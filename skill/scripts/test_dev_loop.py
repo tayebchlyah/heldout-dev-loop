@@ -20,6 +20,8 @@ CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 
 _spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
+if _spec is None or _spec.loader is None:
+    raise ImportError(f"cannot load check_setup module: missing {CHECKER}")
 check_setup = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(check_setup)
 
