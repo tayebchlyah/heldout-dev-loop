@@ -133,9 +133,57 @@ test('a clean merge with no overlapping tables reports no skipped headers', () =
   assert.deepEqual(skipped, [])
 })
 
-test('a no-op merge (marker already present) reports no skipped headers', () => {
+test('a no-op merge adds nothing and names every table it kept', () => {
   const { text } = mergeCodexConfig('model = "gpt"\n', fragment)
   const again = mergeCodexConfig(text, fragment)
   assert.equal(again.changed, false)
-  assert.deepEqual(again.skipped, [])
+  assert.equal(again.text, text)
+  assert.deepEqual(again.skipped, ['default_permissions', '[features]', '[permissions.dev-workspace]'])
+})
+
+test('a target whose own root key shares a name with the fragment keeps its value once, and the merge parses as TOML', () => {
+  const current = 'model = "gpt-5"\ndefault_permissions = "my-own-profile"\n\n[features]\nhooks = false\n'
+  const { text, skipped } = mergeCodexConfig(current, realFragment)
+
+  const keyCount = text.split('\n').filter((line) => line.trim().startsWith('default_permissions')).length
+  assert.equal(keyCount, 1, 'the fragment must not add a second default_permissions')
+  assert.ok(text.includes('default_permissions = "my-own-profile"'))
+  assert.ok(skipped.includes('default_permissions'))
+  assert.ok(skipped.includes('[features]'))
+
+  assertValidToml(text)
+})
+
+test('a target that defines a table by a root dotted key does not also receive that table', () => {
+  const current = 'model = "gpt-5"\nfeatures.hooks = false\n'
+  const { text } = mergeCodexConfig(current, realFragment)
+  assert.ok(!text.split('\n').some((line) => line.trim() === '[features]'), 'the dotted key already declares [features]')
+  assertValidToml(text)
+})
+
+test("a fragment root dotted key is dropped when the target declares that table", () => {
+  const dotted = 'features.hooks = true\n\n[permissions.dev-workspace]\nextends = ":workspace"\n'
+  const current = 'model = "gpt-5"\n\n[features]\nhooks = false\n'
+  const { text, skipped } = mergeCodexConfig(current, dotted)
+  assert.ok(!text.includes('features.hooks = true'))
+  assert.ok(skipped.includes('features.hooks'))
+  assertValidToml(text)
+})
+
+test('a later run still adds what a partial target is missing', () => {
+  const current = '[permissions.dev-workspace]\ndescription = "mine"\nextends = ":workspace"\n'
+  const { text, changed, skipped } = mergeCodexConfig(current, realFragment)
+  assert.equal(changed, true)
+  assert.ok(skipped.includes('[permissions.dev-workspace]'))
+  assert.ok(text.includes('[permissions.dev-spec-tester]'))
+  assert.ok(text.includes('description = "mine"'))
+  assertValidToml(text)
+})
+
+test('a settled target reports the tables it keeps on every run, and changes nothing', () => {
+  const { text } = mergeCodexConfig('model = "gpt-5"\n', realFragment)
+  const again = mergeCodexConfig(text, realFragment)
+  assert.equal(again.changed, false)
+  assert.equal(again.text, text)
+  assert.ok(again.skipped.includes('[features]'))
 })
