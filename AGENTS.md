@@ -1,0 +1,71 @@
+# AGENTS.md
+
+## Purpose
+
+dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. One stage per invocation: detect repo/vault state, run that one stage, stop.
+
+## Repo map
+
+- `bin/install.mjs` — installer entry point. Flags: `--yes`, `--dry-run`, `--link`, `--harness=claude|codex|both`, `--vault=<path>`. Also reads `DEV_LOOP_VAULT`.
+- `lib/` — installer internals: `args.mjs` (flag parsing), `config.mjs` (config load/write), `fsops.mjs` (copy/link/backup), `merge-json.mjs`, `merge-lines.mjs`, `merge-toml.mjs` (per-format merge routing), `plan.mjs` (builds the install plan).
+- `skill/SKILL.md` — the dev-loop skill payload. `skill/references/` — harness-specific reference docs (`claude.md`, `codex.md`). `skill/scripts/check_setup.py` — post-install verifier. `skill/scripts/test_dev_loop.py` — skill regression suite.
+- `claude/` — Claude Code payload: agents, hooks, `settings.fragment.json` (merged into `~/.claude/settings.json`).
+- `codex/` — Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (line-merged only, never copied or linked: it holds the user's own allowlist).
+- `test/*.test.mjs` — installer suite (Node's built-in test runner).
+
+## Build and test
+
+```bash
+npm test                                # installer suite: node --test test/*.test.mjs
+python3 skill/scripts/test_dev_loop.py  # skill suite
+```
+
+Both must pass before any commit.
+
+## Install targets (what `bin/install.mjs` writes)
+
+| Target | Content | How |
+| --- | --- | --- |
+| `~/.agents/skills/dev-loop/` | skill, harness refs, scripts | copy or link |
+| `~/.agents/dev-loop.config.json` | vault path (nullable), user name, harnesses | write |
+| `~/.claude/skills/dev-loop` | link to the skill | link |
+| `~/.claude/agents/`, `~/.claude/hooks/` | subagents, shell walls | copy or link |
+| `~/.claude/settings.json` | hook entries + 3 deny rules | merge |
+| `~/.codex/agents/`, `~/.codex/hooks/`, `~/.codex/rules/` | Codex equivalents | copy/link, except `default.rules` |
+| `~/.codex/hooks.json`, `~/.codex/config.toml` | hook entries, permission tables | merge |
+| `~/.codex/rules/default.rules` | line merge only | merge, never copy/link |
+
+Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. It never removes or reorders an entry it did not add. On a `config.toml` table collision (user already declares a table the fragment also declares), the user's table wins and the installer prints one line naming it.
+
+Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it under "User actions required" with the fix (`--vault=<path>` or `DEV_LOOP_VAULT`).
+
+## Verify after install
+
+```bash
+python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
+python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
+```
+
+Ruling R10: right after a correct Codex install, `check_setup.py --harness codex` still fails two things no installer can fix, printed under "User actions required":
+1. Five trusted-hook-hash entries — Codex writes those only after the user runs `/hooks` and trusts the dev-loop hook definitions.
+2. Six third-party skills dev-loop does not ship: `domain-modeling`, `grilling`, `codebase-design`, `code-review`, `research`, `handoff`.
+
+These are expected manual steps, not install defects.
+
+## Conventions
+
+- Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope/issue optional. No Conventional Commits text prefixes.
+- Changelog: `cliff.toml`, git-cliff, gitmoji `commit_parsers`. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`, which runs `git-cliff-action` then `ncipollo/release-action`.
+- No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
+- `rules/default.rules` and the three merged config files (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.codex/config.toml`) are always merged, never copied or linked wholesale.
+
+## Gotchas
+
+- The repo is private, remote does not exist yet (created in a later task). Don't add links/badges assuming a published repo beyond the `npx github:tchlyah/dev-loop` install command.
+- `--link` mode points `~/.agents` and the harness homes at this clone; a skill/script edit applies next session, a fragment-file edit needs a rerun.
+
+## Working principles
+
+- Say your assumptions out loud. If two readings of a request lead to different work, ask before building. If a simpler approach exists, say so.
+- Write the minimum code that solves the problem. No speculative abstractions, no unrequested flexibility, no error handling for impossible cases.
+- Change only what the request needs. Match the surrounding style. Mention unrelated dead code rather than deleting it. Remove only the orphans your own change created.
