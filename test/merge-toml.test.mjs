@@ -1,6 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { mergeCodexConfig, splitToml } from '../lib/merge-toml.mjs'
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const realFragment = readFileSync(`${repoRoot}/codex/config.permissions.toml`, 'utf8')
+
+function assertValidToml(text) {
+  execFileSync('python3', ['-c', 'import tomllib, sys; tomllib.loads(sys.stdin.read())'], { input: text })
+}
 
 const fragment = [
   'default_permissions = "dev-workspace"',
@@ -71,4 +82,22 @@ test('an empty target file merges to just the fragment content', () => {
   assert.equal(changed, true)
   assert.ok(text.includes('[permissions.dev-workspace]'))
   assert.ok(text.includes('[features]'))
+})
+
+test('a target that already declares a fragment table is not given a duplicate header, and the result parses as TOML', () => {
+  const current = 'model = "gpt"\n\n[features]\nhooks = false\n'
+  const { text, changed } = mergeCodexConfig(current, realFragment)
+  assert.equal(changed, true)
+
+  const headerCount = text.split('\n').filter((line) => line.trim() === '[features]').length
+  assert.equal(headerCount, 1, 'the fragment must not add a second [features] header')
+
+  assertValidToml(text)
+})
+
+test('the target keeps its own value for a table the fragment also declares', () => {
+  const current = 'model = "gpt"\n\n[features]\nhooks = false\n'
+  const { text } = mergeCodexConfig(current, realFragment)
+  assert.ok(text.includes('hooks = false'), "the target's own value must survive untouched")
+  assert.ok(!text.includes('hooks = true'), "the fragment's conflicting [features] table must not be appended")
 })
