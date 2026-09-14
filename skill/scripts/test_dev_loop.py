@@ -243,6 +243,52 @@ class DenyWallScopeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
 
+    def test_subagent_spelling_variants_are_blocked(self) -> None:
+        # A trailing slash, a doubled slash, a dot segment, a parent segment
+        # and a capital letter all resolve to the same held-out suite.
+        variants = [
+            {"pattern": ".", "path": "tests/", "glob": "acceptance/**"},
+            {"file_path": "tests//acceptance/login_test.py"},
+            {"file_path": "tests/./acceptance/login_test.py"},
+            {"file_path": "tests/unit/../acceptance/login_test.py"},
+            {"file_path": "Tests/Acceptance/login_test.py"},
+        ]
+        for tool_input in variants:
+            with self.subTest(tool_input=tool_input):
+                result = self.run_claude(
+                    "deny-acceptance-to-subagents.sh", self.subagent(tool_input)
+                )
+                self.assertEqual(result.returncode, 2)
+
+    def test_subagent_glob_tool_split_across_path_and_pattern_is_blocked(self) -> None:
+        # The Glob tool names its location through `pattern`, not `glob`.
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"path": "tests", "pattern": "acceptance/**"}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_nested_object_in_a_path_field_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"paths": [{"p": f"{self.HELD_OUT}/login_test.py"}]}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_string_path_with_array_glob_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"path": "tests", "glob": ["acceptance/**"]}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_file_url_to_the_suite_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"url": f"file:///repo/{self.HELD_OUT}/login_test.py"}),
+        )
+        self.assertEqual(result.returncode, 2)
+
     def test_subagent_array_valued_path_field_is_blocked(self) -> None:
         result = self.run_claude(
             "deny-acceptance-to-subagents.sh",
