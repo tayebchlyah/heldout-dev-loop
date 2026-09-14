@@ -1,0 +1,7 @@
+.superpowers/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+dev-loop.config.json
+*.bak-*
