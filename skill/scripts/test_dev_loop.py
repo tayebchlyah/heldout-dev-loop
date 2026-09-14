@@ -18,6 +18,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
+CLAUDE_HOOKS = SKILL_ROOT.parent / "claude" / "hooks"
 
 _spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
 if _spec is None or _spec.loader is None:
@@ -170,6 +171,111 @@ class SkillContractTests(unittest.TestCase):
                 self.assertEqual(parsed["default_permissions"], permissions)
                 self.assertTrue(parsed["description"])
                 self.assertTrue(parsed["developer_instructions"])
+
+
+class DenyWallScopeTests(unittest.TestCase):
+    """The deny walls match path fields, never the whole tool input.
+
+    A subagent that writes a document or a configuration file whose BODY names
+    the held-out suite is not reading that suite. Blocking such a write is a
+    false positive, and it teaches an agent to disguise its input instead of
+    reporting the block.
+    """
+
+    HELD_OUT = "tests/" + "acceptance"
+
+    def run_claude(self, name: str, payload: dict, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(CLAUDE_HOOKS / name), *args],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def run_codex(self, payload: dict, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sh", str(CODEX_ASSETS / "hooks" / "deny-path.sh"), *args],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def subagent(self, tool_input: dict) -> dict:
+        return {"agent_id": "sub-1", "agent_type": "general-purpose", "tool_input": tool_input}
+
+    def test_subagent_read_of_the_held_out_suite_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"file_path": f"{self.HELD_OUT}/login_test.py"}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_glob_of_the_held_out_suite_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"pattern": f"{self.HELD_OUT}/**", "path": "."}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_shell_command_touching_the_held_out_suite_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"command": f"cat {self.HELD_OUT}/login_test.py"}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_write_whose_body_only_names_the_suite_is_allowed(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent(
+                {
+                    "file_path": "codex/config.permissions.toml",
+                    "content": f'"{self.HELD_OUT}" = "deny"\n"{self.HELD_OUT}/**" = "deny"\n',
+                }
+            ),
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+
+    def test_the_wall_ignores_a_controller_call(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            {"tool_input": {"file_path": f"{self.HELD_OUT}/login_test.py"}},
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_the_spec_tester_keeps_its_exemption(self) -> None:
+        payload = self.subagent({"file_path": f"{self.HELD_OUT}/login_test.py"})
+        payload["agent_type"] = "spec-tester"
+        result = self.run_claude("deny-acceptance-to-subagents.sh", payload)
+        self.assertEqual(result.returncode, 0)
+
+    def test_claude_deny_path_blocks_a_path_and_allows_a_body(self) -> None:
+        blocked = self.run_claude(
+            "deny-path.sh", {"tool_input": {"file_path": "src/app.py"}}, "src"
+        )
+        allowed = self.run_claude(
+            "deny-path.sh",
+            {"tool_input": {"file_path": "docs/layout.md", "content": "Sources live in src/.\n"}},
+            "src",
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertEqual(allowed.returncode, 0)
+
+    def test_codex_deny_path_blocks_a_path_and_allows_a_body(self) -> None:
+        blocked = self.run_codex(
+            {"tool_input": {"command": f"sed -n 1,80p {self.HELD_OUT}/login.py"}}, self.HELD_OUT
+        )
+        allowed = self.run_codex(
+            {"tool_input": {"file_path": "notes.md", "content": f"The suite is {self.HELD_OUT}.\n"}},
+            self.HELD_OUT,
+        )
+        self.assertEqual(
+            json.loads(blocked.stdout)["hookSpecificOutput"]["permissionDecision"], "deny"
+        )
+        self.assertEqual(allowed.stdout, "")
 
 
 class CodexHookBehaviorTests(unittest.TestCase):
