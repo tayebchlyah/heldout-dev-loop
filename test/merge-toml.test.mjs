@@ -101,3 +101,41 @@ test('the target keeps its own value for a table the fragment also declares', ()
   assert.ok(text.includes('hooks = false'), "the target's own value must survive untouched")
   assert.ok(!text.includes('hooks = true'), "the fragment's conflicting [features] table must not be appended")
 })
+
+test('a header with a trailing comment still matches the fragment header, and the merge parses as TOML', () => {
+  const current = 'model = "gpt"\n\n[features]  # user comment\nhooks = false\n'
+  const { text } = mergeCodexConfig(current, realFragment)
+
+  const headerCount = text.split('\n').filter((line) => line.includes('[features]')).length
+  assert.equal(headerCount, 1, 'the trailing comment must not hide the duplicate table')
+
+  assertValidToml(text)
+})
+
+test('a header with internal whitespace still matches the fragment header, and the merge parses as TOML', () => {
+  const current = 'model = "gpt"\n\n[ features ]\nhooks = false\n'
+  const { text } = mergeCodexConfig(current, realFragment)
+
+  const headerCount = text.split('\n').filter((line) => line.includes('features')).length
+  assert.equal(headerCount, 1, 'the spaced header must not hide the duplicate table')
+
+  assertValidToml(text)
+})
+
+test('mergeCodexConfig reports the table headers it skipped because the target already declares them', () => {
+  const current = 'model = "gpt"\n\n[features]\nhooks = false\n'
+  const { skipped } = mergeCodexConfig(current, realFragment)
+  assert.deepEqual(skipped, ['[features]'])
+})
+
+test('a clean merge with no overlapping tables reports no skipped headers', () => {
+  const { skipped } = mergeCodexConfig('model = "gpt"\n', fragment)
+  assert.deepEqual(skipped, [])
+})
+
+test('a no-op merge (marker already present) reports no skipped headers', () => {
+  const { text } = mergeCodexConfig('model = "gpt"\n', fragment)
+  const again = mergeCodexConfig(text, fragment)
+  assert.equal(again.changed, false)
+  assert.deepEqual(again.skipped, [])
+})
