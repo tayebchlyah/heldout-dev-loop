@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, readlinkSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -200,4 +200,17 @@ test('a re-run with no --vault keeps the configured vault, and a changed vault i
   const backup = readdirSync(join(home, '.agents')).find((name) => name.startsWith('dev-loop.config.json.bak-'))
   assert.ok(backup, 'the replaced config must leave a backup')
   assert.equal(JSON.parse(readFileSync(join(home, '.agents', backup), 'utf8')).vault, vault)
+})
+
+test('link mode links every Codex hook into the clone, and the hooks file still carries the real home', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  run(home, ['--yes', '--harness=both', '--link'])
+  for (const name of ['gate.sh', 'deny-path.sh', 'git-guard.sh', 'session-start.sh']) {
+    const target = join(home, '.codex/hooks', name)
+    assert.ok(lstatSync(target).isSymbolicLink(), `${name} must be a link in link mode`)
+    assert.equal(readlinkSync(target), join(repoRoot, 'codex/hooks', name))
+  }
+  const hooks = readFileSync(join(home, '.codex/hooks.json'), 'utf8')
+  assert.ok(!hooks.includes('{{HOME}}'))
+  assert.ok(hooks.includes(join(home, '.codex/hooks/git-guard.sh')))
 })

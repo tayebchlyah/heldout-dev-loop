@@ -29,11 +29,15 @@ test('the Codex plan covers the agents, the hooks, the rules and the two configu
   assert.ok(targets.includes('/home/x/.codex/config.toml'))
 })
 
-test('a Codex hook stays a copy in link mode, because it carries the home token', () => {
-  const actions = buildPlan({ repoRoot, home, harnesses: ['codex'], mode: 'link' })
-  const hook = actions.find((action) => action.target === '/home/x/.codex/hooks/git-guard.sh')
-  assert.equal(hook.mode, 'copy')
-  assert.equal(hook.template, true)
+test('a Codex hook follows the install mode and carries no template token', () => {
+  const linked = buildPlan({ repoRoot, home, harnesses: ['codex'], mode: 'link' })
+    .find((action) => action.target === '/home/x/.codex/hooks/git-guard.sh')
+  assert.equal(linked.mode, 'link')
+  assert.equal(linked.template, undefined)
+
+  const copied = buildPlan({ repoRoot, home, harnesses: ['codex'], mode: 'copy' })
+    .find((action) => action.target === '/home/x/.codex/hooks/git-guard.sh')
+  assert.equal(copied.mode, 'copy')
 })
 
 test('a merge action keeps its mode in link mode', () => {
