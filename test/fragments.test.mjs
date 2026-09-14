@@ -16,6 +16,49 @@ test('the Claude fragment covers the four hook events', () => {
   }
 })
 
+test('the Claude fragment carries the exact hook commands, matchers and timeouts', () => {
+  const fragment = readJson('claude/settings.fragment.json')
+
+  assert.deepEqual(fragment.hooks.SessionStart, [
+    {
+      matcher: 'startup|resume|clear|compact',
+      hooks: [
+        {
+          type: 'command',
+          command:
+            'd="${CLAUDE_PROJECT_DIR:-.}"; [ -f "$d/AGENTS.md" ] && grep -q \'^vault_notes:\' "$d/AGENTS.md" && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0',
+          timeout: 5,
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.PreToolUse, [
+    {
+      matcher: 'Bash',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/git-guard.sh', timeout: 5 }],
+    },
+    {
+      matcher: 'Read|Edit|Write|Grep|Glob|Bash',
+      hooks: [
+        {
+          type: 'command',
+          command: '~/.claude/hooks/deny-acceptance-to-subagents.sh',
+          timeout: 5,
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.Stop, [
+    { hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh', timeout: 600 }] },
+  ])
+
+  assert.deepEqual(fragment.hooks.SubagentStop, [
+    { hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh', timeout: 600 }] },
+  ])
+})
+
 test('the Claude fragment carries the three deny rules', () => {
   const fragment = readJson('claude/settings.fragment.json')
   assert.deepEqual(fragment.permissions.deny, [
@@ -44,6 +87,64 @@ test('the Codex fragment covers the four hook events and omits style.sh', () => 
   assert.ok(!JSON.stringify(fragment).includes('style.sh'))
 })
 
+test('the Codex fragment carries the exact hook commands, matchers and timeouts', () => {
+  const fragment = readJson('codex/hooks.fragment.json')
+
+  assert.deepEqual(fragment.hooks.SessionStart, [
+    {
+      matcher: 'startup|resume|clear|compact',
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/session-start.sh',
+          timeout: 5,
+          statusMessage: 'Checking repository workflow',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.PreToolUse, [
+    {
+      matcher: 'Bash',
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/git-guard.sh',
+          timeout: 5,
+          statusMessage: 'Checking command safety',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.Stop, [
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/gate.sh',
+          timeout: 600,
+          statusMessage: 'Running repository gate',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.SubagentStop, [
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/gate.sh',
+          timeout: 600,
+          statusMessage: 'Running repository gate',
+        },
+      ],
+    },
+  ])
+})
+
 test('the Codex TOML fragment puts its root keys before the first table', () => {
   const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
   const lines = text.split('\n')
@@ -55,4 +156,32 @@ test('the Codex TOML fragment puts its root keys before the first table', () => 
   assert.ok(text.includes('[permissions.dev-implementer]'))
   assert.ok(text.includes('[permissions.dev-spec-tester]'))
   assert.ok(text.includes('[features]'))
+})
+
+test('the Codex TOML fragment denies the held-out suite for dev-implementer and sources for dev-spec-tester', () => {
+  const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
+  const lines = text.split('\n')
+
+  const sectionBody = (header) => {
+    const start = lines.findIndex((line) => line.trim() === header)
+    assert.ok(start >= 0, `missing section ${header}`)
+    const rest = lines.slice(start + 1)
+    let end = rest.findIndex((line) => line.trimStart().startsWith('['))
+    if (end === -1) end = rest.length
+    return rest.slice(0, end).join('\n')
+  }
+
+  const implementerRoots = sectionBody(
+    '[permissions.dev-implementer.filesystem.":workspace_roots"]',
+  )
+  assert.match(implementerRoots, /"tests\/acceptance"\s*=\s*"deny"/)
+  assert.match(implementerRoots, /"tests\/acceptance\/\*\*"\s*=\s*"deny"/)
+
+  const specTesterRoots = sectionBody(
+    '[permissions.dev-spec-tester.filesystem.":workspace_roots"]',
+  )
+  for (const dir of ['src', 'app', 'backend', 'frontend']) {
+    assert.match(specTesterRoots, new RegExp(`"${dir}"\\s*=\\s*"deny"`))
+    assert.match(specTesterRoots, new RegExp(`"${dir}/\\*\\*"\\s*=\\s*"deny"`))
+  }
 })
