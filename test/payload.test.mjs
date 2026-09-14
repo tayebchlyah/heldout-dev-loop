@@ -65,10 +65,26 @@ test('codex default.rules ships only dev-loop git/rm safety rules', () => {
     .map((block) => block.trim())
     .filter((block) => block.length > 0)
 
-  assert.ok(blocks.length > 0, 'default.rules must contain at least one rule')
-  for (const block of blocks) {
-    assert.ok(/\bgit\b|\brm\b/.test(block), `rule block outside dev-loop's git/rm scope: ${block.slice(0, 80)}`)
-  }
+  assert.equal(blocks.length, 4, 'default.rules must contain exactly four rule blocks')
+
+  // Extract the justification string from each block
+  const justifications = blocks.map((block) => {
+    const match = block.match(/justification="([^"]+)"/)
+    return match ? match[1] : null
+  })
+
+  // Assert the exact set of dev-loop justifications
+  const expectedJustifications = [
+    'Global rule: git push needs explicit permission each time.',
+    'Git with a directory override needs review because later arguments can hide a push or destructive write.',
+    'Hard reset can destroy uncommitted work.',
+    'Recursive deletion of filesystem root is never allowed.',
+  ]
+  assert.deepEqual(
+    new Set(justifications),
+    new Set(expectedJustifications),
+    'default.rules must contain exactly the four dev-loop git/rm safety justifications',
+  )
 })
 
 test('no tracked file holds an absolute home path or a personal name', () => {
