@@ -21,9 +21,16 @@ CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 
 _spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
 if _spec is None or _spec.loader is None:
-    raise ImportError(f"cannot load check_setup module: missing {CHECKER}")
+    # spec_from_file_location does not itself validate that CHECKER exists,
+    # so this guard is here only to satisfy the type checker (_spec.loader
+    # is Optional[Loader]); a missing CHECKER surfaces below instead, as
+    # FileNotFoundError, once exec_module actually tries to read it.
+    raise ImportError(f"cannot load check_setup module: {CHECKER}")
 check_setup = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(check_setup)
+try:
+    _spec.loader.exec_module(check_setup)
+except FileNotFoundError as exc:
+    raise FileNotFoundError(f"cannot load check_setup module: missing {CHECKER}") from exc
 
 
 def all_instructions() -> str:
