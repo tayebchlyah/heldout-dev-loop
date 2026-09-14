@@ -61,7 +61,7 @@ These are expected manual steps, not install defects.
 
 ## Gotchas
 
-- The repo is private, remote does not exist yet (created in a later task). Don't add links/badges assuming a published repo beyond the `npx github:tchlyah/dev-loop` install command.
+- The repo is private. Nothing may assume an anonymous reader: no badges, no links that only resolve for a public repo. The `npx github:tchlyah/dev-loop` install command works only for someone whose Git or SSH credentials already reach it.
 - `--link` mode points `~/.agents` and the harness homes at this clone; a skill/script edit applies next session, a fragment-file edit needs a rerun.
 
 ## Working principles
