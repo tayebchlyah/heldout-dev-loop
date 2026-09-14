@@ -90,3 +90,31 @@ test('a fragment block already present, reformatted, is recognized by its justif
   const { added } = mergeRules(current, fragment)
   assert.deepEqual(added, ['Printing the working directory is always safe.'])
 })
+
+test('a fragment block with no justification is never dropped because the current file also has a justification-less block', () => {
+  const current = [
+    'prefix_rule(',
+    '    pattern=["echo"],',
+    '    decision="allow",',
+    '    match=["echo hi"],',
+    '    not_match=[],',
+    ')',
+    '',
+  ].join('\n')
+  const noJustificationFragment = [
+    'prefix_rule(',
+    '    pattern=["cat"],',
+    '    decision="allow",',
+    '    match=["cat file"],',
+    '    not_match=[],',
+    ')',
+    '',
+  ].join('\n')
+
+  const { text, added } = mergeRules(current, noJustificationFragment)
+
+  assert.equal(added.length, 1, 'a null-justification fragment block must never be reported as already present')
+  assert.equal(added[0], null)
+  assert.ok(text.includes('pattern=["cat"]'), 'the justification-less fragment block must actually be appended')
+  assert.ok(text.includes('pattern=["echo"]'), "the current file's own justification-less block must survive")
+})
