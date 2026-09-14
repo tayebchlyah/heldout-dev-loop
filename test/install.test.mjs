@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { assertValidToml } from './helpers.mjs'
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 function run(home, args) {
@@ -74,7 +76,7 @@ test('a Codex install writes the real home into the hook, with no token left', (
   assert.ok(!hooks.includes('{{HOME}}'))
   assert.ok(hooks.includes(home))
   const guard = readFileSync(join(home, '.codex/hooks/git-guard.sh'), 'utf8')
-  assert.ok(!guard.includes('{{HOME}}'))
+  assert.equal(guard, readFileSync(join(repoRoot, 'codex/hooks/git-guard.sh'), 'utf8'))
   assert.ok(readFileSync(join(home, '.codex/config.toml'), 'utf8').includes('[permissions.dev-spec-tester]'))
 })
 
@@ -117,13 +119,16 @@ test('a Codex install over an existing rules file keeps the user rule and append
 test('a Codex install over a config.toml that already declares [features] keeps the user value and names the skipped table', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   mkdirSync(join(home, '.codex'), { recursive: true })
-  writeFileSync(join(home, '.codex/config.toml'), 'default_permissions = "dev-workspace"\n\n[features]\nhooks = false\n')
+  writeFileSync(join(home, '.codex/config.toml'), 'default_permissions = "my-own-profile"\n\n[features]\nhooks = false\n')
 
   const output = run(home, ['--yes', '--harness=codex'])
   const text = readFileSync(join(home, '.codex/config.toml'), 'utf8')
   assert.match(text, /hooks = false/)
+  assert.match(text, /default_permissions = "my-own-profile"/)
   assert.match(output, /\[features\]/)
+  assert.match(output, /default_permissions/)
   assert.match(output, /config\.toml/)
+  assertValidToml(text)
 })
 
 test('an install with no vault set prints a line about --vault', () => {
