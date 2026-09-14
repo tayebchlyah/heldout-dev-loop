@@ -1,17 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { mergeCodexConfig, splitToml } from '../lib/merge-toml.mjs'
+import { assertValidToml } from './helpers.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const realFragment = readFileSync(`${repoRoot}/codex/config.permissions.toml`, 'utf8')
-
-function assertValidToml(text) {
-  execFileSync('python3', ['-c', 'import tomllib, sys; tomllib.loads(sys.stdin.read())'], { input: text })
-}
 
 const fragment = [
   'default_permissions = "dev-workspace"',
@@ -42,7 +38,7 @@ test('a root key lands before the first table of the target', () => {
   assert.ok(text.includes('[features]'))
 })
 
-test('an existing profile blocks a second merge', () => {
+test('a second merge of the same fragment adds nothing', () => {
   const { text } = mergeCodexConfig('model = "gpt"\n', fragment)
   const again = mergeCodexConfig(text, fragment)
   assert.equal(again.changed, false)
@@ -161,7 +157,7 @@ test('a target that defines a table by a root dotted key does not also receive t
   assertValidToml(text)
 })
 
-test("a fragment root dotted key is dropped when the target declares that table", () => {
+test('a fragment root dotted key is dropped when the target declares that table', () => {
   const dotted = 'features.hooks = true\n\n[permissions.dev-workspace]\nextends = ":workspace"\n'
   const current = 'model = "gpt-5"\n\n[features]\nhooks = false\n'
   const { text, skipped } = mergeCodexConfig(current, dotted)
