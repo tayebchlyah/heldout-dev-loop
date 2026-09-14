@@ -1,0 +1,25 @@
+{
+  "name": "dev-loop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stage-driven development loop skill for Claude Code and Codex, with its installer.",
+  "type": "module",
+  "bin": {
+    "dev-loop": "bin/install.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "test:skill": "python3 skill/scripts/test_dev_loop.py"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "skill",
+    "claude",
+    "codex",
+    "README.md"
+  ]
+}
