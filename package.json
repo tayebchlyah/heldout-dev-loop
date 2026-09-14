@@ -11,7 +11,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.mjs",
     "test:skill": "python3 skill/scripts/test_dev_loop.py"
   },
   "files": [
