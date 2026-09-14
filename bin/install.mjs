@@ -31,7 +31,7 @@ async function main() {
   const reports = runPlan(actions, { dryRun: flags.dryRun, home })
 
   report(
-    [{ target: configResult.path, action: configResult.changed ? 'write' : 'skip', backup: configResult.backup, added: [], skipped: [] }, ...reports],
+    [{ target: configResult.path, action: configResult.changed ? 'write' : 'skip', backup: configResult.backup, added: [], skipped: [], notes: [] }, ...reports],
     flags,
     home,
     config,
@@ -57,6 +57,15 @@ function report(reports, flags, home, config) {
     for (const added of entry.added) console.log(`          + ${added}`)
   }
 
+  // A shape this installer cannot merge (a hand-edited hook group with no
+  // hooks array) is left alone rather than aborting the run, so say which
+  // file it was and what was wrong with it.
+  for (const entry of reports) {
+    for (const note of entry.notes ?? []) {
+      console.log(`  ${short(entry.target)}: ${note}`)
+    }
+  }
+
   // Ruling R9: when a Codex config merge skips a table the target already
   // declares, say so explicitly, naming the file and the table, so a user
   // whose [features] disables hooks understands why check_setup.py later
@@ -67,7 +76,7 @@ function report(reports, flags, home, config) {
     }
   }
 
-  console.log(`${changed.length} changed, ${reports.length - changed.length} unchanged`)
+  console.log(`${changed.length} ${flags.dryRun ? 'would change' : 'changed'}, ${reports.length - changed.length} unchanged`)
 }
 
 main().catch((error) => {
