@@ -184,3 +184,16 @@ test('freeBackupPath steps past a name already taken on disk', () => {
   writeFileSync(first, 'older\n')
   assert.equal(freeBackupPath(target), `${first}-2`)
 })
+
+test('placeDir replaces a symbolic link left by a link install', () => {
+  const root = sandbox()
+  mkdirSync(join(root, 'src', 'tree'), { recursive: true })
+  writeFileSync(join(root, 'src', 'tree', 'f.txt'), 'hello\n')
+  const target = join(root, 'dst', 'tree')
+  symlinkSync(join(root, 'src', 'tree'), target)
+
+  const result = placeDir({ source: join(root, 'src', 'tree'), target, mode: 'copy', dryRun: false })
+  assert.equal(result.action, 'replace')
+  assert.equal(lstatSync(target).isSymbolicLink(), false)
+  assert.equal(readFileSync(join(target, 'f.txt'), 'utf8'), 'hello\n')
+})
