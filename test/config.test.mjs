@@ -107,3 +107,51 @@ test('writeConfig writes the file, and --dry-run writes nothing', () => {
   const again = writeConfig(home, config, { dryRun: false })
   assert.equal(again.changed, false)
 })
+
+test('a re-run with no vault flag keeps the vault the config already holds', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-'))
+  mkdirSync(join(home, '.agents'), { recursive: true })
+  writeFileSync(configPath(home), JSON.stringify({ vault: '/vaults/kept', user_name: 'ada', harnesses: ['claude'] }))
+
+  const withYes = await buildConfig({ flags: { yes: true, harness: null, vault: null }, home, env: {}, ask: noAsk })
+  assert.equal(withYes.vault, '/vaults/kept')
+
+  let offered = null
+  const prompted = await buildConfig({
+    flags: { yes: false, harness: null, vault: null },
+    home,
+    env: {},
+    ask: async (question, fallback) => {
+      if (question === 'Vault path') offered = fallback
+      return fallback
+    },
+  })
+  assert.equal(offered, '/vaults/kept', 'the existing vault must be the prompt default')
+  assert.equal(prompted.vault, '/vaults/kept')
+
+  const replaced = await buildConfig({ flags: { yes: true, harness: null, vault: '/vaults/new' }, home, env: {}, ask: noAsk })
+  assert.equal(replaced.vault, '/vaults/new')
+})
+
+test('an explicit empty --vault= clears the vault instead of falling through', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-'))
+  mkdirSync(join(home, '.agents'), { recursive: true })
+  writeFileSync(configPath(home), JSON.stringify({ vault: '/vaults/kept', user_name: 'ada', harnesses: ['claude'] }))
+
+  const cleared = await buildConfig({
+    flags: { yes: true, harness: null, vault: '' },
+    home,
+    env: { DEV_LOOP_VAULT: '/vaults/from-env' },
+    ask: noAsk,
+  })
+  assert.equal(cleared.vault, null)
+})
+
+test('writeConfig backs up the file it replaces', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-'))
+  writeConfig(home, { vault: '/v', user_name: 'ada', harnesses: ['claude'] }, { dryRun: false })
+  const second = writeConfig(home, { vault: '/w', user_name: 'ada', harnesses: ['claude'] }, { dryRun: false })
+  assert.ok(second.backup, 'the replaced config must be backed up')
+  assert.equal(JSON.parse(readFileSync(second.backup, 'utf8')).vault, '/v')
+  assert.equal(JSON.parse(readFileSync(configPath(home), 'utf8')).vault, '/w')
+})
