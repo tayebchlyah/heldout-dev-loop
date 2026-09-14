@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { placeFile, placeDir, renderTemplate, backupPath } from '../lib/fsops.mjs'
+import { placeFile, placeDir, renderTemplate, backupPath, freeBackupPath } from '../lib/fsops.mjs'
 
 function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'dev-loop-fs-'))
@@ -160,4 +160,27 @@ test('two replacements of the same target in quick succession produce two distin
   assert.ok(existsSync(second.backup))
   assert.equal(readFileSync(first.backup, 'utf8'), 'old-1\n')
   assert.equal(readFileSync(second.backup, 'utf8'), 'old-2\n')
+})
+
+test('a copy over a symbolic link replaces the link with a real file', () => {
+  const root = sandbox()
+  const source = join(root, 'src', 'a.sh')
+  const target = join(root, 'out', 'a.sh')
+  mkdirSync(join(root, 'out'), { recursive: true })
+  symlinkSync(source, target)
+
+  const result = placeFile({ source, target })
+  assert.equal(result.action, 'replace')
+  assert.ok(result.backup, 'the link must be moved aside, not left in place')
+  assert.equal(lstatSync(target).isSymbolicLink(), false)
+})
+
+test('freeBackupPath steps past a name already taken on disk', () => {
+  const root = sandbox()
+  const target = join(root, 'out', 'taken.json')
+  mkdirSync(join(root, 'out'), { recursive: true })
+  writeFileSync(target, 'live\n')
+  const first = freeBackupPath(target)
+  writeFileSync(first, 'older\n')
+  assert.equal(freeBackupPath(target), `${first}-2`)
 })
