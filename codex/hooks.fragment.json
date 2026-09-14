@@ -1,0 +1,55 @@
+{
+  "description": "Shared development workflow safety and verification hooks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/session-start.sh",
+            "timeout": 5,
+            "statusMessage": "Checking repository workflow"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/git-guard.sh",
+            "timeout": 5,
+            "statusMessage": "Checking command safety"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/gate.sh",
+            "timeout": 600,
+            "statusMessage": "Running repository gate"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/gate.sh",
+            "timeout": 600,
+            "statusMessage": "Running repository gate"
+          }
+        ]
+      }
+    ]
+  }
+}
