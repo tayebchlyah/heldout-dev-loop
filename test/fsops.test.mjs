@@ -93,9 +93,9 @@ test('placeDir copies a whole tree and backs up the old one', () => {
 test('placeFile with home set renders {{HOME}}', () => {
   const root = sandbox()
   const target = join(root, 'dst', 'a.sh')
-  const result = placeFile({ source: join(root, 'src', 'a.sh'), target, mode: 'copy', dryRun: false, home: '/Users/me' })
+  const result = placeFile({ source: join(root, 'src', 'a.sh'), target, mode: 'copy', dryRun: false, home: '/home/tester' })
   assert.equal(result.action, 'create')
-  assert.equal(readFileSync(target, 'utf8'), '#!/bin/sh\necho /Users/me\n')
+  assert.equal(readFileSync(target, 'utf8'), '#!/bin/sh\necho /home/tester\n')
 })
 
 test('placeFile with home null writes the bytes unchanged, token included', () => {
@@ -125,11 +125,26 @@ test('placeDir in link mode is a no-op skip when the target already links to the
   assert.equal(result.backup, null)
 })
 
-test('two placements in the same millisecond produce distinct backup paths', () => {
+test('backupPath is pure: same arguments always return the same string', () => {
+  const now = new Date('2026-09-14T10:20:30.000Z')
+  const first = backupPath('/x/y.json', now)
+  const second = backupPath('/x/y.json', now)
+  assert.equal(first, second)
+})
+
+test('two replacements of the same target in quick succession produce two distinct backups on disk', () => {
   const root = sandbox()
   const target = join(root, 'dst', 'a.sh')
-  const now = new Date('2026-09-14T10:20:30.000Z')
-  const first = backupPath(target, now)
-  const second = backupPath(target, now)
-  assert.notEqual(first, second)
+  writeFileSync(target, 'old-1\n')
+  const first = placeFile({ source: join(root, 'src', 'a.sh'), target, mode: 'copy', dryRun: false })
+  writeFileSync(target, 'old-2\n')
+  const second = placeFile({ source: join(root, 'src', 'a.sh'), target, mode: 'copy', dryRun: false })
+
+  assert.equal(first.action, 'replace')
+  assert.equal(second.action, 'replace')
+  assert.notEqual(first.backup, second.backup)
+  assert.ok(existsSync(first.backup))
+  assert.ok(existsSync(second.backup))
+  assert.equal(readFileSync(first.backup, 'utf8'), 'old-1\n')
+  assert.equal(readFileSync(second.backup, 'utf8'), 'old-2\n')
 })
