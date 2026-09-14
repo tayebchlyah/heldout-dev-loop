@@ -10,7 +10,7 @@ npx github:tchlyah/dev-loop
 
 Flags: `--yes`, `--dry-run`, `--harness=claude|codex|both`, `--vault=<path>`, `--link`.
 
-The vault can also come from `DEV_LOOP_VAULT`. If no vault is set, `~/.agents/dev-loop.config.json` gets `vault: null`, the installer says so, and `check_setup.py` reports it as a top-level failure: `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop --vault=<path>`.
+The vault can also come from `DEV_LOOP_VAULT`. A re-run keeps the vault already in `~/.agents/dev-loop.config.json`, so only an explicit new value replaces it; `--vault=` with an empty value is that explicit answer for "no vault" and clears it. If no vault is set, `~/.agents/dev-loop.config.json` gets `vault: null`, the installer says so, and `check_setup.py` reports it as a top-level failure: `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop --vault=<path>`.
 
 ## What it installs
 

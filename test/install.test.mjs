@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -182,4 +182,22 @@ test('--link twice in a row is idempotent: no new link and no backup on the seco
   assert.doesNotMatch(output, /backup/)
   const target = join(home, '.claude/agents/implementer.md')
   assert.ok(lstatSync(target).isSymbolicLink())
+})
+
+test('a re-run with no --vault keeps the configured vault, and a changed vault is backed up', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  const vault = mkdtempSync(join(tmpdir(), 'dev-loop-vault-'))
+  run(home, ['--yes', '--harness=claude', `--vault=${vault}`])
+
+  run(home, ['--yes', '--harness=claude'])
+  const configFile = join(home, '.agents/dev-loop.config.json')
+  assert.equal(JSON.parse(readFileSync(configFile, 'utf8')).vault, vault)
+
+  const other = mkdtempSync(join(tmpdir(), 'dev-loop-vault-'))
+  const output = run(home, ['--yes', '--harness=claude', `--vault=${other}`])
+  assert.match(output, /backup/)
+  assert.equal(JSON.parse(readFileSync(configFile, 'utf8')).vault, other)
+  const backup = readdirSync(join(home, '.agents')).find((name) => name.startsWith('dev-loop.config.json.bak-'))
+  assert.ok(backup, 'the replaced config must leave a backup')
+  assert.equal(JSON.parse(readFileSync(join(home, '.agents', backup), 'utf8')).vault, vault)
 })
