@@ -37,7 +37,7 @@ Both must pass before any commit.
 
 Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. It never removes or reorders an entry it did not add. On a `config.toml` table collision (user already declares a table the fragment also declares), the user's table wins and the installer prints one line naming it.
 
-Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it under "User actions required" with the fix (`--vault=<path>` or `DEV_LOOP_VAULT`).
+Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it as a plain top-level failure line, not under "User actions required": `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop --vault=<path>`.
 
 ## Verify after install
 
@@ -54,7 +54,7 @@ These are expected manual steps, not install defects.
 
 ## Conventions
 
-- Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope/issue optional. No Conventional Commits text prefixes.
+- Commits: gitmoji plus a Conventional Commits type, format `<emoji> type: message` (e.g. `🐛 fix: keep backupPath pure`).
 - Changelog: `cliff.toml`, git-cliff, gitmoji `commit_parsers`. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`, which runs `git-cliff-action` then `ncipollo/release-action`.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
 - `rules/default.rules` and the three merged config files (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.codex/config.toml`) are always merged, never copied or linked wholesale.
