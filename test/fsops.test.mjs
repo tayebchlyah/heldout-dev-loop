@@ -125,6 +125,19 @@ test('placeDir in link mode is a no-op skip when the target already links to the
   assert.equal(result.backup, null)
 })
 
+test('placeDir replaces without throwing when the target has a dangling symlink where the source has a regular file', () => {
+  const root = sandbox()
+  mkdirSync(join(root, 'src', 'tree'), { recursive: true })
+  writeFileSync(join(root, 'src', 'tree', 'f.txt'), 'hello\n')
+  const target = join(root, 'dst', 'tree')
+  mkdirSync(target, { recursive: true })
+  symlinkSync(join(root, 'src', 'tree', 'does-not-exist.txt'), join(target, 'f.txt'))
+
+  const result = placeDir({ source: join(root, 'src', 'tree'), target, mode: 'copy', dryRun: false })
+  assert.equal(result.action, 'replace')
+  assert.equal(readFileSync(join(target, 'f.txt'), 'utf8'), 'hello\n')
+})
+
 test('backupPath is pure: same arguments always return the same string', () => {
   const now = new Date('2026-09-14T10:20:30.000Z')
   const first = backupPath('/x/y.json', now)

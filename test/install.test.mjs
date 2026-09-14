@@ -142,6 +142,39 @@ test('a second install of everything reports every action as unchanged and leave
   assert.doesNotMatch(output, /backup/)
 })
 
+test('a malformed settings.json names the file in the error, and a fixed re-run recovers', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  mkdirSync(join(home, '.claude'), { recursive: true })
+  writeFileSync(join(home, '.claude/settings.json'), '{ not json at all')
+
+  assert.throws(
+    () => run(home, ['--yes', '--harness=claude']),
+    (error) => {
+      assert.match(error.message, /\.claude\/settings\.json/)
+      return true
+    },
+  )
+
+  writeFileSync(join(home, '.claude/settings.json'), '{}\n')
+  const output = run(home, ['--yes', '--harness=claude'])
+  assert.match(output, /1 changed/)
+  const settings = JSON.parse(readFileSync(join(home, '.claude/settings.json'), 'utf8'))
+  assert.ok(settings.hooks.Stop.length > 0)
+})
+
+test('a target that is a directory instead of a file names the path in the error', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  mkdirSync(join(home, '.claude/agents/implementer.md'), { recursive: true })
+
+  assert.throws(
+    () => run(home, ['--yes', '--harness=claude']),
+    (error) => {
+      assert.match(error.message, /\.claude\/agents\/implementer\.md/)
+      return true
+    },
+  )
+})
+
 test('--link twice in a row is idempotent: no new link and no backup on the second run', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   run(home, ['--yes', '--harness=claude', '--link'])
