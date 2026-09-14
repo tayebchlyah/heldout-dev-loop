@@ -8,7 +8,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 - User hooks: `~/.claude/hooks/gate.sh`, `deny-path.sh`, `deny-acceptance-to-subagents.sh`, `git-guard.sh`.
 - Repo settings: `.claude/settings.json` denies `Agent(caveman:cavecrew-reviewer)`, `Agent(caveman:cavecrew-builder)`, and `Agent(caveman:cavecrew-investigator)`. It sets `ENABLE_STOP_REVIEW=0`, `ENABLE_COMMIT_REVIEW=0`, and `SG_PUSH_SWEEP=0`.
 - User deny list keeps `Skill(superpowers:verification-before-completion)`, `Read(./.env)`, and `Read(./.env.*)`.
-- Validate with `python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .`.
+- Install or repair with `npx github:tchlyah/dev-loop`. Validate with `python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .`.
 
 ## Skill and agent names
 

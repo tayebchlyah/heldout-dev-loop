@@ -11,7 +11,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - The active `dev-workspace` permission profile extends `:workspace` and denies environment files. `dev-read-only` preserves the same denies for reviewers. No legacy `sandbox_mode` key can remain in a loaded config layer.
 - `dev-implementer` denies `tests/acceptance` through filesystem policy. `dev-spec-tester` denies `src`, `app`, `backend`, and `frontend` through filesystem policy. These walls do not depend on command spelling or hook trust.
 - Command rules prompt for direct pushes and every `git -C` form. They forbid direct hard resets and `rm -rf /`. The trusted Git hook provides defense in depth for wrapped commands.
-- Validate with `python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
+- Install or repair with `npx github:tchlyah/dev-loop`. Validate with `python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
 
 ## Skill and agent names
 
