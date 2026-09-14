@@ -49,6 +49,28 @@ test('every Codex agent is present', () => {
   }
 })
 
+test('codex default.rules ships only dev-loop git/rm safety rules', () => {
+  const rulesPath = join(repoRoot, 'codex/rules/default.rules')
+  const text = readFileSync(rulesPath, 'utf8')
+
+  for (const token of ['wacli', 'whatsapp', '@g.us']) {
+    assert.ok(!text.toLowerCase().includes(token), `default.rules must not contain "${token}"`)
+  }
+
+  // Every rule call starts a fresh block at "prefix_rule(" or "command_rule(";
+  // split on that boundary and require each block to be about git or rm, per
+  // controller ruling R6a (no unrelated personal allowlist entries).
+  const blocks = text
+    .split(/\n(?=(?:prefix_rule|command_rule)\()/)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0)
+
+  assert.ok(blocks.length > 0, 'default.rules must contain at least one rule')
+  for (const block of blocks) {
+    assert.ok(/\bgit\b|\brm\b/.test(block), `rule block outside dev-loop's git/rm scope: ${block.slice(0, 80)}`)
+  }
+})
+
 test('no tracked file holds an absolute home path or a personal name', () => {
   // Built from parts so this check's own source text never contains the
   // forbidden substrings verbatim, which would otherwise make this test
