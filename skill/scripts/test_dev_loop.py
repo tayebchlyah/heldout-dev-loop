@@ -226,6 +226,30 @@ class DenyWallScopeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
 
+    def test_subagent_grep_glob_of_the_held_out_suite_is_blocked(self) -> None:
+        # Grep names a location through `glob`, which is not `path` and not
+        # `pattern`. A filter that omits it reads the whole held-out suite.
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"pattern": ".", "path": ".", "glob": f"{self.HELD_OUT}/**"}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_grep_split_across_path_and_glob_is_blocked(self) -> None:
+        # The same location split across two fields, each innocent alone.
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"pattern": ".", "path": "tests", "glob": "acceptance/**"}),
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_array_valued_path_field_is_blocked(self) -> None:
+        result = self.run_claude(
+            "deny-acceptance-to-subagents.sh",
+            self.subagent({"paths": ["src/app.py", f"{self.HELD_OUT}/login_test.py"]}),
+        )
+        self.assertEqual(result.returncode, 2)
+
     def test_subagent_write_whose_body_only_names_the_suite_is_allowed(self) -> None:
         result = self.run_claude(
             "deny-acceptance-to-subagents.sh",
@@ -263,6 +287,20 @@ class DenyWallScopeTests(unittest.TestCase):
         )
         self.assertEqual(blocked.returncode, 2)
         self.assertEqual(allowed.returncode, 0)
+
+    def test_claude_deny_path_blocks_a_glob(self) -> None:
+        result = self.run_claude(
+            "deny-path.sh", {"tool_input": {"path": ".", "glob": "src/**"}}, "src"
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_codex_deny_path_blocks_a_glob(self) -> None:
+        result = self.run_codex(
+            {"tool_input": {"path": ".", "glob": f"{self.HELD_OUT}/**"}}, self.HELD_OUT
+        )
+        self.assertEqual(
+            json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny"
+        )
 
     def test_codex_deny_path_blocks_a_path_and_allows_a_body(self) -> None:
         blocked = self.run_codex(
