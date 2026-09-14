@@ -1,0 +1,67 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$d/AGENTS.md\" ] && grep -q '^vault_notes:' \"$d/AGENTS.md\" && echo 'This repo runs the dev-loop skill. Invoke it before any other action.'; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/git-guard.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Edit|Write|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/deny-acceptance-to-subagents.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/gate.sh",
+            "timeout": 600
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/gate.sh",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Skill(superpowers:verification-before-completion)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}
