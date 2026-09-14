@@ -31,7 +31,7 @@ async function main() {
   const reports = runPlan(actions, { dryRun: flags.dryRun, home })
 
   report(
-    [{ target: configResult.path, action: configResult.changed ? 'write' : 'skip', backup: null, added: [], skipped: [] }, ...reports],
+    [{ target: configResult.path, action: configResult.changed ? 'write' : 'skip', backup: configResult.backup, added: [], skipped: [] }, ...reports],
     flags,
     home,
     config,
