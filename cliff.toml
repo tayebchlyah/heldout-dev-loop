@@ -1,0 +1,46 @@
+[changelog]
+header = """
+# Changelog\n
+"""
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+    {% for commit in commits %}
+        - {{ commit.message | upper_first }}
+    {% endfor %}
+{% endfor %}\n
+"""
+trim = true
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+split_commits = false
+filter_commits = false
+tag_pattern = "v[0-9]*"
+sort_commits = "oldest"
+
+commit_parsers = [
+  { message = "^✨", group = "Features" },
+  { message = "^🐛", group = "Bug Fixes" },
+  { message = "^🚑️", group = "Hotfixes" },
+  { message = "^♻️", group = "Refactor" },
+  { message = "^💄", group = "UI" },
+  { message = "^⚡️", group = "Performance" },
+  { message = "^🔒️", group = "Security" },
+  { message = "^📝", group = "Documentation" },
+  { message = "^✅", group = "Tests" },
+  { message = "^🔧", group = "Configuration" },
+  { message = "^🚀", group = "Deploy" },
+  { message = "^⬆️", group = "Dependencies" },
+  { message = "^⬇️", group = "Dependencies" },
+  { message = "^🔥", group = "Removed" },
+  { message = "^🚧", group = "Work in Progress" },
+  { message = "^🎉", group = "Init" },
+  { message = ".*", group = "Other" },
+]
