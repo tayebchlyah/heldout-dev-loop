@@ -48,6 +48,14 @@ test('a flag beats a prompt', async () => {
     ask: noAsk,
   })
   assert.equal(flagBeatsEnv.vault, '/vaults/mine')
+
+  const emptyEnv = await buildConfig({
+    flags: { yes: true, harness: null, vault: null },
+    home: '/home/x',
+    env: { USER: 'ada', DEV_LOOP_VAULT: '' },
+    ask: noAsk,
+  })
+  assert.equal(emptyEnv.vault, null)
 })
 
 test('a prompt answer wins over the default', async () => {
@@ -69,6 +77,19 @@ test('a prompt answer wins over the default', async () => {
     ask: async () => '',
   })
   assert.equal(empty.vault, null)
+
+  let asked = false
+  const emptyEnvPrompts = await buildConfig({
+    flags: { yes: false, harness: null, vault: null },
+    home: '/home/x',
+    env: { USER: 'ada', DEV_LOOP_VAULT: '' },
+    ask: async (question, fallback) => {
+      if (question === 'Vault path') asked = true
+      return answers[question] ?? fallback
+    },
+  })
+  assert.equal(asked, true)
+  assert.equal(emptyEnvPrompts.vault, '/vaults/typed')
 })
 
 test('writeConfig writes the file, and --dry-run writes nothing', () => {
