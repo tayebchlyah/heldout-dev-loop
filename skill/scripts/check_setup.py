@@ -40,6 +40,22 @@ def require_text(raw: str, token: str, label: str, failures: list[str]) -> None:
         failures.append(f"missing {label}: {token}")
 
 
+def check_config(home: Path) -> list[str]:
+    failures: list[str] = []
+    path = home / ".agents" / "dev-loop.config.json"
+    if not path.is_file():
+        failures.append(f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop")
+        return failures
+    config = load_json(path, failures)
+    vault = config.get("vault")
+    if not vault:
+        failures.append(f"missing vault in dev-loop config: {path}. Rerun npx github:tchlyah/dev-loop --vault=<path>")
+        return failures
+    if not Path(vault).is_dir():
+        failures.append(f"vault path does not exist: {vault}. Fix vault in {path} or rerun with --vault=<path>")
+    return failures
+
+
 def check_claude(home: Path, repo: Path | None = None) -> list[str]:
     failures: list[str] = []
     root = home / ".claude"
@@ -86,7 +102,7 @@ def check_claude(home: Path, repo: Path | None = None) -> list[str]:
     return failures
 
 
-def check_codex(home: Path) -> list[str]:
+def check_codex(home: Path) -> tuple[list[str], list[tuple[str, list[str]]]]:
     failures: list[str] = []
     root = home / ".codex"
     config, raw_config = load_toml(root / "config.toml", failures)
@@ -111,16 +127,6 @@ def check_codex(home: Path) -> list[str]:
             failures.append(f"missing Codex hook event: {event}")
     for relative in ["hooks/gate.sh", "hooks/deny-path.sh", "hooks/git-guard.sh", "hooks/session-start.sh"]:
         require_file(root / relative, failures)
-
-    trusted_hooks = config.get("hooks", {}).get("state", {})
-    for event in ["pre_tool_use", "session_start", "user_prompt_submit", "subagent_stop", "stop"]:
-        event_entries = [
-            value
-            for key, value in trusted_hooks.items()
-            if f":{event}:" in key and isinstance(value, dict)
-        ]
-        if not any(str(entry.get("trusted_hash", "")).startswith("sha256:") for entry in event_entries):
-            failures.append(f"missing trusted Codex hook hash: {event}")
 
     agents = {
         "implementer.toml": "dev-implementer",
@@ -168,9 +174,42 @@ def check_codex(home: Path) -> list[str]:
         require_text(rules, 'decision="forbidden"', "forbidden command decision", failures)
         require_text(rules, "match=", "command rule inline tests", failures)
 
+    # Ruling R10: trusted-hook state and third-party skills are not something
+    # any installer can write. A user who just ran the installer will see
+    # these fail until they take the corresponding manual step, so they are
+    # reported separately as user actions rather than mixed in with real
+    # install defects.
+    action_groups: list[tuple[str, list[str]]] = []
+
+    trusted_hooks = config.get("hooks", {}).get("state", {})
+    hook_trust_failures: list[str] = []
+    for event in ["pre_tool_use", "session_start", "user_prompt_submit", "subagent_stop", "stop"]:
+        event_entries = [
+            value
+            for key, value in trusted_hooks.items()
+            if f":{event}:" in key and isinstance(value, dict)
+        ]
+        if not any(str(entry.get("trusted_hash", "")).startswith("sha256:") for entry in event_entries):
+            hook_trust_failures.append(f"missing trusted Codex hook hash: {event}")
+    if hook_trust_failures:
+        action_groups.append(
+            ("Run `/hooks` in Codex and trust the dev-loop hook definitions.", hook_trust_failures)
+        )
+
+    skill_failures: list[str] = []
     for skill in CODEX_SKILLS:
-        require_file(home / ".agents" / "skills" / skill / "SKILL.md", failures)
-    return failures
+        path = home / ".agents" / "skills" / skill / "SKILL.md"
+        if not path.is_file():
+            skill_failures.append(f"missing {path}")
+    if skill_failures:
+        action_groups.append(
+            (
+                f"Install these skills from their own source: {', '.join(CODEX_SKILLS)}.",
+                skill_failures,
+            )
+        )
+
+    return failures, action_groups
 
 
 def main() -> int:
@@ -180,11 +219,23 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     args = parser.parse_args()
 
-    failures = check_claude(args.home, args.repo) if args.harness == "claude" else check_codex(args.home)
-    if failures:
+    failures = check_config(args.home)
+    action_groups: list[tuple[str, list[str]]] = []
+    if args.harness == "claude":
+        failures += check_claude(args.home, args.repo)
+    else:
+        codex_failures, action_groups = check_codex(args.home)
+        failures += codex_failures
+
+    if failures or action_groups:
         print(f"{args.harness}: FAIL")
         for failure in failures:
             print(f"- {failure}")
+        if action_groups:
+            print()
+            print("User actions required (expected manual steps, not install defects):")
+            for heading, items in action_groups:
+                print(f"- {heading} ({'; '.join(items)})")
         return 1
     print(f"{args.harness}: PASS")
     return 0

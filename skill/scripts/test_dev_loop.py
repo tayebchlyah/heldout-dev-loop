@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -18,6 +19,10 @@ SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 
+_spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
+check_setup = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(check_setup)
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
@@ -30,6 +35,44 @@ def all_instructions() -> str:
 def write(path: Path, text: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+class ConfigCheckTests(unittest.TestCase):
+    def test_missing_config_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            failures = check_setup.check_config(home)
+            self.assertIn("missing dev-loop config", " ".join(failures))
+
+    def test_config_with_null_vault_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            path = home / ".agents" / "dev-loop.config.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"vault": None, "user_name": "ada"}))
+            failures = check_setup.check_config(home)
+            joined = " ".join(failures)
+            self.assertIn("missing vault in dev-loop config", joined)
+            self.assertNotIn("missing dev-loop config", joined)
+
+    def test_config_with_absent_vault_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            path = home / ".agents" / "dev-loop.config.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"vault": str(home / "nope"), "user_name": "ada"}))
+            failures = check_setup.check_config(home)
+            self.assertIn("vault path does not exist", " ".join(failures))
+
+    def test_valid_config_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            vault = home / "vault"
+            vault.mkdir()
+            path = home / ".agents" / "dev-loop.config.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"vault": str(vault), "user_name": "ada"}))
+            self.assertEqual(check_setup.check_config(home), [])
 
 
 class SkillContractTests(unittest.TestCase):
@@ -237,7 +280,16 @@ class SetupCheckerTests(unittest.TestCase):
             check=False,
         )
 
+    def write_valid_config(self, home: Path) -> None:
+        vault = home / "vault"
+        vault.mkdir(exist_ok=True)
+        write(
+            home / ".agents" / "dev-loop.config.json",
+            json.dumps({"vault": str(vault), "user_name": "ada", "harnesses": ["claude", "codex"]}),
+        )
+
     def make_valid_claude(self, home: Path) -> None:
+        self.write_valid_config(home)
         for name in ["gate.sh", "deny-path.sh", "deny-acceptance-to-subagents.sh", "git-guard.sh"]:
             write(home / ".claude" / "hooks" / name, "#!/bin/sh\n")
         write(home / ".claude" / "agents" / "implementer.md", "name: implementer\n")
@@ -279,6 +331,7 @@ class SetupCheckerTests(unittest.TestCase):
         )
 
     def make_valid_codex(self, home: Path) -> None:
+        self.write_valid_config(home)
         for name in ["gate.sh", "git-guard.sh", "deny-path.sh", "session-start.sh"]:
             write(home / ".codex" / "hooks" / name, "#!/bin/sh\n")
         agent_profiles = {
