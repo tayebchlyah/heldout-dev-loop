@@ -219,3 +219,35 @@ test('link mode links every Codex hook into the clone, and the hooks file still 
   assert.ok(!hooks.includes('{{HOME}}'))
   assert.ok(hooks.includes(join(home, '.codex/hooks/git-guard.sh')))
 })
+
+test('a dry run says what would change, not what changed', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  const output = run(home, ['--yes', '--harness=claude', '--dry-run'])
+  assert.match(output, /would change/)
+  assert.doesNotMatch(output, /\d+ changed/)
+})
+
+test('a copy install over a link install replaces the links with real files', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  run(home, ['--yes', '--harness=claude', '--link'])
+  run(home, ['--yes', '--harness=claude'])
+  const target = join(home, '.claude/agents/implementer.md')
+  assert.equal(lstatSync(target).isSymbolicLink(), false)
+  assert.equal(readFileSync(target, 'utf8'), readFileSync(join(repoRoot, 'claude/agents/implementer.md'), 'utf8'))
+})
+
+test('a malformed hook group in settings.json is skipped and named, and the install still succeeds', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  mkdirSync(join(home, '.claude'), { recursive: true })
+  writeFileSync(join(home, '.claude/settings.json'), JSON.stringify({
+    hooks: { Stop: [{ matcher: 'broken' }], PreToolUse: 'nonsense' },
+  }, null, 2))
+
+  const output = run(home, ['--yes', '--harness=claude'])
+  assert.match(output, /hooks/)
+  assert.match(output, /settings\.json/)
+  const settings = JSON.parse(readFileSync(join(home, '.claude/settings.json'), 'utf8'))
+  assert.equal(settings.hooks.PreToolUse, 'nonsense')
+  assert.deepEqual(settings.hooks.Stop[0], { matcher: 'broken' })
+  assert.ok(settings.hooks.Stop.some((group) => Array.isArray(group.hooks)))
+})

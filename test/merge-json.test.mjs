@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mergeHooks, mergeDeny, mergeSettings } from '../lib/merge-json.mjs'
+import { mergeHooks, mergeDeny, mergeSettings, mergeHooksFile } from '../lib/merge-json.mjs'
 
 const fragment = {
   hooks: {
@@ -76,4 +76,44 @@ test('mergeSettings preserves unrelated top-level keys and existing hook event o
   assert.equal(parsed.model, 'opus')
   assert.deepEqual(parsed.env, { FOO: 'bar' })
   assert.deepEqual(Object.keys(parsed.hooks), ['Notification', 'Stop', 'PreToolUse'])
+})
+
+test('a hook group whose hooks are not an array is skipped and named', () => {
+  const current = { Stop: [{ matcher: 'x' }] }
+  const { value, notes } = mergeHooks(current, { Stop: [{ hooks: [{ type: 'command', command: 'gate.sh' }] }] })
+  assert.deepEqual(value.Stop[0], { matcher: 'x' }, 'the malformed group survives untouched')
+  assert.ok(value.Stop.some((group) => Array.isArray(group.hooks)), "dev-loop's own group is still added")
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /Stop/)
+})
+
+test('a fragment group with no hooks array is skipped and named', () => {
+  const { value, added, notes } = mergeHooks({}, { Stop: [{ matcher: 'x' }] })
+  assert.deepEqual(value.Stop, [])
+  assert.deepEqual(added, [])
+  assert.equal(notes.length, 1)
+})
+
+test('an event whose value is not an array is left alone as foreign', () => {
+  const current = { Stop: 'nonsense' }
+  const { value, added, notes } = mergeHooks(current, { Stop: [{ hooks: [{ type: 'command', command: 'gate.sh' }] }] })
+  assert.equal(value.Stop, 'nonsense')
+  assert.deepEqual(added, [])
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /Stop/)
+})
+
+test('mergeSettings carries the notes of a malformed hook group', () => {
+  const current = JSON.stringify({ hooks: { Stop: 'nonsense' } })
+  const { notes } = mergeSettings(current, fragment)
+  assert.equal(notes.length, 1)
+})
+
+test('mergeHooksFile merges into the hooks key and keeps the rest of the file', () => {
+  const current = JSON.stringify({ description: 'mine', hooks: {} })
+  const { text, added } = mergeHooksFile(current, JSON.stringify(fragment))
+  const value = JSON.parse(text)
+  assert.equal(value.description, 'mine')
+  assert.equal(value.hooks.Stop.length, 1)
+  assert.equal(added.length, 2)
 })
