@@ -38,6 +38,18 @@ test('a root key lands before the first table of the target', () => {
   assert.ok(text.includes('[features]'))
 })
 
+test('a merge removes the legacy root sandbox_mode while preserving other user settings', () => {
+  const current = 'model = "gpt-5"\nsandbox_mode = "workspace-write"\n\n[plugins.mine]\nenabled = true\n'
+  const { text, changed } = mergeCodexConfig(current, realFragment)
+
+  assert.equal(changed, true)
+  assert.ok(!text.includes('sandbox_mode'))
+  assert.ok(text.includes('model = "gpt-5"'))
+  assert.ok(text.includes('[plugins.mine]\nenabled = true'))
+  assert.ok(text.includes('default_permissions = "dev-workspace"'))
+  assertValidToml(text)
+})
+
 test('a second merge of the same fragment adds nothing', () => {
   const { text } = mergeCodexConfig('model = "gpt"\n', fragment)
   const again = mergeCodexConfig(text, fragment)
