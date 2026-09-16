@@ -237,6 +237,9 @@ test('a re-run with no --vault keeps the configured vault, and a changed vault i
 test('link mode links every Codex hook into the clone, and the hooks file still carries the real home', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   run(home, ['--yes', '--harness=both', '--link'])
+  const agent = join(home, '.codex/agents/implementer.toml')
+  assert.equal(lstatSync(agent).isSymbolicLink(), false)
+  assert.equal(readFileSync(agent, 'utf8'), readFileSync(join(repoRoot, 'codex/agents/implementer.toml'), 'utf8'))
   for (const name of ['gate.sh', 'deny-path.sh', 'git-guard.sh', 'session-start.sh']) {
     const target = join(home, '.codex/hooks', name)
     assert.ok(lstatSync(target).isSymbolicLink(), `${name} must be a link in link mode`)

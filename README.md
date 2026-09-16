@@ -45,7 +45,7 @@ cd ~/Projects/tchlyah/dev-loop
 node bin/install.mjs --link
 ```
 
-Link mode points `~/.agents` and the harness homes at this clone. An edit applies to the next session. A change to a fragment file needs a new run.
+Link mode links skill and hooks into this clone. Codex agent TOMLs stay regular copied files because Paseo rejects linked definitions at dispatch. Re-run after a Codex agent or fragment edit.
 
 ```bash
 npm test                                # installer suite
