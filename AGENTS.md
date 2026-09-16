@@ -31,7 +31,8 @@ Both must pass before any commit.
 | `~/.claude/skills/dev-loop` | link to the skill | link |
 | `~/.claude/agents/`, `~/.claude/hooks/` | subagents, shell walls | copy or link |
 | `~/.claude/settings.json` | hook entries + 3 deny rules | merge |
-| `~/.codex/agents/`, `~/.codex/hooks/`, `~/.codex/rules/` | Codex equivalents | copy/link, except `default.rules` |
+| `~/.codex/agents/` | Codex agent definitions | copy always; Paseo rejects linked agent TOMLs |
+| `~/.codex/hooks/` | Codex hooks | copy or link |
 | `~/.codex/hooks.json`, `~/.codex/config.toml` | hook entries, permission tables | merge |
 | `~/.codex/rules/default.rules` | line merge only | merge, never copy/link |
 
@@ -62,7 +63,7 @@ These are expected manual steps, not install defects.
 ## Gotchas
 
 - The repo is private. Nothing may assume an anonymous reader: no badges, no links that only resolve for a public repo. The `npx github:tchlyah/dev-loop` install command works only for someone whose Git or SSH credentials already reach it.
-- `--link` mode points `~/.agents` and the harness homes at this clone; a skill/script edit applies next session, a fragment-file edit needs a rerun.
+- `--link` mode links skill and hooks. Codex agent TOMLs stay copied for Paseo compatibility. Agent or fragment edit needs rerun.
 
 ## Working principles
 
