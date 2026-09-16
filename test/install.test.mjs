@@ -131,6 +131,33 @@ test('a Codex install over a config.toml that already declares [features] keeps 
   assertValidToml(text)
 })
 
+test('a both-harness install removes legacy Codex sandbox_mode and preserves Claude user settings', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  mkdirSync(join(home, '.codex'), { recursive: true })
+  mkdirSync(join(home, '.claude'), { recursive: true })
+  writeFileSync(join(home, '.codex/config.toml'), 'model = "gpt-5"\nsandbox_mode = "workspace-write"\n')
+  const claudeSettings = {
+    model: 'opus',
+    hooks: { Stop: [{ hooks: [{ type: 'command', command: 'mine.sh' }] }] },
+    permissions: { deny: ['Bash(rm -rf /)'] },
+  }
+  writeFileSync(join(home, '.claude/settings.json'), JSON.stringify(claudeSettings, null, 2))
+
+  run(home, ['--yes', '--harness=both'])
+
+  const codexConfig = readFileSync(join(home, '.codex/config.toml'), 'utf8')
+  assert.ok(!codexConfig.includes('sandbox_mode'))
+  assert.ok(codexConfig.includes('default_permissions = "dev-workspace"'))
+  assertValidToml(codexConfig)
+
+  const installedClaude = JSON.parse(readFileSync(join(home, '.claude/settings.json'), 'utf8'))
+  assert.equal(installedClaude.model, claudeSettings.model)
+  assert.ok(installedClaude.permissions.deny.includes('Bash(rm -rf /)'))
+  const commands = installedClaude.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command))
+  assert.ok(commands.includes('mine.sh'))
+  assert.ok(commands.includes('~/.claude/hooks/gate.sh'))
+})
+
 test('an install with no vault set prints a line about --vault', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   const output = run(home, ['--yes', '--harness=claude'])
