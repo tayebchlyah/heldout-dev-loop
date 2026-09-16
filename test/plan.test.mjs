@@ -40,6 +40,12 @@ test('a Codex hook follows the install mode and carries no template token', () =
   assert.equal(copied.mode, 'copy')
 })
 
+test('Codex agent definitions stay regular files in link mode', () => {
+  const agent = buildPlan({ repoRoot, home, harnesses: ['codex'], mode: 'link' })
+    .find((action) => action.target === '/home/x/.codex/agents/implementer.toml')
+  assert.equal(agent.mode, 'copy')
+})
+
 test('a merge action keeps its mode in link mode', () => {
   const actions = buildPlan({ repoRoot, home, harnesses: ['claude'], mode: 'link' })
   const settings = actions.find((action) => action.target === '/home/x/.claude/settings.json')
