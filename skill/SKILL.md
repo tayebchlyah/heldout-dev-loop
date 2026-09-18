@@ -79,7 +79,8 @@ Defect = finding that names one line of spec `## Acceptance oracle` or one `CONT
 Step 1 failure: reopen the task, return to Stage 5. One reopen per feature gate. Second step 1 failure: remaining items to `## Deferred`, ship.
 Stale image rule. Compose services are `build:` images, source copied in, no bind mount. Host fix changes nothing in running container. Before every step 1 run after any change under `backend/` or `frontend/`: `docker compose --profile test up -d --build --wait`. Then confirm: `docker compose ps --format '{{.Service}} {{.CreatedAt}}'`, created time newer than the fix commit. Rerun on stale image = not a rerun, does not count.
 Escaped bug: the user adds the oracle line to spec first, `spec-tester` adds the test, then the fix. Controller never edits `tests/acceptance/`.
-Environment, deployment or infra gap found here: new slice with its own spec. Never a reopen.
+Unplanned environment, deployment or infra gap discovered by the gate: new slice with its own spec. Never a reopen.
+Deployment or infra work explicitly named in the approved spec or plan stays in the current slice. Implement and verify it normally; do not reclassify planned work as a gap.
 Never invoke `superpowers:verification-before-completion`. The shell gate owns routine verification.
 
 ## 7 Ship
