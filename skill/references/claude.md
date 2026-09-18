@@ -29,6 +29,6 @@ Run in order. Stop on first failure. Steps 2 to 6 run once per feature. A fix re
 5. Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`. Survivors get unit tests, never acceptance tests.
 6. Skill tool, skill `security-review`.
 
-Controller never edits `tests/acceptance/` in this stage. Deployment or infra gap: new slice, not a reopen.
+Controller never edits `tests/acceptance/` in this stage. An unplanned deployment or infra gap discovered by the gate is a new slice, not a reopen. Deployment or infra work explicitly named in the approved spec or plan stays in the current slice and is implemented normally.
 
 Never invoke `superpowers:verification-before-completion`. The shell gate owns verification.
