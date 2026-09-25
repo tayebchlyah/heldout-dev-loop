@@ -73,13 +73,14 @@ Ledger gets `## Discoveries` section, one line per surprise.
 Deferred findings go to vault project note `## Deferred`, not to ledger.
 
 ## 6 Feature gate
-Run the selected route's six-step feature gate. Each step is one real skill, agent, tool, or command invocation. Report six lines: step, pass or fail. Complete only when all six pass.
-Steps 2 to 6 run once per feature. After any fix, rerun step 1 only. Never rerun steps 2 to 6.
-Defect = finding that names one line of spec `## Acceptance oracle` or one `CONTEXT.md` invariant. Quote the line in the fix commit. Anything else: `## Deferred`, not fixed, no test.
-Step 1 failure: reopen the task, return to Stage 5. One reopen per feature gate. Second step 1 failure: remaining items to `## Deferred`, ship.
-Stale image rule. Compose services are `build:` images, source copied in, no bind mount. Host fix changes nothing in running container. Before every step 1 run after any change under `backend/` or `frontend/`: `docker compose --profile test up -d --build --wait`. Then confirm: `docker compose ps --format '{{.Service}} {{.CreatedAt}}'`, created time newer than the fix commit. Rerun on stale image = not a rerun, does not count.
+Run the selected route's feature gate. Order: review wave, triage, fix wave, acceptance loop. Each step is one real skill, agent, tool, or command invocation. Report six lines at the end, one per gate step (acceptance, simplify, code review, spec review, mutation, security): pass or fail. Complete only when all six pass.
+Review wave runs once per feature, before any acceptance run, all reviewers pinned to one commit SHA. Never rerun it. A fix never reruns a reviewer.
+Defect = one of: (a) finding that quotes a spec `## Acceptance oracle` line or a `CONTEXT.md` invariant; (b) correctness finding the reviewer marks CONFIRMED; (c) security finding marked confirmed or high. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Simplify diffs are behaviour-preserving and apply as is. Mutation survivors get unit tests. Anything else: `## Deferred`, not fixed, no test.
+Acceptance loop: full run once, then fix rounds on failures only (`pytest --lf`, `npx playwright test --last-failed`), then one final full run. Fix until green against the frozen suite. Progress guard: every round must reduce the failing count. Two rounds without a reduction, or one test red after three rounds: stop, report, ask the user. Never ship red, never defer a red acceptance test.
+Flaky = red, then green on rerun with no code change. Record it in `## Deferred` as flaky, no code change for it.
+Stale image rule. Compose services are `build:` images, source copied in, no bind mount. Host fix changes nothing in running container. Before every acceptance run after any change under `backend/` or `frontend/`: `docker compose --profile test up -d --build --wait`. Then confirm: `docker compose ps --format '{{.Service}} {{.CreatedAt}}'`, created time newer than the fix commit. Run on stale image = not a run, does not count.
 Escaped bug: the user adds the oracle line to spec first, `spec-tester` adds the test, then the fix. Controller never edits `tests/acceptance/`.
-Unplanned environment, deployment or infra gap discovered by the gate: new slice with its own spec. Never a reopen.
+Unplanned environment, deployment or infra gap discovered by the gate: new slice with its own spec. Never a fix round.
 Deployment or infra work explicitly named in the approved spec or plan stays in the current slice. Implement and verify it normally; do not reclassify planned work as a gap.
 Never invoke `superpowers:verification-before-completion`. The shell gate owns routine verification.
 

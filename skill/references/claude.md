@@ -20,15 +20,20 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 ## Feature gate
 
-Run in order. Stop on first failure. Steps 2 to 6 run once per feature. A fix reruns step 1 only.
+Four phases, in order. Record the branch HEAD as `GATE_SHA` first.
 
-1. Stack first, always fresh: `docker compose --profile test up -d --build --wait`. Confirm `docker compose ps --format '{{.Service}} {{.CreatedAt}}'` shows created time newer than HEAD. Then acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then `/verify`. Fail: one reopen, back to Stage 5. Second fail: rest to `## Deferred`, ship. Any rerun after a fix repeats the `--build` line first. Stale image rerun does not count.
-2. Skill tool, skill `simplify`. Its fixes are the controller-write exception. Rerun step 1.
-3. Skill tool, skill `code-review`, args `medium`. Fix only findings that quote a spec oracle line or `CONTEXT.md` invariant. Rest to `## Deferred`.
-4. Skill tool, skill `mattpocock-skills:code-review`, fixed point `main`. Same filter as step 3.
-5. Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`. Survivors get unit tests, never acceptance tests.
-6. Skill tool, skill `security-review`.
+1. **Review wave, once, in parallel.** One message, five Agent calls, all `general-purpose`. Each invokes one skill or command against `GATE_SHA` and returns a table: file, line, finding, verdict or severity, step. Never `caveman:cavecrew-*`.
+   - Skill `simplify`. `isolation: worktree`. The worktree starts from the default branch, not HEAD: first command `git checkout --detach GATE_SHA`. Let it apply fixes there, commit, return the commit SHA and the finding table.
+   - Skill `code-review`, args `medium`. Report only, no `--fix`.
+   - Skill `mattpocock-skills:code-review`, fixed point `main`. Report only.
+   - Skill `security-review`. Report only.
+   - Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`. `isolation: worktree`, same `git checkout --detach GATE_SHA` first. Return surviving mutants.
+2. **Triage, controller.** Merge the five tables. Dedupe by file and line. Apply the defect rule in SKILL.md Stage 6. Everything else to `## Deferred`.
+3. **Fix wave.** `git cherry-pick` the simplify commit first. Then one `implementer` per file cluster, one at a time: defects (b) and (c), mutation survivors. Each passes `gate.sh`.
+4. **Acceptance loop.** Stack first, always fresh: `docker compose --profile test up -d --build --wait`. Confirm `docker compose ps --format '{{.Service}} {{.CreatedAt}}'` shows created time newer than HEAD. Then acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. On failures: fix round through `implementer`, rebuild, rerun failures only with `pytest tests/acceptance --lf -q --tb=no` and `npx playwright test tests/acceptance --last-failed`. Repeat under the progress guard. Then one final full run. Every run repeats the `--build` line first. Stale image run does not count.
 
-Controller never edits `tests/acceptance/` in this stage. An unplanned deployment or infra gap discovered by the gate is a new slice, not a reopen. Deployment or infra work explicitly named in the approved spec or plan stays in the current slice and is implemented normally.
+No `/verify` step. `/verify` is a real bundled skill but user-invoked only; the model cannot call it. Playwright E2E is the model's live check. The user may type `/verify` after the gate.
+
+Controller never edits `tests/acceptance/` in this stage. An unplanned deployment or infra gap discovered by the gate is a new slice, not a fix round. Deployment or infra work explicitly named in the approved spec or plan stays in the current slice and is implemented normally.
 
 Never invoke `superpowers:verification-before-completion`. The shell gate owns verification.
