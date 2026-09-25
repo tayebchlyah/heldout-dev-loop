@@ -30,7 +30,7 @@ Four phases, in order. Record the branch HEAD as `GATE_SHA` first.
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
    - Invoke skill `code-review` with fixed point `main`.
    - Custom read-only agent `security_reviewer`.
-   - Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`. Return surviving mutants.
+   - Mutation on the diff. Follow [mutation.md](mutation.md) and return its report.
    - Custom agent `simplifier` last, after the read-only reviewers have returned, because it writes. It applies only in-scope, behaviour-preserving fixes and returns its finding table.
 2. **Triage, controller.** Merge the tables. Dedupe by file and line. Apply the defect rule in SKILL.md Stage 6. Everything else to `## Deferred`.
 3. **Fix wave.** Custom agent `implementer`, one file cluster at a time: defects (b) and (c), mutation survivors. Each passes the Stop gate.

@@ -19,6 +19,7 @@ SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 CLAUDE_HOOKS = SKILL_ROOT.parent / "claude" / "hooks"
+SELECTOR = SKILL_ROOT / "scripts" / "select_mutants.py"
 
 _spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
 if _spec is None or _spec.loader is None:
@@ -764,6 +765,294 @@ class SetupCheckerTests(unittest.TestCase):
             result = self.run_checker("codex", home)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("git push", result.stdout)
+
+
+def git_in(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def make_git_repo(root: Path, files: dict[str, str]) -> Path:
+    repo = root / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    for path, text in files.items():
+        write(repo / path, text)
+    git_in(repo, "init", "-q")
+    git_in(repo, "add", "-A")
+    git_in(repo, "commit", "-q", "-m", "base")
+    return repo
+
+
+def commit_changes(repo: Path, files: dict[str, str]) -> str:
+    base = git_in(repo, "rev-parse", "HEAD").strip()
+    for path, text in files.items():
+        write(repo / path, text)
+    git_in(repo, "add", "-A")
+    git_in(repo, "commit", "-q", "-m", "feature")
+    return base
+
+
+PY_AGENTS = "vault_notes: Software/Test\nstacks: python\n"
+MUTMUT_CONFIG = '[tool.mutmut]\nsource_paths = ["src"]\npytest_add_cli_args_test_selection = ["tests/unit"]\n'
+MODULE_BASE = """LIMIT = 1
+
+
+def changed(x):
+    return x + 1
+
+
+def untouched(x):
+    return x - 1
+
+
+class Box:
+    size = 2
+
+    def grow(self):
+        return self.size * 2
+
+    @staticmethod
+    def make():
+        return 1
+
+
+@register
+def routed():
+    return 2
+"""
+MODULE_HEAD = (
+    MODULE_BASE.replace("LIMIT = 1", "LIMIT = 2")
+    .replace("x + 1", "x + 2")
+    .replace("size = 2", "size = 3")
+    .replace("self.size * 2", "self.size * 3")
+    .replace("return 1\n\n\n@register", "return 4\n\n\n@register")
+    .replace("    return 2\n", "    return 5\n")
+)
+
+
+class MutationContractTests(unittest.TestCase):
+    def test_both_routes_run_the_shipped_selector(self) -> None:
+        for route in ["claude.md", "codex.md"]:
+            with self.subTest(route=route):
+                self.assertIn("[mutation.md](mutation.md)", (SKILL_ROOT / "references" / route).read_text())
+        mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
+        self.assertIn("select_mutants.py --head GATE_SHA --run", mutation)
+
+    def test_no_route_uses_a_stryker_flag_that_does_not_exist(self) -> None:
+        self.assertNotIn("--since", all_instructions())
+
+    def test_reference_names_the_selection_gap_and_the_setup_owner(self) -> None:
+        mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
+        for value in ["What the selection does not cover", "Stage 0 owns this setup", "runtime_checkable", "mutants/"]:
+            with self.subTest(value=value):
+                self.assertIn(value, mutation)
+        self.assertIn("references/mutation.md", SKILL.read_text())
+
+    def test_no_em_dash_in_the_mutation_payload(self) -> None:
+        for path in [
+            SKILL_ROOT / "references" / "mutation.md",
+            SELECTOR,
+            CHECKER,
+        ]:
+            with self.subTest(path=path.name):
+                self.assertNotIn("\u2014", path.read_text())
+
+
+class SelectMutantsTests(unittest.TestCase):
+    def select(self, repo: Path, base: str) -> tuple[int, dict, str]:
+        result = subprocess.run(
+            [sys.executable, str(SELECTOR), "--repo", str(repo), "--head", "HEAD", "--base", base, "--json"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        payload = json.loads(result.stdout) if result.returncode == 0 else {}
+        return result.returncode, payload, result.stderr
+
+    def python_repo(self, root: Path) -> tuple[Path, str]:
+        repo = make_git_repo(
+            root,
+            {
+                "AGENTS.md": PY_AGENTS,
+                "pyproject.toml": MUTMUT_CONFIG,
+                "src/pkg/mod.py": MODULE_BASE,
+                "tests/unit/test_mod.py": "def test_x():\n    assert True\n",
+            },
+        )
+        base = commit_changes(
+            repo,
+            {"src/pkg/mod.py": MODULE_HEAD, "tests/unit/test_mod.py": "def test_x():\n    assert 1\n"},
+        )
+        return repo, base
+
+    def test_selects_only_changed_functions_and_methods(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo, base = self.python_repo(Path(root))
+            code, sel, err = self.select(repo, base)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(sel["mutmut_root"], ".")
+            self.assertEqual(
+                sel["patterns"],
+                [
+                    "pkg.mod.x_changed__mutmut_*",
+                    "pkg.mod.x\u01c1Box\u01c1grow__mutmut_*",
+                    "pkg.mod.x\u01c1Box\u01c1make__mutmut_*",
+                ],
+            )
+
+    def test_reports_what_the_selection_does_not_cover(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo, base = self.python_repo(Path(root))
+            _, sel, _ = self.select(repo, base)
+            gaps = " | ".join(sel["gaps"])
+            self.assertIn("src/pkg/mod.py:1 outside any function", gaps)
+            self.assertIn("class body outside any method", gaps)
+            self.assertIn("decorated function, mutmut skips it", gaps)
+            self.assertNotIn("tests/unit", gaps)
+
+    def test_same_diff_gives_the_same_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo, base = self.python_repo(Path(root))
+            self.assertEqual(self.select(repo, base)[1], self.select(repo, base)[1])
+
+    def test_mutmut_root_is_the_package_with_the_config(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root),
+                {
+                    "AGENTS.md": PY_AGENTS,
+                    "pyproject.toml": "[tool.uv.workspace]\nmembers = [\"backend\"]\n",
+                    "backend/pyproject.toml": MUTMUT_CONFIG,
+                    "backend/src/pkg/__init__.py": "def hook():\n    return 1\n",
+                },
+            )
+            base = commit_changes(repo, {"backend/src/pkg/__init__.py": "def hook():\n    return 2\n"})
+            code, sel, err = self.select(repo, base)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(sel["mutmut_root"], "backend")
+            self.assertEqual(sel["patterns"], ["pkg.x_hook__mutmut_*"])
+
+    def test_pure_deletion_inside_a_function_selects_it(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root),
+                {
+                    "AGENTS.md": PY_AGENTS,
+                    "pyproject.toml": MUTMUT_CONFIG,
+                    "src/pkg/mod.py": "def trim(x):\n    y = x\n    y = y + 1\n    return y\n",
+                },
+            )
+            base = commit_changes(repo, {"src/pkg/mod.py": "def trim(x):\n    y = x\n    return y\n"})
+            _, sel, _ = self.select(repo, base)
+            self.assertEqual(sel["patterns"], ["pkg.mod.x_trim__mutmut_*"])
+
+    def test_missing_mutmut_config_is_a_setup_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root), {"AGENTS.md": PY_AGENTS, "pyproject.toml": "[project]\nname = 'x'\n", "src/a.py": "A = 1\n"}
+            )
+            base = commit_changes(repo, {"src/a.py": "A = 2\n"})
+            code, _, err = self.select(repo, base)
+            self.assertEqual(code, 2)
+            self.assertIn("Stage 0", err)
+
+    def test_ui_selects_changed_line_ranges_outside_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root),
+                {
+                    "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
+                    "frontend/stryker.config.mjs": "export default {};\n",
+                    "frontend/src/a.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
+                    "frontend/src/a.test.ts": "test('a', () => {});\n",
+                },
+            )
+            base = commit_changes(
+                repo,
+                {
+                    "frontend/src/a.ts": "export const a = 1;\nexport const b = 20;\nexport const c = 30;\n",
+                    "frontend/src/a.test.ts": "test('a', () => { expect(1); });\n",
+                },
+            )
+            code, sel, err = self.select(repo, base)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(sel["stryker_root"], "frontend")
+            self.assertEqual(sel["stryker_ranges"], ["src/a.ts:2-3"])
+
+    def test_no_mutable_change_selects_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root), {"AGENTS.md": PY_AGENTS, "pyproject.toml": MUTMUT_CONFIG, "README.md": "a\n"}
+            )
+            base = commit_changes(repo, {"README.md": "b\n"})
+            code, sel, err = self.select(repo, base)
+            self.assertEqual(code, 0, err)
+            self.assertEqual((sel["patterns"], sel["stryker_ranges"]), ([], []))
+
+
+class MutationSetupTests(unittest.TestCase):
+    PYPROJECT = (
+        '[dependency-groups]\ndev = ["pytest==9.1.1", "mutmut==3.8.0"]\n\n' + MUTMUT_CONFIG
+    )
+
+    def python_setup(self, root: Path, **overrides: str) -> Path:
+        files = {
+            "AGENTS.md": PY_AGENTS,
+            "pyproject.toml": self.PYPROJECT,
+            ".gitignore": "mutants/\n",
+        }
+        files.update(overrides)
+        return make_git_repo(root, files)
+
+    def test_complete_python_setup_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(check_setup.check_mutation(self.python_setup(Path(root))), [])
+
+    def test_each_missing_python_piece_fails(self) -> None:
+        cases = {
+            "pin": ({"pyproject.toml": MUTMUT_CONFIG}, "mutmut pinned"),
+            "range pin": (
+                {"pyproject.toml": self.PYPROJECT.replace("mutmut==3.8.0", "mutmut>=3.8")},
+                "mutmut pinned",
+            ),
+            "config": ({"pyproject.toml": '[dependency-groups]\ndev = ["mutmut==3.8.0"]\n'}, "[tool.mutmut]"),
+            "acceptance": (
+                {"pyproject.toml": self.PYPROJECT.replace('["tests/unit"]', '["tests/acceptance"]')},
+                "unit tests only",
+            ),
+            "ignore": ({".gitignore": "\n"}, "not ignored"),
+        }
+        for label, (overrides, expected) in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
+                failures = check_setup.check_mutation(self.python_setup(Path(root), **overrides))
+                self.assertTrue(any(expected in f for f in failures), failures)
+
+    def test_ui_setup_needs_pinned_stryker_and_ignored_output(self) -> None:
+        package = {"devDependencies": {"@stryker-mutator/core": "10.0.0", "@stryker-mutator/vitest-runner": "10.0.0"}}
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root),
+                {
+                    "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
+                    "frontend/stryker.config.mjs": "export default {};\n",
+                    "frontend/package.json": json.dumps(package),
+                    ".gitignore": ".stryker-tmp/\nreports/\n",
+                },
+            )
+            self.assertEqual(check_setup.check_mutation(repo), [])
+            package["devDependencies"]["@stryker-mutator/core"] = "^10.0.0"
+            write(repo / "frontend" / "package.json", json.dumps(package))
+            self.assertTrue(any("@stryker-mutator/core" in f for f in check_setup.check_mutation(repo)))
+
+    def test_repos_without_declared_stacks_are_not_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(Path(root), {"AGENTS.md": "vault_notes: Software/Test\n"})
+            self.assertEqual(check_setup.check_mutation(repo), [])
 
 
 if __name__ == "__main__":

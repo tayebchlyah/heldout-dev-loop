@@ -27,7 +27,7 @@ Four phases, in order. Record the branch HEAD as `GATE_SHA` first.
    - Skill `code-review`, args `medium`. Report only, no `--fix`.
    - Skill `mattpocock-skills:code-review`, fixed point `main`. Report only.
    - Skill `security-review`. Report only.
-   - Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`. `isolation: worktree`, same `git checkout --detach GATE_SHA` first. Return surviving mutants.
+   - Mutation on the diff. `isolation: worktree`, same `git checkout --detach GATE_SHA` first. Then follow [mutation.md](mutation.md) and return its report.
 2. **Triage, controller.** Merge the five tables. Dedupe by file and line. Apply the defect rule in SKILL.md Stage 6. Everything else to `## Deferred`.
 3. **Fix wave.** `git cherry-pick` the simplify commit first. Then one `implementer` per file cluster, one at a time: defects (b) and (c), mutation survivors. Each passes `gate.sh`.
 4. **Acceptance loop.** Stack first, always fresh: `docker compose --profile test up -d --build --wait`. Confirm `docker compose ps --format '{{.Service}} {{.CreatedAt}}'` shows created time newer than HEAD. Then acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. On failures: fix round through `implementer`, rebuild, rerun failures only with `pytest tests/acceptance --lf -q --tb=no` and `npx playwright test tests/acceptance --last-failed`. Repeat under the progress guard. Then one final full run. Every run repeats the `--build` line first. Stale image run does not count.
