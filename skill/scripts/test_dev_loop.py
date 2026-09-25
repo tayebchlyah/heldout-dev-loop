@@ -152,6 +152,29 @@ class SkillContractTests(unittest.TestCase):
         self.assertNotIn("`/security-review`", codex)
         self.assertNotIn("`/verify`", codex)
 
+    def test_claude_branch_never_calls_user_only_verify(self) -> None:
+        claude = (SKILL_ROOT / "references" / "claude.md").read_text()
+        self.assertNotIn("then `/verify`", claude)
+        self.assertIn("user-invoked only", claude)
+
+    def test_gate_runs_reviews_once_before_acceptance(self) -> None:
+        for value in [
+            "Review wave runs once per feature, before any acceptance run",
+            "Never rerun it",
+            "Progress guard",
+            "Never ship red",
+            "--last-failed",
+            "GATE_SHA",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.instructions)
+
+    def test_claude_worktree_reviewers_pin_the_sha(self) -> None:
+        claude = (SKILL_ROOT / "references" / "claude.md").read_text()
+        self.assertIn("isolation: worktree", claude)
+        self.assertIn("--detach GATE_SHA", claude)
+        self.assertNotIn("Rerun step 1.", claude)
+
     def test_setup_checker_exists(self) -> None:
         self.assertTrue(CHECKER.is_file())
 

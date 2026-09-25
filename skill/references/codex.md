@@ -24,13 +24,16 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Feature gate
 
-Run in order. Stop on first failure.
+Four phases, in order. Record the branch HEAD as `GATE_SHA` first.
 
-1. Acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools.
-2. Dispatch custom agent `simplifier`. It inspects reuse, simplification, efficiency, and abstraction level, then applies only in-scope fixes. Rerun acceptance.
-3. Dispatch custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent. Fix confirmed correctness findings, then re-review.
-4. Invoke skill `code-review` with fixed point `main`.
-5. Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`.
-6. Dispatch custom read-only agent `security_reviewer`. Fix confirmed security findings, then re-review.
+1. **Review wave, once.** Dispatch in parallel where the session allows it, otherwise in sequence. All review `GATE_SHA` and return a table: file, line, finding, verdict or severity, step.
+   - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
+   - Invoke skill `code-review` with fixed point `main`.
+   - Custom read-only agent `security_reviewer`.
+   - Mutation on the diff: `mutmut run` or `npx stryker run --since main --incremental`. Return surviving mutants.
+   - Custom agent `simplifier` last, after the read-only reviewers have returned, because it writes. It applies only in-scope, behaviour-preserving fixes and returns its finding table.
+2. **Triage, controller.** Merge the tables. Dedupe by file and line. Apply the defect rule in SKILL.md Stage 6. Everything else to `## Deferred`.
+3. **Fix wave.** Custom agent `implementer`, one file cluster at a time: defects (b) and (c), mutation survivors. Each passes the Stop gate.
+4. **Acceptance loop.** Stack fresh with `docker compose --profile test up -d --build --wait` when `ui` is in stacks. Acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. On failures: fix round through `implementer`, rebuild, rerun failures only with `--lf` or `--last-failed`. Repeat under the progress guard. Then one final full run.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.
