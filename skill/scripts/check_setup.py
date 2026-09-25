@@ -5,12 +5,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
 
 CODEX_SKILLS = ["domain-modeling", "grilling", "codebase-design", "code-review", "research", "handoff"]
+EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
+EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+STRYKER_CONFIGS = [
+    f"stryker.{kind}.{ext}" for kind in ("config", "conf") for ext in ("mjs", "js", "cjs", "json")
+]
 
 
 def load_json(path: Path, failures: list[str]) -> dict:
@@ -212,6 +219,101 @@ def check_codex(home: Path) -> tuple[list[str], list[tuple[str, list[str]]]]:
     return failures, action_groups
 
 
+def repo_files(repo: Path, name: str) -> list[Path]:
+    """Tracked files with this basename, or every such file outside tool directories."""
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode == 0:
+        return sorted(repo / p for p in listed.stdout.splitlines() if Path(p).name == name)
+    skip = {".git", ".venv", "node_modules", "mutants", ".stryker-tmp"}
+    return sorted(p for p in repo.rglob(name) if not skip & set(p.relative_to(repo).parts))
+
+
+def is_ignored(repo: Path, path: Path) -> bool:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", str(path.relative_to(repo))],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def dev_dependencies(config: dict) -> list[str]:
+    groups = config.get("dependency-groups", {}).get("dev", [])
+    uv_dev = config.get("tool", {}).get("uv", {}).get("dev-dependencies", [])
+    optional = config.get("project", {}).get("optional-dependencies", {}).get("dev", [])
+    return [d for d in [*groups, *uv_dev, *optional] if isinstance(d, str)]
+
+
+def check_mutmut(repo: Path) -> list[str]:
+    failures: list[str] = []
+    configs: list[tuple[Path, dict]] = []
+    pinned = False
+    for path in repo_files(repo, "pyproject.toml"):
+        config, _ = load_toml(path, failures)
+        if isinstance(config.get("tool", {}).get("mutmut"), dict):
+            configs.append((path, config["tool"]["mutmut"]))
+        pinned = pinned or any(EXACT_PIN.match(d.replace(" ", "")) for d in dev_dependencies(config))
+    if not pinned:
+        failures.append("missing mutation dev dependency: mutmut pinned as mutmut==<version>")
+    if len(configs) != 1:
+        failures.append(f"expected one pyproject.toml with [tool.mutmut], found {len(configs)}")
+        return failures
+    path, mutmut = configs[0]
+    root = path.parent
+    if not mutmut.get("source_paths"):
+        failures.append(f"missing [tool.mutmut] source_paths in {path}")
+    selection = mutmut.get("pytest_add_cli_args_test_selection", [])
+    if not selection:
+        failures.append(f"missing [tool.mutmut] pytest_add_cli_args_test_selection in {path}")
+    elif any("acceptance" in str(arg) for arg in selection):
+        failures.append(f"[tool.mutmut] test selection in {path} must run unit tests only")
+    if not is_ignored(repo, root / "mutants" / "probe"):
+        failures.append(f"mutmut working directory not ignored by git: {(root / 'mutants').relative_to(repo)}/")
+    return failures
+
+
+def check_stryker(repo: Path) -> list[str]:
+    failures: list[str] = []
+    configs = [p for name in STRYKER_CONFIGS for p in repo_files(repo, name)]
+    if len(configs) != 1:
+        return [f"expected one stryker.config.* file, found {len(configs)}"]
+    root = configs[0].parent
+    package = load_json(root / "package.json", failures)
+    dev = package.get("devDependencies", {})
+    for name in ["@stryker-mutator/core", "@stryker-mutator/vitest-runner"]:
+        if not EXACT_VERSION.match(str(dev.get(name, ""))):
+            failures.append(f"missing mutation dev dependency: {name} pinned to an exact version in {root / 'package.json'}")
+    for probe in [root / ".stryker-tmp" / "probe", root / "reports" / "mutation" / "mutation.json"]:
+        if not is_ignored(repo, probe):
+            failures.append(f"Stryker output not ignored by git: {probe.parent.relative_to(repo)}/")
+    return failures
+
+
+def check_mutation(repo: Path) -> list[str]:
+    """The mutation tool setup Stage 0 owns, per declared stack."""
+    agents = repo / "AGENTS.md"
+    if not agents.is_file():
+        return []
+    text = agents.read_text()
+    match = re.search(r"^stacks:\s*(.+)$", text, re.MULTILINE)
+    if "vault_notes:" not in text or not match:
+        return []
+    stacks = {s.strip() for s in match.group(1).split(",")}
+    failures: list[str] = []
+    if "python" in stacks:
+        failures += check_mutmut(repo)
+    if "ui" in stacks:
+        failures += check_stryker(repo)
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--harness", choices=["claude", "codex"], required=True)
@@ -226,6 +328,7 @@ def main() -> int:
     else:
         codex_failures, action_groups = check_codex(args.home)
         failures += codex_failures
+    failures += check_mutation(args.repo)
 
     if failures or action_groups:
         print(f"{args.harness}: FAIL")
