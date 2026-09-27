@@ -24,7 +24,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Feature gate
 
-Four phases, in order. Record the branch HEAD as `GATE_SHA` first.
+Four phases, in order. First rebase onto `origin/main` (SKILL.md, Where each stage runs), then record the branch HEAD as `GATE_SHA`.
 
 1. **Review wave, once.** Dispatch in parallel where the session allows it, otherwise in sequence. All review `GATE_SHA` and return a table: file, line, finding, verdict or severity, step.
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
