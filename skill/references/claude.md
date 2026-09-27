@@ -20,7 +20,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 ## Feature gate
 
-Four phases, in order. Record the branch HEAD as `GATE_SHA` first.
+Four phases, in order. First rebase onto `origin/main` (SKILL.md, Where each stage runs), then record the branch HEAD as `GATE_SHA`.
 
 1. **Review wave, once, in parallel.** One message, five Agent calls, all `general-purpose`. Each invokes one skill or command against `GATE_SHA` and returns a table: file, line, finding, verdict or severity, step. Never `caveman:cavecrew-*`.
    - Skill `simplify`. `isolation: worktree`. The worktree starts from the default branch, not HEAD: first command `git checkout --detach GATE_SHA`. Let it apply fixes there, commit, return the commit SHA and the finding table.

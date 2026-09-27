@@ -25,3 +25,7 @@ three Playwright E2E tests through those routes and the accessible names the
 spec declares. Assert with getByRole and getByLabel. Never assert on pixels.
 If the spec names a UI journey but declares no route or accessible name for
 it, stop and name the gap. If the spec declares no routes, write no E2E.
+
+The spec may list superseded oracle lines of earlier specs. Update exactly
+the earlier acceptance tests that assert those lines, to the replacement.
+Change no other existing test.
