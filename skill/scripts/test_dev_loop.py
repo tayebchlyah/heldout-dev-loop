@@ -863,6 +863,34 @@ class MutationContractTests(unittest.TestCase):
                 self.assertNotIn("\u2014", path.read_text())
 
 
+class FeatureWorktreeContractTests(unittest.TestCase):
+    def test_stages_three_to_seven_run_in_the_feature_worktree(self) -> None:
+        skill = SKILL.read_text()
+        self.assertIn("## Where each stage runs", skill)
+        self.assertIn("Stages 3 to 7 run in the feature's own worktree", skill)
+        self.assertIn("Never ask the user to change directory.", skill)
+        self.assertNotIn(".worktrees/", skill)
+
+    def test_rebase_points_exclude_the_build(self) -> None:
+        skill = SKILL.read_text()
+        self.assertIn("Never during Stages 4 and 5", skill)
+        self.assertIn("git fetch origin`, `git switch main`, `git rebase origin/main`", skill)
+        for route in ["claude.md", "codex.md"]:
+            with self.subTest(route=route):
+                text = (SKILL_ROOT / "references" / route).read_text()
+                self.assertIn("First rebase onto `origin/main`", text)
+
+    def test_superseded_oracle_lines_flow_from_spec_to_tests(self) -> None:
+        skill = SKILL.read_text()
+        self.assertIn("Supersedes: read the earlier specs", skill)
+        self.assertIn("Amended by <feature> on <date>", skill)
+        self.assertIn("a Supersedes line or an escaped bug", skill)
+        self.assertIn("a regression", skill)
+        claude_tester = (SKILL_ROOT.parent / "claude" / "agents" / "spec-tester.md").read_text()
+        codex_tester = (SKILL_ROOT.parent / "codex" / "agents" / "spec-tester.toml").read_text()
+        self.assertIn("Change no other existing test.", claude_tester)
+        self.assertIn("Change no other existing test.", codex_tester)
+
 class SelectMutantsTests(unittest.TestCase):
     def select(self, repo: Path, base: str) -> tuple[int, dict, str]:
         result = subprocess.run(

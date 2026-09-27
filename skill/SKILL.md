@@ -36,6 +36,14 @@ Run in order. First failing check is the stage.
 
 State stage and the check that chose it, one line. Then run it.
 
+## Where each stage runs
+
+Stages 0 to 2 run in the main checkout on `main`. Stages 3 to 7 run in the feature's own worktree, on the feature's own branch, one worktree for the feature's whole life.
+At the start of Stages 3 to 7, work in that worktree yourself: find it with `git worktree list`, or create it with the harness's own worktree mechanism. The branch exists: attach the worktree to it. Else: branch from `origin/main` after `git fetch origin`. Never ask the user to change directory.
+
+Rebase onto `origin/main` at four points only, each right after `git fetch origin`: Stage 2 start (on `main`), Stage 3 start, Stage 6 start, Stage 7 (through `finishing-a-development-branch`). Never during Stages 4 and 5: the SDD ledger and the review packages name commits by hash.
+Rebase conflict in `tests/acceptance/`: another feature's file keeps the upstream side (during a rebase that side is `--ours`: `git checkout --ours <file>`). This feature's own file: stop, `spec-tester` resolves it.
+
 ## 0 Bootstrap
 Invoke `new-repo-setup`. Apply the selected harness setup contract. Claude Code writes its `.claude/settings.json`. Codex writes its `.codex/config.toml` only when a project override is needed. Security review runs once per feature in Stage 6, not per Stop and commit.
 `git init`, one commit. Invoke the selected route's domain-modeling skill for first terms of CONTEXT.md.
@@ -51,16 +59,19 @@ Invoke the selected route's grilling skill. Then `superpowers:brainstorming`.
 Done when brainstorming has named the path out loud.
 
 ## 2 Spec
+Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
 Continue `superpowers:brainstorming`. Spec to `$VAULT/<vault_notes>/specs/`.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
+Supersedes: read the earlier specs in `$VAULT/<vault_notes>/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
 Stop when the user approves. Do NOT let brainstorming invoke writing-plans.
-Set `review_status: approved` in spec frontmatter.
+Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`.
 
 ## 3 Acceptance
+Start in the feature worktree (see Where each stage runs), then `git fetch origin`, `git rebase origin/main`.
 Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and CONTEXT.md path.
-It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. Tell the user to review. Commit.
-Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after spec oracle changes. Controller never writes a test there.
+It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. Tell the user to review. One commit for both.
+Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after a spec oracle change: a Supersedes line or an escaped bug. Controller never writes a test there.
 Stop. Tell the user to run `/clear` before Stage 4.
 
 ## 4 Plan
@@ -68,7 +79,7 @@ Invoke `superpowers:writing-plans`. Plan to `$VAULT/<vault_notes>/plans/`.
 Plan never references `tests/acceptance/`. Choose subagent-driven at handoff.
 
 ## 5 Build
-Invoke `superpowers:subagent-driven-development`.
+Invoke `superpowers:subagent-driven-development`. Work in the feature worktree: SDD's worktree step reuses it and creates none.
 Use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
 Ledger gets `## Discoveries` section, one line per surprise.
 Deferred findings go to vault project note `## Deferred`, not to ledger.
@@ -81,6 +92,7 @@ Acceptance loop: full run once, then fix rounds on failures only (`pytest --lf`,
 Flaky = red, then green on rerun with no code change. Record it in `## Deferred` as flaky, no code change for it.
 Stale image rule. Compose services are `build:` images, source copied in, no bind mount. Host fix changes nothing in running container. Before every acceptance run after any change under `backend/` or `frontend/`: `docker compose --profile test up -d --build --wait`. Then confirm: `docker compose ps --format '{{.Service}} {{.CreatedAt}}'`, created time newer than the fix commit. Run on stale image = not a run, does not count.
 Escaped bug: the user adds the oracle line to spec first, `spec-tester` adds the test, then the fix. Controller never edits `tests/acceptance/`.
+Red acceptance test of an earlier feature whose line this spec does not supersede: a regression. It goes through the fix loop like any red test. If the user rules it a conflict nobody listed, it takes the escaped bug path.
 Unplanned environment, deployment or infra gap discovered by the gate: new slice with its own spec. Never a fix round.
 Deployment or infra work explicitly named in the approved spec or plan stays in the current slice. Implement and verify it normally; do not reclassify planned work as a gap.
 Never invoke `superpowers:verification-before-completion`. The shell gate owns routine verification.
