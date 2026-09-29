@@ -863,6 +863,19 @@ class MutationContractTests(unittest.TestCase):
                 self.assertNotIn("\u2014", path.read_text())
 
 
+class ModelAliasContractTests(unittest.TestCase):
+    def test_subagent_models_are_named_by_alias(self) -> None:
+        claude = (SKILL_ROOT / "references" / "claude.md").read_text()
+        self.assertIn("name them by alias only", claude)
+
+    def test_no_payload_pins_a_full_claude_model_id(self) -> None:
+        import re
+
+        pinned = re.compile(r"^model:\s*claude-", re.MULTILINE)
+        for path in [*(SKILL_ROOT.parent / "claude" / "agents").glob("*.md"), SKILL, *(SKILL_ROOT / "references").glob("*.md")]:
+            with self.subTest(path=path.name):
+                self.assertIsNone(pinned.search(path.read_text()))
+
 class FeatureWorktreeContractTests(unittest.TestCase):
     def test_stages_three_to_seven_run_in_the_feature_worktree(self) -> None:
         skill = SKILL.read_text()
