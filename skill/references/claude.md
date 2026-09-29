@@ -17,6 +17,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 - Acceptance author: `spec-tester`.
 - SDD implementers: `subagent_type: implementer`.
 - Task reviewers and re-reviewers: `general-purpose`. Never use `caveman:cavecrew-*`.
+- Subagent models: name them by alias only, `haiku`, `sonnet`, `opus` or `fable`, in plans, Agent calls and agent frontmatter. An alias resolves to the newest model the running Claude Code knows. A full ID such as `claude-sonnet-5` pins an old model.
 
 ## Feature gate
 
