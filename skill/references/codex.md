@@ -33,7 +33,7 @@ Four phases, in order. First rebase onto `origin/main` (SKILL.md, Where each sta
    - Mutation on the diff. Follow [mutation.md](mutation.md) and return its report.
    - Custom agent `simplifier` last, after the read-only reviewers have returned, because it writes. It applies only in-scope, behaviour-preserving fixes and returns its finding table.
 2. **Triage, controller.** Merge the tables. Dedupe by file and line. Apply the defect rule in SKILL.md Stage 6. Everything else to `## Deferred`.
-3. **Fix wave.** Custom agent `implementer`, one file cluster at a time: defects (b) and (c), mutation survivors. Each passes the Stop gate.
+3. **Fix wave.** Custom agent `implementer`, one file cluster at a time, for defects (b) and (c). Each passes the Stop gate. Then the mutation tests, in parallel where the session allows: one `implementer` per group of listed functions, as [mutation.md](mutation.md) section Fix states.
 4. **Acceptance loop.** Stack fresh with `docker compose --profile test up -d --build --wait` when `ui` is in stacks. Acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. On failures: fix round through `implementer`, rebuild, rerun failures only with `--lf` or `--last-failed`. Repeat under the progress guard. Then one final full run.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.
