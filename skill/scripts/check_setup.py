@@ -269,6 +269,8 @@ def check_mutmut(repo: Path) -> list[str]:
     root = path.parent
     if not mutmut.get("source_paths"):
         failures.append(f"missing [tool.mutmut] source_paths in {path}")
+    if not mutmut.get("only_mutate"):
+        failures.append(f"missing [tool.mutmut] only_mutate list of critical modules in {path}")
     selection = mutmut.get("pytest_add_cli_args_test_selection", [])
     if not selection:
         failures.append(f"missing [tool.mutmut] pytest_add_cli_args_test_selection in {path}")
@@ -282,9 +284,11 @@ def check_mutmut(repo: Path) -> list[str]:
 def check_stryker(repo: Path) -> list[str]:
     failures: list[str] = []
     configs = [p for name in STRYKER_CONFIGS for p in repo_files(repo, name)]
-    if len(configs) != 1:
-        return [f"expected one stryker.config.* file, found {len(configs)}"]
+    if len(configs) != 1 or configs[0].name != "stryker.config.json":
+        return [f"expected one stryker.config.json, found {', '.join(p.name for p in configs) or 'none'}"]
     root = configs[0].parent
+    if not load_json(configs[0], failures).get("mutate"):
+        failures.append(f"missing mutate list of critical files in {configs[0]}")
     package = load_json(root / "package.json", failures)
     dev = package.get("devDependencies", {})
     for name in ["@stryker-mutator/core", "@stryker-mutator/vitest-runner"]:

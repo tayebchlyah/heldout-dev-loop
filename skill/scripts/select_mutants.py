@@ -2,11 +2,16 @@
 """Select the mutants a feature diff changed, and optionally run only those.
 
 Python (mutmut 3): every top-level function and every method of a top-level
-class that the diff touches. Output: mutmut name patterns such as
-`shop.api.app.x_create_app__mutmut_*`.
+class that the diff touches, inside the critical modules `only_mutate` lists.
+Output: mutmut name patterns such as `shop.api.app.x_create_app__mutmut_*`.
 
-UI (Stryker): every changed line range in non-test source files. Output:
-Stryker mutation ranges such as `src/api/client.ts:10-24`.
+UI (Stryker): every changed line range inside the critical files the `mutate`
+list of stryker.config.json names. Output: Stryker mutation ranges such as
+`src/logic/score.ts:10-24`.
+
+After a run, each surviving mutant is classed: a decision mutant changes what
+the code decides or returns, a message mutant changes only a string or a
+logging call. The report lists every function that needs one unit test.
 
 Every input is read from git at --head, so the same diff always gives the
 same selection, whatever the working tree holds.
@@ -27,6 +32,8 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -37,13 +44,18 @@ UI_TEST = re.compile(r"(^|/)__tests__/|\.(test|spec)\.[cm]?[jt]sx?$|\.d\.ts$")
 STRYKER_CONFIGS = {
     f"stryker.{kind}.{ext}" for kind in ("config", "conf") for ext in ("mjs", "js", "cjs", "json")
 }
+STRYKER_CONFIG = "stryker.config.json"
+STRING_LITERAL = re.compile(r"""[rRbBuUfF]{0,2}('''|\"\"\"|'|")(?:\\.|(?!\1).)*\1""", re.S)
+LOG_CALL = re.compile(r"\b(?:log(?:ger)?|logging|print|warnings?|console)\b[\w.]*\s*\(")
+# A string here is read by a person, not by code.
+MESSAGE_CONTEXT = re.compile(
+    r"^\s*raise\b|^\s*assert\b.*,|\b(?:detail|message|msg|description|help|reason|summary)\s*=(?!=)"
+)
 # mutmut 3.8 never trampolines these (mutation/file_mutation.py).
 NEVER_MUTATE = {"__getattribute__", "__setattr__", "__new__"}
 PLAIN_DECORATORS = {"staticmethod", "classmethod"}
 STACKS = re.compile(r"^stacks:\s*(.+)$", re.MULTILINE)
-# Not killed by any test: the fix wave writes unit tests for these.
-MISSED_STATUSES = ("survived", "no tests")
-# Inconclusive: reported, never counted as killed.
+# Inconclusive: reported, never counted as killed, never a test.
 OTHER_STATUSES = ("timeout", "suspicious", "segfault", "not checked")
 
 
@@ -138,13 +150,58 @@ class Selection:
     stryker_root: str | None = None
     stryker_ranges: list[str] = field(default_factory=list[str])
     gaps: list[Gap] = field(default_factory=list[Gap])
+    skipped: list[str] = field(default_factory=list[str])
 
 
 @dataclass
 class ToolResult:
     mutants: int
-    missed: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
+    #: function or file -> decision survivors and untested mutants: one unit test each
+    functions: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
+    #: survivors that change only a string or a logging call: Deferred
+    messages: list[str] = field(default_factory=list[str])
+    #: timeout, suspicious, segfault, not checked
+    inconclusive: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
     note: str | None = None
+
+
+def classify(diff: str) -> str:
+    """`message` when the mutant changes only text a person reads, else `decision`.
+
+    Text a person reads: a string inside a raise, an assert message, a logging
+    call, or a message-named argument or variable. Every other string can be a
+    key, a compared value or a returned value, so it counts as a decision.
+    """
+    removed = [row[1:] for row in diff.splitlines() if row.startswith("-") and not row.startswith("---")]
+    added = [row[1:] for row in diff.splitlines() if row.startswith("+") and not row.startswith("+++")]
+    if not removed and not added:
+        return "decision"
+    def blank(rows: list[str]) -> list[str]:
+        return [STRING_LITERAL.sub('""', row).strip() for row in rows]
+    rows = removed + added
+    if all(LOG_CALL.search(row) for row in rows):
+        return "message"
+    if blank(removed) == blank(added) and all(MESSAGE_CONTEXT.search(row) for row in rows):
+        return "message"
+    return "decision"
+
+
+def glob_match(path: str, pattern: str) -> bool:
+    """Stryker-style glob with `**`, on Python 3.13 and later; plain fnmatch before."""
+    full_match = cast(Callable[[str], bool] | None, getattr(PurePosixPath(path), "full_match", None))
+    if full_match is not None:
+        return full_match(pattern)
+    return fnmatch.fnmatch(path, pattern.replace("**/", "*").replace("**", "*"))
+
+
+def in_globs(path: str, globs: list[str]) -> bool:
+    included = any(glob_match(path, g) for g in globs if not g.startswith("!"))
+    excluded = any(glob_match(path, g[1:]) for g in globs if g.startswith("!"))
+    return included and not excluded
+
+
+def str_list(value: object) -> list[str]:
+    return [str(item) for item in cast(list[object], value)] if isinstance(value, list) else []
 
 
 def mutmut_units(source: str) -> tuple[list[Unit], list[tuple[int, int]]]:
@@ -212,10 +269,19 @@ def select_python(repo: Path, head: str, files: list[str], changed: dict[str, se
         raise SetupError("[tool.mutmut] has no source_paths")
     out.mutmut_root = root or "."
     sources = [str(PurePosixPath(str(p))).rstrip("/") for p in cast(list[object], source_paths)]
+    only = str_list(config.get("only_mutate"))
+    never = str_list(config.get("do_not_mutate"))
     patterns: set[str] = set()
     for path in sorted(python_changes):
         relative = relative_to(path, root)
         if relative is None or not any(relative == s or relative.startswith(s + "/") for s in sources):
+            continue
+        # mutmut 3.8 matches only_mutate and do_not_mutate with fnmatch on this relative path.
+        if only and not any(fnmatch.fnmatch(relative, g) for g in only):
+            out.skipped.append(f"{path} outside only_mutate")
+            continue
+        if any(fnmatch.fnmatch(relative, g) for g in never):
+            out.skipped.append(f"{path} in do_not_mutate")
             continue
         units, classes = mutmut_units(show(repo, head, path))
         uncovered: dict[str, set[int]] = {}
@@ -234,20 +300,26 @@ def select_python(repo: Path, head: str, files: list[str], changed: dict[str, se
     out.patterns = sorted(patterns)
 
 
-def select_ui(files: list[str], changed: dict[str, set[int]], out: Selection) -> None:
+def select_ui(repo: Path, head: str, files: list[str], changed: dict[str, set[int]], out: Selection) -> None:
     ui_changes = {p: lines for p, lines in changed.items() if p.endswith(UI_SOURCE) and not UI_TEST.search(p)}
     if not ui_changes:
         return
-    roots = sorted({parent_dir(p) for p in files if PurePosixPath(p).name in STRYKER_CONFIGS})
-    if len(roots) != 1:
-        found = ", ".join(r or "." for r in roots) or "none"
-        raise SetupError(f"exactly one stryker.config.* file expected, found {found}")
-    root = roots[0]
+    configs = sorted(p for p in files if PurePosixPath(p).name in STRYKER_CONFIGS)
+    if len(configs) != 1 or PurePosixPath(configs[0]).name != STRYKER_CONFIG:
+        found = ", ".join(configs) or "none"
+        raise SetupError(f"exactly one {STRYKER_CONFIG} expected, found {found}")
+    root = parent_dir(configs[0])
+    globs = str_list(cast(dict[str, Any], json.loads(show(repo, head, configs[0]))).get("mutate"))
+    if not globs:
+        raise SetupError(f"{configs[0]} has no mutate list of critical files")
     out.stryker_root = root or "."
     selected: list[str] = []
     for path in sorted(ui_changes):
         relative = relative_to(path, root)
-        if relative is None or not relative.startswith("src/"):
+        if relative is None:
+            continue
+        if not in_globs(relative, globs):
+            out.skipped.append(f"{path} outside the Stryker mutate list")
             continue
         selected.extend(f"{relative}:{a}-{b}" for a, b in ranges(ui_changes[path]))
     out.stryker_ranges = selected
@@ -269,7 +341,7 @@ def select(repo: Path, base: str, head: str) -> Selection:
     if "python" in stacks:
         select_python(repo, head, files, changed, out)
     if "ui" in stacks:
-        select_ui(files, changed, out)
+        select_ui(repo, head, files, changed, out)
     out.gaps.sort(key=lambda g: (g.path, g.start))
     return out
 
@@ -317,21 +389,51 @@ def run_mutmut(repo: Path, sel: Selection) -> ToolResult:
         text=True,
     ).stdout
     total = 0
-    missed: dict[str, list[str]] = {}
+    survived: list[str] = []
+    untested: list[str] = []
+    result = ToolResult(0)
     for row in results.splitlines():
         name, _, status = row.strip().rpartition(": ")
         if not name or not any(fnmatch.fnmatchcase(name, p) for p in sel.patterns):
             continue
         total += 1
-        if status in MISSED_STATUSES or status in OTHER_STATUSES:
-            missed.setdefault(status, []).append(name)
-    crashed = len(missed.get("segfault", []))
+        if status == "survived":
+            survived.append(name)
+        elif status == "no tests":
+            untested.append(name)
+        elif status in OTHER_STATUSES:
+            result.inconclusive.setdefault(status, []).append(name)
+    result.mutants = total
+    crashed = len(result.inconclusive.get("segfault", []))
     if total and crashed * 2 > total:
         raise SetupError(
             f"{crashed} of {total} mutants crashed the forked worker (status segfault), so no test judged them. "
             'Set process_isolation = "forkserver" in [tool.mutmut]'
         )
-    return ToolResult(total, missed)
+    if total and len(untested) * 2 > total:
+        raise SetupError(
+            f"{len(untested)} of {total} mutants reach no unit test, so unit tests are skipped or not collected "
+            "inside mutmut's copy"
+        )
+
+    def diff_of(name: str) -> str:
+        return subprocess.run(
+            ["uv", "run", "mutmut", "show", name], cwd=root, env=tool_env(), capture_output=True, text=True
+        ).stdout
+
+    def kind_of(name: str) -> str:
+        return classify(diff_of(name))
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        kinds = list(pool.map(kind_of, survived))
+    for name, kind in zip(survived, kinds, strict=True):
+        if kind == "message":
+            result.messages.append(name)
+        else:
+            result.functions.setdefault(name.partition("__mutmut_")[0], []).append(f"{name} survived")
+    for name in untested:
+        result.functions.setdefault(name.partition("__mutmut_")[0], []).append(f"{name} no tests")
+    return result
 
 
 def run_stryker(repo: Path, sel: Selection) -> ToolResult:
@@ -344,16 +446,20 @@ def run_stryker(repo: Path, sel: Selection) -> ToolResult:
         raise RuntimeError(f"stryker run exited {code}")
     report = cast(dict[str, Any], json.loads((root / "reports" / "mutation" / "mutation.json").read_text()))
     files = cast(dict[str, dict[str, Any]], report.get("files", {}))
-    total = 0
-    missed: dict[str, list[str]] = {}
+    result = ToolResult(0)
     for path in sorted(files):
         for mutant in cast(list[dict[str, Any]], files[path].get("mutants", [])):
-            total += 1
+            result.mutants += 1
             status = str(mutant.get("status", ""))
-            if status in ("Survived", "NoCoverage", "Timeout", "RuntimeError"):
-                line = cast(dict[str, Any], mutant.get("location", {})).get("start", {}).get("line")
-                missed.setdefault(status, []).append(f"{path}:{line} {mutant.get('mutatorName')}")
-    return ToolResult(total, missed)
+            line = cast(dict[str, Any], mutant.get("location", {})).get("start", {}).get("line")
+            label = f"{path}:{line} {mutant.get('mutatorName')} {status}"
+            if status in ("Timeout", "RuntimeError"):
+                result.inconclusive.setdefault(status, []).append(label)
+            elif status == "Survived" and mutant.get("mutatorName") == "StringLiteral":
+                result.messages.append(label)
+            elif status in ("Survived", "NoCoverage"):
+                result.functions.setdefault(path, []).append(label)
+    return result
 
 
 def report(sel: Selection, results: dict[str, ToolResult] | None) -> str:
@@ -370,13 +476,21 @@ def report(sel: Selection, results: dict[str, ToolResult] | None) -> str:
         lines.append("no mutable code changed: 0 mutants selected")
     lines.append(f"not covered by the selection: {len(sel.gaps)}")
     lines.extend(f"  {g.render()}" for g in sel.gaps)
+    lines.append(f"outside the critical modules: {len(sel.skipped)}")
+    lines.extend(f"  {s}" for s in sel.skipped)
     for tool, result in (results or {}).items():
-        count = sum(len(v) for v in result.missed.values())
-        lines.append(f"{tool}: {result.mutants} mutants run, {count} not killed")
+        lines.append(f"{tool}: {result.mutants} mutants run")
         if result.note:
             lines.append(f"  {result.note}")
-        for status, names in sorted(result.missed.items()):
-            lines.extend(f"  {status}: {name}" for name in names)
+        lines.append(f"{tool} functions that need one unit test: {len(result.functions)}")
+        for unit, mutants in sorted(result.functions.items()):
+            lines.append(f"  {unit}")
+            lines.extend(f"    {m}" for m in mutants)
+        lines.append(f"{tool} message-only survivors, to Deferred: {len(result.messages)}")
+        lines.extend(f"  {m}" for m in result.messages)
+        for status, names in sorted(result.inconclusive.items()):
+            lines.append(f"{tool} inconclusive, {status}: {len(names)}")
+            lines.extend(f"  {n}" for n in names)
     return "\n".join(lines)
 
 
@@ -407,6 +521,7 @@ def main() -> int:
             "stryker_root": sel.stryker_root,
             "stryker_ranges": sel.stryker_ranges,
             "gaps": [g.render() for g in sel.gaps],
+            "skipped": sel.skipped,
         }
         print(json.dumps(payload, indent=2))
         return 0
