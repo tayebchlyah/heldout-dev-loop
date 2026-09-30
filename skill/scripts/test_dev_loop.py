@@ -35,6 +35,14 @@ except FileNotFoundError as exc:
     raise FileNotFoundError(f"cannot load check_setup module: missing {CHECKER}") from exc
 
 
+_selector_spec = importlib.util.spec_from_file_location("select_mutants", SELECTOR)
+if _selector_spec is None or _selector_spec.loader is None:
+    raise ImportError(f"cannot load select_mutants module: {SELECTOR}")
+select_mutants = importlib.util.module_from_spec(_selector_spec)
+sys.modules["select_mutants"] = select_mutants
+_selector_spec.loader.exec_module(select_mutants)
+
+
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
     refs = SKILL_ROOT / "references"
@@ -843,6 +851,15 @@ class MutationContractTests(unittest.TestCase):
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
         self.assertIn("select_mutants.py --head GATE_SHA --run", mutation)
 
+    def test_fix_wave_writes_one_test_per_function_in_parallel(self) -> None:
+        mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
+        for value in ["one unit test per listed function", "in parallel", "Run mutmut once per feature", "only_mutate"]:
+            with self.subTest(value=value):
+                self.assertIn(value, mutation)
+        for route in ["claude.md", "codex.md"]:
+            with self.subTest(route=route):
+                self.assertIn("mutation.md) section Fix", (SKILL_ROOT / "references" / route).read_text())
+
     def test_no_route_uses_a_stryker_flag_that_does_not_exist(self) -> None:
         self.assertNotIn("--since", all_instructions())
 
@@ -1008,9 +1025,10 @@ class SelectMutantsTests(unittest.TestCase):
                 Path(root),
                 {
                     "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
-                    "frontend/stryker.config.mjs": "export default {};\n",
+                    "frontend/stryker.config.json": json.dumps({"mutate": ["src/**/*.ts", "!src/**/*.test.ts"]}),
                     "frontend/src/a.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
                     "frontend/src/a.test.ts": "test('a', () => {});\n",
+                    "frontend/src/Screen.tsx": "export const S = 1;\n",
                 },
             )
             base = commit_changes(
@@ -1018,12 +1036,62 @@ class SelectMutantsTests(unittest.TestCase):
                 {
                     "frontend/src/a.ts": "export const a = 1;\nexport const b = 20;\nexport const c = 30;\n",
                     "frontend/src/a.test.ts": "test('a', () => { expect(1); });\n",
+                    "frontend/src/Screen.tsx": "export const S = 2;\n",
                 },
             )
             code, sel, err = self.select(repo, base)
             self.assertEqual(code, 0, err)
             self.assertEqual(sel["stryker_root"], "frontend")
             self.assertEqual(sel["stryker_ranges"], ["src/a.ts:2-3"])
+            self.assertEqual(sel["skipped"], ["frontend/src/Screen.tsx outside the Stryker mutate list"])
+
+    def test_only_critical_modules_are_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            config = MUTMUT_CONFIG + 'only_mutate = ["src/pkg/core/*"]\ndo_not_mutate = ["src/pkg/core/proto.py"]\n'
+            repo = make_git_repo(
+                Path(root),
+                {
+                    "AGENTS.md": PY_AGENTS,
+                    "pyproject.toml": config,
+                    "src/pkg/core/score.py": "def score(x):\n    return x > 1\n",
+                    "src/pkg/core/proto.py": "def proto(x):\n    return x\n",
+                    "src/pkg/api/routes.py": "def route(x):\n    return x\n",
+                },
+            )
+            base = commit_changes(
+                repo,
+                {
+                    "src/pkg/core/score.py": "def score(x):\n    return x >= 1\n",
+                    "src/pkg/core/proto.py": "def proto(x):\n    return x + 0\n",
+                    "src/pkg/api/routes.py": "def route(x):\n    return x + 0\n",
+                },
+            )
+            code, sel, err = self.select(repo, base)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(sel["patterns"], ["pkg.core.score.x_score__mutmut_*"])
+            self.assertEqual(
+                sel["skipped"],
+                ["src/pkg/api/routes.py outside only_mutate", "src/pkg/core/proto.py in do_not_mutate"],
+            )
+
+    def test_survivors_split_into_decisions_and_messages(self) -> None:
+        cases = {
+            "message": [
+                '-    raise ValueError("bad window")\n+    raise ValueError("XXbad windowXX")\n',
+                '-    logger.info("fetched %s", name)\n+    logger.info(None, name)\n',
+                '-    return Finding(detail="gap")\n+    return Finding(detail="XXgapXX")\n',
+            ],
+            "decision": [
+                '-    return {"status": "ok"}\n+    return {"XXstatusXX": "ok"}\n',
+                '-    if kind == "gauge":\n+    if kind == "XXgaugeXX":\n',
+                "-    if count >= limit:\n+    if count > limit:\n",
+                "-    return total\n+    return None\n",
+            ],
+        }
+        for expected, diffs in cases.items():
+            for diff in diffs:
+                with self.subTest(diff=diff):
+                    self.assertEqual(select_mutants.classify(diff), expected)
 
     def test_no_mutable_change_selects_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -1038,7 +1106,9 @@ class SelectMutantsTests(unittest.TestCase):
 
 class MutationSetupTests(unittest.TestCase):
     PYPROJECT = (
-        '[dependency-groups]\ndev = ["pytest==9.1.1", "mutmut==3.8.0"]\n\n' + MUTMUT_CONFIG
+        '[dependency-groups]\ndev = ["pytest==9.1.1", "mutmut==3.8.0"]\n\n'
+        + MUTMUT_CONFIG
+        + 'only_mutate = ["src/pkg/core/*"]\n'
     )
 
     def python_setup(self, root: Path, **overrides: str) -> Path:
@@ -1067,6 +1137,10 @@ class MutationSetupTests(unittest.TestCase):
                 "unit tests only",
             ),
             "ignore": ({".gitignore": "\n"}, "not ignored"),
+            "critical list": (
+                {"pyproject.toml": self.PYPROJECT.replace('only_mutate = ["src/pkg/core/*"]\n', "")},
+                "only_mutate",
+            ),
         }
         for label, (overrides, expected) in cases.items():
             with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
@@ -1080,7 +1154,7 @@ class MutationSetupTests(unittest.TestCase):
                 Path(root),
                 {
                     "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
-                    "frontend/stryker.config.mjs": "export default {};\n",
+                    "frontend/stryker.config.json": json.dumps({"mutate": ["src/logic/**/*.ts"]}),
                     "frontend/package.json": json.dumps(package),
                     ".gitignore": ".stryker-tmp/\nreports/\n",
                 },
@@ -1089,6 +1163,21 @@ class MutationSetupTests(unittest.TestCase):
             package["devDependencies"]["@stryker-mutator/core"] = "^10.0.0"
             write(repo / "frontend" / "package.json", json.dumps(package))
             self.assertTrue(any("@stryker-mutator/core" in f for f in check_setup.check_mutation(repo)))
+
+    def test_ui_setup_needs_a_json_config_with_a_mutate_list(self) -> None:
+        package = {"devDependencies": {"@stryker-mutator/core": "10.0.0", "@stryker-mutator/vitest-runner": "10.0.0"}}
+        for label, files, expected in [
+            ("mjs", {"frontend/stryker.config.mjs": "export default {};\n"}, "stryker.config.json"),
+            ("no mutate", {"frontend/stryker.config.json": "{}"}, "mutate list"),
+        ]:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
+                base = {
+                    "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
+                    "frontend/package.json": json.dumps(package),
+                    ".gitignore": ".stryker-tmp/\nreports/\n",
+                }
+                repo = make_git_repo(Path(root), {**base, **files})
+                self.assertTrue(any(expected in f for f in check_setup.check_mutation(repo)))
 
     def test_repos_without_declared_stacks_are_not_checked(self) -> None:
         with tempfile.TemporaryDirectory() as root:
