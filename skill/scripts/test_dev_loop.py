@@ -348,6 +348,32 @@ class DenyWallScopeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
 
+    def test_subagent_relative_path_from_a_parent_directory_is_blocked(self) -> None:
+        # A shell that sits in tests/ reaches the suite by a relative path.
+        cases = [
+            ("/repo/tests", {"command": "cat acceptance/login_test.py"}),
+            ("/repo/tests", {"command": "cat 'acceptance/login_test.py'"}),
+            ("/repo/tests/unit", {"file_path": "../acceptance/login_test.py"}),
+        ]
+        for cwd, tool_input in cases:
+            with self.subTest(cwd=cwd, tool_input=tool_input):
+                payload = self.subagent(tool_input)
+                payload["cwd"] = cwd
+                result = self.run_claude("deny-acceptance-to-subagents.sh", payload)
+                self.assertEqual(result.returncode, 2)
+
+    def test_subagent_working_inside_the_suite_is_blocked(self) -> None:
+        payload = self.subagent({"command": "ls"})
+        payload["cwd"] = f"/repo/{self.HELD_OUT}/api"
+        result = self.run_claude("deny-acceptance-to-subagents.sh", payload)
+        self.assertEqual(result.returncode, 2)
+
+    def test_subagent_relative_path_elsewhere_is_allowed(self) -> None:
+        payload = self.subagent({"command": "cat src/app.py"})
+        payload["cwd"] = "/repo"
+        result = self.run_claude("deny-acceptance-to-subagents.sh", payload)
+        self.assertEqual(result.returncode, 0)
+
     def test_the_spec_tester_keeps_its_exemption(self) -> None:
         payload = self.subagent({"file_path": f"{self.HELD_OUT}/login_test.py"})
         payload["agent_type"] = "spec-tester"
@@ -485,12 +511,88 @@ class CodexHookBehaviorTests(unittest.TestCase):
             )
             write(repo / "tracked.txt", "after\n")
             gate = repo / "scripts" / "gate.sh"
-            write(gate, "#!/bin/sh\necho focused failure\nexit 1\n")
+            write(gate, '#!/bin/sh\necho focused failure\necho "scope=${GATE_SCOPE:-full}"\nexit 1\n')
             os.chmod(gate, 0o755)
             first = self.run_hook("gate.sh", {"cwd": str(repo), "stop_hook_active": False})
             second = self.run_hook("gate.sh", {"cwd": str(repo), "stop_hook_active": True})
             self.assertIn("focused failure", json.loads(first.stdout)["reason"])
+            self.assertIn("scope=changed", json.loads(first.stdout)["reason"])
             self.assertEqual(second.stdout, "")
+
+
+class ClaudeGateTests(unittest.TestCase):
+    """The Claude Stop and SubagentStop gate, and its SubagentStart snapshot."""
+
+    def repo(self, root: str) -> Path:
+        repo = Path(root)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True, stderr=subprocess.DEVNULL)
+        write(repo / "tracked.txt", "before\n")
+        subprocess.run(["git", "-C", str(repo), "add", "tracked.txt"], check=True, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture"],
+            check=True,
+            stderr=subprocess.DEVNULL,
+        )
+        write(repo / "tracked.txt", "after\n")
+        gate = repo / "scripts" / "gate.sh"
+        write(gate, '#!/bin/sh\necho "scope=${GATE_SCOPE:-full}"\nexit 1\n')
+        os.chmod(gate, 0o755)
+        return repo
+
+    def hook(self, name: str, repo: Path, payload: dict) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(CLAUDE_HOOKS / name)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo)},
+        )
+
+    def test_stop_asks_for_the_selective_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            result = self.hook("gate.sh", repo, {"hook_event_name": "Stop"})
+            self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
+
+    def test_a_read_only_subagent_runs_no_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            for agent_type in ["Explore", "Plan"]:
+                with self.subTest(agent_type=agent_type):
+                    result = self.hook(
+                        "gate.sh",
+                        repo,
+                        {"hook_event_name": "SubagentStop", "agent_id": "a1", "agent_type": agent_type},
+                    )
+                    self.assertEqual(result.stdout, "")
+
+    def test_a_subagent_that_wrote_nothing_runs_no_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            start = {"hook_event_name": "SubagentStart", "agent_id": "a2", "agent_type": "general-purpose"}
+            self.hook("gate-snapshot.sh", repo, start)
+            result = self.hook("gate.sh", repo, {**start, "hook_event_name": "SubagentStop"})
+            self.assertEqual(result.stdout, "")
+
+    def test_a_subagent_that_wrote_a_file_runs_the_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            start = {"hook_event_name": "SubagentStart", "agent_id": "a3", "agent_type": "implementer"}
+            self.hook("gate-snapshot.sh", repo, start)
+            write(repo / "new.txt", "written\n")
+            result = self.hook("gate.sh", repo, {**start, "hook_event_name": "SubagentStop"})
+            self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
+
+    def test_a_subagent_with_no_snapshot_runs_the_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            result = self.hook(
+                "gate.sh",
+                repo,
+                {"hook_event_name": "SubagentStop", "agent_id": "a4", "agent_type": "general-purpose"},
+            )
+            self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
 
 
 class SetupCheckerTests(unittest.TestCase):
@@ -521,7 +623,7 @@ class SetupCheckerTests(unittest.TestCase):
 
     def make_valid_claude(self, home: Path) -> None:
         self.write_valid_config(home)
-        for name in ["gate.sh", "deny-path.sh", "deny-acceptance-to-subagents.sh", "git-guard.sh"]:
+        for name in ["gate.sh", "gate-snapshot.sh", "tree-hash.sh", "deny-path.sh", "deny-acceptance-to-subagents.sh", "git-guard.sh"]:
             write(home / ".claude" / "hooks" / name, "#!/bin/sh\n")
         write(home / ".claude" / "agents" / "implementer.md", "name: implementer\n")
         write(home / ".claude" / "agents" / "spec-tester.md", "name: spec-tester\n")
@@ -556,7 +658,7 @@ class SetupCheckerTests(unittest.TestCase):
                             "Read(./.env.*)",
                         ]
                     },
-                    "hooks": {"SessionStart": [], "Stop": [], "SubagentStop": [], "PreToolUse": []},
+                    "hooks": {"SessionStart": [], "Stop": [], "SubagentStart": [], "SubagentStop": [], "PreToolUse": []},
                 }
             ),
         )
@@ -920,6 +1022,17 @@ class FeatureWorktreeContractTests(unittest.TestCase):
         codex_tester = (SKILL_ROOT.parent / "codex" / "agents" / "spec-tester.toml").read_text()
         self.assertIn("Change no other existing test.", claude_tester)
         self.assertIn("Change no other existing test.", codex_tester)
+
+    def test_the_spec_tester_proves_flows_not_combinations(self) -> None:
+        claude_tester = (SKILL_ROOT.parent / "claude" / "agents" / "spec-tester.md").read_text()
+        codex_tester = (SKILL_ROOT.parent / "codex" / "agents" / "spec-tester.toml").read_text()
+        for text in [claude_tester, codex_tester]:
+            self.assertIn("Prove each flow once.", text)
+            self.assertNotIn("combinations", text)
+        self.assertIn("Never dispatch a subagent", claude_tester)
+
+    def test_a_stage_ends_with_a_full_gate(self) -> None:
+        self.assertIn("End every stage that changed the repo with a direct `scripts/gate.sh`", SKILL.read_text())
 
 class SelectMutantsTests(unittest.TestCase):
     def select(self, repo: Path, base: str) -> tuple[int, dict, str]:

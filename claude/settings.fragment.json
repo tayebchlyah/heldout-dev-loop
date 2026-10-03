@@ -55,6 +55,17 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/gate-snapshot.sh",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
   "permissions": {
