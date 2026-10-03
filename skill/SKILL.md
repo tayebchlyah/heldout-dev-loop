@@ -6,6 +6,7 @@ description: Use at the start of any coding session, and after finishing any tas
 # Dev loop
 
 Run ONE stage per invocation. Detect, run, stop. Never chain stages in a turn.
+End every stage that changed the repo with a direct `scripts/gate.sh`. The Stop hook runs a selective gate (`GATE_SCOPE=changed`); only a direct, full gate writes a green record.
 
 Select one harness route before detecting the stage:
 
