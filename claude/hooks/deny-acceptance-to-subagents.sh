@@ -18,6 +18,9 @@
 # blocking that produces a false positive that teaches evasion.
 # Every field a tool reaches a path through is listed, and path is joined to
 # both glob and pattern, because Grep and Glob each split a location that way.
+# Each candidate token is also resolved against the subagent's working
+# directory, and the directory itself is a candidate: a shell that sits in
+# tests/ or inside the suite cannot reach it through a relative path.
 # Candidates are normalized before matching, so a trailing slash, a doubled
 # slash, a dot segment or a capital letter does not walk past the wall.
 IN=$(cat)
@@ -35,7 +38,12 @@ CANDIDATES=$(echo "$IN" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  (fields + joins) | join("\n")' \
+  def relative($all):
+    (.cwd // "") as $c
+    | if $c == "" then [] else
+        [$c] + [ $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $c + "/" + . ]
+      end;
+  (fields + joins) as $all | ($all + relative($all)) | join("\n")' \
   | tr 'A-Z' 'a-z' \
   | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta')
 
