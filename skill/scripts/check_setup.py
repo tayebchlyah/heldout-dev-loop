@@ -68,6 +68,8 @@ def check_claude(home: Path, repo: Path | None = None) -> list[str]:
     root = home / ".claude"
     for relative in [
         "hooks/gate.sh",
+        "hooks/gate-snapshot.sh",
+        "hooks/tree-hash.sh",
         "hooks/deny-path.sh",
         "hooks/deny-acceptance-to-subagents.sh",
         "hooks/git-guard.sh",
@@ -78,7 +80,7 @@ def check_claude(home: Path, repo: Path | None = None) -> list[str]:
 
     settings = load_json(root / "settings.json", failures)
     hooks = settings.get("hooks", {})
-    for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStop"]:
+    for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Claude hook event: {event}")
     denies = settings.get("permissions", {}).get("deny", [])
