@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import os
 import subprocess
 import sys
@@ -593,6 +594,45 @@ class ClaudeGateTests(unittest.TestCase):
                 {"hook_event_name": "SubagentStop", "agent_id": "a4", "agent_type": "general-purpose"},
             )
             self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
+
+
+class ClaudeGitGuardPushTests(unittest.TestCase):
+    """A plain push of a feature branch runs; a push that rewrites or reaches main asks."""
+
+    def setUp(self) -> None:
+        self.repo = tempfile.mkdtemp()
+        for args in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "i"],
+                     ["tag", "v1.0"], ["checkout", "-q", "-b", "feat"]):
+            subprocess.run(["git", "-C", self.repo, *args], check=True,
+                           env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.repo)
+
+    def decision(self, command: str, branch: str = "feat") -> str:
+        subprocess.run(["git", "-C", self.repo, "checkout", "-q", branch], check=True)
+        result = subprocess.run(
+            ["bash", str(CLAUDE_HOOKS / "git-guard.sh")],
+            input=json.dumps({"cwd": self.repo, "tool_input": {"command": command}}),
+            text=True, capture_output=True, check=False,
+        )
+        return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] if result.stdout else "allow"
+
+    def test_plain_feature_branch_push_runs(self) -> None:
+        for command in ("git push", "git push origin feat", "git push -u origin feat", "git push origin HEAD"):
+            self.assertEqual(self.decision(command), "allow", command)
+
+    def test_rewriting_deleting_tag_or_main_push_asks(self) -> None:
+        for command in ("git push --force origin feat", "git push --force-with-lease origin feat",
+                        "git push origin +feat", "git push origin :feat", "git push origin --delete feat",
+                        "git push origin main", "git push origin feat:main", "git push origin v1.0",
+                        "git push --tags", "git push --mirror", "git push --all"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_bare_push_from_main_asks(self) -> None:
+        for command in ("git push", "git push origin", "git push origin HEAD"):
+            self.assertEqual(self.decision(command, "main"), "ask", command)
 
 
 class SetupCheckerTests(unittest.TestCase):
