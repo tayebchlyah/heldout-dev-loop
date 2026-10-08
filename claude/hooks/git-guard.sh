@@ -52,8 +52,12 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # main or master as target, a bare push while main, master or a detached HEAD is
 # checked out, or a bare push whose remote config can reach other branches.
 # Parsed with shlex, not regex, so quotes, combined short flags (-uf), global options
-# (-c, -C, --git-dir), sh -c, cd and git aliases do not walk past the rule. Fail
-# closed: a command the parser cannot read, or a parser crash, asks.
+# (-c, -C, --git-dir), cd and git aliases do not walk past the rule. A git anywhere in
+# a segment counts (if, timeout, xargs), and every quoted string is checked as a
+# command of its own (sh -c, eval, ssh). Fail closed: a command the parser cannot
+# read, an argument the shell would expand ($VAR, $(...), globs), arguments fed by
+# xargs or find, a push after a command in the same line that moves HEAD or changes
+# refs or config, or a parser crash, asks.
 ask() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Global rule: %s needs explicit permission each time."}}\n' "$1"; exit 0; }
 if has '(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|$)'; then
   REASON=$(CMD="$CMD" CWD="$CWD" python3 - <<'PY'
@@ -63,8 +67,13 @@ FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--
          "--all", "--branches", "--prune", "--tags", "--follow-tags"}
 PUSH_ARG = {"--push-option", "--repo", "--receive-pack", "--exec"}
 GLOBAL_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
-WRAPPERS = {"env", "command", "exec", "builtin", "sudo", "nohup", "time", "then", "do",
-            "else", "{", "!"}
+# Earlier commands in the same line that change what a later push resolves to.
+MOVES_HEAD = {"checkout", "switch", "reset", "rebase", "worktree", "init", "clone", "branch"}
+CHANGES_REFS = {"config", "remote", "tag", "update-ref", "symbolic-ref"}
+FEEDERS = {"xargs", "parallel", "find", "fd"}
+# chr(96) is a backtick. A literal one breaks bash parsing the $( ) around this script.
+EXPANDS = set("${}*?[~" + chr(96))
+PUNCT = ";&|()" + chr(96)
 
 
 def ask(reason):
@@ -78,11 +87,11 @@ def git(repo, *args):
 
 
 def segments(cmd):
-    lex = shlex.shlex(cmd.replace("\n", ";"), posix=True, punctuation_chars=";&|()`")
+    lex = shlex.shlex(cmd.replace("\n", ";"), posix=True, punctuation_chars=PUNCT)
     lex.whitespace_split = True
     seg = []
     for tok in lex:
-        if tok and all(c in ";&|()`" for c in tok):
+        if tok and all(c in PUNCT for c in tok):
             if seg:
                 yield seg
             seg = []
@@ -92,7 +101,11 @@ def segments(cmd):
         yield seg
 
 
-def check_push(repo, args):
+def check_push(repo, args, drift):
+    if any(EXPANDS & set(a) for a in args):
+        ask("a push with an argument the shell expands")
+    if "refs" in drift:
+        ask("a push after a command that changes refs or config")
     pos, j = [], 0
     while j < len(args):
         a = args[j]
@@ -115,6 +128,8 @@ def check_push(repo, args):
         j += 1
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     remote, specs = (pos[0] if pos else ""), pos[1:]
+    if "head" in drift and (not specs or any(s.partition(":")[0] in ("HEAD", "@") for s in specs)):
+        ask("a push of HEAD after a command that moves it")
     if not specs:
         r = remote or git(repo, "config", f"branch.{branch}.remote")[1] or "origin"
         if (git(repo, "config", "--get-all", f"remote.{r}.push")[1]
@@ -139,46 +154,57 @@ def check_push(repo, args):
             ask("a push to main or master")
 
 
-def check(cmd, cwd):
+def check_git(args, cwd, drift, fed):
+    repo, i, config = cwd, 0, []
+    while i < len(args) and args[i].startswith("-"):
+        if args[i] in GLOBAL_ARG and i + 1 < len(args):
+            if args[i] == "-C":
+                repo = os.path.join(repo, os.path.expanduser(args[i + 1]))
+            if args[i] in ("-c", "--config-env"):
+                config.append(args[i + 1])
+            i += 1
+        elif args[i].startswith("--config-env="):
+            config.append(args[i])
+        i += 1
+    sub = args[i] if i < len(args) else ""
+    if sub != "push":
+        aliases = [c for c in config if c.startswith("alias.")]
+        if sub and "push" in " ".join(aliases + [git(repo, "config", "--get", f"alias.{sub}")[1]]):
+            ask("a git alias that pushes")
+        if sub in MOVES_HEAD:
+            drift.add("head")
+        if sub in CHANGES_REFS or config:
+            drift.add("refs")
+        return
+    if fed:
+        ask("a push whose arguments come from another command")
+    if config:
+        ask("a push with config overrides")
+    check_push(repo, args[i + 1:], drift)
+
+
+def check(cmd, cwd, drift):
     try:
         segs = list(segments(cmd))
     except ValueError:
         ask("a git command the guard cannot parse")
     for seg in segs:
-        config = False
-        while seg and (seg[0] in WRAPPERS or ("=" in seg[0] and not seg[0].startswith("-"))):
-            config = config or seg[0].startswith("GIT_")
-            seg = seg[1:]
-        if not seg:
-            continue
-        head = os.path.basename(seg[0])
-        if head == "cd" and len(seg) > 1:
+        for tok in seg:
+            if any(c in tok for c in " \t;&|"):
+                check(tok, cwd, drift)
+        if seg[0] == "cd" and len(seg) > 1:
             cwd = os.path.join(cwd, os.path.expanduser(seg[1]))
-        elif head in ("sh", "bash", "zsh") and "-c" in seg[1:-1]:
-            check(seg[seg.index("-c") + 1], cwd)
-        elif head == "eval":
-            check(" ".join(seg[1:]), cwd)
-        elif head == "git":
-            repo, i = cwd, 1
-            while i < len(seg) and seg[i].startswith("-"):
-                if seg[i] in GLOBAL_ARG and i + 1 < len(seg):
-                    if seg[i] == "-C":
-                        repo = os.path.join(repo, os.path.expanduser(seg[i + 1]))
-                    config = config or seg[i] in ("-c", "--config-env")
-                    i += 1
-                config = config or seg[i].startswith("--config-env=")
-                i += 1
-            sub = seg[i] if i < len(seg) else ""
-            if sub != "push":
-                if sub and "push" in git(repo, "config", "--get", f"alias.{sub}")[1]:
-                    ask("a git alias that pushes")
-                continue
-            if config:
-                ask("a push with config overrides")
-            check_push(repo, seg[i + 1:])
+            continue
+        if any(t.startswith("GIT_") and "=" in t for t in seg):
+            drift.add("refs")
+        for k, tok in enumerate(seg):
+            if os.path.basename(tok) == "git":
+                fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
+                check_git(seg[k + 1:], cwd, drift, fed)
+                break
 
 
-check(os.environ["CMD"], os.environ["CWD"])
+check(os.environ["CMD"], os.environ["CWD"], set())
 PY
 ) || REASON="a push the guard failed to check"
   [ -n "$REASON" ] && ask "$REASON"
