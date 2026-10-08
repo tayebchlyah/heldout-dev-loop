@@ -28,9 +28,11 @@ CANDIDATES=$(echo "$IN" | jq -r '
   | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta')
 
 for FRAG in "$@"; do
-  NEEDLE=$(printf '%s' "$FRAG" | tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/$||' -e 's|\.|\\.|g')
-  # Whole path segment only: app/ blocks "app/x" and "/x/app", never "App Services".
-  if echo "$CANDIDATES" | grep -qE -- "(^|[^a-z0-9_.-])${NEEDLE}/|(^|/|[[:space:]])${NEEDLE}\$"; then
+  NEEDLE=$(printf '%s' "$FRAG" | tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/$||' -e 's/[][\.*^$+?(){}|]/\\&/g')
+  # Whole path segment only: app/ blocks "app/x", "/x/app", "app;" and "'app'",
+  # never "application" or "App Services". A space does not end a segment, so
+  # prose that starts with the name stays allowed.
+  if echo "$CANDIDATES" | grep -qE -- "(^|[^a-z0-9_.-])${NEEDLE}(/|[\"'\`;|&)<>]|\$)"; then
     echo "Blocked: $FRAG is outside this agent's territory." >&2
     exit 2
   fi
