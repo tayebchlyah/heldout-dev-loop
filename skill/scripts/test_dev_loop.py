@@ -650,6 +650,20 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         "git push origin 'main", "git push origin @:main"):
             self.assertEqual(self.decision(command), "ask", command)
 
+    def test_wrapped_expanded_fed_or_drifted_push_asks(self) -> None:
+        for command in ("if git push origin main; then :; fi", "timeout 9 git push origin main",
+                        "echo main | xargs git push origin", "B=main; git push origin $B",
+                        "git push origin $(echo main)", "git push origin $'\\x6dain'",
+                        "git checkout main && git push", "git tag v2 && git push origin v2",
+                        "git config remote.origin.push '+refs/heads/*:refs/heads/*' && git push",
+                        "git -c alias.x='push -f' x", "ssh host 'git push origin main'"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_everyday_feature_flows_still_run(self) -> None:
+        for command in ("git checkout -b feat2 && git push -u origin feat2", "git status && git log --oneline -3",
+                        "git commit -m 'fix login' && git push"):
+            self.assertEqual(self.decision(command), "allow", command)
+
     def test_remote_config_that_reaches_other_branches_asks(self) -> None:
         subprocess.run(["git", "-C", self.repo, "config", "remote.origin.push", "+refs/heads/*:refs/heads/*"], check=True)
         self.assertEqual(self.decision("git push"), "ask")
