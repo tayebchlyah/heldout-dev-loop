@@ -399,6 +399,14 @@ class DenyWallScopeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
 
+    def test_claude_deny_path_matches_whole_segments(self) -> None:
+        for command in ("cat app/main.py", "ls /repo/app", "ls app; echo", "ls 'app'", "ls \"app\" | wc"):
+            result = self.run_claude("deny-path.sh", {"tool_input": {"command": command}}, "app/")
+            self.assertEqual(result.returncode, 2, command)
+        for command in ("grep -r application docs", "cat src/mapper.py", "grep -r 'App Services' docs"):
+            result = self.run_claude("deny-path.sh", {"tool_input": {"command": command}}, "app/")
+            self.assertEqual(result.returncode, 0, command)
+
     def test_codex_deny_path_blocks_a_glob(self) -> None:
         result = self.run_codex(
             {"tool_input": {"path": ".", "glob": f"{self.HELD_OUT}/**"}}, self.HELD_OUT
@@ -633,6 +641,24 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
     def test_bare_push_from_main_asks(self) -> None:
         for command in ("git push", "git push origin", "git push origin HEAD"):
             self.assertEqual(self.decision(command, "main"), "ask", command)
+
+    def test_quotes_short_flags_and_global_options_do_not_walk_past(self) -> None:
+        for command in ("git push -uf origin feat", "git push origin \"main\"", "git push origin 'main'",
+                        "git push origin feat:\"main\"", "git -c a=b push origin feat",
+                        "GIT_CONFIG_COUNT=1 git push origin feat", "git --no-pager push origin main",
+                        "git push origin feat && git push origin main", "sh -c 'git push origin main'",
+                        "git push origin 'main", "git push origin @:main"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_remote_config_that_reaches_other_branches_asks(self) -> None:
+        subprocess.run(["git", "-C", self.repo, "config", "remote.origin.push", "+refs/heads/*:refs/heads/*"], check=True)
+        self.assertEqual(self.decision("git push"), "ask")
+        self.assertEqual(self.decision("git push origin feat"), "allow")
+
+    def test_a_push_alias_asks(self) -> None:
+        subprocess.run(["git", "-C", self.repo, "config", "alias.p", "push --force"], check=True)
+        self.assertEqual(self.decision("git p"), "ask")
+        self.assertEqual(self.decision("git commit -m 'push fix'"), "allow")
 
 
 class SetupCheckerTests(unittest.TestCase):
