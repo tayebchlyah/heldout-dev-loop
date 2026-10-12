@@ -11,7 +11,6 @@ print(json.loads(p.read_text()).get("vault", "") if p.is_file() else "")' 2>/dev
 # Any global options may sit before the subcommand: -C or -c take a value that may
 # be quoted and may hold spaces, the rest (--no-pager, --git-dir=x) are one token.
 G='git( +-[Cc] +("[^"]+"|'"'"'[^'"'"']+'"'"'|[^ ]+)| +-[^ ]+)* +'
-WRITE="${G}(commit|push|add|checkout|switch|reset|rebase|merge|stash|tag|cherry-pick|am|apply)( |$)|${G}branch +-[dD]( |$)"
 
 deny() { echo "$1" >&2; exit 2; }
 has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
@@ -19,30 +18,9 @@ has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
 # 1. rm -rf on root only.
 has 'rm +-[rf]+ +/( |$)|rm +-[rf]+ +/\*' && deny "Blocked: rm -rf / is never allowed."
 
-# 2. No git write of any kind inside the Obsidian vault.
-# The repo a command acts on is not always the session cwd: a leading "cd <path> &&"
-# or a "git -C <path>" retargets it. Resolve those, so work in another repo is not
-# blocked just because the session started in the vault. Anything unresolved falls
-# back to the cwd, so the vault stays protected by default.
-# An unquoted path may hold spaces (the vault path does), so cut the argument at
-# the next shell operator rather than at the next space, then strip quotes.
-arg() { printf '%s' "$1" | sed -E 's/[[:space:]]*(&&|\|\||;|\|).*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'; }
-TARGET="$CWD"
-lead_cd=$(printf '%s' "$CMD" | sed -nE 's/^[[:space:]]*cd[[:space:]]+(.*)$/\1/p')
-[ -n "$lead_cd" ] && TARGET=$(arg "$lead_cd")
-# "git -C <path>" is followed by the subcommand, so this argument ends at a space
-# unless it is quoted.
-git_c=$(printf '%s' "$CMD" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("[^"]+"|'"'"'[^'"'"']+'"'"'|[^[:space:]]+).*/\1/p')
-[ -n "$git_c" ] && TARGET=$(arg "$git_c")
-case "$TARGET" in /*) ;; *) TARGET="$CWD/$TARGET" ;; esac
-
-if [ -n "$VAULT" ]; then
-  case "$TARGET" in
-    "$VAULT"|"$VAULT"/*)
-      has "$WRITE" && deny "Never run git inside the vault. The Obsidian Git plugin owns commits."
-      ;;
-  esac
-fi
+# 2. No git write of any kind inside the Obsidian vault. Checked per git call in the
+# parser below, which follows every cd and -C, so work in another repo runs while a
+# write that reaches the vault anywhere in the line is denied.
 
 # 3. Hard reset destroys work.
 has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use git stash or --soft."
@@ -60,8 +38,8 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # refs or config, or a parser crash, asks.
 ask() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Global rule: %s needs explicit permission each time."}}\n' "$1"; exit 0; }
 if has '(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|$)'; then
-  REASON=$(CMD="$CMD" CWD="$CWD" python3 - <<'PY'
-import os, shlex, subprocess, sys
+  REASON=$(CMD="$CMD" CWD="$CWD" VAULT="$VAULT" python3 - <<'PY'
+import os, re, shlex, subprocess, sys
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
          "--all", "--branches", "--prune", "--tags", "--follow-tags"}
@@ -74,11 +52,44 @@ FEEDERS = {"xargs", "parallel", "find", "fd"}
 # chr(96) is a backtick. A literal one breaks bash parsing the $( ) around this script.
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
+WRITES = {"commit", "push", "add", "checkout", "switch", "reset", "rebase", "merge", "stash",
+          "tag", "cherry-pick", "am", "apply"}
+WRITE_TEXT = re.compile(r"(^|[^\w.-])git(\s+-\S+)*\s+(" + "|".join(sorted(WRITES)) + r"|branch\s+-[dD])(\s|$)")
+VAULT = os.path.normpath(os.environ["VAULT"]) if os.environ.get("VAULT") else ""
+START = os.environ["CWD"]
 
 
 def ask(reason):
     print(reason)
     sys.exit(0)
+
+
+def vault():
+    print("VAULT")
+    sys.exit(0)
+
+
+def inside(paths):
+    # None is a cwd the parser could not follow (cd $X, cd -, popd): judge it by
+    # where the session started, so the vault stays protected.
+    if not VAULT:
+        return False
+    for path in paths:
+        path = os.path.normpath(START if path is None else path)
+        if path == VAULT or path.startswith(VAULT + os.sep):
+            return True
+    return False
+
+
+def resolve(bases, to):
+    # Every place a cd or -C can land. A ~ expands only at the start of a token:
+    # the vault path itself holds ~ characters (iCloud~md~obsidian).
+    target = os.path.expanduser(to)
+    if to == "-" or (EXPANDS - {"~"}) & set(to) or target.startswith("~"):
+        return {None}
+    if os.path.isabs(target):
+        return {target}
+    return {None if b is None else os.path.join(b, target) for b in bases}
 
 
 def git(repo, *args):
@@ -87,18 +98,21 @@ def git(repo, *args):
 
 
 def segments(cmd):
+    # Yields each command with the operator that follows it. No comment syntax:
+    # a # must not hide the rest of the line from the guard.
     lex = shlex.shlex(cmd.replace("\n", ";"), posix=True, punctuation_chars=PUNCT)
     lex.whitespace_split = True
+    lex.commenters = ""
     seg = []
     for tok in lex:
         if tok and all(c in PUNCT for c in tok):
             if seg:
-                yield seg
+                yield seg, tok
             seg = []
         else:
             seg.append(tok)
     if seg:
-        yield seg
+        yield seg, ""
 
 
 def check_push(repo, args, drift):
@@ -154,12 +168,12 @@ def check_push(repo, args, drift):
             ask("a push to main or master")
 
 
-def check_git(args, cwd, drift, fed):
-    repo, i, config = cwd, 0, []
+def check_git(args, cwds, drift, fed):
+    repos, i, config = cwds, 0, []
     while i < len(args) and args[i].startswith("-"):
         if args[i] in GLOBAL_ARG and i + 1 < len(args):
             if args[i] == "-C":
-                repo = os.path.join(repo, os.path.expanduser(args[i + 1]))
+                repos = resolve(repos, args[i + 1])
             if args[i] in ("-c", "--config-env"):
                 config.append(args[i + 1])
             i += 1
@@ -167,6 +181,9 @@ def check_git(args, cwd, drift, fed):
             config.append(args[i])
         i += 1
     sub = args[i] if i < len(args) else ""
+    if (sub in WRITES or (sub == "branch" and {"-d", "-D", "--delete"} & set(args[i + 1:]))) and inside(repos):
+        vault()
+    repo = next((r for r in sorted(repos, key=str) if r is not None), START)
     if sub != "push":
         aliases = [c for c in config if c.startswith("alias.")]
         if sub and "push" in " ".join(aliases + [git(repo, "config", "--get", f"alias.{sub}")[1]]):
@@ -183,30 +200,44 @@ def check_git(args, cwd, drift, fed):
     check_push(repo, args[i + 1:], drift)
 
 
-def check(cmd, cwd, drift):
+def check(cmd, cwds, drift):
+    # cwds holds every directory the line can be in at this point. A cd replaces
+    # it only when "&&" follows, the one case where the next command surely runs
+    # in the new directory. After ; & | or inside ( ), the old ones stay possible.
     try:
         segs = list(segments(cmd))
     except ValueError:
+        # Unbalanced quotes, often a heredoc body. In the vault, fall back to the
+        # plain text match the guard used before the parser.
+        if inside(cwds) and WRITE_TEXT.search(cmd):
+            vault()
         ask("a git command the guard cannot parse")
-    for seg in segs:
+    for seg, sep in segs:
         for tok in seg:
             if any(c in tok for c in " \t;&|"):
-                check(tok, cwd, drift)
-        if seg[0] == "cd" and len(seg) > 1:
-            cwd = os.path.join(cwd, os.path.expanduser(seg[1]))
+                check(tok, cwds, drift)
+        if seg[0] in ("cd", "pushd", "popd"):
+            new = {None} if seg[0] == "popd" else resolve(cwds, seg[1] if len(seg) > 1 else "~")
+            cwds = new if sep == "&&" else cwds | new
             continue
         if any(t.startswith("GIT_") and "=" in t for t in seg):
             drift.add("refs")
+        # Every git word counts, not only the first: in "sudo -u git git commit" the
+        # first one is a user name.
         for k, tok in enumerate(seg):
             if os.path.basename(tok) == "git":
                 fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
-                check_git(seg[k + 1:], cwd, drift, fed)
-                break
+                check_git(seg[k + 1:], cwds, drift, fed)
 
 
-check(os.environ["CMD"], os.environ["CWD"], set())
+check(os.environ["CMD"], {os.environ["CWD"]}, set())
 PY
 ) || REASON="a push the guard failed to check"
+  # A parser crash in a vault session fails closed as a vault write.
+  if [ -n "$VAULT" ] && [ "$REASON" = "a push the guard failed to check" ]; then
+    case "$CWD" in "$VAULT"|"$VAULT"/*) REASON=VAULT ;; esac
+  fi
+  [ "$REASON" = VAULT ] && deny "Never run git writes inside the vault. The Obsidian Git plugin owns commits. Read-only git is fine."
   [ -n "$REASON" ] && ask "$REASON"
 fi
 exit 0
