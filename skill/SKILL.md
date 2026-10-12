@@ -5,7 +5,7 @@ description: Use at the start of any coding session, and after finishing any tas
 
 # Dev loop
 
-Run ONE stage per invocation. Detect, run, stop. Never chain stages in a turn.
+Run one stage per invocation. Detect, run, stop. Never chain stages in a turn.
 End every stage that changed the repo with a direct `scripts/gate.sh`. The Stop hook runs a selective gate (`GATE_SCOPE=changed`); only a direct, full gate writes a green record.
 
 Select one harness route before detecting the stage:
@@ -65,7 +65,7 @@ Continue `superpowers:brainstorming`. Spec to `$VAULT/<vault_notes>/specs/`.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
 Supersedes: read the earlier specs in `$VAULT/<vault_notes>/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
-Stop when the user approves. Do NOT let brainstorming invoke writing-plans.
+Stop when the user approves. Do not let brainstorming invoke writing-plans: acceptance tests (Stage 3) come before the plan.
 Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`.
 
 ## 3 Acceptance
