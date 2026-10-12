@@ -13,5 +13,4 @@ Implement exactly one task from the plan brief.
 Write the failing unit test first. Watch it fail. Write the minimum code.
 Watch it pass. Refactor. Commit.
 
-Your work is graded later by a suite you cannot read. Do not look for it.
 Satisfy the spec, not the tests you can see.
