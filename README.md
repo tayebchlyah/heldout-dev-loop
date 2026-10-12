@@ -28,7 +28,7 @@ The vault can also come from `DEV_LOOP_VAULT`. A re-run keeps the vault already 
 
 `~/.codex/rules/default.rules` is a line merge only, never a copy and never a link, because it holds the user's own allowlist. The same is true of the three merged configuration files above.
 
-The installer backs up every file it replaces to `<file>.bak-<timestamp>`. It never removes or reorders an entry it did not add. If your `~/.codex/config.toml` already declares a table the fragment also declares, your table wins and the installer prints one line naming it.
+The installer backs up every file it replaces to `<file>.bak-<timestamp>`. A replaced skill goes to `<root>/backups/skills/<name>.bak-<timestamp>` instead, so no harness discovers the backup as a second skill. It never removes or reorders an entry it did not add. If your `~/.codex/config.toml` already declares a table the fragment also declares, your table wins and the installer prints one line naming it.
 
 ## After installing
 

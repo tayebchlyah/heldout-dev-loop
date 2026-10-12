@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, symlinkSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { placeFile, placeDir, renderTemplate, backupPath, freeBackupPath } from '../lib/fsops.mjs'
@@ -90,6 +90,20 @@ test('placeDir copies a whole tree and backs up the old one', () => {
   assert.equal(existsSync(join(target, 'stale.txt')), false)
 })
 
+test('placeDir backs up an old skill outside the skills folder, so no harness finds two', () => {
+  const root = sandbox()
+  mkdirSync(join(root, 'src', 'tree'), { recursive: true })
+  writeFileSync(join(root, 'src', 'tree', 'SKILL.md'), 'new\n')
+  const target = join(root, 'skills', 'dev-loop')
+  mkdirSync(target, { recursive: true })
+  writeFileSync(join(target, 'SKILL.md'), 'old\n')
+
+  const result = placeDir({ source: join(root, 'src', 'tree'), target, mode: 'copy', dryRun: false })
+  assert.ok(result.backup.startsWith(join(root, 'backups', 'skills', 'dev-loop.bak-')))
+  assert.equal(readFileSync(join(result.backup, 'SKILL.md'), 'utf8'), 'old\n')
+  assert.deepEqual(readdirSync(join(root, 'skills')), ['dev-loop'])
+})
+
 test('placeFile with home set renders {{HOME}}', () => {
   const root = sandbox()
   const target = join(root, 'dst', 'a.sh')
@@ -136,6 +150,13 @@ test('placeDir replaces without throwing when the target has a dangling symlink 
   const result = placeDir({ source: join(root, 'src', 'tree'), target, mode: 'copy', dryRun: false })
   assert.equal(result.action, 'replace')
   assert.equal(readFileSync(join(target, 'f.txt'), 'utf8'), 'hello\n')
+})
+
+test('backupPath moves a skill backup out of the skill discovery folder', () => {
+  const now = new Date('2026-09-14T10:20:30Z')
+  assert.equal(backupPath('/h/.agents/skills/dev-loop', now), '/h/.agents/backups/skills/dev-loop.bak-20260914T102030Z')
+  assert.equal(backupPath('/h/.claude/skills/dev-loop', now), '/h/.claude/backups/skills/dev-loop.bak-20260914T102030Z')
+  assert.equal(backupPath('/h/.claude/hooks/gate.sh', now), '/h/.claude/hooks/gate.sh.bak-20260914T102030Z')
 })
 
 test('backupPath is pure: same arguments always return the same string', () => {
