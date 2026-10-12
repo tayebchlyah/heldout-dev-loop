@@ -111,7 +111,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
 
     def test_one_stage_per_invocation_remains(self) -> None:
-        self.assertIn("Run ONE stage per invocation", self.skill)
+        self.assertIn("Run one stage per invocation", self.skill)
         self.assertIn("Never chain stages", self.skill)
 
     def test_claude_bootstrap_contract_remains(self) -> None:
