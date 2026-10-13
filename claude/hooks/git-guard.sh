@@ -160,8 +160,6 @@ def check_push(repo, args, drift):
         else:
             pos.append(a)
         j += 1
-    if git(repo, "rev-parse", "--git-dir")[0] != 0:
-        ask("a push from an unknown repository")
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     remote, specs = (pos[0] if pos else ""), pos[1:]
     if "head" in drift and (not specs or any(s.partition(":")[0] in ("HEAD", "@") for s in specs)):
@@ -185,7 +183,8 @@ def check_push(repo, args, drift):
                 or (src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src}")[0] == 0)):
             ask("a tag push")
         if not dst:
-            ask("a push from a detached HEAD")
+            ask("a push from a detached HEAD" if git(repo, "rev-parse", "--git-dir")[0] == 0
+                else "a push from an unknown repository")
         if dst.removeprefix("refs/heads/") in ("main", "master"):
             ask("a push to main or master")
 
