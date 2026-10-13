@@ -653,10 +653,18 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
             subprocess.run(["git", "-C", self.main_repo, *args], check=True,
                            env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        # A second feature repo, for a session on main whose line visits a feature repo.
+        self.feature_repo = self.repo + "-feature"
+        os.makedirs(self.feature_repo)
+        for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+            subprocess.run(["git", "-C", self.feature_repo, *args], check=True,
+                           env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
 
     def tearDown(self) -> None:
         shutil.rmtree(self.repo)
         shutil.rmtree(self.main_repo)
+        shutil.rmtree(self.feature_repo)
 
     def decision(self, command: str, branch: str = "feat", env: dict | None = None) -> str:
         subprocess.run(["git", "-C", self.repo, "checkout", "-q", branch], check=True)
@@ -709,6 +717,28 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         for command in (f"cd {main}; git push", f"X=1 cd {main} && git push", f"cd {main} & git push"):
             self.assertEqual(self.decision(command), "ask", command)
         self.assertEqual(self.decision(f"cd {main}; git status"), "allow")
+
+    def test_a_push_from_a_folder_the_guard_cannot_follow_asks(self) -> None:
+        # Spec D2(c): cd $D stays unknown. From a feature session the unknown folder
+        # may be the main repo, so it does not fall back to the session start.
+        main = self.main_repo
+        for command in (f"D={main}; cd $D && git push", f"cd {main} && cd - && git push",
+                        f"pushd {main}; popd && git push"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_an_assignment_that_moves_a_cd_stops_it_from_narrowing(self) -> None:
+        # CDPATH=<x> cd f lands in <x>/f, a main clone, not in the feature clone ./f.
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        with tempfile.TemporaryDirectory() as other:
+            for repo, branch in ((os.path.join(self.repo, "f"), "feat"), (os.path.join(other, "f"), "main")):
+                os.makedirs(repo)
+                for args in (["init", "-q", "-b", branch], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                    subprocess.run(["git", "-C", repo, *args], check=True, env=env)
+            self.assertEqual(self.decision("cd ./f && git push"), "allow")
+            for command in (f"CDPATH={other} cd f && git push", f"HOME={other} cd && git push",
+                            f"OLDPWD={other}/f cd - && git push"):
+                self.assertEqual(self.decision(command), "ask", command)
 
     def test_a_cd_before_a_semicolon_keeps_the_old_folders(self) -> None:
         # cd /nope fails, so the cd after && never runs and the push runs on main.
@@ -828,6 +858,92 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         self.assertEqual(self.decision("git p"), "ask")
         self.assertEqual(self.decision("git commit -m 'push fix'"), "allow")
 
+
+    def test_a_push_alias_in_any_possible_repo_asks(self) -> None:
+        # After cd <main>; the line may be in either repo, and only main has the alias.
+        subprocess.run(["git", "-C", self.main_repo, "config", "alias.p", "push"], check=True)
+        self.assertEqual(self.decision(f"cd {self.main_repo}; git p"), "ask")
+
+    def test_a_cd_that_may_be_skipped_does_not_narrow(self) -> None:
+        # true || cd F && git push is (true || cd F) && git push: the push runs
+        # without the cd. Only a cd after the line start, && or ; surely ran.
+        feature = self.feature_repo
+        for command in (f"true || cd {feature} && git push", f"false | cd {feature} && git push",
+                        f"sleep 0 & cd {feature} && git push"):
+            self.assertEqual(self.decision(command, "main"), "ask", command)
+        for command in (f"cd {feature} && git push", f"true; cd {feature} && git push",
+                        f"true && cd {feature} && git push"):
+            self.assertEqual(self.decision(command, "main"), "allow", command)
+
+    def test_a_cd_behind_a_wrapper_is_unknown(self) -> None:
+        # The guard does not follow a cd that is not the first word, so it cannot
+        # say where the push runs.
+        main = self.main_repo
+        for command in (f"builtin cd {main} && git push", f"command cd {main} && git push",
+                        f"time cd {main} && git push", f"eval cd {main} && git push",
+                        f"if cd {main}; then git push; fi", f"{{ cd {main}; }} && git push",
+                        f"! cd {main} && git push", f"exec cd {main} && git push"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_a_cd_with_an_option_or_a_stack_move_is_unknown(self) -> None:
+        # cd -P M lands in M, not in ./-P. pushd +1 and a bare pushd move to a folder
+        # from the directory stack.
+        main, feature = self.main_repo, self.feature_repo
+        for command in (f"cd -P {main} && git push origin v1", f"cd -- {main} && git push origin v1",
+                        f"cd -L {main} && git push origin v1", f"pushd -n {main} && git push origin v1",
+                        f"pushd {main} && pushd {feature} && pushd +1 && git push origin v1",
+                        f"pushd {main} && pushd {feature} && pushd && git push origin v1"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_a_relative_cd_does_not_narrow(self) -> None:
+        # CDPATH, set earlier in the line or in the user's shell profile, sends cd f
+        # to <x>/f, a main clone, not to the feature clone ./f.
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        with tempfile.TemporaryDirectory() as other:
+            for repo, branch in ((os.path.join(self.repo, "f"), "feat"), (os.path.join(other, "f"), "main")):
+                os.makedirs(repo)
+                for args in (["init", "-q", "-b", branch], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                    subprocess.run(["git", "-C", repo, *args], check=True, env=env)
+            for command in (f"CDPATH={other}; cd f && git push", f"export CDPATH={other}; cd f && git push",
+                            "cd f && git push", "pushd f && git push"):
+                self.assertEqual(self.decision(command), "ask", command)
+            for command in ("cd ./f && git push", "cd ../" + os.path.basename(self.repo) + " && git push"):
+                self.assertEqual(self.decision(command), "allow", command)
+
+    def test_a_home_set_in_the_line_makes_a_home_cd_unknown(self) -> None:
+        # The hook's HOME is the feature repo, the line's HOME the main repo.
+        env, main = {**os.environ, "HOME": self.repo}, self.main_repo
+        for command in (f"HOME={main}; cd && git push origin v1", f"export HOME={main}; cd ~ && git push",
+                        f"export HOME={main}; cd ~/. && git push"):
+            self.assertEqual(self.decision(command, env=env), "ask", command)
+        self.assertEqual(self.decision("cd ~ && git push", env=env), "allow")
+
+    def test_a_push_with_git_dir_or_work_tree_asks(self) -> None:
+        main = self.main_repo
+        for command in (f"git --git-dir={main}/.git push", f"git --git-dir {main}/.git push",
+                        f"git --work-tree={main} push", f"git --work-tree {main} push"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_a_git_behind_a_chdir_wrapper_asks(self) -> None:
+        main = self.main_repo
+        for command in (f"env -C {main} git push", f"env --chdir={main} git push", f"env --chdir {main} git push"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_an_alias_from_a_folder_the_guard_cannot_follow_asks(self) -> None:
+        # Only the main repo holds the alias, and the guard cannot see the line is there.
+        main = self.main_repo
+        subprocess.run(["git", "-C", main, "config", "alias.p", "push"], check=True)
+        for command in (f"D={main}; cd $D && git p", f"git --git-dir={main}/.git p", f"env -C {main} git p"):
+            self.assertEqual(self.decision(command), "ask", command)
+        self.assertEqual(self.decision(f"D={main}; cd $D && git status"), "allow")
+
+    def test_send_pack_and_subtree_push_ask(self) -> None:
+        for command in ("git send-pack origin feat", "git send-pack --all origin",
+                        "git subtree push --prefix=lib origin feat", "git subtree -P lib push origin feat",
+                        "git subtree --prefix lib -q push origin feat"):
+            self.assertEqual(self.decision(command), "ask", command)
+        self.assertEqual(self.decision("git subtree split -P lib"), "allow")
 
 class CodexGitGuardPushTests(ClaudeGitGuardPushTests):
     """The Codex guard holds the same push rule. Codex cannot ask, so every ask is a deny."""
