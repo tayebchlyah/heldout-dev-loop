@@ -625,9 +625,18 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
             subprocess.run(["git", "-C", self.repo, *args], check=True,
                            env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        # A second repo on main. Its path sorts after self.repo, so a guard that checks
+        # only the first possible repo checks the feature one.
+        self.main_repo = self.repo + "-main"
+        os.makedirs(self.main_repo)
+        for args in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+            subprocess.run(["git", "-C", self.main_repo, *args], check=True,
+                           env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
 
     def tearDown(self) -> None:
         shutil.rmtree(self.repo)
+        shutil.rmtree(self.main_repo)
 
     def decision(self, command: str, branch: str = "feat") -> str:
         subprocess.run(["git", "-C", self.repo, "checkout", "-q", branch], check=True)
@@ -674,6 +683,73 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         for command in ("git checkout -b feat2 && git push -u origin feat2", "git status && git log --oneline -3",
                         "git commit -m 'fix login' && git push"):
             self.assertEqual(self.decision(command), "allow", command)
+
+    def test_a_cd_after_a_semicolon_or_an_assignment_moves_the_push(self) -> None:
+        main = self.main_repo
+        for command in (f"cd {main}; git push", f"X=1 cd {main} && git push", f"cd {main} & git push"):
+            self.assertEqual(self.decision(command), "ask", command)
+        self.assertEqual(self.decision(f"cd {main}; git status"), "allow")
+
+    def test_a_cd_before_a_semicolon_keeps_the_old_folders(self) -> None:
+        # cd /nope fails, so the cd after && never runs and the push runs on main.
+        with tempfile.TemporaryDirectory() as feature:
+            for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                subprocess.run(["git", "-C", feature, *args], check=True,
+                               env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+            command = f"cd /nope && cd {feature}; git push"
+            self.assertEqual(self.decision(command, "main"), "ask", command)
+
+    def test_a_paren_that_closes_no_subshell_keeps_the_cd(self) -> None:
+        # A case pattern or an escaped paren is a bare ")" to the parser.
+        main = self.main_repo
+        for command in (f"(cd {main} && case x in x) git push;; esac)",
+                        f"(cd {main}; case x in x) git push;; esac)",
+                        f"(cd {main} && echo \\) && git push)"):
+            self.assertEqual(self.decision(command), "ask", command)
+
+    def test_a_cd_inside_a_subshell_does_not_move_the_push(self) -> None:
+        # The push runs in self.repo on main, not in the feature repo the subshell visits.
+        with tempfile.TemporaryDirectory() as feature:
+            for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                subprocess.run(["git", "-C", feature, *args], check=True,
+                               env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+            for command in (f"(cd {feature}; true); git push", f"echo $(cd {feature}; true); git push",
+                            f"(cd {feature} && true); git push", f"echo $(cd {feature} && true) && git push",
+                            "echo " + chr(96) + f"cd {feature} && true" + chr(96) + "; git push"):
+                self.assertEqual(self.decision(command, "main"), "ask", command)
+
+    def test_a_paren_that_closes_no_subshell_stops_a_later_cd_from_narrowing(self) -> None:
+        # The case pattern closes the subshell early to the parser, so the cd looks
+        # like it runs outside, and the real ")" finds nothing open.
+        with tempfile.TemporaryDirectory() as feature:
+            for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                subprocess.run(["git", "-C", feature, *args], check=True,
+                               env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+            command = f"(case x in x) cd {feature} && true;; esac); git push"
+            self.assertEqual(self.decision(command, "main"), "ask", command)
+
+    def test_a_quote_escape_comment_or_heredoc_stops_a_cd_from_narrowing(self) -> None:
+        # Quoted or escaped punctuation, a comment and a heredoc body are not
+        # operators or commands, so a cd next to them may not have run before the push.
+        with tempfile.TemporaryDirectory() as feature:
+            for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                subprocess.run(["git", "-C", feature, *args], check=True,
+                               env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+            bt = chr(96)
+            for command in (f'echo ";" cd {feature}; git push', f"echo \\; cd {feature}; git push",
+                            f"true # ; cd {feature}\ngit push", f"true # && cd {feature}\ngit push",
+                            f"cat <<EOF\ncd {feature}\nEOF\ngit push", f"cat <<EOF\ncd {feature} && true\nEOF\ngit push",
+                            f"cd {feature} extra; git push",
+                            f"(echo \\) && cd {feature} && echo \\( && true); git push",
+                            f"(echo ')' && cd {feature} && echo '(' && true); git push",
+                            f"(echo \\) && cd {feature} && echo \\{bt} && true); git push",
+                            f"(case x in x) cd {feature} && true;; esac; echo \\( ); git push",
+                            f'echo "&&" cd {feature} && git push', f"echo '&&' cd {feature} && git push"):
+                self.assertEqual(self.decision(command, "main"), "ask", command)
 
     def test_remote_config_that_reaches_other_branches_asks(self) -> None:
         subprocess.run(["git", "-C", self.repo, "config", "remote.origin.push", "+refs/heads/*:refs/heads/*"], check=True)
@@ -754,12 +830,16 @@ class GitGuardParityTests(unittest.TestCase):
     def test_a_vault_path_with_tildes_comments_and_unsure_cds_stays_guarded(self) -> None:
         # The real vault sits under iCloud~md~obsidian: a ~ inside a path is not
         # shell expansion. A # is not a comment to the guard, and a cd that may not
-        # have run (after ; & or inside parentheses) keeps the old directory possible.
+        # have run (to a missing folder, after & or ;, inside parentheses) keeps the
+        # old directory possible.
         with tempfile.TemporaryDirectory() as home:
             vault = os.path.join(home, "Mobile Documents", "iCloud~md~obsidian", "Notes")
             outside = os.path.join(home, "repo")
+            locked = os.path.join(home, "locked")
             os.makedirs(vault)
             os.makedirs(outside)
+            os.makedirs(os.path.join(vault, "..", "Other"))
+            os.makedirs(locked)
             write(Path(home) / ".agents" / "dev-loop.config.json", json.dumps({"vault": vault}))
             env = {**os.environ, "HOME": home}
             cases = [
@@ -770,20 +850,65 @@ class GitGuardParityTests(unittest.TestCase):
                 (vault, "cd /nonexistent; git commit -am x", True),
                 (vault, "sudo -u git git commit -am x", True),
                 (vault, "cd /tmp && git commit -am x", False),
+                (vault, "cd /tmp; git add .", True),
+                (vault, "X=1 cd /tmp && git add .", False),
+                (vault, "D=/tmp; cd $D && git add .", True),
+                (vault, "(cd /tmp; true); git commit -am x", True),
+                (vault, "(cd /tmp && true); git commit -am x", True),
+                (vault, "(cd /tmp) && git commit -am x", True),
+                (vault, "echo $(cd /tmp && true); git commit -am x", True),
+                (vault, "echo " + chr(96) + "cd /tmp && true" + chr(96) + "; git commit -am x", True),
+                (vault, "cd /tmp && (git status) && git commit -am x", False),
+                (vault, "(echo \\) && cd /tmp && true); git commit -am x", True),
+                (vault, "echo $(echo \\) && cd /tmp && true); git commit -am x", True),
+                (vault, "(case x in x) cd /tmp && true;; esac); git commit -am x", True),
+                (vault, "echo $(cd /tmp; true); git commit -am x", True),
+                (vault, "echo " + chr(96) + "cd /tmp; true" + chr(96) + "; git commit -am x", True),
+                # Quoted or escaped punctuation, a comment, a heredoc body, a cd with
+                # two arguments: none of them moves the commit out of the vault.
+                (vault, 'echo ";" cd /tmp; git commit -am x', True),
+                (vault, "echo \\; cd /tmp; git commit -am x", True),
+                (vault, "true # ; cd /tmp\ngit commit -am x", True),
+                (vault, "true # && cd /tmp\ngit commit -am x", True),
+                (vault, "cat <<EOF\ncd /tmp\nEOF\ngit commit -am x", True),
+                (vault, "cat <<EOF\ncd /tmp && true\nEOF\ngit commit -am x", True),
+                (vault, "cd /tmp extra; git commit -am x", True),
+                (vault, "(echo \\) && cd /tmp && echo \\( && true); git commit -am x", True),
+                (vault, "(echo ')' && cd /tmp && echo '(' && true); git commit -am x", True),
+                (vault, "(echo \\) && cd /tmp && echo \\" + chr(96) + " && true); git commit -am x", True),
+                (vault, "(case x in x) cd /tmp && true;; esac; echo \\( ); git commit -am x", True),
+                (vault, 'echo "&&" cd /tmp && git commit -am x', True),
+                (vault, "echo '&&' cd /tmp && git commit -am x", True),
+                (vault, "cd /tmp; git commit -am x", True),
+                # A cd before ";" may never have run, so the vault stays possible.
+                (vault, "false && cd /tmp; git commit -am x", True),
+                (vault, "if false; then :; cd /tmp; fi; git commit -am x", True),
+                (vault, "f() { :; cd /tmp; }; git commit -am x", True),
+                (vault, "{ :; cd /tmp; } & git commit -am x", True),
+                (vault, f"cd {locked}; git commit -am x", True),
+                (vault, "cd ../Other; git add .", True),
                 (outside, f'cd "{vault}" && git commit -am x', True),
                 (outside, f'git -C "{vault}" commit -am x', True),
                 (outside, f'# save\ngit -C "{vault}" commit -m x', True),
+                (outside, f'(cd "{vault}" && case x in x) git commit -am x;; esac)', True),
+                (outside, f'(cd "{vault}"; case x in x) git commit -am x;; esac)', True),
+                (outside, f'(cd "{vault}" && echo \\) && git commit -am x)', True),
                 (outside, "git commit -am x", False),
                 (outside, f'git -C "{vault}" log -3', False),
             ]
-            for shell, guard in (("bash", CLAUDE_HOOKS / "git-guard.sh"), ("sh", CODEX_ASSETS / "hooks" / "git-guard.sh")):
-                for cwd, command, expect_blocked in cases:
-                    result = subprocess.run(
-                        [shell, str(guard)], env=env, text=True, capture_output=True, check=False,
-                        input=json.dumps({"cwd": cwd, "tool_input": {"command": command}}),
-                    )
-                    blocked = result.returncode == 2 or '"deny"' in result.stdout
-                    self.assertEqual(blocked, expect_blocked, f"{guard.parent.parent.name}: {command!r} from {cwd}")
+            # A folder cd cannot enter: the cd fails and the next command runs in the vault.
+            os.chmod(locked, 0)
+            try:
+                for shell, guard in (("bash", CLAUDE_HOOKS / "git-guard.sh"), ("sh", CODEX_ASSETS / "hooks" / "git-guard.sh")):
+                    for cwd, command, expect_blocked in cases:
+                        result = subprocess.run(
+                            [shell, str(guard)], env=env, text=True, capture_output=True, check=False,
+                            input=json.dumps({"cwd": cwd, "tool_input": {"command": command}}),
+                        )
+                        blocked = result.returncode == 2 or '"deny"' in result.stdout
+                        self.assertEqual(blocked, expect_blocked, f"{guard.parent.parent.name}: {command!r} from {cwd}")
+            finally:
+                os.chmod(locked, 0o755)
 
     def test_an_unparseable_vault_line_without_a_git_write_is_not_denied(self) -> None:
         # A heredoc with an apostrophe fails the parser. In the vault, only a line
