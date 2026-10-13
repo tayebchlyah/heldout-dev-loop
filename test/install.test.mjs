@@ -11,7 +11,7 @@ import { assertValidToml } from './helpers.mjs'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 function run(home, args) {
-  return execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), ...args], {
+  return execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), '--global', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: { ...process.env, HOME: home, USER: 'ada' },
@@ -92,7 +92,7 @@ test('link mode links the skill folder into the clone', () => {
 test('link mode fails outside a clone', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   const elsewhere = mkdtempSync(join(tmpdir(), 'dev-loop-elsewhere-'))
-  assert.throws(() => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), '--yes', '--link'], {
+  assert.throws(() => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), '--global', '--yes', '--link'], {
     cwd: elsewhere,
     encoding: 'utf8',
     env: { ...process.env, HOME: home },
@@ -280,4 +280,40 @@ test('a malformed hook group in settings.json is skipped and named, and the inst
   assert.equal(settings.hooks.PreToolUse, 'nonsense')
   assert.deepEqual(settings.hooks.Stop[0], { matcher: 'broken' })
   assert.ok(settings.hooks.Stop.some((group) => Array.isArray(group.hooks)))
+})
+
+test('no command and no --global prints the usage and exits 1', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  assert.throws(
+    () => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), '--yes'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: { ...process.env, HOME: home },
+    }),
+    (error) => {
+      assert.equal(error.status, 1)
+      const text = error.stdout + error.stderr
+      for (const word of ['init', 'upgrade', 'uninstall-global', '--global']) assert.ok(text.includes(word), word)
+      return true
+    },
+  )
+  assert.equal(existsSync(join(home, '.agents')), false)
+})
+
+test('a command that is not built yet prints not implemented and exits 1', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  assert.throws(
+    () => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), 'init'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: { ...process.env, HOME: home },
+    }),
+    (error) => {
+      assert.equal(error.status, 1)
+      assert.match(error.stdout + error.stderr, /not implemented/)
+      return true
+    },
+  )
 })
