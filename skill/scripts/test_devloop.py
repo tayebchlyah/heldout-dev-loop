@@ -201,6 +201,31 @@ class StatusTests(Sandbox):
         self.assertEqual(out["stage"], 7)
         self.assertIn("git fetch origin", out["next"])
 
+    def test_failed_cherry_says_fetch_and_never_ships(self) -> None:
+        wt = self.built()
+        self.ledger(wt, "Task 1: complete\nTask 2: complete\nFeature gate: green at abc123\n")
+        tree = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
+        git(self.repo, "update-ref", "refs/remotes/origin/main", tree)
+        out = self.status(cwd=wt)
+        self.assertEqual(out["stage"], 7)
+        self.assertIn("git fetch origin", out["next"])
+        git(self.repo, "switch", "-q", "-c", "fix/tiny")
+        out = self.status()
+        self.assertEqual(out["stage"], 5)
+        self.assertIn("git fetch origin", out["next"])
+
+    def test_approved_spec_with_no_branch_and_acceptance_on_main_is_shipped(self) -> None:
+        self.spec()
+        self.commit(self.repo, "tests/acceptance/api/test_widget_flow.py", "def test_flow():\n    pass\n")
+        self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
+        self.assertEqual(self.status()["features"], [])
+
+    def test_remote_feature_branch_keeps_it_open(self) -> None:
+        self.spec()
+        self.commit(self.repo, "tests/acceptance/api/test_widget_flow.py", "def test_flow():\n    pass\n")
+        git(self.repo, "update-ref", "refs/remotes/origin/feat/widget", "HEAD")
+        self.assertEqual(self.status("--feature", "widget")["stage"], 3)
+
     def test_main_lists_open_features(self) -> None:
         self.spec(review="draft")
         self.spec(name="20261003 Gadget.md", feature="gadget")
@@ -244,6 +269,12 @@ class LoggedTests(Sandbox):
         self.assertEqual(out["tail"], text.splitlines()[-20:])
         self.assertEqual(len(out["tail"]), 20)
         self.assertIsInstance(out["seconds"], float)
+
+    def test_log_names_within_one_second_are_unique(self) -> None:
+        module = load_devloop()
+        first, second = module.log_path(self.repo, "same"), module.log_path(self.repo, "same")
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.is_file() and second.is_file())
 
     def test_a_failing_command_exits_1(self) -> None:
         code, out = self.logged(3)
@@ -302,6 +333,10 @@ class GateTests(Sandbox):
         self.assertEqual([s["seconds"] for s in out["slowest"]], sorted((i / 10 for i in range(2, 12)), reverse=True))
         self.assertNotIn("hint", out)
 
+    def test_slowest_skips_a_non_numeric_time(self) -> None:
+        put(self.root / "r" / "a.xml", "<testsuite><testcase name='bad' time='n/a'/><testcase name='ok' time='0.5'/></testsuite>")
+        self.assertEqual(load_devloop().slowest(self.root / "r"), [{"name": "ok", "seconds": 0.5}])
+
     def test_no_xml_gives_empty_slowest_and_a_hint(self) -> None:
         self.gate("#!/bin/sh\necho ok\n")
         _, out = self.run_gate()
@@ -330,6 +365,9 @@ args = sys.argv[1:]
 if args[:2] == ["pr", "view"]:
     if mode == "nopr":
         print("no pull requests found for branch", file=sys.stderr)
+        sys.exit(1)
+    if mode == "autherror":
+        print("HTTP 401: Bad credentials", file=sys.stderr)
         sys.exit(1)
     print(json.dumps({{"number": 7, "url": "https://github.com/o/r/pull/7"}}))
 elif args[:2] == ["pr", "checks"] and "--watch" in args:
@@ -388,6 +426,11 @@ class CiWaitTests(unittest.TestCase):
     def test_no_pr(self) -> None:
         code, out = self.wait("nopr")
         self.assertEqual((code, out["state"]), (1, "no-pr"))
+
+    def test_other_pr_view_failure_is_an_error(self) -> None:
+        code, out = self.wait("autherror")
+        self.assertEqual((code, out["state"]), (1, "error"))
+        self.assertIn("Bad credentials", out["message"])
 
 
 if __name__ == "__main__":

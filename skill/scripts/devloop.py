@@ -95,20 +95,29 @@ def feature_checkout(repo: Path, slug: str) -> tuple[Path | None, str | None]:
 
 
 def cherry(repo: Path, branch: str) -> list[str] | None:
-    """`git cherry origin/main <branch>` lines, or None with no origin/main."""
-    if git(repo, "rev-parse", "--verify", "-q", "origin/main") is None:
-        return None
+    """`git cherry origin/main <branch>` lines, or None when it fails (no origin/main, for one)."""
     out = git(repo, "cherry", "origin/main", branch)
-    return out.splitlines() if out else []
+    return None if out is None else out.splitlines()
+
+
+def holds_slug(path: str, slug: str) -> bool:
+    """An acceptance path (relative to the acceptance folder) that belongs to the feature."""
+    return any(name in path.lower() for name in (slug, slug.replace("-", "_")))
 
 
 def has_acceptance(worktree: Path, slug: str) -> bool:
     root = worktree / "tests" / "acceptance"
-    names = {slug, slug.replace("-", "_")}
-    return any(
-        path.is_file() and any(name in str(path.relative_to(root)).lower() for name in names)
-        for path in root.rglob("*")
-    )
+    return any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*"))
+
+
+def shipped_without_branch(repo: Path, slug: str) -> bool:
+    """No `origin/<prefix>/<slug>` branch, and an acceptance file for the slug on the default branch."""
+    remotes = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin") or ""
+    if any(ref.endswith(f"/{slug}") and ref.count("/") >= 2 for ref in remotes.splitlines()):
+        return False
+    prefix = "tests/acceptance/"
+    files = git(repo, "ls-tree", "-r", "--name-only", DEFAULT_BRANCH, prefix) or ""
+    return any(holds_slug(f[len(prefix):], slug) for f in files.splitlines() if f.startswith(prefix))
 
 
 def result(stage: int | str, check: str, next_: str, feature: str | None = None,
@@ -124,6 +133,7 @@ def result(stage: int | str, check: str, next_: str, feature: str | None = None,
 
 
 FETCH = "git fetch origin, then run devloop status again"
+DEFAULT_BRANCH = "main"
 
 
 def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
@@ -134,7 +144,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
             return result(1, f"no spec and no branch for {slug}", "Stage 1 Frame", slug)
         lines = cherry(repo, branch)
         if lines is None:
-            return result(5, "Track S: no origin/main", FETCH, slug, "S", worktree)
+            return result(5, "Track S: git cherry origin/main fails", FETCH, slug, "S", worktree)
         if not lines:
             return result(5, f"Track S: {branch} has no commit ahead of origin/main", "Stage 5 Build", slug, "S", worktree)
         if any(line.startswith("+") for line in lines):
@@ -150,6 +160,8 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
 
     if fields.get("review_status") != "approved":
         return at(2, f"spec {spec.name} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
+    if branch is None and shipped_without_branch(repo, slug):
+        return at("shipped", f"no branch for {slug}, its acceptance file is on {DEFAULT_BRANCH}", "none")
     if worktree is None:
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
     if not has_acceptance(worktree, slug):
@@ -172,7 +184,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
         return at(6, "no 'Feature gate: green at' line in the ledger", "Stage 6 Gate")
     lines = cherry(repo, branch)
     if lines is None:
-        return at(7, "no origin/main", FETCH)
+        return at(7, "git cherry origin/main fails", FETCH)
     if any(line.startswith("+") for line in lines):
         return at(7, f"git cherry origin/main {branch} lists a + commit", "Stage 7 Ship")
     return at("shipped", f"git cherry origin/main {branch} lists no + commit", "none")
@@ -220,7 +232,15 @@ def log_path(cwd: Path, name: str) -> Path | None:
         return None
     logs = Path(git_dir) / "dev-loop" / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-    return logs / f"{name}-{datetime.now():%Y%m%dT%H%M%S}.log"
+    stamp = f"{name}-{datetime.now():%Y%m%dT%H%M%S}"
+    log, n = logs / f"{stamp}.log", 1
+    while True:
+        try:
+            log.open("x").close()
+            return log
+        except FileExistsError:
+            n += 1
+            log = logs / f"{stamp}-{n}.log"
 
 
 def run_logged(cmd: list[str], log: Path, cwd: Path, env: dict[str, str] | None = None) -> dict:
@@ -255,9 +275,13 @@ def slowest(report_dir: Path, n: int = 10) -> list[dict]:
         except ET.ParseError:
             continue
         for case in root.iter("testcase"):
+            try:
+                seconds = float(case.get("time") or 0)
+            except ValueError:
+                continue
             name = case.get("name", "")
             classname = case.get("classname")
-            cases.append({"name": f"{classname}::{name}" if classname else name, "seconds": float(case.get("time") or 0)})
+            cases.append({"name": f"{classname}::{name}" if classname else name, "seconds": seconds})
     return sorted(cases, key=lambda c: c["seconds"], reverse=True)[:n]
 
 
@@ -291,7 +315,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     command = mapped_gate(top)
     cmd = ["sh", "-c", command] if command else [str(top / "scripts" / "gate.sh")]
     reports = log.parent / f"{log.stem}-reports"
-    reports.mkdir(exist_ok=True)
+    reports.mkdir()
     payload = run_logged(cmd, log, top, {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
     payload["failures"] = parse_failures(log.read_text(errors="replace"))
     payload["slowest"] = slowest(reports)
@@ -319,6 +343,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     payload: dict = {"state": "no-pr", "failed_job": None, "first_error": None, "url": None}
     view = gh("pr", "view", *([str(args.pr)] if args.pr else []), "--json", "number,url")
     if view.returncode != 0:
+        if "no pull requests found" not in view.stderr:
+            payload.update(state="error", message=view.stderr.strip())
         return emit(payload, 1)
     pr = json.loads(view.stdout)
     number, payload["url"] = str(pr["number"]), pr["url"]
