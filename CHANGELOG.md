@@ -1,24 +1,124 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.0] - 2026-10-13
+
+### ♻️ Refactors & Cleanup
+
+- [`6ae4e32`](https://github.com/tchlyah/dev-loop/commit/6ae4e32ae09fd4c5605bdda70198caf53487ab09) - **guard**: Remove the vault rule from the kit *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`c10b8b3`](https://github.com/tchlyah/dev-loop/commit/c10b8b36ab164b617bd99f4a4074896a7f1ae40c) - **setup**: Check the notes path through the resolver *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`21faedf`](https://github.com/tchlyah/dev-loop/commit/21faedf1cfd16923a24112409520f6da533cb8ca) - **install**: Drop the vault flag, variable and prompt *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### ✨ New Features
+
+- [`73b5fd2`](https://github.com/tchlyah/dev-loop/commit/73b5fd2ac3d9b670a25a3adabbeaec311d409722) - **install**: Route the init, upgrade and uninstall-global commands *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`82f143b`](https://github.com/tchlyah/dev-loop/commit/82f143b317c639d50457cb51332b7c12d8a9a2c9) - **install**: Build the project kit and its manifest *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`061a9f8`](https://github.com/tchlyah/dev-loop/commit/061a9f8cf53e9fc1161f996f528bd8f53305074e) - **install**: Add the init command *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`6877dd4`](https://github.com/tchlyah/dev-loop/commit/6877dd4f08e47c9577476be5c6cde0209975ebe5) - **install**: Add the upgrade command *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`b2fbcf8`](https://github.com/tchlyah/dev-loop/commit/b2fbcf83fa3284ff4cf986264912f218d8be557a) - **install**: Add the uninstall-global command *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`bd5a0f4`](https://github.com/tchlyah/dev-loop/commit/bd5a0f4db72efe0ac2a86aaa1041c5d4c0d363a9) - **check**: Check the project kit against its manifest *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`45a0327`](https://github.com/tchlyah/dev-loop/commit/45a03274025ea72640296ee2a3962d6974fe82fc) - **notes**: Add the notes path resolver *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`fd69719`](https://github.com/tchlyah/dev-loop/commit/fd697198d9d0901aa9764784d8b8abd244e9edcf) - **hooks**: Detect dev-loop by dev-loop.json at session start *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`ce53ea6`](https://github.com/tchlyah/dev-loop/commit/ce53ea6995b0640d46657f7ef0ddb4c799f4a81e) - **skill**: Accept GLOSSARY.md or CONTEXT.md, and continue every Superpowers 7 size to Spec
+
+
+
+### 🐛 Bug Fixes
+
+- [`13ea692`](https://github.com/tchlyah/dev-loop/commit/13ea6929b5f1362bd233a28dea495d9d3b8bbf4a) - **check**: Print legacy Claude failures once and keep the repo walls in project mode *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`3e8b208`](https://github.com/tchlyah/dev-loop/commit/3e8b208a24ac5681a748c55ff5e93456fdb0ea85) - **check**: Point the global remediation at the --global install command *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`19eab4a`](https://github.com/tchlyah/dev-loop/commit/19eab4ad7ca5845ce099099bb93178b094a7eaef) - **install**: Match the vault guard by its git-guard.sh path and name where to move it *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`b3eb47a`](https://github.com/tchlyah/dev-loop/commit/b3eb47a3570c37f403d86ddcb0a8d70a0cd47725) - **install**: Remove hook entries of dropped kit scripts on upgrade *(PR [#4](https://github.com/tchlyah/dev-loop/pull/4) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`e8137a3`](https://github.com/tchlyah/dev-loop/commit/e8137a36f3d6ed4aa589b457afc1b6a9ae646167) - **guard**: Follow cd through assignments and subshells, and check a push against each repo *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`0843439`](https://github.com/tchlyah/dev-loop/commit/08434390d363f6ef445a143981c5bf320fdac593) - **guard**: Ask on a push whose folder or target the guard cannot be sure of *(PR [#5](https://github.com/tchlyah/dev-loop/pull/5) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`7f28eda`](https://github.com/tchlyah/dev-loop/commit/7f28edab43e7d6a4086a249fa9b6ce4b792dc96f) - **hooks**: Check only what the shell runs, and never ask from a subagent *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`91bbd92`](https://github.com/tchlyah/dev-loop/commit/91bbd92631a22ebb92d2596b3920feccda14f5b9) - **guard**: Name an unknown repository only where the guard said detached HEAD *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`93f3dfb`](https://github.com/tchlyah/dev-loop/commit/93f3dfbafcaaa6a21f2d1c8431281f4742db733f) - **guard**: Follow a cd into a variable the line surely set, and strip heredocs before every check *(PR [#6](https://github.com/tchlyah/dev-loop/pull/6) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`f056edc`](https://github.com/tchlyah/dev-loop/commit/f056edc7ac37fe7a8dcb488ad09fd0fa42bff3ed) - **notes**: Expand a variable in the legacy vault_notes value *(PR [#7](https://github.com/tchlyah/dev-loop/pull/7) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`4d49099`](https://github.com/tchlyah/dev-loop/commit/4d4909973b0046fde6736473693c0feb325ca949) - **guard**: Follow a variable whose absolute path holds a ~
+
+- [`552750d`](https://github.com/tchlyah/dev-loop/commit/552750d89dfd13067b83cdf94be1aa0d9827776a) - **skill**: Escape the || in the Stage 0 table row
+
+
 
 ### 📝 Documentation & Content
 
-- [`6466a30`](https://github.com/tchlyah/dev-loop/commit/6466a3073ed0ba419ab8f21f3310ab6baeaa5888) - **changelog**: Gitmoji git-cliff config and CHANGELOG.md
+- [`aa07838`](https://github.com/tchlyah/dev-loop/commit/aa0783808e7a50300bbaceb76055a47a15777da4) - **changelog**: Gitmoji git-cliff config and CHANGELOG.md *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`ac4f196`](https://github.com/tchlyah/dev-loop/commit/ac4f196b7a9301dc9e3b9a87315dcaab78533208) - **agents**: Fix the commit convention and add the release steps
+- [`33c0dbe`](https://github.com/tchlyah/dev-loop/commit/33c0dbe07e72af5afe4b83d7fa062320382a6ec5) - **agents**: Fix the commit convention and add the release steps *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`5e55916`](https://github.com/tchlyah/dev-loop/commit/5e55916a2b0e9d732f4fcddf09bdc7f8279e5734) - **changelog**: Regenerate CHANGELOG.md *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`c5de453`](https://github.com/tchlyah/dev-loop/commit/c5de453973dc8560569875866f278aa5276750d0) - **agents**: State the CI merge rule without a ruleset *(PR [#3](https://github.com/tchlyah/dev-loop/pull/3) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`88517ee`](https://github.com/tchlyah/dev-loop/commit/88517ee40830c6a80ab306546e5163ce106f0fbe) - **docs**: Describe the project install commands *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`623b9e7`](https://github.com/tchlyah/dev-loop/commit/623b9e7e8cbef689ef7c9fc7d9ecf8132c3b9cd5) - **install**: Drop spec decision labels from the installer comments *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`70bfb59`](https://github.com/tchlyah/dev-loop/commit/70bfb59ed1f5bdad5190f980ff06535e55440ec0) - **docs**: Lead the README with init, scope --link and the top-level rule, drop em-dashes in the repo map *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`3d72336`](https://github.com/tchlyah/dev-loop/commit/3d72336cd0a0ed5a2a7361a3424e4afc976cafff) - **skill**: Use the notes folder in place of the vault *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`9732a16`](https://github.com/tchlyah/dev-loop/commit/9732a166d2d93e630262e92188df0c937409b1f8) - **docs**: Document upgrade, rollback, the first init on a machine and the notes folder
+
+
+
+### 🔒 Security
+
+- [`6cee4f9`](https://github.com/tchlyah/dev-loop/commit/6cee4f99ab2baff51cf50044d1a6297f5ad17c86) - **release**: Let git-cliff read pull requests, pin the git-cliff version *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`e7efdc0`](https://github.com/tchlyah/dev-loop/commit/e7efdc0c75f4998a5a7e4195d53384b82ddd769b) - **install**: Refuse symlinked paths and a folder at the skill link in init *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`c667497`](https://github.com/tchlyah/dev-loop/commit/c6674973e3cb8fa7dd5e2c95791c337266488720) - **install**: Delete only kit-owned files named by the old manifest in upgrade *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`4458457`](https://github.com/tchlyah/dev-loop/commit/4458457685c33061921c41ad257d4b7b774858e4) - **install**: Back up a user file at a kit path instead of overwriting or deleting it *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`7f3fbb2`](https://github.com/tchlyah/dev-loop/commit/7f3fbb26e78471a21e93819a14418e7b023e605a) - **install**: Keep project backups beside their target *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`7ebf487`](https://github.com/tchlyah/dev-loop/commit/7ebf487ff755798dc7061ab26cb3e57ea64963e1) - **guard**: Treat a ~ after : or = in an assignment as an expansion
 
 
 
 ### 🔖 Release & Versioning
 
-- [`bc14e48`](https://github.com/tchlyah/dev-loop/commit/bc14e48b544965155c5efe1d2f1c3d9b29c81a36) - **release**: Version 1.5.0
+- [`255ee3c`](https://github.com/tchlyah/dev-loop/commit/255ee3c453403d668e989233f2575ff15288560e) - **release**: Version 1.5.0 *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
 ### 🔧 Infrastructure & DevOps
 
-- [`921b70a`](https://github.com/tchlyah/dev-loop/commit/921b70a457e19146bc5e24331c32328bfeab16ec) - **release**: Check the tag against package.json, pin actions, pass the token to git-cliff
+- [`04c05dd`](https://github.com/tchlyah/dev-loop/commit/04c05ddf298d0ac037fa1ac3cfca72cc32dfc021) - **release**: Check the tag against package.json, pin actions, pass the token to git-cliff *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`b46baf7`](https://github.com/tchlyah/dev-loop/commit/b46baf7f3cee77fa4d167c309cbcbaf897ba97d6) - **ci**: Run both suites on every PR and on main *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`ab87daf`](https://github.com/tchlyah/dev-loop/commit/ab87dafb2e5a75cd88dc18a8d412b80dfc30452d) - **claude**: Turn off the commit and stop security reviews in this repository *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🧪 Tests & Quality
+
+- [`62799fb`](https://github.com/tchlyah/dev-loop/commit/62799fb6e4608fdd948a4742f44ab5538a8f44b4) - **skill**: Pin the glossary and size rules
 
 
 ## [1.4.0] - 2026-10-12
