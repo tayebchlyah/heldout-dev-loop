@@ -119,7 +119,8 @@ def record(words):
         line = os.environ["CMD"]
         once = (len(re.findall(rf"(?<![\w$]){name}=", line)) == 1
                 and not re.search(rf"(?<![\w${{]){name}(?![\w=}}])", line))
-        if once and os.path.isabs(value) and not EXPANDS & set(value):
+        # A ~ inside an absolute path is text (iCloud~md~obsidian).
+        if once and os.path.isabs(value) and not (EXPANDS - {"~"}) & set(value):
             VARS[name] = value
 
 
