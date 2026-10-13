@@ -44,8 +44,9 @@ def read_notes(file: Path, strict: bool = True) -> str | None:
     return value
 
 
-def legacy_notes(worktree: Path, home: Path) -> Path | None:
-    # Legacy 1.4 layout. Remove in 1.6.
+def legacy_notes(worktree: Path, home: Path, env: Mapping[str, str]) -> Path | None:
+    # Legacy 1.4 layout. Remove in 1.6. The vault_notes value may name a variable
+    # ($VAULT_NOTES_PATH), set per person in the harness settings.
     try:
         config = json.loads((home / ".agents" / "dev-loop.config.json").read_text())
         match = re.search(r"^vault_notes:\s*(.+)$", (worktree / "AGENTS.md").read_text(), re.MULTILINE)
@@ -54,7 +55,8 @@ def legacy_notes(worktree: Path, home: Path) -> Path | None:
     vault = config.get("vault") if isinstance(config, dict) else None
     if not vault or not match:
         return None
-    return expand(str(vault), worktree, home) / match.group(1).strip()
+    notes = re.sub(r"\$\{?(\w+)\}?", lambda m: env.get(m.group(1), m.group(0)), match.group(1).strip())
+    return expand(str(vault), worktree, home) / notes
 
 
 def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
@@ -77,7 +79,7 @@ def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
     if found:
         path, source = expand(found[0], found[1], home), found[2]
     else:
-        path = legacy_notes(worktree, home)
+        path = legacy_notes(worktree, home, env)
         source = "dev-loop.config.json and AGENTS.md"
         if path is None:
             raise NotesPathError(
