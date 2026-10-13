@@ -4,14 +4,14 @@ import { parseArgs } from '../lib/args.mjs'
 
 test('no flag gives the default shape', () => {
   assert.deepEqual(parseArgs([]), {
-    command: null, global: false, yes: false, dryRun: false, link: false, force: false, harness: null, notes: null,
+    command: null, yes: false, dryRun: false, force: false, harness: null, notes: null,
   })
 })
 
 test('every flag parses', () => {
-  const flags = parseArgs(['--global', '--yes', '--dry-run', '--link', '--force', '--harness=codex', '--notes=/tmp/n'])
+  const flags = parseArgs(['--yes', '--dry-run', '--force', '--harness=codex', '--notes=/tmp/n'])
   assert.deepEqual(flags, {
-    command: null, global: true, yes: true, dryRun: true, link: true, force: true, harness: 'codex', notes: '/tmp/n',
+    command: null, yes: true, dryRun: true, force: true, harness: 'codex', notes: '/tmp/n',
   })
 })
 
@@ -31,7 +31,6 @@ test('each command is parsed', () => {
   for (const command of ['init', 'upgrade', 'uninstall-global']) {
     const flags = parseArgs([command, '--yes'])
     assert.equal(flags.command, command)
-    assert.equal(flags.global, false)
     assert.equal(flags.yes, true)
   }
 })
@@ -46,12 +45,7 @@ test('two commands throw', () => {
   assert.throws(() => parseArgs(['init', 'upgrade']), /one command at a time/)
 })
 
-test('a command with --global throws', () => {
-  assert.throws(() => parseArgs(['init', '--global']), /--global cannot be combined with a command/)
-  assert.throws(() => parseArgs(['--global', 'upgrade']), /--global cannot be combined with a command/)
-})
-
-test('init --link and upgrade --link throw', () => {
-  assert.throws(() => parseArgs(['init', '--link']), /--link works only with --global/)
-  assert.throws(() => parseArgs(['upgrade', '--link']), /--link works only with --global/)
+test('the global flag is gone, and --link with it', () => {
+  assert.throws(() => parseArgs(['--global']), /unknown flag: --global/)
+  assert.throws(() => parseArgs(['init', '--link']), /unknown flag: --link/)
 })

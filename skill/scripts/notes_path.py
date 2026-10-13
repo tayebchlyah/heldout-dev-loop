@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Resolve the notes folder for a repo from env, local files, or the legacy layout."""
+"""Resolve the notes folder for a repo from env or local files."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -44,21 +43,6 @@ def read_notes(file: Path, strict: bool = True) -> str | None:
     return value
 
 
-def legacy_notes(worktree: Path, home: Path, env: Mapping[str, str]) -> Path | None:
-    # Legacy 1.4 layout. Remove in 1.6. The vault_notes value may name a variable
-    # ($VAULT_NOTES_PATH), set per person in the harness settings.
-    try:
-        config = json.loads((home / ".agents" / "dev-loop.config.json").read_text())
-        match = re.search(r"^vault_notes:\s*(.+)$", (worktree / "AGENTS.md").read_text(), re.MULTILINE)
-    except (OSError, ValueError):
-        return None
-    vault = config.get("vault") if isinstance(config, dict) else None
-    if not vault or not match:
-        return None
-    notes = re.sub(r"\$\{?(\w+)\}?", lambda m: env.get(m.group(1), m.group(0)), match.group(1).strip())
-    return expand(str(vault), worktree, home) / notes
-
-
 def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
     worktree = git_path(repo, "rev-parse", "--show-toplevel") or repo
     common = git_path(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -76,15 +60,9 @@ def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
         value = read_notes(root / name, strict)
         if value:
             found = (value, root, str(root / name))
-    if found:
-        path, source = expand(found[0], found[1], home), found[2]
-    else:
-        path = legacy_notes(worktree, home, env)
-        source = "dev-loop.config.json and AGENTS.md"
-        if path is None:
-            raise NotesPathError(
-                f'no notes path for {repo}. Write {{"notes": "<path>"}} to {main / "dev-loop.local.json"}'
-            )
+    if not found:
+        raise NotesPathError(f'no notes path for {repo}. Write {{"notes": "<path>"}} to {main / "dev-loop.local.json"}')
+    path, source = expand(found[0], found[1], home), found[2]
     if not path.is_dir():
         change = "DEV_LOOP_NOTES" if source == "DEV_LOOP_NOTES" else f"the path in {source}"
         raise NotesPathError(f"notes folder does not exist: {path} (from {source}). Create it or change {change}")

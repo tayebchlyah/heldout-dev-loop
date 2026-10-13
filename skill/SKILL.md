@@ -1,11 +1,10 @@
 ---
 name: dev-loop
-description: Use at the start of any coding session, and after finishing any task, in a repo with dev-loop.json at its root (or, until 1.6, an AGENTS.md that declares vault_notes). Detects the current stage from repo and notes state, runs that one stage, stops.
+description: Use at the start of any coding session, and after finishing any task, in a repo with dev-loop.json at its root. Detects the current stage with scripts/devloop.py status, then runs it and the stages its session chains.
 ---
 
 # Dev loop
 
-Run one stage per invocation. Detect, run, stop. Never chain stages in a turn.
 End every stage that changed the repo with a direct `scripts/gate.sh`. The Stop hook runs a selective gate (`GATE_SCOPE=changed`); only a direct, full gate writes a green record.
 
 Select one harness route before detecting the stage:
@@ -19,22 +18,39 @@ Run `scripts/notes_path.py`. `$NOTES` below means its output. Specs and plans li
 
 Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md` (the name before Pocock skills 1.3). Both exist: `GLOSSARY.md` wins. New repos write `GLOSSARY.md`.
 
+## Tracks and sessions
+
+Stage 1 sizes the work:
+
+- Track S: one session, no spec, no plan. Stage 1, then Stage 5 on branch `<prefix>/<slug>`, then Stage 7.
+- Track M: Session A, then Session B. Build `superpowers:executing-plans`.
+- Track L: Session A, then Session B. Build `superpowers:subagent-driven-development`. Spec adds threat model. Never auto-merged.
+
+Session A: Stages 1 and 2, on `main`. Stops at the spec approval. Track S: Stage 1, then build in the same session under the grant.
+Session B: Stages 3 to 7 chained, under the grant. Each stage ends, run `scripts/devloop.py status` again, run the next stage.
+
+Autonomy grant (Session B, Track S after Stage 1):
+
+- Make each open decision yourself: pick the option you would recommend, record it in the spec under `## Assumptions`, one line of reason. Track S: in the PR body.
+- Stop and report only for: a gate still red after three fix rounds, a one-way door the approved spec does not cover, an action that deletes data or reaches production, a usage limit, a conflict with an earlier spec that its Supersedes list does not name.
+- Push the feature branch, open the PR. Merge only under Stage 7 merge rule. Ask before a tag push.
+- Report once, at the end: PR link, gate results, the `## Assumptions` list, deferred items.
+
+Monitor rule: a command longer than two minutes runs in the background as `scripts/devloop.py logged -- <cmd>`, full log in a file, with a Monitor on it. Never end a turn while a run has nobody watching.
+
+Verification budget. The kit enforces no time cap: a hook the harness kills is a non-blocking error, so a hard cap could let a red gate pass. Each project caps T0 in its own `gate.sh`.
+
+| Tier | When | Budget | Content |
+|---|---|---|---|
+| T0 | Stop hook, each turn | 60 s or less, never falls back to the full gate | lint, types, impacted tests without `proof` or `slow` markers |
+| T1 | End of a stage, direct `gate.sh` | 4 min or less | full fast tier, writes the green record |
+| T2 | CI on each PR | 8 min or less, jobs split | fast tier, proof tier, UI |
+| T3 | CI, feature gate | API 11 min, Playwright 9 min per shard | held-out acceptance, flows only |
+| T4 | Nightly | about 60 min | mutation on critical modules, test-value audit, flake statistics |
+
 ## Detect the stage
 
-Run in order. First failing check is the stage.
-
-| Check | Stage |
-|---|---|
-| No glossary (`test -f GLOSSARY.md \|\| test -f CONTEXT.md` fails), or `git rev-parse HEAD` fails | 0 Bootstrap |
-| No spec in `$NOTES/specs/` for requested work | 1 Frame |
-| Spec exists, frontmatter `review_status` not `approved` | 2 Spec |
-| Spec approved, `tests/acceptance/` has no test for it | 3 Acceptance |
-| Acceptance exists, no plan in `$NOTES/plans/` | 4 Plan |
-| Plan exists, ledger `.superpowers/sdd/<plan>/progress.md` incomplete | 5 Build |
-| Ledger complete, acceptance not yet green on this branch | 6 Feature gate |
-| Feature gate passed, branch not integrated | 7 Ship |
-
-State stage and the check that chose it, one line. Then run it.
+Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left.
 
 ## Where each stage runs
 
@@ -51,14 +67,16 @@ Detect stacks: `pyproject.toml` = python, `go.mod` = go, `package.json` with UI 
 Layout: PyPA src layout, `uv init --package`. One stack: `src/<pkg>/` + `tests/unit/`. Two stacks: uv workspace root, `backend/src/<pkg>/` + `backend/tests/unit/`, `frontend/src/` + `frontend/tests/unit/`. FastAPI-template `backend/app/` also acceptable; the spec-tester wall covers `src/ app/ backend/ frontend/`. Acceptance tests once, at root `tests/acceptance/` (`api/`, and `e2e/` when ui). Root only: spec-tester writes it and cannot enter a stack dir.
 Write `scripts/gate.sh`: runs only the stack `git diff --name-only HEAD` touched. python: ruff, pyright, `pytest tests/unit`. go: `go vet`, `go test ./...`. ui: biome, `tsc --noEmit`, `vitest run`. Never E2E.
 `ui` in stacks: `docker-compose` test profile with seeded fixtures, for Stage 6 E2E. Else skip.
-Mutation setup per stack, as [references/mutation.md](references/mutation.md) section Setup states. `check_setup.py` verifies it.
+Mutation setup per stack, as [references/mutation.md](references/mutation.md) section Setup states. `check_setup.py` verifies it. New repo only: the nightly mutation CI workflow, as `mutation.md` states.
+New repo only: empty `CODING_STANDARDS.md` at the root. Only the standards reviewer reads it.
 Notes path: ask for it, the folder must exist. Write `{"notes": "<path>"}` to `dev-loop.local.json` in the main worktree. Add it to `.gitignore` when `git check-ignore` says it is not ignored.
 Done when `scripts/gate.sh` blocks a deliberately broken unit test.
 
 ## 1 Frame
+Cap check first: when `## Deferred` holds 20 open items (the cap), triage it, then frame new work.
 Invoke the selected route's `grilling` skill. No other framing skill. UI work: the route's `prototype` skill first, a throwaway prototype.
 Work larger than one session: tell the user to run `/wayfinder`. User-invoked only, the agent cannot call it.
-Propose the track, S, M or L, with a one-line reason. Track S: no spec, no plan, branch `<prefix>/<slug>`, then Stage 5. Tracks M and L: Stage 2 Spec. Done when the user accepts the track.
+Propose the track, S, M or L, with a one-line reason. Track S: no spec, no plan. Branch `<prefix>/<slug>` from `origin/main` in its own worktree, then Stage 5. Tracks M and L: Stage 2 Spec. Done when the user accepts the track.
 
 ## 2 Spec
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
@@ -66,22 +84,23 @@ Write the spec from [references/spec.md](references/spec.md) to `$NOTES/specs/`.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
 Supersedes: read the earlier specs in `$NOTES/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
-Stop when the user approves. Acceptance tests (Stage 3) come before the plan.
+Stop when the user approves: end of Session A. Acceptance tests (Stage 3) come before the plan.
 Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`.
 
 ## 3 Acceptance
 Start in the feature worktree (see Where each stage runs), then `git fetch origin`, `git rebase origin/main`.
 Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and glossary path.
-It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. Tell the user to review. One commit for both.
+It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. No human review. One commit for both.
 Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after a spec oracle change: a Supersedes line or an escaped bug. Controller never writes a test there.
-Stop. Tell the user to run `/clear` before Stage 4.
 
 ## 4 Plan
-Invoke `superpowers:writing-plans`. Plan to `$NOTES/plans/`.
-Plan never references `tests/acceptance/`. At handoff: Tracks S and M inline execution, Track L subagent-driven.
+Invoke `superpowers:writing-plans`. Plan to `$NOTES/plans/`. Plan frontmatter `spec: <spec file name>`.
+Plan never references `tests/acceptance/`. At handoff: Track M inline execution, Track L subagent-driven.
+Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or one seam, the brief names each file it changes, the task needs no ruling from another task. A task that fails: split it before Stage 5.
 
 ## 5 Build
-Executor by spec `track:`. Tracks S and M: `superpowers:executing-plans`. Track L: `superpowers:subagent-driven-development`. Work in the feature worktree: the executor's worktree step reuses it and creates none.
+Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then Stage 7.
+Tracks M and L: executor by spec `track:`. Track M: `superpowers:executing-plans`. Track L: `superpowers:subagent-driven-development`. Work in the feature worktree: the executor's worktree step reuses it and creates none.
 Skip the executor's final whole-branch review: the Stage 6 review wave replaces it. Keep its workspace: the ledger stays.
 Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
 Track L: use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
@@ -107,4 +126,10 @@ End: append `Feature gate: green at <sha>` to the ledger `.superpowers/sdd/<plan
 Never invoke `superpowers:verification-before-completion`. The shell gate owns routine verification.
 
 ## 7 Ship
-dev-loop's own steps, no finishing skill. `git fetch origin`, `git rebase origin/main`, direct `scripts/gate.sh`, `git push`. PR body through the route's `pr` skill. Integrate by `gh pr merge --rebase`, never a merge commit.
+dev-loop's own steps, no finishing skill.
+`git fetch origin`, `git rebase origin/main`, `scripts/devloop.py gate --summary` (`exit` 0, else fix first), `git push`.
+PR body through the route's `pr` skill. It names the door (one-way or two-way) and the blast radius.
+`scripts/devloop.py ci wait`. `state` `fail`: read `failed_job` and `first_error`, fix, push, wait again. Three red rounds: stop, report.
+Merge rule, `merge` in `dev-loop.json`. `merge: auto` (default): after green CI (and the Stage 6 review wave for Tracks M and L), merge a Track S or M PR that is a two-way door with a small blast radius. A one-way door or Track L waits for the user. `merge: human`: every PR waits for the user.
+Open security item in `## Deferred` blocks a release. Never merge a release PR or push a tag while one is open.
+Merge by `gh pr merge --rebase`, never a merge commit. Report once (autonomy grant).

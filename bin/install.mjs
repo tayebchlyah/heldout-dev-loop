@@ -5,8 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { dirname, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { parseArgs } from '../lib/args.mjs'
-import { buildConfig, writeConfig } from '../lib/config.mjs'
-import { buildPlan, runPlan, assertLinkSource } from '../lib/plan.mjs'
 import { runInit, runUpgrade } from '../lib/project.mjs'
 import { runUninstallGlobal } from '../lib/uninstall.mjs'
 
@@ -15,51 +13,30 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const USAGE = `usage: dev-loop <command> [flags]
   init              install the dev-loop kit into this repository
   upgrade           update the kit in this repository
-  uninstall-global  remove the 1.4 global install
-  --global          run the 1.4 global install (1.5.x only)`
+  uninstall-global  remove the 1.4 global install`
 
 async function main() {
   const flags = parseArgs(argv.slice(2))
   const home = env.HOME ?? homedir()
 
-  if (flags.command === null && !flags.global) {
+  if (flags.command === null) {
     console.error(USAGE)
     exit(1)
   }
-  if (flags.command !== null) {
-    const rl = flags.yes ? null : createInterface({ input: stdin, output: stdout })
-    const ctx = { flags, home, cwd: process.cwd(), packageRoot, ask: asker(rl) }
-    const runners = { init: runInit, upgrade: runUpgrade, 'uninstall-global': runUninstallGlobal }
-    let reports
-    try {
-      reports = await runners[flags.command](ctx)
-    } finally {
-      rl?.close()
-    }
-    const uninstall = flags.command === 'uninstall-global'
-    console.log(flags.dryRun ? 'dry run, nothing written' : uninstall ? 'uninstalled' : 'installed')
-    // uninstall-global works on the home folder, not on the repository.
-    printReports(reports, flags, uninstall ? (path) => path.replace(home, '~') : (path) => relative(ctx.cwd, path))
-    if (uninstall && reports.every((entry) => entry.action === 'kept')) console.log('nothing to remove')
-    return
-  }
-
-  const repoRoot = flags.link ? process.cwd() : packageRoot
-  if (flags.link) assertLinkSource(repoRoot)
-
   const rl = flags.yes ? null : createInterface({ input: stdin, output: stdout })
-  const config = await buildConfig({ flags, home, env, ask: asker(rl) })
-  rl?.close()
-
-  const configResult = writeConfig(home, config, { dryRun: flags.dryRun })
-  const actions = buildPlan({ repoRoot, home, harnesses: config.harnesses, mode: flags.link ? 'link' : 'copy' })
-  const reports = runPlan(actions, { dryRun: flags.dryRun, home })
-
-  report(
-    [{ target: configResult.path, action: configResult.changed ? 'write' : 'skip', backup: configResult.backup, added: [], skipped: [], notes: [] }, ...reports],
-    flags,
-    home,
-  )
+  const ctx = { flags, home, cwd: process.cwd(), packageRoot, ask: asker(rl) }
+  const runners = { init: runInit, upgrade: runUpgrade, 'uninstall-global': runUninstallGlobal }
+  let reports
+  try {
+    reports = await runners[flags.command](ctx)
+  } finally {
+    rl?.close()
+  }
+  const uninstall = flags.command === 'uninstall-global'
+  console.log(flags.dryRun ? 'dry run, nothing written' : uninstall ? 'uninstalled' : 'installed')
+  // uninstall-global works on the home folder, not on the repository.
+  printReports(reports, flags, uninstall ? (path) => path.replace(home, '~') : (path) => relative(ctx.cwd, path))
+  if (uninstall && reports.every((entry) => entry.action === 'kept')) console.log('nothing to remove')
 }
 
 // The line iterator buffers input, so piped answers that arrive before their
@@ -75,13 +52,6 @@ function asker(rl) {
     const answer = done ? '' : value.trim()
     return answer === '' ? fallback : answer
   }
-}
-
-function report(reports, flags, home) {
-  console.log(flags.dryRun ? 'dry run, nothing written' : 'installed')
-  console.log(`mode: ${flags.link ? 'link' : 'copy'}`)
-
-  printReports(reports, flags, (path) => path.replace(home, '~'))
 }
 
 function printReports(allReports, flags, short) {

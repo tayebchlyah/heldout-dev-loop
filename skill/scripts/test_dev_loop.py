@@ -68,6 +68,7 @@ CiWaitTests = test_devloop.CiWaitTests
 InstructionContractTests = test_devloop.InstructionContractTests
 SkillStackContractTests = test_devloop.SkillStackContractTests
 ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
+TracksContractTests = test_devloop.TracksContractTests
 
 
 def all_instructions() -> str:
@@ -89,7 +90,8 @@ class ConfigCheckTests(unittest.TestCase):
             home = Path(tmp)
             failures = check_setup.check_config(home, home / "repo", {})
             self.assertIn("missing dev-loop config", " ".join(failures))
-            self.assertIn("Run npx github:tchlyah/dev-loop#<tag> --global", " ".join(failures))
+            self.assertIn("npx github:tchlyah/dev-loop#<tag> init", " ".join(failures))
+            self.assertNotIn("--global", " ".join(failures))
 
     def test_repo_without_a_notes_path_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,11 +145,8 @@ class UsesDevLoopTests(unittest.TestCase):
     def test_dev_loop_json_counts(self) -> None:
         self.assertTrue(self.uses({"dev-loop.json": "{}"}))
 
-    def test_vault_notes_in_agents_md_counts(self) -> None:
-        self.assertTrue(self.uses({"AGENTS.md": "vault_notes: Software/Test\n"}))
-
-    def test_vault_notes_mid_line_does_not_count(self) -> None:
-        self.assertFalse(self.uses({"AGENTS.md": "# Repo\n\nA repo with a `vault_notes:` line uses it.\n"}))
+    def test_vault_notes_in_agents_md_does_not_count(self) -> None:
+        self.assertFalse(self.uses({"AGENTS.md": "vault_notes: Software/Test\n"}))
 
     def test_neither_does_not_count(self) -> None:
         self.assertFalse(self.uses({"AGENTS.md": "# Plain\n"}))
@@ -213,10 +212,6 @@ class SkillContractTests(unittest.TestCase):
         positions = [self.skill.index(f"## {number} ") for number in range(8)]
         self.assertEqual(positions, sorted(positions))
 
-    def test_one_stage_per_invocation_remains(self) -> None:
-        self.assertIn("Run one stage per invocation", self.skill)
-        self.assertIn("Never chain stages", self.skill)
-
     def test_claude_bootstrap_contract_remains(self) -> None:
         required = [
             ".dev-loop/hooks/claude/gate.sh",
@@ -249,7 +244,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("spec-tester", self.instructions)
         self.assertIn("implementer", self.instructions)
         self.assertIn("Plan never references `tests/acceptance/`", self.instructions)
-        self.assertIn("Tell the user to run `/clear`", self.instructions)
+        self.assertNotIn("Tell the user to run `/clear`", self.instructions)
 
     def test_codex_branch_is_declared(self) -> None:
         self.assertIn("references/codex.md", self.skill)
@@ -293,9 +288,6 @@ class SkillContractTests(unittest.TestCase):
         text = SKILL.read_text()
         self.assertIn("Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md`", text)
         self.assertIn("Both exist: `GLOSSARY.md` wins.", text)
-        self.assertIn("`test -f GLOSSARY.md \\|\\| test -f CONTEXT.md` fails", text)
-        row = next(line for line in text.splitlines() if "0 Bootstrap |" in line)
-        self.assertEqual(len(re.split(r"(?<!\\)\|", row)), 4, row)
         self.assertIn("first terms of `GLOSSARY.md`", text)
         self.assertIn("spec path and glossary path", text)
         self.assertIn("or a glossary invariant;", text)
@@ -611,20 +603,15 @@ class CodexHookBehaviorTests(unittest.TestCase):
             )
             self.assertEqual((allowed.returncode, allowed.stdout), (0, ""))
 
-    def test_session_start_routes_only_declared_repositories(self) -> None:
+    def test_session_start_detects_dev_loop_json_only(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             repo = Path(root)
             write(repo / "AGENTS.md", "vault_notes: Software/Test.md\n")
-            routed = self.run_hook("session-start.sh", {"cwd": str(repo)})
-            write(repo / "AGENTS.md", "# No workflow\n")
-            ignored = self.run_hook("session-start.sh", {"cwd": str(repo)})
-            self.assertIn("dev-loop skill", routed.stdout)
-            self.assertEqual(ignored.stdout, "")
-            (repo / "AGENTS.md").unlink()
             self.assertEqual(self.run_hook("session-start.sh", {"cwd": str(repo)}).stdout, "")
             write(repo / "dev-loop.json", "{}\n")
-            by_config = self.run_hook("session-start.sh", {"cwd": str(repo)})
-            self.assertIn("dev-loop skill", by_config.stdout)
+            routed = self.run_hook("session-start.sh", {"cwd": str(repo)}).stdout
+            self.assertIn("dev-loop skill", routed)
+            self.assertNotIn("one stage", routed)
 
     def test_gate_blocks_failed_dirty_repo_once(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -1207,7 +1194,6 @@ class SetupCheckerTests(unittest.TestCase):
             write(home / ".claude" / "hooks" / name, "#!/bin/sh\n")
         write(home / ".claude" / "agents" / "implementer.md", "name: implementer\n")
         write(home / ".claude" / "agents" / "spec-tester.md", "name: spec-tester\n")
-        write(home / "repo" / "AGENTS.md", "vault_notes: Software/Test\n")
         write(
             home / "repo" / ".claude" / "settings.json",
             json.dumps(
@@ -1322,30 +1308,6 @@ class SetupCheckerTests(unittest.TestCase):
             result = self.run_checker("claude", home)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("settings.json", result.stdout)
-
-    def test_missing_claude_repo_controls_fail(self) -> None:
-        required = [
-            "Agent(caveman:cavecrew-reviewer)",
-            "Agent(caveman:cavecrew-builder)",
-            "Agent(caveman:cavecrew-investigator)",
-            "ENABLE_STOP_REVIEW",
-            "ENABLE_COMMIT_REVIEW",
-            "SG_PUSH_SWEEP",
-        ]
-        for missing in required:
-            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as root:
-                home = Path(root)
-                self.make_valid_claude(home)
-                path = home / "repo" / ".claude" / "settings.json"
-                settings = json.loads(path.read_text())
-                if missing.startswith("Agent("):
-                    settings["permissions"]["deny"].remove(missing)
-                else:
-                    del settings["env"][missing]
-                write(path, json.dumps(settings))
-                result = self.run_checker("claude", home)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(missing, result.stdout)
 
     def test_valid_codex_setup_passes(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -1618,7 +1580,6 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             "missing Claude repo env: SG_PUSH_SWEEP=0",
         ]
         self.init("claude")
-        write(self.repo / "AGENTS.md", "vault_notes: Software/Test\n")
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("Claude repo", result.stdout)
@@ -1786,7 +1747,7 @@ def commit_changes(repo: Path, files: dict[str, str]) -> str:
     return base
 
 
-PY_AGENTS = "vault_notes: Software/Test\nstacks: python\n"
+PY_AGENTS = "stacks: python\n"
 MUTMUT_CONFIG = '[tool.mutmut]\nsource_paths = ["src"]\npytest_add_cli_args_test_selection = ["tests/unit"]\n'
 MODULE_BASE = """LIMIT = 1
 
@@ -2013,7 +1974,7 @@ class SelectMutantsTests(unittest.TestCase):
             repo = make_git_repo(
                 Path(root),
                 {
-                    "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
+                    "AGENTS.md": "stacks: ui\n",
                     "frontend/stryker.config.json": json.dumps({"mutate": ["src/**/*.ts", "!src/**/*.test.ts"]}),
                     "frontend/src/a.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
                     "frontend/src/a.test.ts": "test('a', () => {});\n",
@@ -2115,6 +2076,7 @@ class MutationSetupTests(unittest.TestCase):
     def python_setup(self, root: Path, **overrides: str) -> Path:
         files = {
             "AGENTS.md": PY_AGENTS,
+            "dev-loop.json": "{}",
             "pyproject.toml": self.PYPROJECT,
             ".gitignore": "mutants/\n",
         }
@@ -2154,7 +2116,8 @@ class MutationSetupTests(unittest.TestCase):
             repo = make_git_repo(
                 Path(root),
                 {
-                    "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
+                    "AGENTS.md": "stacks: ui\n",
+                    "dev-loop.json": "{}",
                     "frontend/stryker.config.json": json.dumps({"mutate": ["src/logic/**/*.ts"]}),
                     "frontend/package.json": json.dumps(package),
                     ".gitignore": ".stryker-tmp/\nreports/\n",
@@ -2173,7 +2136,8 @@ class MutationSetupTests(unittest.TestCase):
         ]:
             with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
                 base = {
-                    "AGENTS.md": "vault_notes: Software/Test\nstacks: ui\n",
+                    "AGENTS.md": "stacks: ui\n",
+                    "dev-loop.json": "{}",
                     "frontend/package.json": json.dumps(package),
                     ".gitignore": ".stryker-tmp/\nreports/\n",
                 }
@@ -2187,7 +2151,7 @@ class MutationSetupTests(unittest.TestCase):
 
     def test_repos_without_declared_stacks_are_not_checked(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            repo = make_git_repo(Path(root), {"AGENTS.md": "vault_notes: Software/Test\n"})
+            repo = make_git_repo(Path(root), {"dev-loop.json": "{}"})
             self.assertEqual(check_setup.check_mutation(repo), [])
 
 
@@ -2219,10 +2183,6 @@ class NotesPathTests(unittest.TestCase):
 
     def test_each_source_wins_over_every_later_source(self) -> None:
         linked = self.linked()
-        write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
-        write(linked / "AGENTS.md", "vault_notes: fb\n")
-        (self.folder("vault") / "fb").mkdir()
-        self.assertEqual(self.resolve(linked), self.folder("vault") / "fb")
         steps = [
             (lambda: write(linked / "dev-loop.json", json.dumps({"notes": str(self.folder("shared"))})), self.folder("shared")),
             (lambda: self.set_local(self.repo, self.folder("main")), self.folder("main")),
@@ -2327,31 +2287,14 @@ class NotesPathTests(unittest.TestCase):
         with self.assertRaises(notes_path.NotesPathError) as ctx:
             self.resolve()
         self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
-        write(self.repo / "dev-loop.json", json.dumps({"notes": ""}))
+
+    def test_notes_path_has_no_vault_fallback(self) -> None:
         write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
         write(self.repo / "AGENTS.md", "vault_notes: fb\n")
         (self.folder("vault") / "fb").mkdir()
-        self.assertEqual(self.resolve(), self.folder("vault") / "fb")
-
-    def test_legacy_notes_path_expands_a_variable_from_the_environment(self) -> None:
-        # shop 1.4 declares vault_notes: $VAULT_NOTES_PATH, set per person in
-        # .claude/settings.local.json.
-        write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
-        write(self.repo / "AGENTS.md", "vault_notes: $VAULT_NOTES_PATH\n")
-        (self.folder("vault") / "Shared Notes").mkdir()
-        self.env["VAULT_NOTES_PATH"] = "Shared Notes"
-        self.assertEqual(self.resolve(), self.folder("vault") / "Shared Notes")
-
-    def test_missing_legacy_folder_raises_naming_the_source(self) -> None:
-        write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
-        write(self.repo / "AGENTS.md", "vault_notes: fb\n")
         with self.assertRaises(notes_path.NotesPathError) as ctx:
             self.resolve()
-        self.assertEqual(
-            str(ctx.exception),
-            f"notes folder does not exist: {self.folder('vault') / 'fb'} (from dev-loop.config.json and AGENTS.md)."
-            " Create it or change the path in dev-loop.config.json and AGENTS.md",
-        )
+        self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
 
     def run_main(self, env_notes: str | None) -> subprocess.CompletedProcess:
         env = {**os.environ, "HOME": str(self.home)}
