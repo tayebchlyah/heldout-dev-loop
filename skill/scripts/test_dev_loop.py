@@ -64,6 +64,7 @@ class ConfigCheckTests(unittest.TestCase):
             home = Path(tmp)
             failures = check_setup.check_config(home)
             self.assertIn("missing dev-loop config", " ".join(failures))
+            self.assertIn("Run npx github:tchlyah/dev-loop#<tag> --global", " ".join(failures))
 
     def test_config_with_null_vault_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,6 +75,7 @@ class ConfigCheckTests(unittest.TestCase):
             failures = check_setup.check_config(home)
             joined = " ".join(failures)
             self.assertIn("missing vault in dev-loop config", joined)
+            self.assertIn("Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>", joined)
             self.assertNotIn("missing dev-loop config", joined)
 
     def test_config_with_absent_vault_fails(self) -> None:
