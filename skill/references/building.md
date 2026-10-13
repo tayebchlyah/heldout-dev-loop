@@ -6,11 +6,11 @@ Read before writing code. Three parts: code volume, scope for your harness, test
 
 Source: Ponytail v5.1.0 `AGENTS.md` (https://github.com/DietrichGebert/ponytail, commit `9b58c1f`), copied verbatim, first-person ponytail-repo line dropped.
 
-## Before you write
+### Before you write
 
 Read the task and the code it touches. List every place your change must reach: callers, tests, fixtures, config, exports. Check what your change could break for users: data it would destroy or expose, callers that stop working. That is scope. Extra features are not.
 
-## The smallest complete change
+### The smallest complete change
 
 Take the first option that fully works:
 
@@ -33,7 +33,7 @@ Take the first option that fully works:
 
 Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
 
-### Ponytail license
+## Ponytail license
 
 MIT License
 
@@ -79,4 +79,4 @@ Source: https://developers.openai.com/api/docs/guides/latest-model
 
 - Do not write tests for reversible, low-impact changes that mirror the implementation.
 - The user's instructions take precedence over guidelines provided in a skill.
-- Ask for approval only after preparing a concrete, reviewable result.
+- ask for approval only after preparing a concrete, reviewable result.
