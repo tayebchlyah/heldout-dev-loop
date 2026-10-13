@@ -776,3 +776,98 @@ test('init --force --dry-run names the backup it would make and changes nothing'
   assert.deepEqual(readdirSync(join(repo, '.claude/agents')), ['implementer.md'])
   assert.equal(readFileSync(join(repo, '.claude/agents/implementer.md'), 'utf8'), 'mine\n')
 })
+
+// A package whose kit renames the Claude gate.sh to stop-gate.sh and the
+// Codex session-start.sh to repo-start.sh, with the fragments following.
+function renamedHooksPackage(nextVersion) {
+  return fakePackage(nextVersion, (root) => {
+    const edit = (path, from, to) => {
+      const text = readFileSync(join(root, path), 'utf8')
+      assert.ok(text.includes(from), `${path} holds ${from}`)
+      writeFileSync(join(root, path), text.split(from).join(to))
+    }
+    renameSync(join(root, 'claude/hooks/gate.sh'), join(root, 'claude/hooks/stop-gate.sh'))
+    renameSync(join(root, 'codex/hooks/session-start.sh'), join(root, 'codex/hooks/repo-start.sh'))
+    edit('lib/plan.mjs', "CLAUDE_HOOKS = ['gate.sh'", "CLAUDE_HOOKS = ['stop-gate.sh'")
+    edit('lib/plan.mjs', "'session-start.sh']", "'repo-start.sh']")
+    edit('claude/settings.fragment.json', '/.claude/hooks/gate.sh"', '/.claude/hooks/stop-gate.sh"')
+    edit('codex/hooks.fragment.json', '/.codex/hooks/session-start.sh"', '/.codex/hooks/repo-start.sh"')
+  })
+}
+
+function hookCommands(path) {
+  return Object.values(readJson(path).hooks).flat().flatMap((group) => group.hooks.map((hook) => hook.command))
+}
+
+// Every dev-loop project hook command in the file names a kit script on disk.
+function assertNoDanglingHook(repo, file) {
+  for (const command of hookCommands(join(repo, file))) {
+    const script = /\/(\.dev-loop\/hooks\/(?:claude|codex)\/[^"]+)"/.exec(command)?.[1]
+    if (script) assert.ok(existsSync(join(repo, script)), `${file} runs a missing ${script}`)
+  }
+}
+
+const git = (repo, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: repo, encoding: 'utf8' })
+
+test('upgrade removes the hook entries of kit scripts the package renamed, and adds the new ones', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  git(repo, 'add', '-A')
+  git(repo, 'commit', '-qm', 'init')
+
+  const output = upgrade(repo, home, [], renamedHooksPackage('99.0.0'))
+  const claude = hookCommands(join(repo, '.claude/settings.json'))
+  assert.equal(claude.some((command) => command.endsWith('.dev-loop/hooks/claude/gate.sh"')), false)
+  assert.ok(claude.some((command) => command.endsWith('.dev-loop/hooks/claude/stop-gate.sh"')))
+  const codex = hookCommands(join(repo, '.codex/hooks.json'))
+  assert.equal(codex.some((command) => command.endsWith('.dev-loop/hooks/codex/session-start.sh"')), false)
+  assert.ok(codex.some((command) => command.endsWith('.dev-loop/hooks/codex/repo-start.sh"')))
+  assertNoDanglingHook(repo, '.claude/settings.json')
+  assertNoDanglingHook(repo, '.codex/hooks.json')
+  const diff = git(repo, 'diff', '--', '.claude/settings.json', '.codex/hooks.json')
+  assert.doesNotMatch(diff, /^\+.*(claude\/gate\.sh|session-start\.sh)"/m)
+  assert.match(output, /- Stop: "\$\{CLAUDE_PROJECT_DIR:-\$\(git rev-parse --show-toplevel\)\}\/\.dev-loop\/hooks\/claude\/gate\.sh"/)
+  assert.match(output, /- SessionStart: "\$\(git rev-parse --show-toplevel\)\/\.dev-loop\/hooks\/codex\/session-start\.sh"/)
+  for (const file of ['.claude', '.codex']) {
+    assert.equal(readdirSync(join(repo, file)).filter((name) => name.includes('.bak-')).length, 1, `one backup in ${file}`)
+  }
+})
+
+test('upgrade keeps a foreign hook in the group of a removed kit hook entry', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  const path = join(repo, '.claude/settings.json')
+  const settings = readJson(path)
+  settings.hooks.Stop[0].hooks.push({ type: 'command', command: 'echo mine' })
+  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`)
+
+  upgrade(repo, home, [], renamedHooksPackage('99.0.0'))
+  const stop = readJson(path).hooks.Stop
+  const commands = stop.flatMap((group) => group.hooks.map((hook) => hook.command))
+  assert.ok(commands.includes('echo mine'))
+  assert.equal(commands.some((command) => command.endsWith('/claude/gate.sh"')), false)
+  assertNoDanglingHook(repo, '.claude/settings.json')
+})
+
+test('upgrade --dry-run reports the removed hook entries and writes nothing', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const before = snapshot(repo)
+  const output = upgrade(repo, home, ['--dry-run'], renamedHooksPackage('99.0.0'))
+  assert.match(output, /dry run, nothing written/)
+  assert.match(output, /- Stop: .*\/\.dev-loop\/hooks\/claude\/gate\.sh"/)
+  assert.match(output, /- SessionStart: .*\/\.dev-loop\/hooks\/codex\/session-start\.sh"/)
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade with no hook change leaves the hook files byte-identical', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const files = ['.claude/settings.json', '.codex/hooks.json']
+  const before = files.map((file) => readFileSync(join(repo, file)))
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  files.forEach((file, index) => assert.ok(readFileSync(join(repo, file)).equals(before[index]), file))
+  for (const dir of ['.claude', '.codex']) {
+    assert.equal(readdirSync(join(repo, dir)).some((name) => name.includes('.bak-')), false)
+  }
+})
