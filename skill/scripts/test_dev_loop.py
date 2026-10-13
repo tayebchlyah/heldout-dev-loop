@@ -69,6 +69,7 @@ InstructionContractTests = test_devloop.InstructionContractTests
 SkillStackContractTests = test_devloop.SkillStackContractTests
 ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
 TracksContractTests = test_devloop.TracksContractTests
+SpecGapContractTests = test_devloop.SpecGapContractTests
 
 
 def all_instructions() -> str:
