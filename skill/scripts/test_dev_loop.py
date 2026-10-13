@@ -65,6 +65,7 @@ StatusTests = test_devloop.StatusTests
 LoggedTests = test_devloop.LoggedTests
 GateTests = test_devloop.GateTests
 CiWaitTests = test_devloop.CiWaitTests
+InstructionContractTests = test_devloop.InstructionContractTests
 
 
 def all_instructions() -> str:
@@ -1831,11 +1832,11 @@ class MutationContractTests(unittest.TestCase):
             with self.subTest(route=route):
                 self.assertIn("[mutation.md](mutation.md)", (SKILL_ROOT / "references" / route).read_text())
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
-        self.assertIn("select_mutants.py --head GATE_SHA --run", mutation)
+        self.assertIn("select_mutants.py --base <main 24 h ago> --head main --run", mutation)
 
     def test_fix_wave_writes_one_test_per_function_in_parallel(self) -> None:
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
-        for value in ["one unit test per listed function", "in parallel", "Run mutmut once per feature", "only_mutate"]:
+        for value in ["one unit test per listed function", "in parallel", "Run mutmut once per night", "only_mutate"]:
             with self.subTest(value=value):
                 self.assertIn(value, mutation)
         for route in ["claude.md", "codex.md"]:

@@ -433,5 +433,71 @@ class CiWaitTests(unittest.TestCase):
         self.assertIn("Bad credentials", out["message"])
 
 
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = SKILL_ROOT.parent
+TEN_RULES = [
+    "one home file per module",
+    "public behaviour only",
+    "one table per function",
+    "no change-detector tests",
+    "one golden per output",
+    "cost markers",
+    "a mutation fix test proves the kill",
+    "a test budget per plan task",
+    "synthetic fixtures for moved acceptance details",
+    "a growth report on each pr",
+    "tests only at the seams the spec names",
+]
+IMPLEMENTERS = [REPO_ROOT / "claude" / "agents" / "implementer.md", REPO_ROOT / "codex" / "agents" / "implementer.toml"]
+SPEC_TESTERS = [REPO_ROOT / "claude" / "agents" / "spec-tester.md", REPO_ROOT / "codex" / "agents" / "spec-tester.toml"]
+
+
+class InstructionContractTests(unittest.TestCase):
+    def test_building_md_holds_ponytail_and_its_notice(self) -> None:
+        text = (SKILL_ROOT / "references" / "building.md").read_text()
+        for value in ["Does it need to exist?", "MIT License", "DietrichGebert"]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+
+    def test_tests_md_holds_ten_rules(self) -> None:
+        text = (SKILL_ROOT / "references" / "tests.md").read_text().lower()
+        for rule in TEN_RULES:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, text)
+
+    def test_implementers_read_building_and_tests(self) -> None:
+        for path in IMPLEMENTERS:
+            text = path.read_text()
+            for value in ["references/building.md", "references/tests.md"]:
+                with self.subTest(path=path.name, value=value):
+                    self.assertIn(value, text)
+
+    def test_implementers_have_contradictory_test_exit(self) -> None:
+        for path in IMPLEMENTERS:
+            with self.subTest(path=path.name):
+                self.assertIn("CONTRADICTORY_TEST: <test> <spec line>", path.read_text())
+
+    def test_spec_testers_write_one_test_per_flow(self) -> None:
+        for path in SPEC_TESTERS:
+            with self.subTest(path=path.name):
+                self.assertIn("one test per acceptance flow", path.read_text())
+
+    def test_no_double_check_in_kit_prompts(self) -> None:
+        banned = ["double-check", "double check", "use a subagent to verify", "narration"]
+        for root in [SKILL_ROOT, REPO_ROOT / "claude", REPO_ROOT / "codex"]:
+            for path in root.rglob("*"):
+                if path.suffix not in {".md", ".toml", ".json"} or "__pycache__" in path.parts:
+                    continue
+                text = path.read_text().lower()
+                for value in banned:
+                    with self.subTest(path=str(path.relative_to(REPO_ROOT)), value=value):
+                        self.assertNotIn(value, text)
+
+    def test_mutation_runs_nightly(self) -> None:
+        text = (SKILL_ROOT / "references" / "mutation.md").read_text()
+        self.assertIn("--base <main 24 h ago> --head main --run", text)
+        self.assertNotIn("GATE_SHA", text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
