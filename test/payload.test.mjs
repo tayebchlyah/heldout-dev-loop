@@ -15,6 +15,7 @@ const REQUIRED = [
   'skill/references/mutation.md',
   'skill/scripts/check_setup.py',
   'skill/scripts/select_mutants.py',
+  'skill/scripts/notes_path.py',
   'skill/scripts/test_dev_loop.py',
   'claude/agents/implementer.md',
   'claude/agents/spec-tester.md',
