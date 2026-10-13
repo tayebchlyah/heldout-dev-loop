@@ -728,12 +728,20 @@ class TracksContractTests(unittest.TestCase):
     def test_track_s_has_no_spec_and_no_plan(self) -> None:
         self.assertIn("Track S: no spec, no plan", stage_text(1))
         self.assertIn("Track S: no plan, no executor", stage_text(5))
+        self.assertIn("then the Stage 6 review wave and triage, then Stage 7", stage_text(5))
+        self.assertIn("Stage 1, Stage 5, Stage 6 review wave and triage only, Stage 7", self.header)
+        self.assertIn("after green CI and the Stage 6 review wave", stage_text(7))
         self.assertNotIn("Tracks S and M", self.skill)
         self.assertNotIn("Tracks S, M", (REFERENCES / "claude.md").read_text())
         self.assertNotIn("Tracks S, M", (REFERENCES / "codex.md").read_text())
 
     def test_codex_never_invoke_list_names_plain_skills(self) -> None:
-        self.assertNotIn("Skill(superpowers:", (REFERENCES / "codex.md").read_text())
+        codex = (REFERENCES / "codex.md").read_text()
+        self.assertNotIn("Skill(superpowers:", codex)
+        line = next(line for line in codex.splitlines() if line.lstrip("- ").startswith("Never invoke"))
+        for name in REPLACED_SKILLS:
+            with self.subTest(name=name):
+                self.assertIn(f"`{name}`", line)
 
 
 if __name__ == "__main__":
