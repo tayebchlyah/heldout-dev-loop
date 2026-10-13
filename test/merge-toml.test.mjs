@@ -141,12 +141,12 @@ test('a clean merge with no overlapping tables reports no skipped headers', () =
   assert.deepEqual(skipped, [])
 })
 
-test('a no-op merge adds nothing and names every table it kept', () => {
+test('a no-op merge adds nothing and names no table equal to its own', () => {
   const { text } = mergeCodexConfig('model = "gpt"\n', fragment)
   const again = mergeCodexConfig(text, fragment)
   assert.equal(again.changed, false)
   assert.equal(again.text, text)
-  assert.deepEqual(again.skipped, ['default_permissions', '[features]', '[permissions.dev-workspace]'])
+  assert.deepEqual(again.skipped, [])
 })
 
 test('a target whose own root key shares a name with the fragment keeps its value once, and the merge parses as TOML', () => {
@@ -188,10 +188,12 @@ test('a later run still adds what a partial target is missing', () => {
   assertValidToml(text)
 })
 
-test('a settled target reports the tables it keeps on every run, and changes nothing', () => {
+test('a settled target reports the tables the user changed on every run, and changes nothing', () => {
   const { text } = mergeCodexConfig('model = "gpt-5"\n', realFragment)
-  const again = mergeCodexConfig(text, realFragment)
+  const edited = text.replace('hooks = true', 'hooks = false')
+  assert.notEqual(edited, text)
+  const again = mergeCodexConfig(edited, realFragment)
   assert.equal(again.changed, false)
-  assert.equal(again.text, text)
-  assert.ok(again.skipped.includes('[features]'))
+  assert.equal(again.text, edited)
+  assert.deepEqual(again.skipped, ['[features]'])
 })
