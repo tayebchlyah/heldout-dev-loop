@@ -20,7 +20,7 @@ npm test                                # installer suite: node --test test/*.te
 python3 skill/scripts/test_dev_loop.py  # skill suite
 ```
 
-Both must pass before any commit. `.github/workflows/ci.yml` runs both on every PR and on `main`. A ruleset on `main` requires its `test` check to pass before merge.
+Both must pass before any commit. `.github/workflows/ci.yml` runs both on every PR and on `main`. Merge a PR only when its `test` check is green.
 
 ## Install targets (what `bin/install.mjs` writes)
 
