@@ -117,10 +117,11 @@ test('uninstall-global moves every dev-loop file to a backup and removes the hoo
   }
 })
 
-test('uninstall-global with no vault guard refuses, names the guard, session G and --force, and changes nothing', () => {
+test('uninstall-global with no vault guard refuses, names the guard, where to move it and --force, and changes nothing', () => {
   const home = globalInstall({ guard: false })
   const before = snapshot(home)
-  fails(home, ['uninstall-global'], /git-guard\.sh[\s\S]*session G[\s\S]*--force/)
+  fails(home, ['uninstall-global'], /git-guard\.sh[\s\S]*outside ~\/\.claude\/hooks\/[\s\S]*--force/)
+  assert.throws(() => run(home, ['uninstall-global']), (error) => !/session G/.test(error.stderr))
   assert.deepEqual(snapshot(home), before)
 })
 
@@ -138,6 +139,34 @@ test('the dev-loop git-guard hook does not count as the vault guard', () => {
   settings.hooks.Stop.push({ hooks: [{ type: 'command', command: `"${home}/.claude/hooks/git-guard.sh"` }] })
   writeFileSync(path, JSON.stringify(settings, null, 2))
   fails(home, ['uninstall-global'], /--force/)
+})
+
+function addHook(home, command) {
+  const path = join(home, '.claude/settings.json')
+  const settings = JSON.parse(readFileSync(path, 'utf8'))
+  settings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command }] })
+  writeFileSync(path, JSON.stringify(settings, null, 2))
+}
+
+test('a hook whose script is only named like git-guard.sh does not count as the vault guard', () => {
+  const home = globalInstall({ guard: false })
+  addHook(home, '~/.claude/hooks/vault-git-guard.sh')
+  fails(home, ['uninstall-global'], /--force/)
+})
+
+test('a vault git-guard.sh hook with arguments counts as the vault guard', () => {
+  const home = globalInstall({ guard: false })
+  addHook(home, '/vault/.agents/hooks/git-guard.sh --x')
+  run(home, ['uninstall-global'])
+  for (const path of DEV_LOOP_FILES) assert.equal(existsSync(join(home, path)), false, path)
+})
+
+test('the dev-loop git-guard hooks with arguments, in any HOME form, do not count as the vault guard', () => {
+  for (const command of ['~/.claude/hooks/git-guard.sh --x', '$HOME/.codex/hooks/git-guard.sh', '"${HOME}/.claude/hooks/git-guard.sh" --x']) {
+    const home = globalInstall({ guard: false })
+    addHook(home, command)
+    fails(home, ['uninstall-global'], /--force/)
+  }
 })
 
 test('uninstall-global --force removes the global install with no vault guard', () => {
