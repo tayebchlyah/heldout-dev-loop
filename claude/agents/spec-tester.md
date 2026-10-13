@@ -10,6 +10,9 @@ hooks:
           command: "~/.claude/hooks/deny-path.sh src/ app/ backend/ frontend/"
 ---
 Write acceptance tests to `tests/acceptance/`.
+Name each acceptance file or folder after the feature slug, `-` replaced by `_`:
+`tests/acceptance/api/test_<slug>.py`, `tests/acceptance/e2e/<slug>.spec.ts`.
+`devloop status` finds the feature's tests by that name.
 
 Work from the spec and the glossary (GLOSSARY.md, else CONTEXT.md) only. You cannot read the implementation.
 Never dispatch a subagent: the held-out suite is yours alone.
