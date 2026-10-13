@@ -12,6 +12,10 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import Mapping
+
+sys.path.insert(0, str(Path(__file__).parent))
+from notes_path import NotesPathError, resolve  # noqa: E402
 
 
 CODEX_SKILLS = ["domain-modeling", "grilling", "codebase-design", "code-review", "research", "handoff"]
@@ -49,20 +53,28 @@ def require_text(raw: str, token: str, label: str, failures: list[str]) -> None:
         failures.append(f"missing {label}: {token}")
 
 
-def check_config(home: Path) -> list[str]:
-    failures: list[str] = []
+def uses_dev_loop(repo: Path) -> bool:
+    if (repo / "dev-loop.json").is_file():
+        return True
+    agents = repo / "AGENTS.md"
+    return agents.is_file() and re.search(r"^vault_notes:", agents.read_text(), re.MULTILINE) is not None
+
+
+def check_config(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
     path = home / ".agents" / "dev-loop.config.json"
     if not path.is_file():
-        failures.append(f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop#<tag> --global")
-        return failures
-    config = load_json(path, failures)
-    vault = config.get("vault")
-    if not vault:
-        failures.append(f"missing vault in dev-loop config: {path}. Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>")
-        return failures
-    if not Path(vault).is_dir():
-        failures.append(f"vault path does not exist: {vault}. Fix vault in {path} or rerun with --vault=<path>")
-    return failures
+        return [f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop#<tag> --global"]
+    return check_notes(home, repo, env)
+
+
+def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    if not uses_dev_loop(repo):
+        return []
+    try:
+        resolve(repo, os.environ if env is None else env, home)
+    except NotesPathError as exc:
+        return [re.sub(r"^no notes path", "missing notes path", str(exc))]
+    return []
 
 
 def check_claude_settings(path: Path, failures: list[str]) -> None:
@@ -103,24 +115,22 @@ def check_claude(home: Path, repo: Path | None = None) -> list[str]:
 
 
 def check_claude_repo(repo: Path) -> list[str]:
-    """The repo walls a dev-loop repo (vault_notes in AGENTS.md) needs in its .claude/settings.json."""
+    """The repo walls a dev-loop repo needs in its .claude/settings.json."""
     failures: list[str] = []
-    if (repo / "AGENTS.md").is_file():
-        agents_text = (repo / "AGENTS.md").read_text()
-        if "vault_notes:" in agents_text:
-            repo_settings = load_json(repo / ".claude" / "settings.json", failures)
-            repo_denies = repo_settings.get("permissions", {}).get("deny", [])
-            for agent in [
-                "Agent(caveman:cavecrew-reviewer)",
-                "Agent(caveman:cavecrew-builder)",
-                "Agent(caveman:cavecrew-investigator)",
-            ]:
-                if agent not in repo_denies:
-                    failures.append(f"missing Claude repo deny: {agent}")
-            repo_env = repo_settings.get("env", {})
-            for variable in ["ENABLE_STOP_REVIEW", "ENABLE_COMMIT_REVIEW", "SG_PUSH_SWEEP"]:
-                if repo_env.get(variable) != "0":
-                    failures.append(f"missing Claude repo env: {variable}=0")
+    if uses_dev_loop(repo):
+        repo_settings = load_json(repo / ".claude" / "settings.json", failures)
+        repo_denies = repo_settings.get("permissions", {}).get("deny", [])
+        for agent in [
+            "Agent(caveman:cavecrew-reviewer)",
+            "Agent(caveman:cavecrew-builder)",
+            "Agent(caveman:cavecrew-investigator)",
+        ]:
+            if agent not in repo_denies:
+                failures.append(f"missing Claude repo deny: {agent}")
+        repo_env = repo_settings.get("env", {})
+        for variable in ["ENABLE_STOP_REVIEW", "ENABLE_COMMIT_REVIEW", "SG_PUSH_SWEEP"]:
+            if repo_env.get(variable) != "0":
+                failures.append(f"missing Claude repo env: {variable}=0")
     return failures
 
 
@@ -434,7 +444,7 @@ def check_mutation(repo: Path) -> list[str]:
         return []
     text = agents.read_text()
     match = re.search(r"^stacks:\s*(.+)$", text, re.MULTILINE)
-    if "vault_notes:" not in text or not match:
+    if not uses_dev_loop(repo) or not match:
         return []
     stacks = {s.strip() for s in match.group(1).split(",")}
     failures: list[str] = []
@@ -455,11 +465,12 @@ def main() -> int:
     action_groups: list[tuple[str, list[str]]] = []
     if (args.repo / "dev-loop.json").exists():
         failures, action_groups = check_project(args.home, args.repo, args.harness)
+        failures += check_notes(args.home, args.repo)
     elif args.harness == "claude":
-        failures = check_config(args.home)
+        failures = check_config(args.home, args.repo)
         failures += check_claude(args.home, args.repo)
     else:
-        failures = check_config(args.home)
+        failures = check_config(args.home, args.repo)
         codex_failures, action_groups = check_codex(args.home)
         failures += codex_failures
     failures += check_mutation(args.repo)
