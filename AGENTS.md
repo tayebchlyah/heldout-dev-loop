@@ -55,7 +55,7 @@ Notes path: `skill/scripts/notes_path.py` resolves it (`DEV_LOOP_NOTES`, `dev-lo
 
 ## Verify after install
 
-Applies when `dev-loop.json` exists:
+Applies when `dev-loop.json` exists. Without it, `check_setup.py` prints one failure line, `no dev-loop.json in <repo>. Run npx github:tchlyah/dev-loop#<tag> init`, exit 1:
 
 ```bash
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
