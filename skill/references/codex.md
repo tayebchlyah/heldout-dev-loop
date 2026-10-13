@@ -27,7 +27,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
-1. **Review wave, once.** Three reviewers, in parallel where the session allows it, otherwise in sequence. Each reviews the whole branch `main...GATE_SHA`, report only, and returns a table: file, line, finding, verdict or severity, reviewer.
+1. **Review wave, once.** Three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `main...GATE_SHA`: whole branch, report only, and returns a table: file, line, finding, verdict or severity, reviewer.
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
    - Invoke skill `code-review` with fixed point `main`.
    - Custom read-only agent `security_reviewer`.
