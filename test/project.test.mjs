@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -515,7 +515,7 @@ test('upgrade with the same version applies the kit again', () => {
 
 test('upgrade with no dev-loop.json refuses and names init', () => {
   const { home, repo } = setup()
-  upgradeFails(repo, home, [], /init/)
+  upgradeFails(repo, home, [], /dev-loop\.json not found: run init first/)
   assert.deepEqual(entries(repo), [])
 })
 
@@ -581,4 +581,111 @@ test('releaseNotes returns the sections after the old version, up to and includi
   assert.equal(releaseNotes(changelog, '1.5.0', '1.6.0'), '## [v1.6.0] - 2026-11-01\n\n- six\n\n## [1.5.1] - 2026-10-20\n\n- five one')
   assert.equal(releaseNotes(changelog, '1.5.1', '1.5.1'), '')
   assert.equal(releaseNotes(changelog, '1.4.0', '1.10.0'), releaseNotes(changelog, '1.4.0', '1.6.0'))
+})
+
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+function addManifestEntry(repo, key, value) {
+  const path = join(repo, '.dev-loop/MANIFEST.json')
+  const manifest = readJson(path)
+  manifest.files[key] = value
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
+test('upgrade refuses an old manifest path outside the kit locations, with and without --force, and deletes nothing', () => {
+  for (const force of [[], ['--force']]) {
+    const victim = mkdtempSync(join(tmpdir(), 'dev-loop-victim-'))
+    writeFileSync(join(victim, 'keep.txt'), 'keep\n')
+    const cases = [
+      [`../${victim.split('/').pop()}`, 'sha256:0'],
+      [`../${victim.split('/').pop()}/keep.txt`, 'sha256:0'],
+      [join(victim, 'keep.txt'), 'sha256:0'],
+      ['a/../../x', 'sha256:0'],
+      ['.agents/skills/dev-loop/../../../x', 'sha256:0'],
+      ['.claude/agents/./x', 'sha256:0'],
+      ['.claude/agents//x', 'sha256:0'],
+      ['.claude/agents\\x', 'sha256:0'],
+      ['', 'sha256:0'],
+      ['README.md', 'sha256:0'],
+      ['.agents/skills/dev-loop', 'sha256:0'],
+      ['..', 'link:..'],
+    ]
+    for (const [key, value] of cases) {
+      const { home, repo } = setup()
+      init(repo, home, ['--yes'])
+      writeFileSync(join(repo, 'README.md'), 'readme\n')
+      addManifestEntry(repo, key, value)
+      const before = snapshot(repo)
+      upgradeFails(repo, home, force, new RegExp(`does not own: ${escape(key)}$`, 'm'), fakePackage('99.0.0'))
+      assert.deepEqual(snapshot(repo), before, key)
+      assert.equal(readFileSync(join(victim, 'keep.txt'), 'utf8'), 'keep\n', key)
+    }
+  }
+})
+
+test('upgrade refuses a folder at a dropped kit file entry, with --force, and writes nothing', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => writeFileSync(join(root, 'skill/extra.md'), 'extra\n'))
+  run(older, 'init', repo, home, ['--yes', '--harness=claude'])
+  rmSync(join(repo, '.agents/skills/dev-loop/extra.md'))
+  mkdirSync(join(repo, '.agents/skills/dev-loop/extra.md/mine'), { recursive: true })
+  writeFileSync(join(repo, '.agents/skills/dev-loop/extra.md/mine/keep.txt'), 'keep\n')
+  const before = snapshot(repo)
+  upgradeFails(repo, home, ['--force'], /\.agents\/skills\/dev-loop\/extra\.md/, fakePackage('99.0.0'))
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade --force removes a dropped kit file that is a symlink, and keeps the file it points to', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => writeFileSync(join(root, 'skill/extra.md'), 'extra\n'))
+  run(older, 'init', repo, home, ['--yes', '--harness=claude'])
+  const outside = join(mkdtempSync(join(tmpdir(), 'dev-loop-outside-')), 'target.txt')
+  writeFileSync(outside, 'outside\n')
+  rmSync(join(repo, '.agents/skills/dev-loop/extra.md'))
+  symlinkSync(outside, join(repo, '.agents/skills/dev-loop/extra.md'))
+  upgrade(repo, home, ['--force'], fakePackage('99.0.0'))
+  assert.equal(lstatOrNull(join(repo, '.agents/skills/dev-loop/extra.md')), null)
+  assert.equal(readFileSync(outside, 'utf8'), 'outside\n')
+})
+
+test('upgrade refuses a dev-loop.json with bad harnesses, and writes nothing', () => {
+  for (const harnesses of [undefined, [], ['emacs'], 'claude', ['claude', 'both']]) {
+    const { home, repo } = setup()
+    init(repo, home, ['--yes'])
+    const devLoop = readJson(join(repo, 'dev-loop.json'))
+    writeFileSync(join(repo, 'dev-loop.json'), `${JSON.stringify({ ...devLoop, harnesses })}\n`)
+    const before = snapshot(repo)
+    upgradeFails(repo, home, [], /dev-loop\.json harnesses must be a non-empty list of claude and codex/, fakePackage('99.0.0'))
+    assert.deepEqual(snapshot(repo), before)
+  }
+})
+
+function lstatOrNull(path) {
+  try {
+    return lstatSync(path)
+  } catch {
+    return null
+  }
+}
+
+test('upgrade --force refuses a real folder at a dropped skill link, and writes nothing', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  writeFileSync(join(repo, 'dev-loop.json'), `${JSON.stringify({ version, harnesses: ['codex'] }, null, 2)}\n`)
+  unlinkSync(join(repo, '.claude/skills/dev-loop'))
+  mkdirSync(join(repo, '.claude/skills/dev-loop'))
+  writeFileSync(join(repo, '.claude/skills/dev-loop/mine.md'), 'mine\n')
+  const before = snapshot(repo)
+  upgradeFails(repo, home, ['--force'], /\.claude\/skills\/dev-loop is a folder/, fakePackage('99.0.0'))
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade removes the skill link when dev-loop.json drops the claude harness', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  writeFileSync(join(repo, 'dev-loop.json'), `${JSON.stringify({ version, harnesses: ['codex'] }, null, 2)}\n`)
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(lstatOrNull(join(repo, '.claude/skills')), null)
+  assert.equal(lstatOrNull(join(repo, '.claude/agents')), null)
+  assert.ok(existsSync(join(repo, '.claude/settings.json')))
 })
