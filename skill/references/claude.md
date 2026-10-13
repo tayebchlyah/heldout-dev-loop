@@ -12,8 +12,9 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 ## Skill and agent names
 
-- Domain work: `mattpocock-skills:domain-modeling`, `mattpocock-skills:grilling`, `mattpocock-skills:codebase-design`, `mattpocock-skills:code-review`, `mattpocock-skills:research`, `mattpocock-skills:handoff`.
-- Core loop: `superpowers:brainstorming`, `superpowers:writing-plans`, `superpowers:subagent-driven-development`, `superpowers:test-driven-development`, `superpowers:systematic-debugging`, `superpowers:finishing-a-development-branch`.
+- Domain work: `mattpocock-skills:domain-modeling`, `mattpocock-skills:codebase-design`, `mattpocock-skills:code-review`.
+- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Tracks S, M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`.
+- Denied in the project, never invoke: `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
 - Acceptance author: `spec-tester`.
 - SDD implementers: `subagent_type: implementer`.
 - Task reviewers and re-reviewers: `general-purpose`. Never use `caveman:cavecrew-*`.
