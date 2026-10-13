@@ -1,15 +1,13 @@
 #!/bin/bash
-# PreToolUse(Bash) wall for the global git rules. Codex copy of claude/hooks/git-guard.sh:
-# only deny() and ask() differ, because Codex parses permissionDecision "ask" but does
-# not support it (the call would run), so every ask becomes a deny that names the rule.
+# PreToolUse(Bash) wall: the git push rule, git reset --hard and rm -rf /.
+# Codex copy of claude/hooks/git-guard.sh: only deny() and ask() differ, because Codex
+# parses permissionDecision "ask" but does not support it (the call would run), so every
+# ask becomes a deny that names the rule.
 IN=$(cat)
 CMD=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty')
 CWD=$(printf '%s' "$IN" | jq -r '.cwd // empty')
 [ -z "$CMD" ] && exit 0
 
-VAULT=$(python3 -c 'import json,os,pathlib
-p = pathlib.Path(os.path.expanduser("~/.agents/dev-loop.config.json"))
-print(json.loads(p.read_text()).get("vault", "") if p.is_file() else "")' 2>/dev/null)
 # Any global options may sit before the subcommand: -C or -c take a value that may
 # be quoted and may hold spaces, the rest (--no-pager, --git-dir=x) are one token.
 G='git( +-[Cc] +("[^"]+"|'"'"'[^'"'"']+'"'"'|[^ ]+)| +-[^ ]+)* +'
@@ -20,14 +18,10 @@ has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
 # 1. rm -rf on root only.
 has 'rm +-[rf]+ +/( |$)|rm +-[rf]+ +/\*' && deny "Blocked: rm -rf / is never allowed."
 
-# 2. No git write of any kind inside the Obsidian vault. Checked per git call in the
-# parser below, which follows every cd and -C, so work in another repo runs while a
-# write that reaches the vault anywhere in the line is denied.
-
-# 3. Hard reset destroys work.
+# 2. Hard reset destroys work.
 has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use git stash or --soft."
 
-# 4. A plain push of a feature branch runs. A push that rewrites, deletes or publishes
+# 3. A plain push of a feature branch runs. A push that rewrites, deletes or publishes
 # beyond one feature branch asks: force, a + refspec, delete, mirror, all, prune, tags,
 # main or master as target, a bare push while main, master or a detached HEAD is
 # checked out, or a bare push whose remote config can reach other branches.
@@ -40,7 +34,7 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # refs or config, or a parser crash, asks.
 ask() { deny "Global rule: $1 needs explicit permission each time. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
 if has '(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|$)'; then
-  REASON=$(CMD="$CMD" CWD="$CWD" VAULT="$VAULT" python3 - <<'PY'
+  REASON=$(CMD="$CMD" CWD="$CWD" python3 - <<'PY'
 import os, re, shlex, subprocess, sys
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
@@ -54,10 +48,6 @@ FEEDERS = {"xargs", "parallel", "find", "fd"}
 # chr(96) is a backtick. A literal one breaks bash parsing the $( ) around this script.
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
-WRITES = {"commit", "push", "add", "checkout", "switch", "reset", "rebase", "merge", "stash",
-          "tag", "cherry-pick", "am", "apply"}
-WRITE_TEXT = re.compile(r"(^|[^\w.-])git(\s+-\S+)*\s+(" + "|".join(sorted(WRITES)) + r"|branch\s+-[dD])(\s|$)")
-VAULT = os.path.normpath(os.environ["VAULT"]) if os.environ.get("VAULT") else ""
 START = os.environ["CWD"]
 
 
@@ -66,26 +56,10 @@ def ask(reason):
     sys.exit(0)
 
 
-def vault():
-    print("VAULT")
-    sys.exit(0)
-
-
-def inside(paths):
-    # None is a cwd the parser could not follow (cd $X, cd -, popd): judge it by
-    # where the session started, so the vault stays protected.
-    if not VAULT:
-        return False
-    for path in paths:
-        path = os.path.normpath(START if path is None else path)
-        if path == VAULT or path.startswith(VAULT + os.sep):
-            return True
-    return False
-
-
 def resolve(bases, to):
-    # Every place a cd or -C can land. A ~ expands only at the start of a token:
-    # the vault path itself holds ~ characters (iCloud~md~obsidian).
+    # Every place a cd or -C can land, None for one the parser cannot follow (cd $X,
+    # cd -). A ~ expands only at the start of a token: a path may hold ~
+    # characters (iCloud~md~obsidian).
     target = os.path.expanduser(to)
     if to == "-" or (EXPANDS - {"~"}) & set(to) or target.startswith("~"):
         return {None}
@@ -200,8 +174,6 @@ def check_git(args, cwds, drift, fed):
             config.append(args[i])
         i += 1
     sub = args[i] if i < len(args) else ""
-    if (sub in WRITES or (sub == "branch" and {"-d", "-D", "--delete"} & set(args[i + 1:]))) and inside(repos):
-        vault()
     repo = next((r for r in sorted(repos, key=str) if r is not None), START)
     if sub != "push":
         aliases = [c for c in config if c.startswith("alias.")]
@@ -235,10 +207,7 @@ def check(cmd, cwds, drift):
     try:
         segs = list(segments(cmd))
     except ValueError:
-        # Unbalanced quotes, often a heredoc body. In the vault, fall back to the
-        # plain text match the guard used before the parser.
-        if inside(cwds) and WRITE_TEXT.search(cmd):
-            vault()
+        # Unbalanced quotes, often a heredoc body.
         ask("a git command the guard cannot parse")
     subshells, seen, lost = [], set(cwds), unreliable(cmd, segs)
     for seg, sep in segs:
@@ -278,11 +247,6 @@ def check(cmd, cwds, drift):
 check(os.environ["CMD"], {os.environ["CWD"]}, set())
 PY
 ) || REASON="a push the guard failed to check"
-  # A parser crash in a vault session fails closed as a vault write.
-  if [ -n "$VAULT" ] && [ "$REASON" = "a push the guard failed to check" ]; then
-    case "$CWD" in "$VAULT"|"$VAULT"/*) REASON=VAULT ;; esac
-  fi
-  [ "$REASON" = VAULT ] && deny "Never run git writes inside the vault. The Obsidian Git plugin owns commits. Read-only git is fine."
   [ -n "$REASON" ] && ask "$REASON"
 fi
 exit 0
