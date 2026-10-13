@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import { assertValidToml } from './helpers.mjs'
 import { buildKit } from '../lib/kit.mjs'
-import { compareManifest } from '../lib/manifest.mjs'
+import { compareManifest, sha256 } from '../lib/manifest.mjs'
 import { readVersion, releaseNotes, writeKit } from '../lib/project.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -272,7 +272,7 @@ test('writeKit writes changed files, skips equal ones, links, and deletes files 
     ],
     link: { path: 'links/kept', target: '../skill' },
   }
-  const oldManifest = { version: '0.0.1', files: { 'a/same.txt': 'x', 'a/old.txt': 'x', 'a/gone.txt': 'x', 'links/kept': 'link:../skill' } }
+  const oldManifest = { version: '0.0.1', files: { 'a/same.txt': 'x', 'a/old.txt': 'x', 'a/gone.txt': sha256('gone\n'), 'links/kept': 'link:../skill' } }
 
   const dry = writeKit({ repo, kit, oldManifest, dryRun: true })
   assert.equal(readFileSync(join(repo, 'a/old.txt'), 'utf8'), 'edited\n')
@@ -295,6 +295,40 @@ test('writeKit writes changed files, skips equal ones, links, and deletes files 
   assert.equal(lstatSync(join(repo, 'b/run.sh')).mode & 0o777, 0o755)
   assert.equal(existsSync(join(repo, 'a/gone.txt')), false)
   assert.equal(readdirSync(join(repo, 'a')).some((name) => name.includes('.bak')), false)
+})
+
+const kitContent = (path) => buildKit({ packageRoot, harnesses: ['claude'] }).files.find((file) => file.path === path).content
+
+test('init refuses a kit file path that holds other content, lists every such path, and writes nothing', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, '.claude/agents'), { recursive: true })
+  writeFileSync(join(repo, '.claude/agents/implementer.md'), 'mine\n')
+  writeFileSync(join(repo, '.claude/agents/spec-tester.md'), 'also mine\n')
+  initFails(repo, home, ['--yes', '--harness=claude'], /\.claude\/agents\/implementer\.md[\s\S]*--force/)
+  initFails(repo, home, ['--yes', '--harness=claude'], /\.claude\/agents\/spec-tester\.md/)
+  assert.deepEqual(entries(repo), ['.claude'])
+  assert.deepEqual(readdirSync(join(repo, '.claude/agents')), ['implementer.md', 'spec-tester.md'])
+  assert.equal(readFileSync(join(repo, '.claude/agents/implementer.md'), 'utf8'), 'mine\n')
+})
+
+test('init --force moves a kit file path that holds other content to a backup, then writes the kit', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, '.claude/agents'), { recursive: true })
+  writeFileSync(join(repo, '.claude/agents/implementer.md'), 'mine\n')
+  const output = init(repo, home, ['--yes', '--harness=claude', '--force'])
+  const backups = readdirSync(join(repo, '.claude/agents')).filter((name) => name.startsWith('implementer.md.bak-'))
+  assert.equal(backups.length, 1)
+  assert.equal(readFileSync(join(repo, '.claude/agents', backups[0]), 'utf8'), 'mine\n')
+  assert.equal(readFileSync(join(repo, '.claude/agents/implementer.md'), 'utf8'), kitContent('.claude/agents/implementer.md'))
+  assert.match(output, /backup .*implementer\.md\.bak-/)
+})
+
+test('init accepts a kit file path that already holds the kit content', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, '.claude/agents'), { recursive: true })
+  writeFileSync(join(repo, '.claude/agents/implementer.md'), kitContent('.claude/agents/implementer.md'))
+  init(repo, home, ['--yes', '--harness=claude'])
+  assert.equal(readdirSync(join(repo, '.claude/agents')).some((name) => name.includes('.bak')), false)
 })
 
 test('writeKit replaces a link that points elsewhere', () => {
@@ -688,4 +722,16 @@ test('upgrade removes the skill link when dev-loop.json drops the claude harness
   assert.equal(lstatOrNull(join(repo, '.claude/skills')), null)
   assert.equal(lstatOrNull(join(repo, '.claude/agents')), null)
   assert.ok(existsSync(join(repo, '.claude/settings.json')))
+})
+
+test('upgrade --force moves a dropped path that no longer matches the old manifest to a backup', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  writeFileSync(join(repo, '.claude/agents/mine.md'), 'mine\n')
+  addManifestEntry(repo, '.claude/agents/mine.md', 'sha256:00')
+  upgrade(repo, home, ['--force'], fakePackage('99.0.0'))
+  assert.equal(lstatOrNull(join(repo, '.claude/agents/mine.md')), null)
+  const backups = readdirSync(join(repo, '.claude/agents')).filter((name) => name.startsWith('mine.md.bak-'))
+  assert.equal(backups.length, 1)
+  assert.equal(readFileSync(join(repo, '.claude/agents', backups[0]), 'utf8'), 'mine\n')
 })
