@@ -68,16 +68,7 @@ def uses_dev_loop(repo: Path) -> bool:
     return (repo / "dev-loop.json").is_file()
 
 
-def check_config(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
-    path = home / ".agents" / "dev-loop.config.json"
-    if not path.is_file():
-        return [f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop#<tag> init in the repository"]
-    return check_notes(home, repo, env)
-
-
 def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
-    if not uses_dev_loop(repo):
-        return []
     try:
         resolve(repo, os.environ if env is None else env, home)
     except NotesPathError as exc:
@@ -104,7 +95,7 @@ def check_project_config(repo: Path) -> list[str]:
     return failures
 
 
-def check_claude_settings(path: Path, failures: list[str], project: bool = False) -> None:
+def check_claude_settings(path: Path, failures: list[str]) -> None:
     settings = load_json(path, failures)
     hooks = settings.get("hooks", {})
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
@@ -115,29 +106,10 @@ def check_claude_settings(path: Path, failures: list[str], project: bool = False
         "Skill(superpowers:verification-before-completion)",
         "Read(./.env)",
         "Read(./.env.*)",
-        *(PROJECT_SKILL_DENIES if project else []),
+        *PROJECT_SKILL_DENIES,
     ]:
         if rule not in denies:
             failures.append(f"missing Claude deny: {rule}")
-
-
-def check_claude(home: Path) -> list[str]:
-    failures: list[str] = []
-    root = home / ".claude"
-    for relative in [
-        "hooks/gate.sh",
-        "hooks/gate-snapshot.sh",
-        "hooks/tree-hash.sh",
-        "hooks/deny-path.sh",
-        "hooks/deny-acceptance-to-subagents.sh",
-        "hooks/git-guard.sh",
-        "agents/implementer.md",
-        "agents/spec-tester.md",
-    ]:
-        require_file(root / relative, failures)
-
-    check_claude_settings(root / "settings.json", failures)
-    return failures
 
 
 def check_claude_repo(repo: Path) -> list[str]:
@@ -160,8 +132,8 @@ def check_claude_repo(repo: Path) -> list[str]:
     return failures
 
 
-def check_codex_root(root: Path, rules_path: Path, hook_scripts: bool) -> tuple[list[str], dict]:
-    """Config, hooks, agents and rules of one Codex folder: ~/.codex, or <repo>/.codex in a project."""
+def check_codex_root(root: Path, rules_path: Path) -> list[str]:
+    """Config, hooks, agents and rules of the project .codex folder."""
     failures: list[str] = []
     config, raw_config = load_toml(root / "config.toml", failures)
     if "sandbox_mode" in raw_config:
@@ -183,9 +155,6 @@ def check_codex_root(root: Path, rules_path: Path, hook_scripts: bool) -> tuple[
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Codex hook event: {event}")
-    if hook_scripts:
-        for relative in ["hooks/gate.sh", "hooks/deny-path.sh", "hooks/git-guard.sh", "hooks/session-start.sh"]:
-            require_file(root / relative, failures)
 
     agents = {
         "implementer.toml": "dev-implementer",
@@ -230,7 +199,7 @@ def check_codex_root(root: Path, rules_path: Path, hook_scripts: bool) -> tuple[
         require_text(rules, '"reset", "--hard"', "hard reset rule", failures)
         require_text(rules, 'decision="forbidden"', "forbidden command decision", failures)
         require_text(rules, "match=", "command rule inline tests", failures)
-    return failures, config
+    return failures
 
 
 def codex_skill_groups(home: Path) -> list[tuple[str, list[str]]]:
@@ -242,36 +211,6 @@ def codex_skill_groups(home: Path) -> list[tuple[str, list[str]]]:
     if not skill_failures:
         return []
     return [(f"Install these skills from their own source: {', '.join(CODEX_SKILLS)}.", skill_failures)]
-
-
-def check_codex(home: Path) -> tuple[list[str], list[tuple[str, list[str]]]]:
-    root = home / ".codex"
-    failures, config = check_codex_root(root, root / "rules" / "default.rules", hook_scripts=True)
-
-    # Ruling R10: trusted-hook state and third-party skills are not something
-    # any installer can write. A user who just ran the installer will see
-    # these fail until they take the corresponding manual step, so they are
-    # reported separately as user actions rather than mixed in with real
-    # install defects.
-    action_groups: list[tuple[str, list[str]]] = []
-
-    trusted_hooks = config.get("hooks", {}).get("state", {})
-    hook_trust_failures: list[str] = []
-    for event in ["pre_tool_use", "session_start", "user_prompt_submit", "subagent_stop", "stop"]:
-        event_entries = [
-            value
-            for key, value in trusted_hooks.items()
-            if f":{event}:" in key and isinstance(value, dict)
-        ]
-        if not any(str(entry.get("trusted_hash", "")).startswith("sha256:") for entry in event_entries):
-            hook_trust_failures.append(f"missing trusted Codex hook hash: {event}")
-    if hook_trust_failures:
-        action_groups.append(
-            ("Run `/hooks` in Codex and trust the dev-loop hook definitions.", hook_trust_failures)
-        )
-
-    action_groups += codex_skill_groups(home)
-    return failures, action_groups
 
 
 MANIFEST = ".dev-loop/MANIFEST.json"
@@ -374,11 +313,11 @@ def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list
     """D10: the kit against its manifest, the project merged files, and no user-level skill."""
     failures = check_manifest(repo) + check_user_skill(home)
     if harness == "claude":
-        check_claude_settings(repo / ".claude" / "settings.json", failures, project=True)
+        check_claude_settings(repo / ".claude" / "settings.json", failures)
         return failures + check_claude_repo(repo), []
     root = repo / ".codex"
-    codex_failures, _ = check_codex_root(root, root / "rules" / "dev-loop.rules", hook_scripts=False)
-    return failures + codex_failures, project_trust_groups(home, repo) + codex_skill_groups(home)
+    failures += check_codex_root(root, root / "rules" / "dev-loop.rules")
+    return failures, project_trust_groups(home, repo) + codex_skill_groups(home)
 
 
 def repo_files(repo: Path, name: str) -> list[Path]:
@@ -487,18 +426,13 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     args = parser.parse_args()
 
-    action_groups: list[tuple[str, list[str]]] = []
-    if (args.repo / "dev-loop.json").exists():
-        failures, action_groups = check_project(args.home, args.repo, args.harness)
-        failures += check_notes(args.home, args.repo)
-        failures += check_project_config(args.repo)
-    elif args.harness == "claude":
-        failures = check_config(args.home, args.repo)
-        failures += check_claude(args.home)
-    else:
-        failures = check_config(args.home, args.repo)
-        codex_failures, action_groups = check_codex(args.home)
-        failures += codex_failures
+    if not uses_dev_loop(args.repo):
+        print(f"{args.harness}: FAIL")
+        print(f"- no dev-loop.json in {args.repo}. Run npx github:tchlyah/dev-loop#<tag> init")
+        return 1
+    failures, action_groups = check_project(args.home, args.repo, args.harness)
+    failures += check_notes(args.home, args.repo)
+    failures += check_project_config(args.repo)
     failures += check_mutation(args.repo)
 
     if failures or action_groups:
