@@ -4,19 +4,23 @@ import { parseArgs } from '../lib/args.mjs'
 
 test('no flag gives the default shape', () => {
   assert.deepEqual(parseArgs([]), {
-    command: null, global: false, yes: false, dryRun: false, link: false, force: false, harness: null, vault: null, notes: null,
+    command: null, global: false, yes: false, dryRun: false, link: false, force: false, harness: null, notes: null,
   })
 })
 
 test('every flag parses', () => {
-  const flags = parseArgs(['--global', '--yes', '--dry-run', '--link', '--force', '--harness=codex', '--vault=/tmp/v', '--notes=/tmp/n'])
+  const flags = parseArgs(['--global', '--yes', '--dry-run', '--link', '--force', '--harness=codex', '--notes=/tmp/n'])
   assert.deepEqual(flags, {
-    command: null, global: true, yes: true, dryRun: true, link: true, force: true, harness: 'codex', vault: '/tmp/v', notes: '/tmp/n',
+    command: null, global: true, yes: true, dryRun: true, link: true, force: true, harness: 'codex', notes: '/tmp/n',
   })
 })
 
 test('an unknown flag throws', () => {
   assert.throws(() => parseArgs(['--nope']), /unknown flag: --nope/)
+})
+
+test('--vault= is an unknown flag', () => {
+  assert.throws(() => parseArgs(['--vault=/tmp/v']), /unknown flag: --vault=\/tmp\/v/)
 })
 
 test('an invalid harness throws', () => {
