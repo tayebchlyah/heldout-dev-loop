@@ -304,7 +304,7 @@ test('no command and no --global prints the usage and exits 1', () => {
 test('a command that is not built yet prints not implemented and exits 1', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   assert.throws(
-    () => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), 'init'], {
+    () => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), 'upgrade'], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: 'pipe',
