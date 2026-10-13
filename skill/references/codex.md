@@ -15,8 +15,9 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Skill and agent names
 
-- Domain work: `domain-modeling`, `grilling`, `codebase-design`, `code-review`, `research`, `handoff` from the local Matt Pocock installation.
-- Core loop: `superpowers:brainstorming`, `superpowers:writing-plans`, `superpowers:subagent-driven-development`, `superpowers:test-driven-development`, `superpowers:systematic-debugging`, `superpowers:finishing-a-development-branch`.
+- Matt Pocock skills from the local installation: `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr`, `prototype`.
+- Core loop: Stage 1 `grilling`, `prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Tracks S, M), `superpowers:subagent-driven-development` (Track L), `tdd`, `diagnosing-bugs`. Stage 7 `pr`.
+- Never invoke these Superpowers skills (Codex has no skill deny list): `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
 - Acceptance author: custom agent `spec_tester`.
 - SDD implementers: custom agent `implementer`.
 - Task reviewers and re-reviewers: custom read-only agent `task_reviewer`.

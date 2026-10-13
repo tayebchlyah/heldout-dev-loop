@@ -61,10 +61,14 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
   ])
 })
 
-test('the Claude fragment carries the three deny rules', () => {
+test('test_project_fragment_denies_the_replaced_skills', () => {
   const fragment = readJson('claude/settings.fragment.json')
   assert.deepEqual(fragment.permissions.deny, [
     'Skill(superpowers:verification-before-completion)',
+    'Skill(superpowers:test-driven-development)',
+    'Skill(superpowers:systematic-debugging)',
+    'Skill(superpowers:brainstorming)',
+    'Skill(superpowers:finishing-a-development-branch)',
     'Read(./.env)',
     'Read(./.env.*)',
   ])

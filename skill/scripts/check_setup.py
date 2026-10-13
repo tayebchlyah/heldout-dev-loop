@@ -20,7 +20,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from notes_path import NotesPathError, resolve  # noqa: E402
 
 
-CODEX_SKILLS = ["domain-modeling", "grilling", "codebase-design", "code-review", "research", "handoff"]
+CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"]
+# D16: the Superpowers skills that Pocock grilling, tdd, diagnosing-bugs and pr replace, denied per project.
+PROJECT_SKILL_DENIES = [
+    "Skill(superpowers:test-driven-development)",
+    "Skill(superpowers:systematic-debugging)",
+    "Skill(superpowers:brainstorming)",
+    "Skill(superpowers:finishing-a-development-branch)",
+]
 COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed")
 MERGE_VALUES = ("auto", "human")
 EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
@@ -98,7 +105,7 @@ def check_project_config(repo: Path) -> list[str]:
     return failures
 
 
-def check_claude_settings(path: Path, failures: list[str]) -> None:
+def check_claude_settings(path: Path, failures: list[str], project: bool = False) -> None:
     settings = load_json(path, failures)
     hooks = settings.get("hooks", {})
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
@@ -109,6 +116,7 @@ def check_claude_settings(path: Path, failures: list[str]) -> None:
         "Skill(superpowers:verification-before-completion)",
         "Read(./.env)",
         "Read(./.env.*)",
+        *(PROJECT_SKILL_DENIES if project else []),
     ]:
         if rule not in denies:
             failures.append(f"missing Claude deny: {rule}")
@@ -370,7 +378,7 @@ def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list
     """D10: the kit against its manifest, the project merged files, and no user-level skill."""
     failures = check_manifest(repo) + check_user_skill(home)
     if harness == "claude":
-        check_claude_settings(repo / ".claude" / "settings.json", failures)
+        check_claude_settings(repo / ".claude" / "settings.json", failures, project=True)
         return failures + check_claude_repo(repo), []
     root = repo / ".codex"
     codex_failures, _ = check_codex_root(root, root / "rules" / "dev-loop.rules", hook_scripts=False)

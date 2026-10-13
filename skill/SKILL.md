@@ -41,7 +41,7 @@ State stage and the check that chose it, one line. Then run it.
 Stages 0 to 2 run in the main checkout on `main`. Stages 3 to 7 run in the feature's own worktree, on the feature's own branch, one worktree for the feature's whole life.
 At the start of Stages 3 to 7, work in that worktree yourself: find it with `git worktree list`, or create it with the harness's own worktree mechanism. The branch exists: attach the worktree to it. Else: branch from `origin/main` after `git fetch origin`. Never ask the user to change directory.
 
-Rebase onto `origin/main` at four points only, each right after `git fetch origin`: Stage 2 start (on `main`), Stage 3 start, Stage 6 start, Stage 7 (through `finishing-a-development-branch`). Never during Stages 4 and 5: the SDD ledger and the review packages name commits by hash.
+Rebase onto `origin/main` at four points only, each right after `git fetch origin`: Stage 2 start (on `main`), Stage 3 start, Stage 6 start, Stage 7. Never during Stages 4 and 5: the SDD ledger and the review packages name commits by hash.
 Rebase conflict in `tests/acceptance/`: another feature's file keeps the upstream side (during a rebase that side is `--ours`: `git checkout --ours <file>`). This feature's own file: stop, `spec-tester` resolves it.
 
 ## 0 Bootstrap
@@ -56,16 +56,17 @@ Notes path: ask for it, the folder must exist. Write `{"notes": "<path>"}` to `d
 Done when `scripts/gate.sh` blocks a deliberately broken unit test.
 
 ## 1 Frame
-Invoke the selected route's grilling skill. Then `superpowers:brainstorming`.
-Done when brainstorming has named the path out loud. Superpowers 7 also names a size (quick task, small change, project): every size continues to Stage 2 Spec. No track rule per size.
+Invoke the selected route's `grilling` skill. No other framing skill. UI work: the route's `prototype` skill first, a throwaway prototype.
+Work larger than one session: tell the user to run `/wayfinder`. User-invoked only, the agent cannot call it.
+Propose the track, S, M or L, with a one-line reason. Track S: no spec, no plan, branch `<prefix>/<slug>`, then Stage 5. Tracks M and L: Stage 2 Spec. Done when the user accepts the track.
 
 ## 2 Spec
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
-Continue `superpowers:brainstorming`. Spec to `$NOTES/specs/`.
+Write the spec from [references/spec.md](references/spec.md) to `$NOTES/specs/`. Run its builder check. Track L: its threat model. One-way door: its doubt review.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
 Supersedes: read the earlier specs in `$NOTES/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
-Stop when the user approves. Do not let brainstorming invoke writing-plans: acceptance tests (Stage 3) come before the plan.
+Stop when the user approves. Acceptance tests (Stage 3) come before the plan.
 Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`.
 
 ## 3 Acceptance
@@ -77,11 +78,13 @@ Stop. Tell the user to run `/clear` before Stage 4.
 
 ## 4 Plan
 Invoke `superpowers:writing-plans`. Plan to `$NOTES/plans/`.
-Plan never references `tests/acceptance/`. Choose subagent-driven at handoff.
+Plan never references `tests/acceptance/`. At handoff: Tracks S and M inline execution, Track L subagent-driven.
 
 ## 5 Build
-Invoke `superpowers:subagent-driven-development`. Work in the feature worktree: SDD's worktree step reuses it and creates none.
-Use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
+Executor by spec `track:`. Tracks S and M: `superpowers:executing-plans`. Track L: `superpowers:subagent-driven-development`. Work in the feature worktree: the executor's worktree step reuses it and creates none.
+Skip the executor's final whole-branch review: the Stage 6 review wave replaces it. Keep its workspace: the ledger stays.
+Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
+Track L: use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
 Ledger gets `## Discoveries` section, one line per surprise.
 Deferred findings go to the project note `## Deferred` in the notes folder, not to ledger.
 
@@ -99,4 +102,4 @@ Deployment or infra work explicitly named in the approved spec or plan stays in 
 Never invoke `superpowers:verification-before-completion`. The shell gate owns routine verification.
 
 ## 7 Ship
-Invoke `superpowers:finishing-a-development-branch`. Option 1 is rebase, never merge.
+dev-loop's own steps, no finishing skill. `git fetch origin`, `git rebase origin/main`, direct `scripts/gate.sh`, `git push`. PR body through the route's `pr` skill. Integrate by `gh pr merge --rebase`, never a merge commit.
