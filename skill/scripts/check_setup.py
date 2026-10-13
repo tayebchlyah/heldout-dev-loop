@@ -53,12 +53,12 @@ def check_config(home: Path) -> list[str]:
     failures: list[str] = []
     path = home / ".agents" / "dev-loop.config.json"
     if not path.is_file():
-        failures.append(f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop")
+        failures.append(f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop#<tag> --global")
         return failures
     config = load_json(path, failures)
     vault = config.get("vault")
     if not vault:
-        failures.append(f"missing vault in dev-loop config: {path}. Rerun npx github:tchlyah/dev-loop --vault=<path>")
+        failures.append(f"missing vault in dev-loop config: {path}. Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>")
         return failures
     if not Path(vault).is_dir():
         failures.append(f"vault path does not exist: {vault}. Fix vault in {path} or rerun with --vault=<path>")

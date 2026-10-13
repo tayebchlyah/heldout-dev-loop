@@ -54,7 +54,7 @@ MANIFEST rule: kit files are never edited in a project. Change dev-loop, then ru
 
 Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. A replaced skill goes to `<root>/backups/skills/<name>.bak-<timestamp>` instead (for example `~/.agents/backups/skills/`), because a backup inside a skills folder is discovered as a second skill. It never removes or reorders an entry it did not add. On a `config.toml` table collision (user already declares a table the fragment also declares), the user's table wins and the installer prints one line naming it.
 
-Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it as a plain top-level failure line, not under "User actions required": `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop --vault=<path>`.
+Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it as a plain top-level failure line, not under "User actions required": `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>`.
 
 ## Verify after install
 
