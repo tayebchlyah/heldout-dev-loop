@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import shutil
@@ -1072,6 +1073,241 @@ class SetupCheckerTests(unittest.TestCase):
             result = self.run_checker("codex", home)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("git push", result.stdout)
+
+
+PACKAGE_ROOT = SKILL_ROOT.parent
+INSTALLER = PACKAGE_ROOT / "bin" / "install.mjs"
+
+
+@unittest.skipUnless(shutil.which("node"), "node is required to run the installer")
+class ProjectSetupCheckerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name) / "home"
+        self.home.mkdir()
+        self.repo = Path(self._tmp.name) / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def init(self, harness: str = "both") -> None:
+        result = subprocess.run(
+            ["node", str(INSTALLER), "init", "--yes", f"--harness={harness}"],
+            cwd=self.repo,
+            env={**os.environ, "HOME": str(self.home)},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def run_checker(self, harness: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(CHECKER), "--harness", harness, "--home", str(self.home), "--repo", str(self.repo)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def main_checkout(self) -> str:
+        common = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=self.repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        return str(Path(common).parent)
+
+    def trust_codex(self) -> None:
+        main = self.main_checkout()
+        lines = [f'[projects."{main}"]', 'trust_level = "trusted"']
+        for event in ["session_start", "pre_tool_use", "stop", "subagent_stop"]:
+            lines += [f'[hooks.state."{main}/.codex/hooks.json:{event}:0:0"]', 'trusted_hash = "sha256:test"']
+        write(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
+        for name in check_setup.CODEX_SKILLS:
+            write(self.home / ".agents" / "skills" / name / "SKILL.md", f"name: {name}\n")
+
+    def test_claude_project_passes(self) -> None:
+        self.init("claude")
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("claude: PASS", result.stdout)
+
+    def test_codex_project_lists_only_user_actions(self) -> None:
+        self.init("codex")
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(
+            result.stdout.startswith("codex: FAIL\n\nUser actions required"), result.stdout
+        )
+        self.assertIn("Trust the project, then run /hooks in Codex.", result.stdout)
+        self.assertIn("trust_level", result.stdout)
+        self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
+        self.assertIn("grilling", result.stdout)
+
+    def test_codex_project_with_trust_and_skills_passes(self) -> None:
+        self.init()
+        self.trust_codex()
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("codex: PASS", result.stdout)
+
+    def test_codex_project_reads_the_project_codex_folder(self) -> None:
+        self.init()
+        self.trust_codex()
+        config = self.repo / ".codex" / "config.toml"
+        write(config, config.read_text().replace("hooks = true", "hooks = false"))
+        (self.repo / ".codex" / "agents" / "spec-tester.toml").unlink()
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Codex hooks are not enabled", result.stdout)
+        self.assertIn("spec-tester.toml", result.stdout)
+
+    def test_codex_project_needs_a_trusted_hash_for_the_project_hooks_file(self) -> None:
+        self.init()
+        self.trust_codex()
+        config = self.home / ".codex" / "config.toml"
+        write(config, config.read_text().replace(".codex/hooks.json:stop:", "/elsewhere/hooks.json:stop:"))
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
+
+    def test_claude_project_needs_the_hook_events_and_denies(self) -> None:
+        self.init("claude")
+        path = self.repo / ".claude" / "settings.json"
+        settings = json.loads(path.read_text())
+        del settings["hooks"]["Stop"]
+        settings["permissions"]["deny"].remove("Read(./.env)")
+        write(path, json.dumps(settings))
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing Claude hook event: Stop", result.stdout)
+        self.assertIn("missing Claude deny: Read(./.env)", result.stdout)
+
+    def test_a_changed_kit_file_fails(self) -> None:
+        self.init()
+        path = self.repo / ".dev-loop" / "hooks" / "claude" / "gate.sh"
+        path.write_bytes(path.read_bytes() + b"x")
+        for harness in ["claude", "codex"]:
+            with self.subTest(harness=harness):
+                result = self.run_checker(harness)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(
+                    "- kit file changed locally: .dev-loop/hooks/claude/gate.sh. "
+                    "Move the change to dev-loop, then run upgrade",
+                    result.stdout,
+                )
+
+    def test_a_deleted_kit_file_fails(self) -> None:
+        self.init("claude")
+        (self.repo / ".claude" / "agents" / "spec-tester.md").unlink()
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("- missing kit file: .claude/agents/spec-tester.md", result.stdout)
+
+    def test_a_user_level_skill_fails(self) -> None:
+        self.init()
+        self.trust_codex()
+        folder = self.home / ".agents" / "skills" / "dev-loop"
+        dangling_link = self.home / ".claude" / "skills" / "dev-loop"
+        folder.mkdir(parents=True)
+        dangling_link.parent.mkdir(parents=True)
+        dangling_link.symlink_to(self.home / "nowhere")
+        for harness in ["claude", "codex"]:
+            with self.subTest(harness=harness):
+                result = self.run_checker(harness)
+                self.assertEqual(result.returncode, 1)
+                for location in [folder, dangling_link]:
+                    self.assertIn(
+                        f"- user-level dev-loop skill found: {location}. "
+                        "Run npx github:tchlyah/dev-loop#<tag> uninstall-global",
+                        result.stdout,
+                    )
+
+    def test_without_dev_loop_json_the_global_checks_run(self) -> None:
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing dev-loop config", result.stdout)
+
+
+class ManifestCheckTests(unittest.TestCase):
+    CHANGED = ". Move the change to dev-loop, then run upgrade"
+
+    def manifest(self, repo: Path, files: dict) -> None:
+        write(repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "1.5.0", "files": files}))
+
+    def digest(self, data: bytes) -> str:
+        return "sha256:" + hashlib.sha256(data).hexdigest()
+
+    def test_matching_files_and_link_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = Path(root)
+            write(repo / "a" / "b.txt", "hello\n")
+            (repo / "link").symlink_to("a")
+            self.manifest(repo, {"a/b.txt": self.digest(b"hello\n"), "link": "link:a"})
+            self.assertEqual(check_setup.check_manifest(repo), [])
+
+    def test_changed_missing_and_wrong_link_are_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = Path(root)
+            write(repo / "a.txt", "edited\n")
+            (repo / "link").symlink_to("elsewhere")
+            self.manifest(
+                repo,
+                {"a.txt": self.digest(b"hello\n"), "gone.txt": self.digest(b"x"), "link": "link:a"},
+            )
+            self.assertEqual(
+                check_setup.check_manifest(repo),
+                [
+                    f"kit file changed locally: a.txt{self.CHANGED}",
+                    "missing kit file: gone.txt",
+                    f"kit file changed locally: link{self.CHANGED}",
+                ],
+            )
+
+    def test_a_file_entry_that_is_a_symlink_is_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            repo = Path(root)
+            write(Path(outside) / "secret", "hello\n")
+            (repo / "a.txt").symlink_to(Path(outside) / "secret")
+            self.manifest(repo, {"a.txt": self.digest(b"hello\n")})
+            self.assertEqual(check_setup.check_manifest(repo), [f"kit file changed locally: a.txt{self.CHANGED}"])
+
+    def test_unsafe_keys_are_rejected_and_not_read(self) -> None:
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            repo = Path(root) / "repo"
+            repo.mkdir()
+            write(Path(outside) / "secret", "hello\n")
+            (repo / "out").symlink_to(outside)
+            keys = [
+                "/etc/hosts",
+                "../x",
+                "a/../b",
+                "./a",
+                "a//b",
+                "a/",
+                "",
+                "a\\b",
+                "out/secret",
+            ]
+            self.manifest(repo, {key: self.digest(b"hello\n") for key in keys})
+            self.assertEqual(
+                check_setup.check_manifest(repo),
+                [f"invalid kit path in MANIFEST.json: {key}" for key in keys],
+            )
+
+    def test_missing_or_invalid_manifest_fails(self) -> None:
+        for content in [None, "{not json", json.dumps({"version": "1.5.0"}), json.dumps([1])]:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as root:
+                repo = Path(root)
+                if content is not None:
+                    write(repo / ".dev-loop" / "MANIFEST.json", content)
+                self.assertEqual(
+                    check_setup.check_manifest(repo), ["missing or invalid .dev-loop/MANIFEST.json"]
+                )
 
 
 def git_in(repo: Path, *args: str) -> str:
