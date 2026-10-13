@@ -2,11 +2,12 @@
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout, argv, env, exit } from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { parseArgs } from '../lib/args.mjs'
 import { buildConfig, writeConfig } from '../lib/config.mjs'
 import { buildPlan, runPlan, assertLinkSource } from '../lib/plan.mjs'
+import { runInit } from '../lib/project.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -19,7 +20,6 @@ const USAGE = `usage: dev-loop <command> [flags]
 const notImplemented = (name) => () => {
   throw new Error(`${name} is not implemented`)
 }
-const runInit = notImplemented('init')
 const runUpgrade = notImplemented('upgrade')
 const runUninstallGlobal = notImplemented('uninstall-global')
 
@@ -32,9 +32,17 @@ async function main() {
     exit(1)
   }
   if (flags.command !== null) {
-    const ctx = { flags, home, cwd: process.cwd(), packageRoot, ask: null }
+    const rl = flags.yes ? null : createInterface({ input: stdin, output: stdout })
+    const ctx = { flags, home, cwd: process.cwd(), packageRoot, ask: asker(rl) }
     const runners = { init: runInit, upgrade: runUpgrade, 'uninstall-global': runUninstallGlobal }
-    await runners[flags.command](ctx)
+    let reports
+    try {
+      reports = await runners[flags.command](ctx)
+    } finally {
+      rl?.close()
+    }
+    console.log(flags.dryRun ? 'dry run, nothing written' : 'installed')
+    printReports(reports, flags, (path) => relative(ctx.cwd, path))
     return
   }
 
@@ -42,12 +50,7 @@ async function main() {
   if (flags.link) assertLinkSource(repoRoot)
 
   const rl = flags.yes ? null : createInterface({ input: stdin, output: stdout })
-  const ask = async (question, fallback) => {
-    const answer = await rl.question(`${question} [${fallback}]: `)
-    return answer.trim() === '' ? fallback : answer.trim()
-  }
-
-  const config = await buildConfig({ flags, home, env, ask })
+  const config = await buildConfig({ flags, home, env, ask: asker(rl) })
   rl?.close()
 
   const configResult = writeConfig(home, config, { dryRun: flags.dryRun })
@@ -62,10 +65,21 @@ async function main() {
   )
 }
 
-function report(reports, flags, home, config) {
-  const short = (path) => path.replace(home, '~')
-  const changed = reports.filter((entry) => entry.action !== 'skip')
+// The line iterator buffers input, so piped answers that arrive before their
+// question are not lost (rl.question drops them). At the end of the input,
+// every question takes its fallback.
+function asker(rl) {
+  if (rl === null) return null
+  const lines = rl[Symbol.asyncIterator]()
+  return async (question, fallback) => {
+    stdout.write(`${question} [${fallback}]: `)
+    const { value, done } = await lines.next()
+    const answer = done ? '' : value.trim()
+    return answer === '' ? fallback : answer
+  }
+}
 
+function report(reports, flags, home, config) {
   console.log(flags.dryRun ? 'dry run, nothing written' : 'installed')
   console.log(`mode: ${flags.link ? 'link' : 'copy'}`)
 
@@ -75,6 +89,11 @@ function report(reports, flags, home, config) {
     console.log('vault not set; pass --vault=<path> or set DEV_LOOP_VAULT to set it')
   }
 
+  printReports(reports, flags, (path) => path.replace(home, '~'))
+}
+
+function printReports(reports, flags, short) {
+  const changed = reports.filter((entry) => entry.action !== 'skip')
   for (const entry of changed) {
     console.log(`  ${entry.action.padEnd(7)} ${short(entry.target)}`)
     if (entry.backup) console.log(`          backup ${short(entry.backup)}`)
