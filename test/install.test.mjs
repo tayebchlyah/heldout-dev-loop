@@ -158,11 +158,12 @@ test('a both-harness install removes legacy Codex sandbox_mode and preserves Cla
   assert.ok(commands.includes('~/.claude/hooks/gate.sh'))
 })
 
-test('an install with no vault set prints a line about --vault', () => {
+test('an install prints no vault line and writes no vault key', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   const output = run(home, ['--yes', '--harness=claude'])
-  assert.match(output, /--vault/)
-  assert.match(output, /DEV_LOOP_VAULT/)
+  assert.doesNotMatch(output, /vault not set|--vault|DEV_LOOP_VAULT/)
+  const config = JSON.parse(readFileSync(join(home, '.agents/dev-loop.config.json'), 'utf8'))
+  assert.equal('vault' in config, false)
 })
 
 test('a second install of everything reports every action as unchanged and leaves no new backup', () => {
@@ -216,22 +217,15 @@ test('--link twice in a row is idempotent: no new link and no backup on the seco
   assert.ok(lstatSync(target).isSymbolicLink())
 })
 
-test('a re-run with no --vault keeps the configured vault, and a changed vault is backed up', () => {
+test('a re-run keeps a legacy vault key already in the config,', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
-  const vault = mkdtempSync(join(tmpdir(), 'dev-loop-vault-'))
-  run(home, ['--yes', '--harness=claude', `--vault=${vault}`])
-
   run(home, ['--yes', '--harness=claude'])
   const configFile = join(home, '.agents/dev-loop.config.json')
-  assert.equal(JSON.parse(readFileSync(configFile, 'utf8')).vault, vault)
+  const config = JSON.parse(readFileSync(configFile, 'utf8'))
+  writeFileSync(configFile, JSON.stringify({ vault: '/vaults/kept', ...config }, null, 2) + '\n')
 
-  const other = mkdtempSync(join(tmpdir(), 'dev-loop-vault-'))
-  const output = run(home, ['--yes', '--harness=claude', `--vault=${other}`])
-  assert.match(output, /backup/)
-  assert.equal(JSON.parse(readFileSync(configFile, 'utf8')).vault, other)
-  const backup = readdirSync(join(home, '.agents')).find((name) => name.startsWith('dev-loop.config.json.bak-'))
-  assert.ok(backup, 'the replaced config must leave a backup')
-  assert.equal(JSON.parse(readFileSync(join(home, '.agents', backup), 'utf8')).vault, vault)
+  run(home, ['--yes', '--harness=claude'])
+  assert.equal(JSON.parse(readFileSync(configFile, 'utf8')).vault, '/vaults/kept')
 })
 
 test('link mode links every Codex hook into the clone, and the hooks file still carries the real home', () => {
