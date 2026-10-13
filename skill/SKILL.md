@@ -25,7 +25,7 @@ Run in order. First failing check is the stage.
 
 | Check | Stage |
 |---|---|
-| No glossary (`test -f GLOSSARY.md || test -f CONTEXT.md` fails), or `git rev-parse HEAD` fails | 0 Bootstrap |
+| No glossary (`test -f GLOSSARY.md \|\| test -f CONTEXT.md` fails), or `git rev-parse HEAD` fails | 0 Bootstrap |
 | No spec in `$NOTES/specs/` for requested work | 1 Frame |
 | Spec exists, frontmatter `review_status` not `approved` | 2 Spec |
 | Spec approved, `tests/acceptance/` has no test for it | 3 Acceptance |
