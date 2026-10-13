@@ -4,14 +4,14 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Setup contract
 
-- User agents: `~/.codex/agents/implementer.toml`, `~/.codex/agents/spec-tester.toml`, `~/.codex/agents/task-reviewer.toml`.
-- Review agents: `~/.codex/agents/simplifier.toml`, `~/.codex/agents/final-reviewer.toml`, `~/.codex/agents/security-reviewer.toml`.
-- User hooks: `~/.codex/hooks.json`, plus scripts `gate.sh`, `deny-path.sh`, `git-guard.sh`, and `session-start.sh`.
+- Project agents: `.codex/agents/implementer.toml`, `.codex/agents/spec-tester.toml`, `.codex/agents/task-reviewer.toml`.
+- Review agents: `.codex/agents/simplifier.toml`, `.codex/agents/final-reviewer.toml`, `.codex/agents/security-reviewer.toml`.
+- Project hooks: `.codex/hooks.json`, plus scripts in `.dev-loop/hooks/codex/`: `gate.sh`, `deny-path.sh`, `git-guard.sh`, and `session-start.sh`.
 - `features.hooks = true`. Trust exact hook definitions through `/hooks` before relying on them.
 - The active `dev-workspace` permission profile extends `:workspace` and denies environment files. `dev-read-only` preserves the same denies for reviewers. No legacy `sandbox_mode` key can remain in a loaded config layer.
 - `dev-implementer` denies `tests/acceptance` through filesystem policy. `dev-spec-tester` denies `src`, `app`, `backend`, and `frontend` through filesystem policy. These walls do not depend on command spelling or hook trust.
 - Command rules prompt for direct pushes and every `git -C` form. They forbid direct hard resets and `rm -rf /`. The trusted Git hook provides defense in depth for wrapped commands.
-- Install or repair with `npx github:tchlyah/dev-loop`. Validate with `python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
+- Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
 
 ## Skill and agent names
 
