@@ -72,7 +72,8 @@ function asker(rl) {
   if (rl === null) return null
   const lines = rl[Symbol.asyncIterator]()
   return async (question, fallback) => {
-    stdout.write(`${question} [${fallback}]: `)
+    rl.setPrompt(`${question} [${fallback}]: `)
+    rl.prompt()
     const { value, done } = await lines.next()
     const answer = done ? '' : value.trim()
     return answer === '' ? fallback : answer
