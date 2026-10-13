@@ -8,6 +8,8 @@
 
 - [`95ac2d3`](https://github.com/tchlyah/dev-loop/commit/95ac2d3ce6681280e81bf0d1cf9f957a0d795c3c) - **gate**: One review wave of three reviewers, no simplify, mutation nightly
 
+- [`d9e2ea8`](https://github.com/tchlyah/dev-loop/commit/d9e2ea820c022fc527c9b7f0a19da1c4fe5e9758) - **check**: Replace the dead global check with one init line
+
 
 
 ### ✨ New Features
@@ -19,6 +21,14 @@
 ### 🐛 Bug Fixes
 
 - [`e08e5d5`](https://github.com/tchlyah/dev-loop/commit/e08e5d55b7b0ff6a12f53f6681c8a277bd212258) - **cli**: Ship a merged feature with no branch, never read a failed git cherry as empty
+
+- [`a374e8c`](https://github.com/tchlyah/dev-loop/commit/a374e8c88f0d181a44ad60c2e40950a31514b577) - **skill**: Send Track S through the review wave, replace only known old SessionStart commands
+
+- [`4d9c4bd`](https://github.com/tchlyah/dev-loop/commit/4d9c4bd804782cac7eb6680d614e1f4ed1be9116) - **cli**: Fix devloop status detection, ci wait retry and spec-tester naming
+
+- [`47c2e21`](https://github.com/tchlyah/dev-loop/commit/47c2e2127b14c75e21db62eb7f6218cd492cd52f) - **hooks**: Run the mapped commands.gate in the Stop and SubagentStop gate
+
+- [`b6e70a5`](https://github.com/tchlyah/dev-loop/commit/b6e70a5f5bda8cd5a0f1aaf8d1b3cc8a5e280a4a) - **skill**: Run the Pocock desks and every reviewer in the feature worktree
 
 
 
@@ -33,6 +43,10 @@
 - [`1b3320c`](https://github.com/tchlyah/dev-loop/commit/1b3320c14e5fb4f9f02f80f37399da02f2f867e7) - **skill**: Ponytail rules, vendor scope paragraphs and test rules for implementers
 
 - [`a2f20a2`](https://github.com/tchlyah/dev-loop/commit/a2f20a24ed33ed5b2f82e19cb3cc07b50fa63e94) - **skill**: Match vendor quote, trim test rules, fix building.md headings
+
+- [`4bca392`](https://github.com/tchlyah/dev-loop/commit/4bca3923d8d74846cb21e5772fea14af5d7ac4ca) - **changelog**: Regenerate CHANGELOG.md for v2.0.0
+
+- [`931439d`](https://github.com/tchlyah/dev-loop/commit/931439d29ebaa1bb2253678f87766cf14300d824) - **skill**: Describe the nightly CI workflow, the app CLI skeleton and stack_up
 
 
 ## [1.5.0] - 2026-10-13
