@@ -499,6 +499,11 @@ class CodexHookBehaviorTests(unittest.TestCase):
             ignored = self.run_hook("session-start.sh", {"cwd": str(repo)})
             self.assertIn("dev-loop skill", routed.stdout)
             self.assertEqual(ignored.stdout, "")
+            (repo / "AGENTS.md").unlink()
+            self.assertEqual(self.run_hook("session-start.sh", {"cwd": str(repo)}).stdout, "")
+            write(repo / "dev-loop.json", "{}\n")
+            by_config = self.run_hook("session-start.sh", {"cwd": str(repo)})
+            self.assertIn("dev-loop skill", by_config.stdout)
 
     def test_gate_blocks_failed_dirty_repo_once(self) -> None:
         with tempfile.TemporaryDirectory() as root:

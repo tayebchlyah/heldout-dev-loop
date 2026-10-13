@@ -1,7 +1,9 @@
 // test/fragments.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
@@ -26,7 +28,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
         {
           type: 'command',
           command:
-            'd="${CLAUDE_PROJECT_DIR:-.}"; [ -f "$d/AGENTS.md" ] && grep -q \'^vault_notes:\' "$d/AGENTS.md" && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0',
+            'd="${CLAUDE_PROJECT_DIR:-.}"; { [ -f "$d/dev-loop.json" ] || grep -qs \'^vault_notes:\' "$d/AGENTS.md"; } && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0',
           timeout: 5,
         },
       ],
@@ -184,4 +186,23 @@ test('the Codex TOML fragment denies the held-out suite for dev-implementer and 
     assert.match(specTesterRoots, new RegExp(`"${dir}"\\s*=\\s*"deny"`))
     assert.match(specTesterRoots, new RegExp(`"${dir}/\\*\\*"\\s*=\\s*"deny"`))
   }
+})
+
+test('the Claude SessionStart command detects dev-loop.json or a vault_notes line', () => {
+  const command = readJson('claude/settings.fragment.json').hooks.SessionStart[0].hooks[0].command
+  const run = (files) => {
+    const dir = mkdtempSync(join(tmpdir(), 'dev-loop-session-'))
+    try {
+      for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
+      return execFileSync('sh', ['-c', command], {
+        env: { ...process.env, CLAUDE_PROJECT_DIR: dir },
+        encoding: 'utf8',
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  assert.match(run({ 'dev-loop.json': '{}\n' }), /dev-loop skill/)
+  assert.match(run({ 'AGENTS.md': 'vault_notes: Software/Test.md\n' }), /dev-loop skill/)
+  assert.equal(run({}), '')
 })
