@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### 📝 Documentation & Content
+
+- [`6466a30`](https://github.com/tchlyah/dev-loop/commit/6466a3073ed0ba419ab8f21f3310ab6baeaa5888) - **changelog**: Gitmoji git-cliff config and CHANGELOG.md
+
+- [`ac4f196`](https://github.com/tchlyah/dev-loop/commit/ac4f196b7a9301dc9e3b9a87315dcaab78533208) - **agents**: Fix the commit convention and add the release steps
+
+
+
+### 🔖 Release & Versioning
+
+- [`bc14e48`](https://github.com/tchlyah/dev-loop/commit/bc14e48b544965155c5efe1d2f1c3d9b29c81a36) - **release**: Version 1.5.0
+
+
+
+### 🔧 Infrastructure & DevOps
+
+- [`921b70a`](https://github.com/tchlyah/dev-loop/commit/921b70a457e19146bc5e24331c32328bfeab16ec) - **release**: Check the tag against package.json, pin actions, pass the token to git-cliff
+
+
 ## [1.4.0] - 2026-10-12
 
 ### 🐛 Bug Fixes
