@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mergeHooks, mergeDeny, mergeSettings, mergeHooksFile } from '../lib/merge-json.mjs'
+import { mergeHooks, mergeDeny, mergeSettings, mergeHooksFile, removeHookCommands } from '../lib/merge-json.mjs'
 
 const fragment = {
   hooks: {
@@ -116,4 +116,45 @@ test('mergeHooksFile merges into the hooks key and keeps the rest of the file', 
   assert.equal(value.description, 'mine')
   assert.equal(value.hooks.Stop.length, 1)
   assert.equal(added.length, 2)
+})
+
+const installed = JSON.stringify({
+  model: 'opus',
+  hooks: {
+    PreToolUse: [
+      { matcher: 'Bash', hooks: [{ type: 'command', command: '~/.claude/hooks/git-guard.sh' }, { type: 'command', command: 'mine.sh' }] },
+      { matcher: 'Edit', hooks: [{ type: 'command', command: '~/.claude/hooks/deny-path.sh' }] },
+    ],
+    Stop: [{ hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh' }] }],
+    Notification: [{ hooks: [{ type: 'command', command: 'notify.sh' }] }],
+  },
+  permissions: { deny: ['Read(./.env)'] },
+})
+
+test('removeHookCommands removes only the listed commands and names them', () => {
+  const commands = ['~/.claude/hooks/git-guard.sh', '~/.claude/hooks/deny-path.sh', '~/.claude/hooks/gate.sh']
+  const { text, removed } = removeHookCommands(installed, commands)
+  const value = JSON.parse(text)
+  assert.deepEqual(removed, [
+    'PreToolUse: ~/.claude/hooks/git-guard.sh',
+    'PreToolUse: ~/.claude/hooks/deny-path.sh',
+    'Stop: ~/.claude/hooks/gate.sh',
+  ])
+  assert.deepEqual(value.hooks.PreToolUse, [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'mine.sh' }] }])
+  assert.equal('Stop' in value.hooks, false, 'an event with no group left is dropped')
+  assert.deepEqual(value.hooks.Notification, [{ hooks: [{ type: 'command', command: 'notify.sh' }] }])
+  assert.equal(value.model, 'opus')
+  assert.deepEqual(value.permissions, { deny: ['Read(./.env)'] })
+})
+
+test('removeHookCommands with no listed command present removes nothing', () => {
+  const { removed } = removeHookCommands(installed, ['other.sh'])
+  assert.deepEqual(removed, [])
+})
+
+test('removeHookCommands leaves a malformed event or group alone', () => {
+  const current = JSON.stringify({ hooks: { Stop: 'nonsense', PreToolUse: [{ matcher: 'x' }, { hooks: [{ command: 'gate.sh' }] }] } })
+  const { text, removed } = removeHookCommands(current, ['gate.sh'])
+  assert.deepEqual(JSON.parse(text).hooks, { Stop: 'nonsense', PreToolUse: [{ matcher: 'x' }] })
+  assert.deepEqual(removed, ['PreToolUse: gate.sh'])
 })
