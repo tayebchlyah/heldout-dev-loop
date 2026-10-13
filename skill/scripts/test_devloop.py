@@ -722,13 +722,20 @@ class ReviewWaveContractTests(unittest.TestCase):
 
     def test_review_wave_has_three_reviewers_per_route(self) -> None:
         for value in [
-            "`general-purpose`", "`model: opus`", "one message, three Agent calls",
-            "skill `code-review`, args `high <feature branch>`", "skill `mattpocock-skills:code-review`, fixed point `main`",
-            "skill `security-review`", "GATE_SHA",
+            "`general-purpose`", "`model: opus`", "one message, four Agent calls",
+            "skill `code-review`, args `high <feature branch>`", "skill `security-review`",
+            "`git diff main...GATE_SHA` from the feature worktree, not the working tree",
+            "Pocock spec desk", "Pocock standards desk", "`mattpocock-skills:code-review` SKILL.md",
+            "no nested agents", "reports after its parent hands back", "Pocock = two desks",
+            "works in the feature worktree on `main...GATE_SHA`",
         ]:
             with self.subTest(route="claude", value=value):
                 self.assertIn(value, self.claude)
-        for value in ["`final_reviewer`", "skill `code-review` with fixed point `main`", "`security_reviewer`", "GATE_SHA"]:
+        self.assertNotIn("three Agent calls", self.claude)
+        for value in [
+            "`final_reviewer`", "skill `code-review` with fixed point `main`", "`security_reviewer`",
+            "works in the feature worktree on `main...GATE_SHA`",
+        ]:
             with self.subTest(route="codex", value=value):
                 self.assertIn(value, self.codex)
 
