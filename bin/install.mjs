@@ -10,9 +10,33 @@ import { buildPlan, runPlan, assertLinkSource } from '../lib/plan.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+const USAGE = `usage: dev-loop <command> [flags]
+  init              install the dev-loop kit into this repository
+  upgrade           update the kit in this repository
+  uninstall-global  remove the 1.4 global install
+  --global          run the 1.4 global install (1.5.x only)`
+
+const notImplemented = (name) => () => {
+  throw new Error(`${name} is not implemented`)
+}
+const runInit = notImplemented('init')
+const runUpgrade = notImplemented('upgrade')
+const runUninstallGlobal = notImplemented('uninstall-global')
+
 async function main() {
   const flags = parseArgs(argv.slice(2))
   const home = env.HOME ?? homedir()
+
+  if (flags.command === null && !flags.global) {
+    console.error(USAGE)
+    exit(1)
+  }
+  if (flags.command !== null) {
+    const ctx = { flags, home, cwd: process.cwd(), packageRoot, ask: null }
+    const runners = { init: runInit, upgrade: runUpgrade, 'uninstall-global': runUninstallGlobal }
+    await runners[flags.command](ctx)
+    return
+  }
 
   const repoRoot = flags.link ? process.cwd() : packageRoot
   if (flags.link) assertLinkSource(repoRoot)
