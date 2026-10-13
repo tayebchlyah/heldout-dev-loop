@@ -146,7 +146,9 @@ class SkillContractTests(unittest.TestCase):
     def test_frontmatter_and_trigger_survive(self) -> None:
         self.assertIn("name: dev-loop", self.skill)
         self.assertIn("at the start of any coding session", self.skill)
-        self.assertIn("vault_notes", self.skill)
+        self.assertIn("dev-loop.json", self.skill)
+        self.assertIn("notes_path.py", self.skill)
+        self.assertNotIn("$VAULT", self.skill)
 
     def test_all_eight_stages_remain_ordered(self) -> None:
         positions = [self.skill.index(f"## {number} ") for number in range(8)]
