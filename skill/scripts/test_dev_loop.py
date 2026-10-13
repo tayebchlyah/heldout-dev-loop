@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import os
 import subprocess
@@ -234,7 +235,9 @@ class SkillContractTests(unittest.TestCase):
         text = SKILL.read_text()
         self.assertIn("Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md`", text)
         self.assertIn("Both exist: `GLOSSARY.md` wins.", text)
-        self.assertIn("`test -f GLOSSARY.md || test -f CONTEXT.md` fails", text)
+        self.assertIn("`test -f GLOSSARY.md \\|\\| test -f CONTEXT.md` fails", text)
+        row = next(line for line in text.splitlines() if "0 Bootstrap |" in line)
+        self.assertEqual(len(re.split(r"(?<!\\)\|", row)), 4, row)
         self.assertIn("first terms of `GLOSSARY.md`", text)
         self.assertIn("spec path and glossary path", text)
         self.assertIn("or a glossary invariant;", text)
@@ -924,7 +927,14 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                                env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                                     "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
             self.assertEqual(self.decision(f'F="{feature}"; cd "$F" && git push', "main"), "allow")
-            self.assertEqual(self.decision(f'F="~{feature}"; cd "$F" && git push', "main"), "ask")
+            # An assignment expands a ~ after ":": F=/a:~+ is /a:$PWD, not the folder "/a:~+".
+            colon = os.path.join(root, "p:~+")
+            os.makedirs(colon)
+            for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                subprocess.run(["git", "-C", colon, *args], check=True,
+                               env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+            self.assertEqual(self.decision(f'F={colon}; cd "$F" && git push', "main"), "ask")
 
     def test_the_reset_and_rm_walls_skip_a_heredoc_body(self) -> None:
         reset, rm = "git re" + "set --hard", "rm -rf " + "/"
