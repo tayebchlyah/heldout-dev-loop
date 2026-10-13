@@ -4,42 +4,64 @@ header = """
 """
 body = """
 {% if version %}\
-    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else %}\
-    ## [Unreleased]
+## [Unreleased]
 {% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | upper_first }}
-    {% for commit in commits %}
-        - {{ commit.message | upper_first }}
-    {% endfor %}
-{% endfor %}\n
+### {{ group }}
+
+{% for commit in commits %}
+{%- set title = commit.message | split(pat="\n") | first | trim | split(pat=" (#") | first -%}
+{%- if commit.scope -%}
+{%- set clean_title = title | split(pat="(" ~ commit.scope ~ ")") | last | trim | trim_start_matches(pat=":") | trim -%}
+- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/tchlyah/dev-loop/commit/{{ commit.id }}) - **{{ commit.scope }}**: {{ clean_title }}{% if commit.remote.pr_number and commit.remote.username %} *(PR [#{{ commit.remote.pr_number }}](https://github.com/tchlyah/dev-loop/pull/{{ commit.remote.pr_number }}) by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% elif commit.remote.username %} *(commit by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% endif %}
+{% else %}
+{%- set first_token = title | split(pat=" ") | first -%}
+{%- set clean_title = title | replace(from=first_token ~ " ", to="") -%}
+- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/tchlyah/dev-loop/commit/{{ commit.id }}) - {{ clean_title }}{% if commit.remote.pr_number and commit.remote.username %} *(PR [#{{ commit.remote.pr_number }}](https://github.com/tchlyah/dev-loop/pull/{{ commit.remote.pr_number }}) by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% elif commit.remote.username %} *(commit by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% endif %}
+{%- endif %}
+{% endfor %}
+{% endfor %}
 """
+
 trim = true
 
 [git]
-conventional_commits = true
+conventional_commits = false
 filter_unconventional = false
-split_commits = false
-filter_commits = false
-tag_pattern = "v[0-9]*"
+filter_commits = true
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
 sort_commits = "oldest"
-
 commit_preprocessors = [
-  { pattern = '^\S+\s+(\w+):\s*', replace = "${1}: " },
+  { pattern = '^(💥|✨️|✨|🎉|🌱|🚩|🥚|👔|🌐|✈️|🦖|🐛|🚑️|🩹|🥅|⚡️|🧵|🔒️|🔒|🔐|🛂|🦺|✅|🧪|🤡|🧐|⚗️|🚨|♻️|🔥|🗑️|⚰️|💩|⏪️|📝|✏️|💬|💡|📄|👥|🔍️|🎨|💄|♿️|🚸|📱|💫|🍱|📸|⬆️|⬆|⬇️|⬇|➕|➖|📌|👽️|👷|🚀|🔧|🔨|🚚|📦️|📦|🧱|🩺|💚|🔀|🙈|💸|🧑‍💻|🐳️|🐳|🏗️|🗃️|📈|🏷️|🔊|🔇|🔖|🚧|🍻)([^\s(])', replace = "$1 $2" },
+  { pattern = ' ️', replace = '' },
+  { pattern = '^(\S+\)):\s*', replace = "$1 " },
+  { pattern = '^(\S+) #[0-9]+:\s*', replace = "$1 " },
+  { pattern = '^(\S+) [a-z]+:\s*', replace = "$1 " },
 ]
 
 commit_parsers = [
-  { message = "^feat:", group = "Features" },
-  { message = "^fix:", group = "Bug Fixes" },
-  { message = "^perf:", group = "Performance" },
-  { message = "^refactor:", group = "Refactor" },
-  { message = "^docs:", group = "Documentation" },
-  { message = "^test:", group = "Tests" },
-  { message = "^style:", group = "Style" },
-  { message = "^build:", group = "Build" },
-  { message = "^ci:", group = "CI" },
-  { message = "^chore:", group = "Chore" },
-  { message = "^revert:", group = "Reverts" },
-  { message = ".*", group = "Other" },
+  { message = "^(?:💥)(?:\\(([^)]+)\\))?", group = "💥 Breaking Changes", scope = "${1}" },
+  { message = "^(?:✨️|✨)\\s+fix\\(([^)]+)\\)", group = "🐛 Bug Fixes", scope = "${1}" },
+  { message = "^(?:✨|✨️|🎉|🌱|🚩|🥚|👔|🌐|✈️|🦖)(?:\\(([^)]+)\\))?", group = "✨ New Features", scope = "${1}" },
+  { message = "^(?:🐛|🚑️|🩹|🥅)(?:\\(([^)]+)\\))?", group = "🐛 Bug Fixes", scope = "${1}" },
+  { message = "^(?:⚡️|🧵)(?:\\(([^)]+)\\))?", group = "⚡️ Performance", scope = "${1}" },
+  { message = "^(?:🔒|🔒️|🔐|🛂|🦺)(?:\\(([^)]+)\\))?", group = "🔒 Security", scope = "${1}" },
+  { message = "^(?:✅|🧪|🤡|🧐|⚗️|🚨)(?:\\(([^)]+)\\))?", group = "🧪 Tests & Quality", scope = "${1}" },
+  { message = "^(?:♻️|🔥|🗑️|⚰️|💩|⏪️)(?:\\(([^)]+)\\))?", group = "♻️ Refactors & Cleanup", scope = "${1}" },
+  { message = "^(?:📝|✏️|💬|💡|📄|👥|🔍️)(?:\\(([^)]+)\\))?", group = "📝 Documentation & Content", scope = "${1}" },
+  { message = "^(?:🎨|💄|♿️|🚸|📱|💫|🍱|📸)(?:\\(([^)]+)\\))?", group = "🎨 UI/UX & Accessibility", scope = "${1}" },
+  { message = "^(?:⬆|⬇|⬆️|⬇️|➕|➖|📌|👽️)(?:\\(([^)]+)\\))?", group = "📦 Dependencies", scope = "${1}" },
+  { message = "^(?:👷|🚀|🔧|🔨|🚚|📦|📦️|🧱|🩺|💚|🔀|🙈|💸|🧑‍💻|🐳|🐳️)(?:\\(([^)]+)\\))?", group = "🔧 Infrastructure & DevOps", scope = "${1}" },
+  { message = "^(?:🏗️|🗃️|📈|🏷️)(?:\\(([^)]+)\\))?", group = "🏗️ Architecture & Data", scope = "${1}" },
+  { message = "^(?:🔊|🔇)(?:\\(([^)]+)\\))?", group = "🔊 Logging", scope = "${1}" },
+  { message = "^(?:🔖)(?:\\(([^)]+)\\))?", group = "🔖 Release & Versioning", scope = "${1}" },
+  { message = "^(?:🚧)(?:\\(([^)]+)\\))?", group = "🚧 Work In Progress", scope = "${1}" },
+  { message = "^(?:🍻)(?:\\(([^)]+)\\))?", group = "🍻 Miscellaneous", scope = "${1}" },
+  { message = ".*", group = "🔹 Other Changes" },
 ]
+
+[remote.github]
+owner = "tchlyah"
+repo = "dev-loop"
