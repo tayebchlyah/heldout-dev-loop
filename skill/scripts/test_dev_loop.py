@@ -70,40 +70,71 @@ class ConfigCheckTests(unittest.TestCase):
     def test_missing_config_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            failures = check_setup.check_config(home)
+            failures = check_setup.check_config(home, home / "repo", {})
             self.assertIn("missing dev-loop config", " ".join(failures))
             self.assertIn("Run npx github:tchlyah/dev-loop#<tag> --global", " ".join(failures))
 
-    def test_config_with_null_vault_fails(self) -> None:
+    def test_repo_without_a_notes_path_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            path = home / ".agents" / "dev-loop.config.json"
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps({"vault": None, "user_name": "ada"}))
-            failures = check_setup.check_config(home)
-            joined = " ".join(failures)
-            self.assertIn("missing vault in dev-loop config", joined)
-            self.assertIn("Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>", joined)
-            self.assertNotIn("missing dev-loop config", joined)
+            home = Path(tmp) / "home"
+            repo = Path(tmp) / "repo"
+            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
+            write(repo / "dev-loop.json", "{}")
+            failures = check_setup.check_config(home, repo, {})
+            self.assertEqual(len(failures), 1)
+            self.assertTrue(failures[0].startswith(f"missing notes path for {repo}. Write "), failures)
+            self.assertIn("dev-loop.local.json", failures[0])
+            self.assertNotIn("vault", failures[0])
 
-    def test_config_with_absent_vault_fails(self) -> None:
+    def test_notes_folder_that_does_not_exist_fails_with_the_resolver_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            path = home / ".agents" / "dev-loop.config.json"
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps({"vault": str(home / "nope"), "user_name": "ada"}))
-            failures = check_setup.check_config(home)
-            self.assertIn("vault path does not exist", " ".join(failures))
+            home = Path(tmp) / "home"
+            repo = Path(tmp) / "repo"
+            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
+            write(repo / "dev-loop.json", "{}")
+            failures = check_setup.check_config(home, repo, {"DEV_LOOP_NOTES": str(Path(tmp) / "nope")})
+            self.assertEqual(len(failures), 1)
+            self.assertIn("notes folder does not exist", failures[0])
 
-    def test_valid_config_passes(self) -> None:
+    def test_repo_with_a_resolved_notes_path_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            vault = home / "vault"
-            vault.mkdir()
-            path = home / ".agents" / "dev-loop.config.json"
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps({"vault": str(vault), "user_name": "ada"}))
-            self.assertEqual(check_setup.check_config(home), [])
+            home = Path(tmp) / "home"
+            repo = Path(tmp) / "repo"
+            notes = Path(tmp) / "notes"
+            notes.mkdir()
+            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
+            write(repo / "dev-loop.json", "{}")
+            write(repo / "dev-loop.local.json", json.dumps({"notes": str(notes)}))
+            self.assertEqual(check_setup.check_config(home, repo, {}), [])
+
+    def test_repo_not_using_dev_loop_needs_no_notes_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
+            self.assertEqual(check_setup.check_config(home, repo, {}), [])
+
+
+class UsesDevLoopTests(unittest.TestCase):
+    def uses(self, files: dict[str, str]) -> bool:
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in files.items():
+                write(Path(tmp) / name, text)
+            return check_setup.uses_dev_loop(Path(tmp))
+
+    def test_dev_loop_json_counts(self) -> None:
+        self.assertTrue(self.uses({"dev-loop.json": "{}"}))
+
+    def test_vault_notes_in_agents_md_counts(self) -> None:
+        self.assertTrue(self.uses({"AGENTS.md": "vault_notes: Software/Test\n"}))
+
+    def test_vault_notes_mid_line_does_not_count(self) -> None:
+        self.assertFalse(self.uses({"AGENTS.md": "# Repo\n\nA repo with a `vault_notes:` line uses it.\n"}))
+
+    def test_neither_does_not_count(self) -> None:
+        self.assertFalse(self.uses({"AGENTS.md": "# Plain\n"}))
+        self.assertFalse(self.uses({}))
 
 
 class SkillContractTests(unittest.TestCase):
@@ -861,12 +892,13 @@ class SetupCheckerTests(unittest.TestCase):
         )
 
     def write_valid_config(self, home: Path) -> None:
-        vault = home / "vault"
-        vault.mkdir(exist_ok=True)
+        notes = home / "notes"
+        notes.mkdir(exist_ok=True)
         write(
             home / ".agents" / "dev-loop.config.json",
-            json.dumps({"vault": str(vault), "user_name": "ada", "harnesses": ["claude", "codex"]}),
+            json.dumps({"user_name": "ada", "harnesses": ["claude", "codex"]}),
         )
+        write(home / "repo" / "dev-loop.local.json", json.dumps({"notes": str(notes)}))
 
     def make_valid_claude(self, home: Path) -> None:
         self.write_valid_config(home)
@@ -979,6 +1011,17 @@ class SetupCheckerTests(unittest.TestCase):
             result = self.run_checker("claude", home)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("gate.sh", result.stdout)
+
+    def test_repo_with_dev_loop_json_only_gets_the_repo_deny_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            home = Path(root)
+            self.make_valid_claude(home)
+            write(home / "repo" / "AGENTS.md", "# Plain\n")
+            write(home / "repo" / "dev-loop.json", "{}")
+            (home / "repo" / ".claude" / "settings.json").unlink()
+            result = self.run_checker("claude", home)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("settings.json", result.stdout)
 
     def test_missing_claude_repo_controls_fail(self) -> None:
         required = [
@@ -1150,8 +1193,10 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def init(self, harness: str = "both") -> None:
+        notes = Path(self._tmp.name) / "notes"
+        notes.mkdir(exist_ok=True)
         result = subprocess.run(
-            ["node", str(INSTALLER), "init", "--yes", f"--harness={harness}"],
+            ["node", str(INSTALLER), "init", "--yes", f"--harness={harness}", f"--notes={notes}"],
             cwd=self.repo,
             env={**os.environ, "HOME": str(self.home)},
             text=True,
@@ -1189,6 +1234,16 @@ class ProjectSetupCheckerTests(unittest.TestCase):
 
     def test_claude_project_passes(self) -> None:
         self.init("claude")
+        # Stage 0 writes the repo walls; init does not.
+        path = self.repo / ".claude" / "settings.json"
+        settings = json.loads(path.read_text())
+        settings["permissions"]["deny"] += [
+            "Agent(caveman:cavecrew-reviewer)",
+            "Agent(caveman:cavecrew-builder)",
+            "Agent(caveman:cavecrew-investigator)",
+        ]
+        settings.setdefault("env", {}).update({"ENABLE_STOP_REVIEW": "0", "ENABLE_COMMIT_REVIEW": "0", "SG_PUSH_SWEEP": "0"})
+        path.write_text(json.dumps(settings))
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("claude: PASS", result.stdout)
@@ -1810,6 +1865,11 @@ class MutationSetupTests(unittest.TestCase):
                 }
                 repo = make_git_repo(Path(root), {**base, **files})
                 self.assertTrue(any(expected in f for f in check_setup.check_mutation(repo)))
+
+    def test_dev_loop_json_only_repo_gets_the_mutation_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(Path(root), {"AGENTS.md": "stacks: python\n", "dev-loop.json": "{}"})
+            self.assertTrue(any("mutmut" in f for f in check_setup.check_mutation(repo)))
 
     def test_repos_without_declared_stacks_are_not_checked(self) -> None:
         with tempfile.TemporaryDirectory() as root:
