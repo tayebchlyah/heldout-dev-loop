@@ -8,6 +8,7 @@ import { parseArgs } from '../lib/args.mjs'
 import { buildConfig, writeConfig } from '../lib/config.mjs'
 import { buildPlan, runPlan, assertLinkSource } from '../lib/plan.mjs'
 import { runInit, runUpgrade } from '../lib/project.mjs'
+import { runUninstallGlobal } from '../lib/uninstall.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -16,11 +17,6 @@ const USAGE = `usage: dev-loop <command> [flags]
   upgrade           update the kit in this repository
   uninstall-global  remove the 1.4 global install
   --global          run the 1.4 global install (1.5.x only)`
-
-const notImplemented = (name) => () => {
-  throw new Error(`${name} is not implemented`)
-}
-const runUninstallGlobal = notImplemented('uninstall-global')
 
 async function main() {
   const flags = parseArgs(argv.slice(2))
@@ -40,8 +36,11 @@ async function main() {
     } finally {
       rl?.close()
     }
-    console.log(flags.dryRun ? 'dry run, nothing written' : 'installed')
-    printReports(reports, flags, (path) => relative(ctx.cwd, path))
+    const uninstall = flags.command === 'uninstall-global'
+    console.log(flags.dryRun ? 'dry run, nothing written' : uninstall ? 'uninstalled' : 'installed')
+    // uninstall-global works on the home folder, not on the repository.
+    printReports(reports, flags, uninstall ? (path) => path.replace(home, '~') : (path) => relative(ctx.cwd, path))
+    if (uninstall && reports.every((entry) => entry.action === 'kept')) console.log('nothing to remove')
     return
   }
 
@@ -92,13 +91,18 @@ function report(reports, flags, home, config) {
   printReports(reports, flags, (path) => path.replace(home, '~'))
 }
 
-function printReports(reports, flags, short) {
+function printReports(allReports, flags, short) {
+  // uninstall-global names each dev-loop item it leaves in place.
+  const kept = allReports.filter((entry) => entry.action === 'kept')
+  const reports = allReports.filter((entry) => entry.action !== 'kept')
   const changed = reports.filter((entry) => entry.action !== 'skip')
   for (const entry of changed) {
     console.log(`  ${entry.action.padEnd(7)} ${short(entry.target)}`)
     if (entry.backup) console.log(`          backup ${short(entry.backup)}`)
     for (const added of entry.added) console.log(`          + ${added}`)
+    for (const removed of entry.removed ?? []) console.log(`          - ${removed}`)
   }
+  for (const entry of kept) console.log(`  kept ${entry.item ? `${entry.item} ` : ''}${short(entry.target)}`)
 
   // A shape this installer cannot merge (a hand-edited hook group with no
   // hooks array) is left alone rather than aborting the run, so say which

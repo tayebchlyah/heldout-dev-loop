@@ -300,20 +300,3 @@ test('no command and no --global prints the usage and exits 1', () => {
   )
   assert.equal(existsSync(join(home, '.agents')), false)
 })
-
-test('a command that is not built yet prints not implemented and exits 1', () => {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
-  assert.throws(
-    () => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), 'uninstall-global'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      stdio: 'pipe',
-      env: { ...process.env, HOME: home },
-    }),
-    (error) => {
-      assert.equal(error.status, 1)
-      assert.match(error.stdout + error.stderr, /not implemented/)
-      return true
-    },
-  )
-})
