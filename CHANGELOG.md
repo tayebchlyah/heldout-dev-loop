@@ -30,7 +30,7 @@
 
 - [`fd69719`](https://github.com/tchlyah/dev-loop/commit/fd697198d9d0901aa9764784d8b8abd244e9edcf) - **hooks**: Detect dev-loop by dev-loop.json at session start *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`ce53ea6`](https://github.com/tchlyah/dev-loop/commit/ce53ea6995b0640d46657f7ef0ddb4c799f4a81e) - **skill**: Accept GLOSSARY.md or CONTEXT.md, and continue every Superpowers 7 size to Spec
+- [`7199331`](https://github.com/tchlyah/dev-loop/commit/7199331aa5bf64d59f0016e0fd2533af638f7357) - **skill**: Accept GLOSSARY.md or CONTEXT.md, and continue every Superpowers 7 size to Spec *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
@@ -56,9 +56,15 @@
 
 - [`f056edc`](https://github.com/tchlyah/dev-loop/commit/f056edc7ac37fe7a8dcb488ad09fd0fa42bff3ed) - **notes**: Expand a variable in the legacy vault_notes value *(PR [#7](https://github.com/tchlyah/dev-loop/pull/7) by [@tchlyah](https://github.com/tchlyah))*
 
-- [`4d49099`](https://github.com/tchlyah/dev-loop/commit/4d4909973b0046fde6736473693c0feb325ca949) - **guard**: Follow a variable whose absolute path holds a ~
+- [`f90d922`](https://github.com/tchlyah/dev-loop/commit/f90d9224dcdf0a8586114c84f1a527d969d84a09) - **guard**: Follow a variable whose absolute path holds a ~ *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`552750d`](https://github.com/tchlyah/dev-loop/commit/552750d89dfd13067b83cdf94be1aa0d9827776a) - **skill**: Escape the || in the Stage 0 table row
+- [`48fd730`](https://github.com/tchlyah/dev-loop/commit/48fd730aa9dffa5ba236ab018eae879d8afe8ed7) - **skill**: Escape the || in the Stage 0 table row *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`accb767`](https://github.com/tchlyah/dev-loop/commit/accb7670561ad0ba211b347e2d9e3a23e18980e5) - **init**: Write the Claude repo contract into the project settings
+
+- [`385d876`](https://github.com/tchlyah/dev-loop/commit/385d8767af891088885c735129c565784f05da4c) - **install**: Name only the kept Codex tables that differ from dev-loop's
+
+- [`62aa8ed`](https://github.com/tchlyah/dev-loop/commit/62aa8ed6d527c15e2394124d782d84c88dd0e34b) - **check**: Write no __pycache__ into the vendored skill folder
 
 
 
@@ -80,7 +86,9 @@
 
 - [`3d72336`](https://github.com/tchlyah/dev-loop/commit/3d72336cd0a0ed5a2a7361a3424e4afc976cafff) - **skill**: Use the notes folder in place of the vault *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`9732a16`](https://github.com/tchlyah/dev-loop/commit/9732a166d2d93e630262e92188df0c937409b1f8) - **docs**: Document upgrade, rollback, the first init on a machine and the notes folder
+- [`36691eb`](https://github.com/tchlyah/dev-loop/commit/36691ebcd9419a28e89127d4f2b9473e43858fa5) - **docs**: Document upgrade, rollback, the first init on a machine and the notes folder *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`c2af901`](https://github.com/tchlyah/dev-loop/commit/c2af901b44951bb04c5c49c85558d18008f09f2d) - **changelog**: Regenerate CHANGELOG.md for v1.5.0 *(PR [#8](https://github.com/tchlyah/dev-loop/pull/8) by [@tchlyah](https://github.com/tchlyah))*
 
 
 
@@ -96,7 +104,7 @@
 
 - [`7f3fbb2`](https://github.com/tchlyah/dev-loop/commit/7f3fbb26e78471a21e93819a14418e7b023e605a) - **install**: Keep project backups beside their target *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`7ebf487`](https://github.com/tchlyah/dev-loop/commit/7ebf487ff755798dc7061ab26cb3e57ea64963e1) - **guard**: Treat a ~ after : or = in an assignment as an expansion
+- [`a836b1a`](https://github.com/tchlyah/dev-loop/commit/a836b1a05a3f4606dde0f153ce5b4e20c20e0324) - **guard**: Treat a ~ after : or = in an assignment as an expansion *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
@@ -118,7 +126,7 @@
 
 ### 🧪 Tests & Quality
 
-- [`62799fb`](https://github.com/tchlyah/dev-loop/commit/62799fb6e4608fdd948a4742f44ab5538a8f44b4) - **skill**: Pin the glossary and size rules
+- [`b075b8d`](https://github.com/tchlyah/dev-loop/commit/b075b8d8e3aba72a203c5dccf33d0cd514df7c28) - **skill**: Pin the glossary and size rules *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 ## [1.4.0] - 2026-10-12
