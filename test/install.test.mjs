@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, readlinkSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readlinkSync, existsSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -217,7 +217,7 @@ test('--link twice in a row is idempotent: no new link and no backup on the seco
   assert.ok(lstatSync(target).isSymbolicLink())
 })
 
-test('a re-run keeps a legacy vault key already in the config,', () => {
+test('a re-run keeps a legacy vault key already in the config', () => {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
   run(home, ['--yes', '--harness=claude'])
   const configFile = join(home, '.agents/dev-loop.config.json')
