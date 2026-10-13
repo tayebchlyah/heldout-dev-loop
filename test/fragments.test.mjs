@@ -28,7 +28,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
         {
           type: 'command',
           command:
-            'd="${CLAUDE_PROJECT_DIR:-.}"; { [ -f "$d/dev-loop.json" ] || grep -qs \'^vault_notes:\' "$d/AGENTS.md"; } && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0',
+            'd="${CLAUDE_PROJECT_DIR:-.}"; [ -f "$d/dev-loop.json" ] && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0',
           timeout: 5,
         },
       ],
@@ -192,7 +192,7 @@ test('the Codex TOML fragment denies the held-out suite for dev-implementer and 
   }
 })
 
-test('the Claude SessionStart command detects dev-loop.json or a vault_notes line', () => {
+test('the Claude SessionStart command detects dev-loop.json only', () => {
   const command = readJson('claude/settings.fragment.json').hooks.SessionStart[0].hooks[0].command
   const run = (files) => {
     const dir = mkdtempSync(join(tmpdir(), 'dev-loop-session-'))
@@ -207,6 +207,6 @@ test('the Claude SessionStart command detects dev-loop.json or a vault_notes lin
     }
   }
   assert.match(run({ 'dev-loop.json': '{}\n' }), /dev-loop skill/)
-  assert.match(run({ 'AGENTS.md': 'vault_notes: Software/Test.md\n' }), /dev-loop skill/)
+  assert.equal(run({ 'AGENTS.md': 'vault_notes: Software/Test.md\n' }), '')
   assert.equal(run({}), '')
 })

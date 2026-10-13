@@ -600,7 +600,7 @@ class SkillStackContractTests(unittest.TestCase):
     def test_stage_5_executor_by_track(self) -> None:
         stage = stage_text(5)
         for value in [
-            "Tracks S and M: `superpowers:executing-plans`",
+            "Track M: `superpowers:executing-plans`",
             "Track L: `superpowers:subagent-driven-development`",
             "`tdd`", "`diagnosing-bugs`", "references/building.md", "references/tests.md",
         ]:
@@ -642,7 +642,7 @@ class ReviewWaveContractTests(unittest.TestCase):
     def test_review_wave_has_three_reviewers_per_route(self) -> None:
         for value in [
             "`general-purpose`", "`model: opus`", "one message, three Agent calls",
-            "skill `code-review`, args `high`", "skill `mattpocock-skills:code-review`, fixed point `main`",
+            "skill `code-review`, args `high <feature branch>`", "skill `mattpocock-skills:code-review`, fixed point `main`",
             "skill `security-review`", "GATE_SHA",
         ]:
             with self.subTest(route="claude", value=value):
@@ -673,6 +673,67 @@ class ReviewWaveContractTests(unittest.TestCase):
     def test_gate_writes_ledger_line(self) -> None:
         self.assertIn("`Feature gate: green at <sha>`", self.stage)
         self.assertIn("progress.md", self.stage)
+
+
+class TracksContractTests(unittest.TestCase):
+    """D7, D10, D11, D14, D15: tracks, chained sessions, status detection, the merge rule."""
+
+    def setUp(self) -> None:
+        self.skill = (SKILL_ROOT / "SKILL.md").read_text()
+        self.header = self.skill[: self.skill.index("\n## 0 ")]
+
+    def test_skill_chains_stages_under_the_grant(self) -> None:
+        self.assertNotIn("Run one stage per invocation", self.skill)
+        self.assertNotIn("Never chain stages", self.skill)
+        description = next(line for line in self.skill.splitlines() if line.startswith("description:"))
+        self.assertIn("dev-loop.json", description)
+        self.assertNotIn("vault_notes", self.skill)
+        for value in [
+            "Track S", "Track M", "Track L", "Session A", "Session B", "Stages 3 to 7",
+            "## Assumptions", "three fix rounds", "one-way door", "deletes data", "reaches production",
+            "usage limit", "Supersedes", "Monitor", "two minutes", "| T0 |", "| T4 |",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.header)
+        stage = stage_text(3)
+        self.assertNotIn("Tell the user to review", stage)
+        self.assertNotIn("/clear", stage)
+
+    def test_skill_detects_by_devloop_status(self) -> None:
+        self.assertIn("scripts/devloop.py status", self.header)
+        self.assertNotIn("| Check | Stage |", self.skill)
+
+    def test_stage_4_smart_zone_rule(self) -> None:
+        stage = stage_text(4)
+        for value in ["smart zone", "names each file", "no ruling from another task", "split", "`spec: <spec file name>`"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage)
+
+    def test_stage_7_merge_rule(self) -> None:
+        stage = stage_text(7)
+        for value in [
+            "git fetch origin", "git rebase origin/main", "scripts/devloop.py gate --summary",
+            "scripts/devloop.py ci wait", "`merge: auto`", "`merge: human`", "two-way door", "blast radius",
+            "Track L", "gh pr merge --rebase", "security item in `## Deferred`",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage)
+
+    def test_new_repo_files_and_the_deferred_cap(self) -> None:
+        for value in ["`CODING_STANDARDS.md`", "nightly"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage_text(0))
+        self.assertIn("`## Deferred` holds 20 open items", stage_text(1))
+
+    def test_track_s_has_no_spec_and_no_plan(self) -> None:
+        self.assertIn("Track S: no spec, no plan", stage_text(1))
+        self.assertIn("Track S: no plan, no executor", stage_text(5))
+        self.assertNotIn("Tracks S and M", self.skill)
+        self.assertNotIn("Tracks S, M", (REFERENCES / "claude.md").read_text())
+        self.assertNotIn("Tracks S, M", (REFERENCES / "codex.md").read_text())
+
+    def test_codex_never_invoke_list_names_plain_skills(self) -> None:
+        self.assertNotIn("Skill(superpowers:", (REFERENCES / "codex.md").read_text())
 
 
 if __name__ == "__main__":

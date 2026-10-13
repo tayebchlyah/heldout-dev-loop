@@ -65,16 +65,13 @@ def require_text(raw: str, token: str, label: str, failures: list[str]) -> None:
 
 
 def uses_dev_loop(repo: Path) -> bool:
-    if (repo / "dev-loop.json").is_file():
-        return True
-    agents = repo / "AGENTS.md"
-    return agents.is_file() and re.search(r"^vault_notes:", agents.read_text(), re.MULTILINE) is not None
+    return (repo / "dev-loop.json").is_file()
 
 
 def check_config(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
     path = home / ".agents" / "dev-loop.config.json"
     if not path.is_file():
-        return [f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop#<tag> --global"]
+        return [f"missing dev-loop config: {path}. Run npx github:tchlyah/dev-loop#<tag> init in the repository"]
     return check_notes(home, repo, env)
 
 
@@ -122,7 +119,7 @@ def check_claude_settings(path: Path, failures: list[str], project: bool = False
             failures.append(f"missing Claude deny: {rule}")
 
 
-def check_claude(home: Path, repo: Path | None = None) -> list[str]:
+def check_claude(home: Path) -> list[str]:
     failures: list[str] = []
     root = home / ".claude"
     for relative in [
@@ -138,8 +135,6 @@ def check_claude(home: Path, repo: Path | None = None) -> list[str]:
         require_file(root / relative, failures)
 
     check_claude_settings(root / "settings.json", failures)
-    if repo is not None:
-        failures += check_claude_repo(repo)
     return failures
 
 
@@ -497,7 +492,7 @@ def main() -> int:
         failures += check_project_config(args.repo)
     elif args.harness == "claude":
         failures = check_config(args.home, args.repo)
-        failures += check_claude(args.home, args.repo)
+        failures += check_claude(args.home)
     else:
         failures = check_config(args.home, args.repo)
         codex_failures, action_groups = check_codex(args.home)

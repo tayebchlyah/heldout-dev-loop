@@ -2,16 +2,25 @@
 
 ## Purpose
 
-dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. One stage per invocation: detect repo and notes state, run that one stage, stop.
+dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Session A: Stages 1 and 2, stops at spec approval. Session B: Stages 3 to 7 chained under the autonomy grant. Track S: no spec, no plan. `devloop.py status` detects the stage.
 
 ## Repo map
 
-- `bin/install.mjs`: installer entry point. Commands: `init`, `upgrade`, `uninstall-global`, `--global` (the 1.4 flow, kept for 1.5.x only). No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--link` (only with `--global`), `--harness=claude|codex|both`, `--notes=<path>` (`init`).
-- `lib/`: installer internals: `args.mjs` (flag parsing), `config.mjs` (config load/write), `fsops.mjs` (copy/link/backup), `merge-json.mjs`, `merge-lines.mjs`, `merge-toml.mjs` (per-format merge routing), `plan.mjs` (builds the install plan), `kit.mjs` (project kit file list, path rewrite), `manifest.mjs` (`.dev-loop/MANIFEST.json` write and compare), `project.mjs` (`init` and `upgrade`), `uninstall.mjs` (`uninstall-global`).
-- `skill/SKILL.md`: the dev-loop skill payload. `skill/references/`: harness-specific reference docs (`claude.md`, `codex.md`). `skill/scripts/check_setup.py`: post-install verifier. `skill/scripts/notes_path.py`: notes path resolver. `skill/scripts/test_dev_loop.py`: skill regression suite.
-- `claude/` — Claude Code payload: agents, hooks, `settings.fragment.json` (merged into `~/.claude/settings.json`).
-- `codex/` — Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (line-merged only, never copied or linked: it holds the user's own allowlist).
-- `test/*.test.mjs` — installer suite (Node's built-in test runner).
+- `bin/install.mjs`: installer entry point. Commands: `init`, `upgrade`, `uninstall-global`. No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`).
+- `lib/`: installer internals: `args.mjs` (flag parsing), `fsops.mjs` (backup names), `merge-json.mjs`, `merge-toml.mjs` (per-format merge), `plan.mjs` (runs the merges), `kit.mjs` (project kit file list, path rewrite), `manifest.mjs` (`.dev-loop/MANIFEST.json` write and compare), `project.mjs` (`init` and `upgrade`), `uninstall.mjs` (`uninstall-global`, frozen 1.4 file and hook lists).
+- `skill/SKILL.md`: the dev-loop skill payload. `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `tests.md`, `spec.md`, `mutation.md`. `skill/scripts/devloop.py`: the `devloop` CLI. `skill/scripts/check_setup.py`: post-install verifier. `skill/scripts/notes_path.py`: notes path resolver. `skill/scripts/test_dev_loop.py`: skill suite (imports `test_devloop.py`).
+- `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json` (merged into the project `.claude/settings.json`).
+- `codex/`: Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (kit file `.codex/rules/dev-loop.rules`).
+- `test/*.test.mjs`: installer suite (Node's built-in test runner).
+
+## devloop CLI
+
+`python3 .agents/skills/dev-loop/scripts/devloop.py <command>`. One JSON object on stdout. Exit 0 success, 1 failure the JSON describes, 2 usage error.
+
+- `status [--feature <slug>]`: `stage`, `check`, `next`, `feature`, `track`, `worktree`. Default branch: lists open features. Reads local state only, never fetches.
+- `logged -- <cmd>`: full output to `$(git rev-parse --git-dir)/dev-loop/logs/<name>-<timestamp>.log`. JSON `exit`, `log`, `seconds`, `tail`.
+- `gate --summary`: `commands.gate`, else `scripts/gate.sh`. JSON `exit`, `log`, `seconds`, `failures`, `slowest` (JUnit XML in `DEVLOOP_REPORT_DIR`, else `[]` and `hint`).
+- `ci wait [--pr <n>] [--timeout <min>]`: JSON `state` (`pass`, `fail`, `timeout`, `no-pr`), `failed_job`, `first_error`, `url`.
 
 ## Build and test
 
@@ -26,7 +35,7 @@ Both must pass before any commit. `.github/workflows/ci.yml` runs both on every 
 
 | Target | Content | How |
 | --- | --- | --- |
-| `dev-loop.json` | `version`, `harnesses` | write |
+| `dev-loop.json` | `version`, `harnesses`; optional `commands` (keys `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`, non-empty strings), `merge` (`auto` default, or `human`) | write |
 | `dev-loop.local.json` | `notes` path, gitignored (`init` adds the `.gitignore` line) | write, only with a notes path |
 | `.dev-loop/MANIFEST.json` | version, sha256 of each kit file | write |
 | `.dev-loop/hooks/claude/`, `.dev-loop/hooks/codex/` | shell walls | kit |
@@ -34,49 +43,28 @@ Both must pass before any commit. `.github/workflows/ci.yml` runs both on every 
 | `.claude/skills/dev-loop` | link to `../../.agents/skills/dev-loop` | link |
 | `.claude/agents/`, `.codex/agents/` | subagents | kit |
 | `.codex/rules/dev-loop.rules` | Codex command rules | kit |
-| `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml` | hook entries, deny rules (incl. the Claude repo contract: 3 caveman agent denies), `env` (`ENABLE_STOP_REVIEW`, `ENABLE_COMMIT_REVIEW`, `SG_PUSH_SWEEP` = `0`, never overriding a user value), permission tables | merge |
+| `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml` | hook entries, deny rules (5 Superpowers skill denies, `.env` reads, the Claude repo contract: 3 caveman agent denies), `env` (`ENABLE_STOP_REVIEW`, `ENABLE_COMMIT_REVIEW`, `SG_PUSH_SWEEP` = `0`, never overriding a user value), permission tables | merge |
 
-Upgrade: `npx github:tchlyah/dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tchlyah/dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither.
+Upgrade: `npx github:tchlyah/dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tchlyah/dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither. `uninstall-global` removes a 1.4 install from its own frozen lists (files, 1.4 and 1.5 hook commands).
 
-MANIFEST rule: kit files are never edited in a project. Change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit or a deleted kit file unless `--force`. A kit file gets no backup (git holds it). A merged file gets `<file>.bak-<timestamp>`.
+MANIFEST rule: kit files are never edited in a project. Change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit or a deleted kit file unless `--force`. A kit file gets no backup (git holds it). A merged file gets `<file>.bak-<timestamp>`. Merge never removes or reorders an entry it did not add. One exception: a dev-loop-owned hook entry (command holds `dev-loop.json`) whose text changed is replaced in place. On a `config.toml` table collision, the user's table wins and the installer prints one line naming it.
 
-## Global install targets (`--global`, the 1.4 flow, 1.5.x only)
+2.0.0 upgrade (breaking): from 1.5.x, `upgrade` on a branch, then the user steps. From 1.4.0: write `dev-loop.local.json`, `uninstall-global` (`--dry-run` first, keep a personal vault guard first), `init`. User steps: remove the user-level denies of `executing-plans`, Pocock `tdd`, Pocock `diagnosing-bugs` from `~/.claude/settings.json`; Codex: install Pocock `tdd`, `diagnosing-bugs`, `pr`, `prototype`; optional `CONTEXT.md` to `GLOSSARY.md`; run `check_setup.py`.
 
-| Target | Content | How |
-| --- | --- | --- |
-| `~/.agents/skills/dev-loop/` | skill, harness refs, scripts | copy or link |
-| `~/.agents/dev-loop.config.json` | user name, harnesses | write |
-| `~/.claude/skills/dev-loop` | link to the skill | link |
-| `~/.claude/agents/`, `~/.claude/hooks/` | subagents, shell walls | copy or link |
-| `~/.claude/settings.json` | hook entries + 3 deny rules | merge |
-| `~/.codex/agents/` | Codex agent definitions | copy always; Paseo rejects linked agent TOMLs |
-| `~/.codex/hooks/` | Codex hooks | copy or link |
-| `~/.codex/hooks.json`, `~/.codex/config.toml` | hook entries, permission tables | merge |
-| `~/.codex/rules/default.rules` | line merge only | merge, never copy/link |
-
-Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. A replaced skill goes to `<root>/backups/skills/<name>.bak-<timestamp>` instead (for example `~/.agents/backups/skills/`), because a backup inside a skills folder is discovered as a second skill. It never removes or reorders an entry it did not add. On a `config.toml` table collision (user already declares a table the fragment also declares), the user's table wins and the installer prints one line naming it.
-
-Notes path: `skill/scripts/notes_path.py` resolves it (`DEV_LOOP_NOTES`, `dev-loop.local.json` in the worktree then the main worktree, `notes` in `dev-loop.json`, then the 1.4 fallback `vault` + `vault_notes:`, whose `$NAME` comes from the environment). Glossary: `GLOSSARY.md`, else `CONTEXT.md`. Unset: `check_setup.py` reports a plain top-level failure line, not under "User actions required": `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`. A re-run keeps an existing `vault` key in the config.
+Notes path: `skill/scripts/notes_path.py` resolves it (`DEV_LOOP_NOTES`, `dev-loop.local.json` in the worktree then the main worktree, `notes` in `dev-loop.json`). No 1.4 fallback. Glossary: `GLOSSARY.md`, else `CONTEXT.md`. Unset: `check_setup.py` reports a plain top-level failure line, not under "User actions required": `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`.
 
 ## Verify after install
 
-Project mode (applies when `dev-loop.json` exists):
+Applies when `dev-loop.json` exists:
 
 ```bash
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
 ```
 
-Global mode (1.4):
-
-```bash
-python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
-python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
-```
-
 Ruling R10: right after a correct Codex install, `check_setup.py --harness codex` still fails two things no installer can fix, printed under "User actions required":
-1. Five trusted-hook-hash entries — Codex writes those only after the user runs `/hooks` and trusts the dev-loop hook definitions.
-2. Six third-party skills dev-loop does not ship: `domain-modeling`, `grilling`, `codebase-design`, `code-review`, `research`, `handoff`.
+1. Trusted project and trusted-hook-hash entries: Codex writes those only after the user trusts the project and runs `/hooks` to trust the dev-loop hook definitions.
+2. Eight Pocock skills dev-loop does not ship: `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr`, `prototype`.
 
 These are expected manual steps, not install defects.
 
@@ -90,12 +78,11 @@ These are expected manual steps, not install defects.
   3. On `main`: `git tag -a vX.Y.Z -m "dev-loop vX.Y.Z"`, `git push origin vX.Y.Z`. One tag per push: GitHub sends no push event for more than three tags.
   4. Workflow checks version, makes notes, makes the GitHub Release.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
-- `rules/default.rules` and the three merged config files (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.codex/config.toml`) are always merged, never copied or linked wholesale.
+- The three merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) are always merged, never copied wholesale.
 
 ## Gotchas
 
 - The repo is private. Nothing may assume an anonymous reader: no badges, no links that only resolve for a public repo. The `npx github:tchlyah/dev-loop` install command works only for someone whose Git or SSH credentials already reach it.
-- `--link` mode links skill and hooks. Codex agent TOMLs stay copied for Paseo compatibility. Agent or fragment edit needs rerun.
 
 ## Working principles
 
