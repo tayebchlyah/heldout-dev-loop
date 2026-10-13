@@ -1,6 +1,6 @@
 # dev-loop
 
-Stage-driven development loop for Claude Code and Codex. Each piece of work is sized as Track S, M or L. A Track M or L feature runs in two sessions: Session A frames it and writes the spec (Stages 1 and 2) and stops at the spec approval. Session B chains Stages 3 to 7 (acceptance tests, plan, build, feature gate, ship) under an autonomy grant. A Track S change has no spec and no plan.
+Stage-driven development loop for Claude Code and Codex. Each piece of work is sized as Track S, M or L. A Track M or L feature runs in two sessions: Session A frames it and writes the spec (Stages 1 and 2) and stops at the spec approval. Session B chains Stages 3 to 7 (acceptance tests, plan, build, feature gate, ship) under an autonomy grant. A Track S change has no spec and no plan: it is built, goes through the review wave of the feature gate (no acceptance tests), then ships.
 
 ## Install
 
@@ -87,7 +87,7 @@ Every merged file the installer replaces (`.claude/settings.json`, `.codex/hooks
 
 `check_setup.py` can report two things under "User actions required" that no installer can fix. Both are expected, not a broken install:
 
-1. **Trusted Codex hooks.** Codex only trusts hook definitions after you run `/hooks` inside Codex and approve the dev-loop hooks. Until you do, five trusted-hook-hash checks fail.
+1. **Trusted Codex hooks.** Codex only trusts hook definitions after you run `/hooks` inside Codex and approve the dev-loop hooks. Until you trust the project and its hooks, the trusted-project and trusted-hook-hash checks fail.
 2. **Third-party skills.** dev-loop does not ship the Codex skills `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr` and `prototype` (Matt Pocock's skills). Install them separately from their own source.
 
 ## Develop

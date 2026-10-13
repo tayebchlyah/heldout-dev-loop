@@ -22,7 +22,7 @@ Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md` (the name before Po
 
 Stage 1 sizes the work:
 
-- Track S: one session, no spec, no plan. Stage 1, then Stage 5 on branch `<prefix>/<slug>`, then Stage 7.
+- Track S: one session, no spec, no plan, branch `<prefix>/<slug>`. Stage 1, Stage 5, Stage 6 review wave and triage only, Stage 7. `devloop status` never reports Stage 6 for Track S.
 - Track M: Session A, then Session B. Build `superpowers:executing-plans`.
 - Track L: Session A, then Session B. Build `superpowers:subagent-driven-development`. Spec adds threat model. Never auto-merged.
 
@@ -99,7 +99,7 @@ Plan never references `tests/acceptance/`. At handoff: Track M inline execution,
 Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or one seam, the brief names each file it changes, the task needs no ruling from another task. A task that fails: split it before Stage 5.
 
 ## 5 Build
-Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then Stage 7.
+Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then the Stage 6 review wave and triage, then Stage 7.
 Tracks M and L: executor by spec `track:`. Track M: `superpowers:executing-plans`. Track L: `superpowers:subagent-driven-development`. Work in the feature worktree: the executor's worktree step reuses it and creates none.
 Skip the executor's final whole-branch review: the Stage 6 review wave replaces it. Keep its workspace: the ledger stays.
 Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
@@ -110,6 +110,7 @@ Deferred findings go to the project note `## Deferred` in the notes folder, not 
 ## 6 Feature gate
 Start: `git fetch origin`, `git rebase origin/main`. Fresh stack: `commands.stack_reset`, else `docker compose --profile test up -d --build --wait` when the repo has a compose test profile. `GATE_SHA` = HEAD. `commands.<key>` = key of `commands` in `dev-loop.json`.
 Then run the selected route's feature gate. Order: review wave, triage, fix wave, acceptance loop. Each step is one real skill, agent, tool, or command invocation.
+Track S: review wave, triage and fix wave only. No acceptance loop, no ledger line. Then Stage 7.
 Review wave: the route's three reviewers, whole branch against `main`. Review wave runs once per feature, before any acceptance run, all reviewers pinned to `GATE_SHA`. Never rerun it. A fix never reruns a reviewer.
 Triage, controller. Merge the tables, dedupe by file and line. Defect = CONFIRMED finding and one of: (a) finding that quotes a spec `## Acceptance oracle` line or a glossary invariant; (b) correctness finding; (c) security finding. Act On list: defects only, at most 5, lead's judgment picks. Defect past the cap: `## Deferred`. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Same standards finding in two or more places: `## Gardener`, marked lint candidate. Every other finding: `## Gardener`, not fixed, no test.
 `## Gardener` in the project note: standards findings and non-defect items, triaged weekly. `## Deferred` holds at most 20 open items. At the cap, Stage 1 triages before it frames new work. Open security item in `## Deferred` blocks a release.
@@ -130,6 +131,6 @@ dev-loop's own steps, no finishing skill.
 `git fetch origin`, `git rebase origin/main`, `scripts/devloop.py gate --summary` (`exit` 0, else fix first), `git push`.
 PR body through the route's `pr` skill. It names the door (one-way or two-way) and the blast radius.
 `scripts/devloop.py ci wait`. `state` `fail`: read `failed_job` and `first_error`, fix, push, wait again. Three red rounds: stop, report.
-Merge rule, `merge` in `dev-loop.json`. `merge: auto` (default): after green CI (and the Stage 6 review wave for Tracks M and L), merge a Track S or M PR that is a two-way door with a small blast radius. A one-way door or Track L waits for the user. `merge: human`: every PR waits for the user.
+Merge rule, `merge` in `dev-loop.json`. `merge: auto` (default): after green CI and the Stage 6 review wave, merge a Track S or M PR that is a two-way door with a small blast radius. A one-way door or Track L waits for the user. `merge: human`: every PR waits for the user.
 Open security item in `## Deferred` blocks a release. Never merge a release PR or push a tag while one is open.
 Merge by `gh pr merge --rebase`, never a merge commit. Report once (autonomy grant).

@@ -524,7 +524,8 @@ test('upgrade from 1.5 leaves one SessionStart entry', () => {
   custom.hooks.SessionStart[0].hooks.push({ type: 'command', command: 'echo mine' })
   writeFileSync(settings, JSON.stringify(custom, null, 2))
 
-  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.ok(output.includes(`- SessionStart: ${SESSION_START_1_5}`), output)
   const commands = readJson(settings).hooks.SessionStart.flatMap((group) => group.hooks.map((hook) => hook.command))
   const current = readJson(join(packageRoot, 'claude/settings.fragment.json')).hooks.SessionStart[0].hooks[0].command
   assert.deepEqual(commands.filter((command) => command.includes('dev-loop.json')), [current])
