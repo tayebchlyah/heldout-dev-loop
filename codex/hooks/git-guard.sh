@@ -100,21 +100,38 @@ def git(repo, *args):
 
 
 def segments(cmd):
-    # Yields each command with the operator that follows it. No comment syntax:
-    # a # must not hide the rest of the line from the guard.
+    # Yields each command with the operator that follows it. An operator with no
+    # command before it, such as an opening (, comes with an empty one. No comment
+    # syntax: a # must not hide the rest of the line from the guard.
     lex = shlex.shlex(cmd.replace("\n", ";"), posix=True, punctuation_chars=PUNCT)
     lex.whitespace_split = True
     lex.commenters = ""
     seg = []
     for tok in lex:
         if tok and all(c in PUNCT for c in tok):
-            if seg:
-                yield seg, tok
+            yield seg, tok
             seg = []
         else:
             seg.append(tok)
     if seg:
         yield seg, ""
+
+
+# A backslash escape, a single-quoted string, a double-quoted string.
+QUOTED = re.compile(r"\\.|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+
+
+def unreliable(cmd, segs):
+    # segments() reads punctuation inside quotes or after a backslash as an operator,
+    # a comment and a heredoc body as commands, and a case pattern's ) as the end of
+    # a subshell. True when any of these can sit in cmd. Quoted and escaped text is
+    # replaced by one word character, so "a"# is still no comment.
+    bare = QUOTED.sub("x", cmd.replace("\n", ";"))
+    if "<<" in bare or re.search(r"(^|[\s;&|()])#", bare) or re.search(r"(^|[\s;&|(" + chr(96) + r"])case\s", bare):
+        return True
+    # More operator characters than the bare text holds: a quoted or escaped one
+    # became an operator.
+    return sum(len(sep) for _, sep in segs) > sum(bare.count(c) for c in PUNCT)
 
 
 def check_push(repo, args, drift):
@@ -199,13 +216,22 @@ def check_git(args, cwds, drift, fed):
         ask("a push whose arguments come from another command")
     if config:
         ask("a push with config overrides")
-    check_push(repo, args[i + 1:], drift)
+    # Each repo the push may run in, the session start for a cwd the parser lost.
+    for r in sorted({START if r is None else r for r in repos}):
+        check_push(r, args[i + 1:], drift)
 
 
 def check(cmd, cwds, drift):
     # cwds holds every directory the line can be in at this point. A cd replaces
-    # it only when "&&" follows, the one case where the next command surely runs
-    # in the new directory. After ; & | or inside ( ), the old ones stay possible.
+    # it only when "&&" follows, the one case where the next command surely runs in
+    # the new directory. After ; & | or || the old ones stay possible: a cd before
+    # ";" may never have run (after && or ||, inside if, a loop or a function body).
+    # A ( ), $( ) or backtick body is a subshell: its end adds the cwds from
+    # before it back. A ) that closes no subshell means a stray ) (a case pattern,
+    # an escaped paren) closed one too early, so the parse is unreliable: cwds
+    # becomes every folder seen so far, and no later cd narrows it. The same holds
+    # for the whole line when unreliable() finds a quote, escape, comment, heredoc
+    # or case that can fool the parser: a cd then only adds its targets.
     try:
         segs = list(segments(cmd))
     except ValueError:
@@ -214,22 +240,39 @@ def check(cmd, cwds, drift):
         if inside(cwds) and WRITE_TEXT.search(cmd):
             vault()
         ask("a git command the guard cannot parse")
+    subshells, seen, lost = [], set(cwds), unreliable(cmd, segs)
     for seg, sep in segs:
         for tok in seg:
             if any(c in tok for c in " \t;&|"):
                 check(tok, cwds, drift)
-        if seg[0] in ("cd", "pushd", "popd"):
-            new = {None} if seg[0] == "popd" else resolve(cwds, seg[1] if len(seg) > 1 else "~")
-            cwds = new if sep == "&&" else cwds | new
-            continue
-        if any(t.startswith("GIT_") and "=" in t for t in seg):
-            drift.add("refs")
-        # Every git word counts, not only the first: in "sudo -u git git commit" the
-        # first one is a user name.
-        for k, tok in enumerate(seg):
-            if os.path.basename(tok) == "git":
-                fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
-                check_git(seg[k + 1:], cwds, drift, fed)
+        # NAME=value words before a cd do not stop it from running.
+        words = seg
+        while words and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            words = words[1:]
+        if words and words[0] in ("cd", "pushd", "popd"):
+            to = words[1] if len(words) > 1 else "~"
+            new = {None} if words[0] == "popd" else resolve(cwds, to)
+            cwds = new if sep == "&&" and not lost else cwds | new
+            seen |= cwds
+        else:
+            if any(t.startswith("GIT_") and "=" in t for t in seg):
+                drift.add("refs")
+            # Every git word counts, not only the first: in "sudo -u git git commit" the
+            # first one is a user name.
+            for k, tok in enumerate(seg):
+                if os.path.basename(tok) == "git":
+                    fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
+                    check_git(seg[k + 1:], cwds, drift, fed)
+        for c in sep:
+            if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
+                # A union, not a swap: a ) that closes no subshell (a case pattern,
+                # an escaped paren) must not drop a cd that ran.
+                if subshells:
+                    cwds = subshells.pop()[1] | cwds
+                else:
+                    cwds, lost = set(seen), True
+            elif c in "(" + chr(96):
+                subshells.append((c, cwds))
 
 
 check(os.environ["CMD"], {os.environ["CWD"]}, set())
