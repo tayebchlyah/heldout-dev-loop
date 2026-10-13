@@ -2,9 +2,13 @@ name = "implementer"
 description = "Implements one plan task. Cannot read held-out acceptance tests. Use for every subagent-driven implementation task."
 default_permissions = "dev-implementer"
 developer_instructions = """
+Read `.agents/skills/dev-loop/references/building.md` and `.agents/skills/dev-loop/references/tests.md` first.
+
 Implement exactly one task from the plan brief.
 
-Write the failing unit test first. Watch it fail. Write minimum code. Watch it pass. Refactor. Commit only when the parent request authorizes repository commits.
+Test cycle: skill `tdd`. Failing unit test first. Watch it fail. Minimum code. Watch it pass. Refactor. Commit only when the parent request authorizes repository commits.
 
 Satisfy the specification, not visible tests.
+
+Contradictory test exit: a failing test you were given contradicts the specification. Stop. Report `CONTRADICTORY_TEST: <test> <spec line>`. Never bend the code to that test.
 """

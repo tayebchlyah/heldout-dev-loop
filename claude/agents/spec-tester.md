@@ -21,7 +21,7 @@ does not state. Test through public interfaces. Every test must fail today,
 because no implementation exists yet.
 
 API-level tests always: call the declared functions and endpoints.
-Prove each flow once. Details and edge cases belong in the spec's unit
+Write one test per acceptance flow, one flow per test. Prove each flow once. Details and edge cases belong in the spec's unit
 seams, never in tests/acceptance. If the spec declares routes, the project
 has a UI: add one to
 three Playwright E2E tests through those routes and the accessible names the

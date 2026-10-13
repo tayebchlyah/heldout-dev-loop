@@ -1,16 +1,16 @@
 # Mutation step
 
-Read this file when the feature gate reaches its mutation step, or when Stage 0 sets up mutation testing. Both harness routes use it.
+Read this file when the nightly mutation job runs, or when Stage 0 sets up mutation testing. Both harness routes use it.
 
 ## Run
 
-In the worktree detached to `GATE_SHA`, from the repository root, run one command:
+Mutation is a nightly job on `main`, not a gate step. From the repository root, run one command:
 
 ```
-python3 .agents/skills/dev-loop/scripts/select_mutants.py --head GATE_SHA --run
+python3 .agents/skills/dev-loop/scripts/select_mutants.py --base <main 24 h ago> --head main --run
 ```
 
-The script computes the selection from the diff `merge-base(main, GATE_SHA)..GATE_SHA`, runs the tools on that selection only, and prints the report. Return the report as the step's finding table. The same diff always gives the same selection, so the report is comparable between runs.
+The script computes the selection from the diff `<base>..main`, runs the tools on that selection only, and prints the report. `--base` defaults to the merge base with `main`. The same diff always gives the same selection, so the report is comparable between runs.
 
 Exit codes:
 
@@ -46,15 +46,17 @@ The script classes every survivor from its diff, the same way on every run.
 
 ## Fix
 
-The report ends with "functions that need one unit test", each with the mutants that justify it.
+A nightly survivor is a Track S change. The report ends with "functions that need one unit test", each with the mutants that justify it.
 
 - Write **one unit test per listed function**, not one per mutant. The test pins the function's outputs, so it kills its decision survivors together. When a mutant's name does not show the gap, read its change with `mutmut show <name>`.
-- Dispatch all the mutation tests at once, in parallel, one `implementer` per group of listed functions. Each implementer writes only its own new test file, changes no product code, and runs only that file.
-- Run mutmut once per feature. A test written in the fix wave is accepted when its own file passes; mutmut does not run again to confirm the kill.
+- The test goes into the home test file of the function.
+- Commit it only when a rerun of the selection shows the mutant killed. A test that leaves the mutant alive is dropped.
+- Group the listed functions and write the tests in parallel, one `implementer` per group. Each changes no product code and runs only its test file.
+- Run mutmut once per night.
 
 ## Setup
 
-Stage 0 owns this setup. `scripts/check_setup.py` verifies it and fails until it holds, so a repository bootstrapped before this rule gets it at its next Stage 0 run. The gate uses the setup as it finds it.
+Stage 0 owns this setup. `scripts/check_setup.py` verifies it and fails until it holds, so a repository bootstrapped before this rule gets it at its next Stage 0 run. The nightly job uses the setup as it finds it.
 
 **Python stack.**
 
@@ -70,7 +72,7 @@ Stage 0 owns this setup. `scripts/check_setup.py` verifies it and fails until it
 
   `only_mutate` lists the critical modules, as `fnmatch` globs relative to that directory: detectors, evaluators, verifiers, scoring, parsers, window and coverage logic. Leave out wiring, routes, persistence adapters, formatting and logging.
 
-  The config holds only what stays true across features. The gate adds the per-feature selection at run time.
+  The config holds only what stays true across runs. The job adds the selection at run time.
 - Set `process_isolation = "forkserver"` when the unit tests import a C extension that starts threads, such as a database client SDK. Under the default `fork`, those workers crash and mutmut labels the mutant `segfault`. The script stops with exit code `2` when more than half of the selected mutants crash. On macOS it also sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` for mutmut, because macOS aborts forked children otherwise.
 - List in `do_not_mutate` every module that defines a `@runtime_checkable` Protocol. mutmut adds its trampoline attributes to the class body, they become Protocol members, and every `isinstance` check against the Protocol fails.
 - Git-ignore `mutants/` in that package directory.
