@@ -17,13 +17,15 @@ Run `scripts/check_setup.py --harness claude|codex --repo .`. Stage 0 owns any f
 
 Run `scripts/notes_path.py`. `$NOTES` below means its output. Specs and plans live in the notes folder. It fails: Stage 0 owns it.
 
+Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md` (the name before Pocock skills 1.3). Both exist: `GLOSSARY.md` wins. New repos write `GLOSSARY.md`.
+
 ## Detect the stage
 
 Run in order. First failing check is the stage.
 
 | Check | Stage |
 |---|---|
-| `test -f CONTEXT.md` fails, or `git rev-parse HEAD` fails | 0 Bootstrap |
+| No glossary (`test -f GLOSSARY.md || test -f CONTEXT.md` fails), or `git rev-parse HEAD` fails | 0 Bootstrap |
 | No spec in `$NOTES/specs/` for requested work | 1 Frame |
 | Spec exists, frontmatter `review_status` not `approved` | 2 Spec |
 | Spec approved, `tests/acceptance/` has no test for it | 3 Acceptance |
@@ -44,7 +46,7 @@ Rebase conflict in `tests/acceptance/`: another feature's file keeps the upstrea
 
 ## 0 Bootstrap
 Invoke `new-repo-setup`. Apply the selected harness setup contract. Claude Code writes its `.claude/settings.json`. Codex writes its `.codex/config.toml` only when a project override is needed. Security review runs once per feature in Stage 6, not per Stop and commit.
-`git init`, one commit. Invoke the selected route's domain-modeling skill for first terms of CONTEXT.md.
+`git init`, one commit. Invoke the selected route's domain-modeling skill for first terms of `GLOSSARY.md`.
 Detect stacks: `pyproject.toml` = python, `go.mod` = go, `package.json` with UI framework or `frontend/` = ui. Confirm with the user. Write `stacks: <list>` in repo AGENTS.md. Every later stage reads that line.
 Layout: PyPA src layout, `uv init --package`. One stack: `src/<pkg>/` + `tests/unit/`. Two stacks: uv workspace root, `backend/src/<pkg>/` + `backend/tests/unit/`, `frontend/src/` + `frontend/tests/unit/`. FastAPI-template `backend/app/` also acceptable; the spec-tester wall covers `src/ app/ backend/ frontend/`. Acceptance tests once, at root `tests/acceptance/` (`api/`, and `e2e/` when ui). Root only: spec-tester writes it and cannot enter a stack dir.
 Write `scripts/gate.sh`: runs only the stack `git diff --name-only HEAD` touched. python: ruff, pyright, `pytest tests/unit`. go: `go vet`, `go test ./...`. ui: biome, `tsc --noEmit`, `vitest run`. Never E2E.
@@ -55,7 +57,7 @@ Done when `scripts/gate.sh` blocks a deliberately broken unit test.
 
 ## 1 Frame
 Invoke the selected route's grilling skill. Then `superpowers:brainstorming`.
-Done when brainstorming has named the path out loud.
+Done when brainstorming has named the path out loud. Superpowers 7 also names a size (quick task, small change, project): every size continues to Stage 2 Spec. No track rule per size.
 
 ## 2 Spec
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
@@ -68,7 +70,7 @@ Set `review_status: approved` in spec frontmatter. Under each superseded line in
 
 ## 3 Acceptance
 Start in the feature worktree (see Where each stage runs), then `git fetch origin`, `git rebase origin/main`.
-Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and CONTEXT.md path.
+Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and glossary path.
 It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. Tell the user to review. One commit for both.
 Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after a spec oracle change: a Supersedes line or an escaped bug. Controller never writes a test there.
 Stop. Tell the user to run `/clear` before Stage 4.
@@ -86,7 +88,7 @@ Deferred findings go to the project note `## Deferred` in the notes folder, not 
 ## 6 Feature gate
 Run the selected route's feature gate. Order: review wave, triage, fix wave, acceptance loop. Each step is one real skill, agent, tool, or command invocation. Report six lines at the end, one per gate step (acceptance, simplify, code review, spec review, mutation, security): pass or fail. Complete only when all six pass.
 Review wave runs once per feature, before any acceptance run, all reviewers pinned to one commit SHA. Never rerun it. A fix never reruns a reviewer.
-Defect = one of: (a) finding that quotes a spec `## Acceptance oracle` line or a `CONTEXT.md` invariant; (b) correctness finding the reviewer marks CONFIRMED; (c) security finding marked confirmed or high. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Simplify diffs are behaviour-preserving and apply as is. Mutation: one unit test per function the mutation report lists, as [references/mutation.md](references/mutation.md) states; message-only survivors go to `## Deferred`. Anything else: `## Deferred`, not fixed, no test.
+Defect = one of: (a) finding that quotes a spec `## Acceptance oracle` line or a glossary invariant; (b) correctness finding the reviewer marks CONFIRMED; (c) security finding marked confirmed or high. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Simplify diffs are behaviour-preserving and apply as is. Mutation: one unit test per function the mutation report lists, as [references/mutation.md](references/mutation.md) states; message-only survivors go to `## Deferred`. Anything else: `## Deferred`, not fixed, no test.
 Acceptance loop: full run once, then fix rounds on failures only (`pytest --lf`, `npx playwright test --last-failed`), then one final full run. Fix until green against the frozen suite. Progress guard: every round must reduce the failing count. Two rounds without a reduction, or one test red after three rounds: stop, report, ask the user. Never ship red, never defer a red acceptance test.
 Flaky = red, then green on rerun with no code change. Flaky is a race: a read before the write it asserts, a resource shared with a parallel test, or a tool version CI and local disagree on. Name the race with evidence, fix it in the fix loop like any red test, and confirm the fix under CI load. Repo flaky-test rules, when `AGENTS.md` points at them, say how. A rerun to green, a retry or a raised global timeout is not a fix.
 Stale image rule. Compose services are `build:` images, source copied in, no bind mount. Host fix changes nothing in running container. Before every acceptance run after any change under `backend/` or `frontend/`: `docker compose --profile test up -d --build --wait`. Then confirm: `docker compose ps --format '{{.Service}} {{.CreatedAt}}'`, created time newer than the fix commit. Run on stale image = not a run, does not count.
