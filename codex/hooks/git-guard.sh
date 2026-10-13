@@ -27,11 +27,12 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # checked out, or a bare push whose remote config can reach other branches.
 # Parsed with shlex, not regex, so quotes, combined short flags (-uf), global options
 # (-c, -C, --git-dir), cd and git aliases do not walk past the rule. A git anywhere in
-# a segment counts (if, timeout, xargs), and every quoted string is checked as a
-# command of its own (sh -c, eval, ssh). Fail closed: a command the parser cannot
-# read, an argument the shell would expand ($VAR, $(...), globs), arguments fed by
-# xargs or find, a push after a command in the same line that moves HEAD or changes
-# refs or config, or a parser crash, asks.
+# a segment counts (if, timeout, xargs). Only what the shell runs is checked: a heredoc
+# body is text unless its line feeds it to a shell, and a quoted string is a command
+# only in a segment that runs a shell (sh -c, eval, ssh, su -c). Fail closed: a push
+# line the parser cannot read, an argument the shell would expand ($VAR, $(...),
+# globs), arguments fed by xargs or find, a push after a command in the same line that
+# moves HEAD or changes refs or config, or a parser crash, asks.
 ask() { deny "Global rule: $1 needs explicit permission each time. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
 if has '(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|$)'; then
   REASON=$(CMD="$CMD" CWD="$CWD" python3 - <<'PY'
@@ -45,6 +46,9 @@ GLOBAL_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-e
 MOVES_HEAD = {"checkout", "switch", "reset", "rebase", "worktree", "init", "clone", "branch"}
 CHANGES_REFS = {"config", "remote", "tag", "update-ref", "symbolic-ref"}
 FEEDERS = {"xargs", "parallel", "find", "fd"}
+# Commands that run a string or a heredoc body as shell commands.
+RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
 # chr(96) is a backtick. A literal one breaks bash parsing the $( ) around this script.
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
@@ -70,6 +74,28 @@ def resolve(bases, to):
     if os.path.isabs(target):
         return {target}
     return {None if b is None else os.path.join(b, target) for b in bases}
+
+
+def strip_heredocs(cmd):
+    # Drops each heredoc body and its end line, so prose with apostrophes or git words
+    # is not read as commands. A body whose line names a shell stays. A heredoc with
+    # no end line keeps the rest of the text.
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        feeds = any(os.path.basename(w) in RUNNERS for w in re.split(r"[\s;&|()]+", line))
+        for dash, _, end in HEREDOC.findall(line):
+            j = i
+            while j < len(lines) and (lines[j].lstrip("\t") if dash else lines[j]) != end:
+                j += 1
+            if j == len(lines):
+                return "\n".join(out + lines[i:])
+            if feeds:
+                out += lines[i:j + 1]
+            i = j + 1
+    return "\n".join(out)
 
 
 def git(repo, *args):
@@ -137,6 +163,8 @@ def check_push(repo, args, drift):
         else:
             pos.append(a)
         j += 1
+    if git(repo, "rev-parse", "--git-dir")[0] != 0:
+        ask("a push from an unknown repository")
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     remote, specs = (pos[0] if pos else ""), pos[1:]
     if "head" in drift and (not specs or any(s.partition(":")[0] in ("HEAD", "@") for s in specs)):
@@ -232,13 +260,16 @@ def check(cmd, cwds, drift):
     try:
         segs = list(segments(cmd))
     except ValueError:
-        # Unbalanced quotes, often a heredoc body.
-        ask("a git command the guard cannot parse")
+        # Unbalanced quotes. Only a line that may push asks.
+        if re.search(r"(?<![\w.-])git(?![\w.-]).*(\bpush\b|send-pack)", cmd):
+            ask("a push the guard cannot parse")
+        return
     subshells, seen, lost, prev = [], set(cwds), unreliable(cmd, segs), ""
     for seg, sep in segs:
-        for tok in seg:
-            if any(c in tok for c in " \t;&|"):
-                check(tok, cwds, drift)
+        if any(os.path.basename(w) in RUNNERS for w in seg):
+            for tok in seg:
+                if any(c in tok for c in " \t;&|"):
+                    check(tok, cwds, drift)
         # NAME=value words before a cd do not stop it from running. CDPATH, HOME
         # or OLDPWD change where it lands, so its target becomes unknown.
         words, moved = seg, False
@@ -288,7 +319,7 @@ def check(cmd, cwds, drift):
         prev = sep
 
 
-check(os.environ["CMD"], {os.environ["CWD"]}, set())
+check(strip_heredocs(os.environ["CMD"]), {os.environ["CWD"]}, set())
 PY
 ) || REASON="a push the guard failed to check"
   [ -n "$REASON" ] && ask "$REASON"
