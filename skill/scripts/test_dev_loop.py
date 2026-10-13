@@ -1495,6 +1495,14 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("claude: PASS", result.stdout)
 
+    def test_the_checker_writes_no_python_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            scripts = Path(root) / "scripts"
+            shutil.copytree(CHECKER.parent, scripts, ignore=shutil.ignore_patterns("__pycache__", "test_*"))
+            subprocess.run([sys.executable, str(scripts / "check_setup.py"), "--harness", "claude", "--repo", root],
+                           capture_output=True, text=True, check=False, env={**os.environ, "HOME": root})
+            self.assertFalse((scripts / "__pycache__").exists())
+
     def test_codex_project_lists_only_user_actions(self) -> None:
         self.init("codex")
         result = self.run_checker("codex")
@@ -1547,6 +1555,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertIn("missing Claude deny: Read(./.env)", result.stdout)
 
     def test_claude_project_keeps_the_repo_walls(self) -> None:
+        # init writes the Claude repo contract; the checker still fails without it.
         walls = [
             "missing Claude repo deny: Agent(caveman:cavecrew-reviewer)",
             "missing Claude repo deny: Agent(caveman:cavecrew-builder)",
@@ -1558,22 +1567,18 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.init("claude")
         write(self.repo / "AGENTS.md", "vault_notes: Software/Test\n")
         result = self.run_checker("claude")
-        self.assertEqual(result.returncode, 1)
-        for wall in walls:
-            self.assertIn(f"- {wall}\n", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Claude repo", result.stdout)
 
         path = self.repo / ".claude" / "settings.json"
         settings = json.loads(path.read_text())
-        settings["permissions"]["deny"] += [
-            "Agent(caveman:cavecrew-reviewer)",
-            "Agent(caveman:cavecrew-builder)",
-            "Agent(caveman:cavecrew-investigator)",
-        ]
-        settings["env"] = {"ENABLE_STOP_REVIEW": "0", "ENABLE_COMMIT_REVIEW": "0", "SG_PUSH_SWEEP": "0"}
+        settings["permissions"]["deny"] = [d for d in settings["permissions"]["deny"] if "cavecrew" not in d]
+        del settings["env"]
         write(path, json.dumps(settings))
         result = self.run_checker("claude")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("Claude repo", result.stdout)
+        self.assertEqual(result.returncode, 1)
+        for wall in walls:
+            self.assertIn(f"- {wall}\n", result.stdout)
 
     def test_a_changed_kit_file_fails(self) -> None:
         self.init()
