@@ -882,8 +882,11 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         "cat <<'EOF'\ngit status\ngit push origin main"):
             self.assertEqual(self.decision(command), "ask", command)
 
-    def test_a_push_from_an_unknown_repository_asks(self) -> None:
-        self.assertEqual(self.decision(f"git -C {self.repo}/nope push origin feat"), "ask")
+    def test_a_bare_push_from_an_unknown_repository_asks(self) -> None:
+        # A folder made earlier in the line does not exist yet, so a named feature
+        # branch still runs.
+        self.assertEqual(self.decision(f"git -C {self.repo}/nope push"), "ask")
+        self.assertEqual(self.decision(f"git -C {self.repo}/nope push origin feat"), "allow")
 
     def test_the_regression_commands_ask_only_for_a_real_push(self) -> None:
         # The 53 commands the 1.4 guard asked on (permission prompt analysis,
