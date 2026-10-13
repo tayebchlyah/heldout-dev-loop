@@ -1,5 +1,40 @@
 # Changelog
 
+## [2.0.0] - 2026-10-13
+
+### ♻️ Refactors & Cleanup
+
+- [`a4bf4e3`](https://github.com/tchlyah/dev-loop/commit/a4bf4e374ef3bf9d597be35256a91f7e177e3e6b) - **skill**: v2 skill stack: grilling, writing-plans, native or SDD, Pocock tdd and pr
+
+- [`95ac2d3`](https://github.com/tchlyah/dev-loop/commit/95ac2d3ce6681280e81bf0d1cf9f957a0d795c3c) - **gate**: One review wave of three reviewers, no simplify, mutation nightly
+
+
+
+### ✨ New Features
+
+- [`1185d29`](https://github.com/tchlyah/dev-loop/commit/1185d2907540ebcfdb9346ec09fc1a21a1cd6505) - **cli**: devloop status, logged, gate --summary and ci wait, commands map
+
+
+
+### 🐛 Bug Fixes
+
+- [`e08e5d5`](https://github.com/tchlyah/dev-loop/commit/e08e5d55b7b0ff6a12f53f6681c8a277bd212258) - **cli**: Ship a merged feature with no branch, never read a failed git cherry as empty
+
+
+
+### 💥 Breaking Changes
+
+- [`b4c4caa`](https://github.com/tchlyah/dev-loop/commit/b4c4caa3a4d2063b6c86670381dbff19eb635c02) - **skill**: Tracks, chained sessions, devloop status detection, no 1.4 fallbacks
+
+
+
+### 📝 Documentation & Content
+
+- [`1b3320c`](https://github.com/tchlyah/dev-loop/commit/1b3320c14e5fb4f9f02f80f37399da02f2f867e7) - **skill**: Ponytail rules, vendor scope paragraphs and test rules for implementers
+
+- [`a2f20a2`](https://github.com/tchlyah/dev-loop/commit/a2f20a24ed33ed5b2f82e19cb3cc07b50fa63e94) - **skill**: Match vendor quote, trim test rules, fix building.md headings
+
+
 ## [1.5.0] - 2026-10-13
 
 ### ♻️ Refactors & Cleanup
@@ -60,11 +95,11 @@
 
 - [`48fd730`](https://github.com/tchlyah/dev-loop/commit/48fd730aa9dffa5ba236ab018eae879d8afe8ed7) - **skill**: Escape the || in the Stage 0 table row *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`accb767`](https://github.com/tchlyah/dev-loop/commit/accb7670561ad0ba211b347e2d9e3a23e18980e5) - **init**: Write the Claude repo contract into the project settings
+- [`d1ecfbc`](https://github.com/tchlyah/dev-loop/commit/d1ecfbc0f9aeb6cef0db0181ef3bb5214838491e) - **init**: Write the Claude repo contract into the project settings *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`385d876`](https://github.com/tchlyah/dev-loop/commit/385d8767af891088885c735129c565784f05da4c) - **install**: Name only the kept Codex tables that differ from dev-loop's
+- [`ff4d421`](https://github.com/tchlyah/dev-loop/commit/ff4d42122598feb13946cc35a6bbe0a5a31e01df) - **install**: Name only the kept Codex tables that differ from dev-loop's *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`62aa8ed`](https://github.com/tchlyah/dev-loop/commit/62aa8ed6d527c15e2394124d782d84c88dd0e34b) - **check**: Write no __pycache__ into the vendored skill folder
+- [`7a6d7ac`](https://github.com/tchlyah/dev-loop/commit/7a6d7ac6c1c1788f69906362aa1ecd4fb49b6a29) - **check**: Write no __pycache__ into the vendored skill folder *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
@@ -89,6 +124,8 @@
 - [`36691eb`](https://github.com/tchlyah/dev-loop/commit/36691ebcd9419a28e89127d4f2b9473e43858fa5) - **docs**: Document upgrade, rollback, the first init on a machine and the notes folder *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 - [`c2af901`](https://github.com/tchlyah/dev-loop/commit/c2af901b44951bb04c5c49c85558d18008f09f2d) - **changelog**: Regenerate CHANGELOG.md for v1.5.0 *(PR [#8](https://github.com/tchlyah/dev-loop/pull/8) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`8d805a5`](https://github.com/tchlyah/dev-loop/commit/8d805a553f674838235136985f51f4b5650ee4d1) - **changelog**: Regenerate CHANGELOG.md for v1.5.0 *(PR [#9](https://github.com/tchlyah/dev-loop/pull/9) by [@tchlyah](https://github.com/tchlyah))*
 
 
 
