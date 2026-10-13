@@ -7,7 +7,7 @@ Read this file when the feature gate reaches its mutation step, or when Stage 0 
 In the worktree detached to `GATE_SHA`, from the repository root, run one command:
 
 ```
-python3 ~/.agents/skills/dev-loop/scripts/select_mutants.py --head GATE_SHA --run
+python3 .agents/skills/dev-loop/scripts/select_mutants.py --head GATE_SHA --run
 ```
 
 The script computes the selection from the diff `merge-base(main, GATE_SHA)..GATE_SHA`, runs the tools on that selection only, and prints the report. Return the report as the step's finding table. The same diff always gives the same selection, so the report is comparable between runs.
