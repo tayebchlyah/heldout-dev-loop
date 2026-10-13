@@ -97,8 +97,15 @@ def check_claude(home: Path, repo: Path | None = None) -> list[str]:
         require_file(root / relative, failures)
 
     check_claude_settings(root / "settings.json", failures)
+    if repo is not None:
+        failures += check_claude_repo(repo)
+    return failures
 
-    if repo is not None and (repo / "AGENTS.md").is_file():
+
+def check_claude_repo(repo: Path) -> list[str]:
+    """The repo walls a dev-loop repo (vault_notes in AGENTS.md) needs in its .claude/settings.json."""
+    failures: list[str] = []
+    if (repo / "AGENTS.md").is_file():
         agents_text = (repo / "AGENTS.md").read_text()
         if "vault_notes:" in agents_text:
             repo_settings = load_json(repo / ".claude" / "settings.json", failures)
@@ -333,7 +340,7 @@ def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list
     failures = check_manifest(repo) + check_user_skill(home)
     if harness == "claude":
         check_claude_settings(repo / ".claude" / "settings.json", failures)
-        return failures, []
+        return failures + check_claude_repo(repo), []
     root = repo / ".codex"
     codex_failures, _ = check_codex_root(root, root / "rules" / "dev-loop.rules", hook_scripts=False)
     return failures + codex_failures, project_trust_groups(home, repo) + codex_skill_groups(home)
@@ -450,7 +457,6 @@ def main() -> int:
         failures, action_groups = check_project(args.home, args.repo, args.harness)
     elif args.harness == "claude":
         failures = check_config(args.home)
-        failures += check_claude(args.home, args.repo)
         failures += check_claude(args.home, args.repo)
     else:
         failures = check_config(args.home)
