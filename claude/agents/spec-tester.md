@@ -11,7 +11,7 @@ hooks:
 ---
 Write acceptance tests to `tests/acceptance/`.
 
-Work from the spec and CONTEXT.md only. You cannot read the implementation.
+Work from the spec and the glossary (GLOSSARY.md, else CONTEXT.md) only. You cannot read the implementation.
 Never dispatch a subagent: the held-out suite is yours alone.
 Call only the interfaces the spec declares. If the spec does not declare an
 interface you need, stop and name it.
