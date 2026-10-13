@@ -27,6 +27,27 @@ npx github:tchlyah/dev-loop#<tag> --global          # run the 1.4 global install
 
 `init` writes `dev-loop.json`, `.dev-loop/MANIFEST.json`, the skill in `.agents/skills/dev-loop/` and the files of the chosen harnesses (`--harness=claude|codex|both`) under `.claude/`, `.codex/` and `.dev-loop/hooks/`. `--notes=<path>` sets the notes folder in the gitignored `dev-loop.local.json`. Commit the result. Kit files are never edited in a project: change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit unless `--force`. `--link` works only with `--global`. A call with no command prints the usage and exits 1.
 
+## Before the first `init` on a machine
+
+Remove the 1.4 global install first: `npx github:tchlyah/dev-loop#<tag> uninstall-global` (try `--dry-run` first). With a global `dev-loop` skill still in place, Claude Code runs the global skill instead of the project one, and Codex runs neither. `check_setup.py` fails while a user-level `dev-loop` skill exists. `uninstall-global` refuses when no hook of yours runs a `git-guard.sh` outside the dev-loop install, because a vault guard that lived there would go too (`--force` skips this check).
+
+## Upgrade and rollback
+
+- **Upgrade:** on a branch, run `npx github:tchlyah/dev-loop#<new tag> upgrade`, commit the diff, open a PR. Each person gets the new version with `git pull`.
+- **Rollback of a project:** `git revert` the upgrade commit.
+- **Rollback of a machine to 1.4:** `npx github:tchlyah/dev-loop#v1.4.0` reinstalls the global install. Do not keep it on a machine whose projects use the kit.
+
+## Notes folder
+
+Specs and plans live in a notes folder, any local folder. `skill/scripts/notes_path.py` finds it, first match wins:
+
+1. `DEV_LOOP_NOTES` environment variable.
+2. `notes` in `dev-loop.local.json` in the current worktree, then in the main worktree. This file is gitignored: each person and each machine sets its own path. A new worktree has no copy, so it uses the main worktree's file.
+3. `notes` in the committed `dev-loop.json`, for a team that keeps its notes in the repository (for example `docs/dev-loop`).
+4. The 1.4 layout, 1.5.x only: `vault` in `~/.agents/dev-loop.config.json` plus `vault_notes:` in `AGENTS.md`. A `$NAME` in the `vault_notes:` value is read from the environment.
+
+A path is absolute, starts with `~`, or is relative to the repository root. The folder must exist. `init --notes=<path>` writes the local file.
+
 The sections below describe the `--global` flow.
 
 ## What it installs
@@ -57,7 +78,7 @@ The installer backs up every file it replaces to `<file>.bak-<timestamp>`. A rep
 ```bash
 git clone git@github.com:tchlyah/dev-loop.git ~/Projects/tchlyah/dev-loop
 cd ~/Projects/tchlyah/dev-loop
-node bin/install.mjs --link
+node bin/install.mjs --global --link
 ```
 
 Link mode links skill and hooks into this clone. Codex agent TOMLs stay regular copied files because Paseo rejects linked definitions at dispatch. Re-run after a Codex agent or fragment edit.

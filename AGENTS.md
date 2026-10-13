@@ -36,6 +36,8 @@ Both must pass before any commit. `.github/workflows/ci.yml` runs both on every 
 | `.codex/rules/dev-loop.rules` | Codex command rules | kit |
 | `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml` | hook entries, deny rules, permission tables | merge |
 
+Upgrade: `npx github:tchlyah/dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tchlyah/dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither.
+
 MANIFEST rule: kit files are never edited in a project. Change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit or a deleted kit file unless `--force`. A kit file gets no backup (git holds it). A merged file gets `<file>.bak-<timestamp>`.
 
 ## Global install targets (`--global`, the 1.4 flow, 1.5.x only)
@@ -54,7 +56,7 @@ MANIFEST rule: kit files are never edited in a project. Change dev-loop, then ru
 
 Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. A replaced skill goes to `<root>/backups/skills/<name>.bak-<timestamp>` instead (for example `~/.agents/backups/skills/`), because a backup inside a skills folder is discovered as a second skill. It never removes or reorders an entry it did not add. On a `config.toml` table collision (user already declares a table the fragment also declares), the user's table wins and the installer prints one line naming it.
 
-Notes path: `skill/scripts/notes_path.py` resolves it (`DEV_LOOP_NOTES`, `dev-loop.local.json` in the worktree then the main worktree, `notes` in `dev-loop.json`, then the 1.4 fallback `vault` + `vault_notes:`). Unset: `check_setup.py` reports a plain top-level failure line, not under "User actions required": `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`. A re-run keeps an existing `vault` key in the config.
+Notes path: `skill/scripts/notes_path.py` resolves it (`DEV_LOOP_NOTES`, `dev-loop.local.json` in the worktree then the main worktree, `notes` in `dev-loop.json`, then the 1.4 fallback `vault` + `vault_notes:`, whose `$NAME` comes from the environment). Glossary: `GLOSSARY.md`, else `CONTEXT.md`. Unset: `check_setup.py` reports a plain top-level failure line, not under "User actions required": `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`. A re-run keeps an existing `vault` key in the config.
 
 ## Verify after install
 
