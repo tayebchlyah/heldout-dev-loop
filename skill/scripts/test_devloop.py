@@ -543,7 +543,8 @@ class SkillStackContractTests(unittest.TestCase):
             for line in path.read_text().splitlines():
                 if name in line:
                     with self.subTest(path=path.name, line=line):
-                        self.assertIn(f"Skill({name})", line)
+                        if not line.lstrip("- ").startswith("Never invoke"):
+                            self.assertIn(f"Skill({name})", line)
 
     def test_codex_skill_list(self) -> None:
         self.assertEqual(
@@ -620,6 +621,58 @@ class SkillStackContractTests(unittest.TestCase):
                 self.assertIn(value, stage)
         self.assertIn("mattpocock-skills:pr", self.claude)
         self.assertIn("`pr`", self.codex)
+
+
+
+def section(path: Path, heading: str) -> str:
+    text = path.read_text()
+    start = text.index(f"\n{heading}")
+    end = text.find("\n## ", start + 1)
+    return text[start:] if end == -1 else text[start:end]
+
+
+class ReviewWaveContractTests(unittest.TestCase):
+    """D12, D13, D14, D6 in Stage 6: one review wave of three reviewers."""
+
+    def setUp(self) -> None:
+        self.stage = stage_text(6)
+        self.claude = section(REFERENCES / "claude.md", "## Feature gate")
+        self.codex = section(REFERENCES / "codex.md", "## Feature gate")
+
+    def test_review_wave_has_three_reviewers_per_route(self) -> None:
+        for value in [
+            "`general-purpose`", "`model: opus`", "one message, three Agent calls",
+            "skill `code-review`, args `high`", "skill `mattpocock-skills:code-review`, fixed point `main`",
+            "skill `security-review`", "GATE_SHA",
+        ]:
+            with self.subTest(route="claude", value=value):
+                self.assertIn(value, self.claude)
+        for value in ["`final_reviewer`", "skill `code-review` with fixed point `main`", "`security_reviewer`", "GATE_SHA"]:
+            with self.subTest(route="codex", value=value):
+                self.assertIn(value, self.codex)
+
+    def test_no_simplify_or_mutation_in_gate(self) -> None:
+        for name, text in [("SKILL.md", self.stage), ("claude.md", self.claude), ("codex.md", self.codex)]:
+            for value in ["simplif", "mutation", "mutant"]:
+                with self.subTest(path=name, value=value):
+                    self.assertNotIn(value, text.lower())
+        self.assertFalse((REPO_ROOT / "codex" / "agents" / "simplifier.toml").exists())
+        self.assertNotIn("simplifier", (REFERENCES / "codex.md").read_text())
+        self.assertNotIn("simplifier.toml", (SKILL_ROOT / "scripts" / "check_setup.py").read_text())
+
+    def test_gate_uses_devloop_and_commands_map(self) -> None:
+        for value in [
+            "git fetch origin", "`commands.stack_reset`", "docker compose --profile test up -d --build --wait",
+            "`GATE_SHA`", "scripts/devloop.py gate --summary", "`commands.acceptance`", "`commands.acceptance_failed`",
+            "product, test or environment", "Never rerun to green", "Progress guard", "Stale image rule",
+            "## Gardener", "at most 20 open items", "lint candidate", "at most 5",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.stage)
+
+    def test_gate_writes_ledger_line(self) -> None:
+        self.assertIn("`Feature gate: green at <sha>`", self.stage)
+        self.assertIn("progress.md", self.stage)
 
 
 if __name__ == "__main__":

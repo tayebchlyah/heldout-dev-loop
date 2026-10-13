@@ -194,7 +194,6 @@ def check_codex_root(root: Path, rules_path: Path, hook_scripts: bool) -> tuple[
         "implementer.toml": "dev-implementer",
         "spec-tester.toml": "dev-spec-tester",
         "task-reviewer.toml": "dev-read-only",
-        "simplifier.toml": "dev-workspace",
         "final-reviewer.toml": "dev-read-only",
         "security-reviewer.toml": "dev-read-only",
     }

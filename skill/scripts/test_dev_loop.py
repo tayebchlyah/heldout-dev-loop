@@ -67,6 +67,7 @@ GateTests = test_devloop.GateTests
 CiWaitTests = test_devloop.CiWaitTests
 InstructionContractTests = test_devloop.InstructionContractTests
 SkillStackContractTests = test_devloop.SkillStackContractTests
+ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
 
 
 def all_instructions() -> str:
@@ -277,14 +278,15 @@ class SkillContractTests(unittest.TestCase):
             "Never ship red",
             "--last-failed",
             "GATE_SHA",
+            "`commands.acceptance_failed`",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, self.instructions)
 
     def test_claude_worktree_reviewers_pin_the_sha(self) -> None:
         claude = (SKILL_ROOT / "references" / "claude.md").read_text()
-        self.assertIn("isolation: worktree", claude)
-        self.assertIn("--detach GATE_SHA", claude)
+        self.assertIn("`main...GATE_SHA`", claude)
+        self.assertNotIn("isolation: worktree", claude)
         self.assertNotIn("Rerun step 1.", claude)
 
     def test_the_glossary_is_glossary_md_else_context_md(self) -> None:
@@ -308,7 +310,6 @@ class SkillContractTests(unittest.TestCase):
             "implementer.toml": ("implementer", "dev-implementer"),
             "spec-tester.toml": ("spec_tester", "dev-spec-tester"),
             "task-reviewer.toml": ("task_reviewer", "dev-read-only"),
-            "simplifier.toml": ("simplifier", "dev-workspace"),
             "final-reviewer.toml": ("final_reviewer", "dev-read-only"),
             "security-reviewer.toml": ("security_reviewer", "dev-read-only"),
         }
@@ -1250,7 +1251,6 @@ class SetupCheckerTests(unittest.TestCase):
             "implementer": "dev-implementer",
             "spec-tester": "dev-spec-tester",
             "task-reviewer": "dev-read-only",
-            "simplifier": "dev-workspace",
             "final-reviewer": "dev-read-only",
             "security-reviewer": "dev-read-only",
         }
@@ -1825,10 +1825,10 @@ MODULE_HEAD = (
 
 
 class MutationContractTests(unittest.TestCase):
-    def test_both_routes_run_the_shipped_selector(self) -> None:
+    def test_no_route_runs_mutation_in_the_gate(self) -> None:
         for route in ["claude.md", "codex.md"]:
             with self.subTest(route=route):
-                self.assertIn("[mutation.md](mutation.md)", (SKILL_ROOT / "references" / route).read_text())
+                self.assertNotIn("mutation.md", (SKILL_ROOT / "references" / route).read_text())
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
         self.assertIn("select_mutants.py --base <main 24 h ago> --head main --run", mutation)
 
@@ -1837,9 +1837,6 @@ class MutationContractTests(unittest.TestCase):
         for value in ["one unit test per listed function", "in parallel", "Run mutmut once per night", "only_mutate"]:
             with self.subTest(value=value):
                 self.assertIn(value, mutation)
-        for route in ["claude.md", "codex.md"]:
-            with self.subTest(route=route):
-                self.assertIn("mutation.md) section Fix", (SKILL_ROOT / "references" / route).read_text())
 
     def test_no_route_uses_a_stryker_flag_that_does_not_exist(self) -> None:
         self.assertNotIn("--since", all_instructions())

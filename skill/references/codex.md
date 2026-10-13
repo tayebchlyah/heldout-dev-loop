@@ -5,7 +5,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 ## Setup contract
 
 - Project agents: `.codex/agents/implementer.toml`, `.codex/agents/spec-tester.toml`, `.codex/agents/task-reviewer.toml`.
-- Review agents: `.codex/agents/simplifier.toml`, `.codex/agents/final-reviewer.toml`, `.codex/agents/security-reviewer.toml`.
+- Review agents: `.codex/agents/final-reviewer.toml`, `.codex/agents/security-reviewer.toml`.
 - Project hooks: `.codex/hooks.json`, plus scripts in `.dev-loop/hooks/codex/`: `gate.sh`, `deny-path.sh`, `git-guard.sh`, and `session-start.sh`.
 - `features.hooks = true`. Trust exact hook definitions through `/hooks` before relying on them.
 - The active `dev-workspace` permission profile extends `:workspace` and denies environment files. `dev-read-only` preserves the same denies for reviewers. No legacy `sandbox_mode` key can remain in a loaded config layer.
@@ -17,7 +17,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 - Matt Pocock skills from the local installation: `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr`, `prototype`.
 - Core loop: Stage 1 `grilling`, `prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Tracks S, M), `superpowers:subagent-driven-development` (Track L), `tdd`, `diagnosing-bugs`. Stage 7 `pr`.
-- Never invoke these Superpowers skills (Codex has no skill deny list): `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
+- Never invoke these Superpowers skills (Codex has no skill deny list): `superpowers:brainstorming`, `superpowers:test-driven-development`, `superpowers:systematic-debugging`, `superpowers:finishing-a-development-branch`.
 - Acceptance author: custom agent `spec_tester`.
 - SDD implementers: custom agent `implementer`.
 - Task reviewers and re-reviewers: custom read-only agent `task_reviewer`.
@@ -25,16 +25,14 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Feature gate
 
-Four phases, in order. First rebase onto `origin/main` (SKILL.md, Where each stage runs), then record the branch HEAD as `GATE_SHA`.
+Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
-1. **Review wave, once.** Dispatch in parallel where the session allows it, otherwise in sequence. All review `GATE_SHA` and return a table: file, line, finding, verdict or severity, step.
+1. **Review wave, once.** Three reviewers, in parallel where the session allows it, otherwise in sequence. Each reviews the whole branch `main...GATE_SHA`, report only, and returns a table: file, line, finding, verdict or severity, reviewer.
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
    - Invoke skill `code-review` with fixed point `main`.
    - Custom read-only agent `security_reviewer`.
-   - Mutation on the diff. Follow [mutation.md](mutation.md) and return its report.
-   - Custom agent `simplifier` last, after the read-only reviewers have returned, because it writes. It applies only in-scope, behaviour-preserving fixes and returns its finding table.
-2. **Triage, controller.** Merge the tables. Dedupe by file and line. Apply the defect rule in SKILL.md Stage 6. Everything else to `## Deferred`.
-3. **Fix wave.** Custom agent `implementer`, one file cluster at a time, for defects (b) and (c). Each passes the Stop gate. Then the mutation tests, in parallel where the session allows: one `implementer` per group of listed functions, as [mutation.md](mutation.md) section Fix states.
-4. **Acceptance loop.** Stack fresh with `docker compose --profile test up -d --build --wait` when `ui` is in stacks. Acceptance runners from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. On failures: fix round through `implementer`, rebuild, rerun failures only with `--lf` or `--last-failed`. Repeat under the progress guard. Then one final full run.
+2. **Triage, controller.** SKILL.md Stage 6.
+3. **Fix wave.** Custom agent `implementer`, one file cluster at a time, for the Act On defects. Each passes `scripts/devloop.py gate --summary`.
+4. **Acceptance loop.** SKILL.md Stage 6. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.

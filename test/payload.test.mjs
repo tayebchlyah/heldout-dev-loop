@@ -35,7 +35,6 @@ const REQUIRED_CODEX_AGENTS = [
   'implementer.toml',
   'spec-tester.toml',
   'task-reviewer.toml',
-  'simplifier.toml',
   'final-reviewer.toml',
   'security-reviewer.toml',
 ]
