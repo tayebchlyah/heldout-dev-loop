@@ -1,0 +1,6 @@
+{
+  "env": {
+    "ENABLE_COMMIT_REVIEW": "0",
+    "ENABLE_STOP_REVIEW": "0"
+  }
+}
