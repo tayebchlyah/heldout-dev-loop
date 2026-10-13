@@ -67,7 +67,8 @@ Detect stacks: `pyproject.toml` = python, `go.mod` = go, `package.json` with UI 
 Layout: PyPA src layout, `uv init --package`. One stack: `src/<pkg>/` + `tests/unit/`. Two stacks: uv workspace root, `backend/src/<pkg>/` + `backend/tests/unit/`, `frontend/src/` + `frontend/tests/unit/`. FastAPI-template `backend/app/` also acceptable; the spec-tester wall covers `src/ app/ backend/ frontend/`. Acceptance tests once, at root `tests/acceptance/` (`api/`, and `e2e/` when ui). Root only: spec-tester writes it and cannot enter a stack dir.
 Write `scripts/gate.sh`: runs only the stack `git diff --name-only HEAD` touched. python: ruff, pyright, `pytest tests/unit`. go: `go vet`, `go test ./...`. ui: biome, `tsc --noEmit`, `vitest run`. Never E2E.
 `ui` in stacks: `docker-compose` test profile with seeded fixtures, for Stage 6 E2E. Else skip.
-Mutation setup per stack, as [references/mutation.md](references/mutation.md) section Setup states. `check_setup.py` verifies it. New repo only: the nightly mutation CI workflow, as `mutation.md` states.
+Mutation setup per stack, as [references/mutation.md](references/mutation.md) section Setup states. `check_setup.py` verifies it. New repo with CI only: the nightly mutation workflow, as `mutation.md` section Nightly CI states.
+Write the app CLI skeleton (stack up, stack reset, acceptance run), mapped in `commands` of `dev-loop.json`.
 New repo only: empty `CODING_STANDARDS.md` at the root. Only the standards reviewer reads it.
 Notes path: ask for it, the folder must exist. Write `{"notes": "<path>"}` to `dev-loop.local.json` in the main worktree. Add it to `.gitignore` when `git check-ignore` says it is not ignored.
 Done when `scripts/gate.sh` blocks a deliberately broken unit test.
@@ -102,7 +103,7 @@ Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from i
 Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then the Stage 6 review wave and triage, then Stage 7.
 Tracks M and L: executor by spec `track:`. Track M: `superpowers:executing-plans`. Track L: `superpowers:subagent-driven-development`. Work in the feature worktree: the executor's worktree step reuses it and creates none.
 Skip the executor's final whole-branch review: the Stage 6 review wave replaces it. Keep its workspace: the ledger stays.
-Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
+Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. A test that needs a running stack: `commands.stack_up`, else `docker compose --profile test up -d --wait`. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
 Track L: use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
 Ledger gets `## Discoveries` section, one line per surprise.
 Deferred findings go to the project note `## Deferred` in the notes folder, not to ledger.

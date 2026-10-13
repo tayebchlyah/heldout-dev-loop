@@ -18,6 +18,15 @@ Exit codes:
 - `2`: the mutation setup is missing or broken: no config, unit tests that fail inside mutmut's copy, forked workers that crash, or most mutants reaching no unit test. The message names the failure. Stop the step and record it as failed with that message. Stage 0 owns the repair, see [Setup](#setup).
 - Any other code: the tool failed. Record the step as failed with the tool output.
 
+## Nightly CI
+
+Stage 0 writes this workflow for a new repo with CI only, for example `.github/workflows/mutation.yml`. An existing repo gets none.
+
+- Trigger: a schedule, cron once a day, on `main`.
+- One job. Check out `main` with full history, install the dev dependencies, then run the command of [Run](#run): `python3 .agents/skills/dev-loop/scripts/select_mutants.py --base "$(git rev-list -1 --before='24 hours ago' main)" --head main --run`.
+- Save its stdout to a file. Upload that report as an artifact, pass or fail.
+- Fail the job on survivors: a report line `functions that need one unit test: <n>` with `n` above 0. Exit code `2` or any other non-zero code fails it too.
+
 ## What the selection holds
 
 Mutation runs only in **critical modules**: decision logic whose unit tests a regression could slip past. Stage 0 lists them, see [Setup](#setup). A changed file outside them is reported under "outside the critical modules" and gets no mutants.

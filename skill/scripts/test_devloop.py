@@ -832,5 +832,30 @@ class TracksContractTests(unittest.TestCase):
                 self.assertIn(f"`{name}`", line)
 
 
+class SpecGapContractTests(unittest.TestCase):
+    """D6, D9, the pipeline table, the devloop CLI contract in AGENTS.md."""
+
+    def test_mutation_md_describes_the_nightly_ci_workflow(self) -> None:
+        nightly = section(REFERENCES / "mutation.md", "## Nightly CI")
+        for value in ["schedule", "cron", "once a day", "`main`", "--head main --run", "artifact",
+                      "functions that need one unit test", "Stage 0", "new repo"]:
+            with self.subTest(value=value):
+                self.assertIn(value, nightly)
+
+    def test_stage_0_writes_the_app_cli_skeleton(self) -> None:
+        self.assertIn("app CLI skeleton (stack up, stack reset, acceptance run), mapped in `commands`", stage_text(0))
+
+    def test_stack_up_and_stack_reset_are_read(self) -> None:
+        self.assertIn("`commands.stack_up`, else `docker compose --profile test up -d --wait`", stage_text(5))
+        self.assertIn("Fresh stack: `commands.stack_reset`", stage_text(6))
+
+    def test_agents_md_documents_the_cli_as_built(self) -> None:
+        agents = (REPO_ROOT / "AGENTS.md").read_text()
+        for value in ["`status [--repo <path>] [--feature <slug>]`", "`logged [--name <name>] -- <cmd>`",
+                      "`error` with `message`", "`features`: each spec not shipped"]:
+            with self.subTest(value=value):
+                self.assertIn(value, agents)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
