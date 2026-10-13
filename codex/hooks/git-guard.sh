@@ -12,6 +12,42 @@ CWD=$(printf '%s' "$IN" | jq -r '.cwd // empty')
 # be quoted and may hold spaces, the rest (--no-pager, --git-dir=x) are one token.
 G='git( +-[Cc] +("[^"]+"|'"'"'[^'"'"']+'"'"'|[^ ]+)| +-[^ ]+)* +'
 
+# A heredoc body is text, not commands: every check below reads the line without it.
+# A body whose line names a shell (bash, sh, zsh, ssh, eval) stays. If this step
+# fails, the checks read the whole text.
+case "$CMD" in *'<<'*) BODYLESS=$(CMD="$CMD" python3 - <<'PY'
+import os, re
+
+RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
+
+
+def strip_heredocs(cmd):
+    # Drops each heredoc body and its end line, so prose with apostrophes or git words
+    # is not read as commands. A body whose line names a shell stays. A heredoc with
+    # no end line keeps the rest of the text.
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        feeds = any(os.path.basename(w) in RUNNERS for w in re.split(r"[\s;&|()]+", line))
+        for dash, _, end in HEREDOC.findall(line):
+            j = i
+            while j < len(lines) and (lines[j].lstrip("\t") if dash else lines[j]) != end:
+                j += 1
+            if j == len(lines):
+                return "\n".join(out + lines[i:])
+            if feeds:
+                out += lines[i:j + 1]
+            i = j + 1
+    return "\n".join(out)
+
+
+print(strip_heredocs(os.environ["CMD"]), end="")
+PY
+) && CMD=$BODYLESS || RAW=1 ;; esac
+
 deny() { jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'; exit 0; }
 has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
 
@@ -35,7 +71,7 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # moves HEAD or changes refs or config, or a parser crash, asks.
 ask() { deny "Global rule: $1 needs explicit permission each time. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
 if has '(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|$)'; then
-  REASON=$(CMD="$CMD" CWD="$CWD" python3 - <<'PY'
+  REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" python3 - <<'PY'
 import os, re, shlex, subprocess, sys
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
@@ -48,7 +84,6 @@ CHANGES_REFS = {"config", "remote", "tag", "update-ref", "symbolic-ref"}
 FEEDERS = {"xargs", "parallel", "find", "fd"}
 # Commands that run a string or a heredoc body as shell commands.
 RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
-HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
 # chr(96) is a backtick. A literal one breaks bash parsing the $( ) around this script.
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
@@ -64,38 +99,41 @@ def ask(reason):
     sys.exit(0)
 
 
+# Variables the line surely set to an absolute path before this point.
+VARS = {}
+
+
+def expand(to):
+    # $NAME, ${NAME} or $NAME/x, for a NAME in VARS.
+    m = re.fullmatch(r"\$(\w+|\{\w+\})(/.*)?", to)
+    name = m and m.group(1).strip("{}")
+    return VARS[name] + (m.group(2) or "") if name in VARS else to
+
+
+def record(words):
+    # A segment of only NAME=/abs words (after an optional export) sets shell
+    # variables. Kept only when the line sets NAME once and uses it in no other way
+    # than $NAME or ${NAME}: no for NAME, read NAME, unset NAME, NAME+=.
+    for w in words:
+        name, value = w.split("=", 1)
+        line = os.environ["CMD"]
+        once = (len(re.findall(rf"(?<![\w$]){name}=", line)) == 1
+                and not re.search(rf"(?<![\w${{]){name}(?![\w=}}])", line))
+        if once and os.path.isabs(value) and not EXPANDS & set(value):
+            VARS[name] = value
+
+
 def resolve(bases, to):
-    # Every place a cd or -C can land, None for one the parser cannot follow (cd $X,
-    # cd -). A ~ expands only at the start of a token: a path may hold ~
-    # characters (iCloud~md~obsidian).
+    # Every place a cd or -C can land, None for one the parser cannot follow (cd $X
+    # for an X not in VARS, cd -). A ~ expands only at the start of a token: a path
+    # may hold ~ characters (iCloud~md~obsidian).
+    to = expand(to)
     target = os.path.expanduser(to)
     if to == "-" or (EXPANDS - {"~"}) & set(to) or target.startswith("~"):
         return {None}
     if os.path.isabs(target):
         return {target}
     return {None if b is None else os.path.join(b, target) for b in bases}
-
-
-def strip_heredocs(cmd):
-    # Drops each heredoc body and its end line, so prose with apostrophes or git words
-    # is not read as commands. A body whose line names a shell stays. A heredoc with
-    # no end line keeps the rest of the text.
-    lines, out, i = cmd.split("\n"), [], 0
-    while i < len(lines):
-        line = lines[i]
-        out.append(line)
-        i += 1
-        feeds = any(os.path.basename(w) in RUNNERS for w in re.split(r"[\s;&|()]+", line))
-        for dash, _, end in HEREDOC.findall(line):
-            j = i
-            while j < len(lines) and (lines[j].lstrip("\t") if dash else lines[j]) != end:
-                j += 1
-            if j == len(lines):
-                return "\n".join(out + lines[i:])
-            if feeds:
-                out += lines[i:j + 1]
-            i = j + 1
-    return "\n".join(out)
 
 
 def git(repo, *args):
@@ -129,9 +167,11 @@ def unreliable(cmd, segs):
     # segments() reads punctuation inside quotes or after a backslash as an operator,
     # a comment and a heredoc body as commands, and a case pattern's ) as the end of
     # a subshell. True when any of these can sit in cmd. Quoted and escaped text is
-    # replaced by one word character, so "a"# is still no comment.
+    # replaced by one word character, so "a"# is still no comment. A heredoc body is
+    # left only on a line that feeds a shell, or when the first pass failed (RAW).
     bare = QUOTED.sub("x", cmd.replace("\n", ";"))
-    if "<<" in bare or re.search(r"(^|[\s;&|()])#", bare) or re.search(r"(^|[\s;&|(" + chr(96) + r"])case\s", bare):
+    body = "<<" in bare and (os.environ["RAW"] or RUNNERS & {os.path.basename(w) for w in re.split(r"[\s;&|()]+", bare)})
+    if body or re.search(r"(^|[\s;&|()])#", bare) or re.search(r"(^|[\s;&|(" + chr(96) + r"])case\s", bare):
         return True
     # More operator characters than the bare text holds: a quoted or escaped one
     # became an operator.
@@ -237,7 +277,7 @@ def check_git(args, cwds, drift, fed):
         check_push(r, args[i + 1:], drift)
 
 
-def check(cmd, cwds, drift):
+def check(cmd, cwds, drift, top=False):
     # cwds holds every directory the line can be in at this point. A cd (or
     # pushd) replaces it only when all of these hold, the one case where the next
     # command surely runs in the new directory: the line start, "&&" or ";" comes
@@ -272,13 +312,20 @@ def check(cmd, cwds, drift):
         # NAME=value words before a cd do not stop it from running. CDPATH, HOME
         # or OLDPWD change where it lands, so its target becomes unknown.
         words, moved = seg, False
+        # An assignment surely ran before the next command only at the line start or
+        # after ";", outside a subshell and a shell script (sh -c), on a line the
+        # parser reads reliably.
+        sets = seg[1:] if seg[:1] == ["export"] else seg
+        if sets and all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", w) for w in sets) \
+                and prev in ("", ";") and top and not subshells and not lost:
+            record(sets)
         while words and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", words[0]):
             moved |= words[0].split("=", 1)[0] in ("CDPATH", "HOME", "OLDPWD")
             words = words[1:]
         if words and words[0] in ("cd", "pushd", "popd"):
             # A bare pushd, an option (cd -P) and a stack move (pushd +1) land in a
             # folder the guard cannot read.
-            to = words[1] if len(words) > 1 else "~" if words[0] == "cd" else "+"
+            to = expand(words[1]) if len(words) > 1 else "~" if words[0] == "cd" else "+"
             # A HOME= anywhere in the line may have moved ~ before this cd.
             moved |= "HOME=" in os.environ["CMD"] and (to == "~" or to.startswith("~/"))
             new = {None} if words[0] == "popd" or moved or to.startswith(("-", "+")) else resolve(cwds, to)
@@ -318,7 +365,7 @@ def check(cmd, cwds, drift):
         prev = sep
 
 
-check(strip_heredocs(os.environ["CMD"]), {os.environ["CWD"]}, set())
+check(os.environ["CMD"], {os.environ["CWD"]}, set(), top=True)
 PY
 ) || REASON="a push the guard failed to check"
   [ -n "$REASON" ] && ask "$REASON"
