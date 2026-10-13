@@ -55,8 +55,13 @@ These are expected manual steps, not install defects.
 
 ## Conventions
 
-- Commits: gitmoji plus a Conventional Commits type, format `<emoji> type: message` (e.g. `🐛 fix: keep backupPath pure`).
-- Changelog: `cliff.toml`, git-cliff, gitmoji `commit_parsers`. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`, which runs `git-cliff-action` then `ncipollo/release-action`.
+- Commits: gitmoji, format `<emoji>(<scope>) <message>`, scope required (e.g. `🐛(install) Back up a replaced skill outside its skills folder`).
+- Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Workflow fails when tag and `package.json` version differ.
+- Release:
+  1. Release PR: set `package.json` `version`, run `GITHUB_TOKEN=$(gh auth token) git cliff --tag vX.Y.Z -o CHANGELOG.md`.
+  2. Rebase the PR, no merge commit.
+  3. On `main`: `git tag -a vX.Y.Z -m "dev-loop vX.Y.Z"`, `git push origin vX.Y.Z`. One tag per push: GitHub sends no push event for more than three tags.
+  4. Workflow checks version, makes notes, makes the GitHub Release.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
 - `rules/default.rules` and the three merged config files (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.codex/config.toml`) are always merged, never copied or linked wholesale.
 
