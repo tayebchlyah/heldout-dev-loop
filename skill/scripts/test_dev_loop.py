@@ -2231,6 +2231,15 @@ class NotesPathTests(unittest.TestCase):
         (self.folder("vault") / "fb").mkdir()
         self.assertEqual(self.resolve(), self.folder("vault") / "fb")
 
+    def test_legacy_notes_path_expands_a_variable_from_the_environment(self) -> None:
+        # couchbase-doctor 1.4 declares vault_notes: $VAULT_NOTES_PATH, set per person in
+        # .claude/settings.local.json.
+        write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
+        write(self.repo / "AGENTS.md", "vault_notes: $VAULT_NOTES_PATH\n")
+        (self.folder("vault") / "Shared Notes").mkdir()
+        self.env["VAULT_NOTES_PATH"] = "Shared Notes"
+        self.assertEqual(self.resolve(), self.folder("vault") / "Shared Notes")
+
     def test_missing_legacy_folder_raises_naming_the_source(self) -> None:
         write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
         write(self.repo / "AGENTS.md", "vault_notes: fb\n")
