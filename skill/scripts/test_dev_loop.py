@@ -1062,6 +1062,14 @@ class SetupCheckerTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Read(./.env.*)", result.stdout)
 
+    def test_a_legacy_claude_failure_prints_once(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            home = Path(root)
+            self.make_valid_claude(home)
+            (home / ".claude" / "hooks" / "gate.sh").unlink()
+            result = self.run_checker("claude", home)
+            self.assertEqual(result.stdout.count(f"- missing {home / '.claude' / 'hooks' / 'gate.sh'}\n"), 1, result.stdout)
+
     def test_missing_push_prompt_fails(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             home = Path(root)
@@ -1186,6 +1194,35 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("missing Claude hook event: Stop", result.stdout)
         self.assertIn("missing Claude deny: Read(./.env)", result.stdout)
+
+    def test_claude_project_keeps_the_repo_walls(self) -> None:
+        walls = [
+            "missing Claude repo deny: Agent(caveman:cavecrew-reviewer)",
+            "missing Claude repo deny: Agent(caveman:cavecrew-builder)",
+            "missing Claude repo deny: Agent(caveman:cavecrew-investigator)",
+            "missing Claude repo env: ENABLE_STOP_REVIEW=0",
+            "missing Claude repo env: ENABLE_COMMIT_REVIEW=0",
+            "missing Claude repo env: SG_PUSH_SWEEP=0",
+        ]
+        self.init("claude")
+        write(self.repo / "AGENTS.md", "vault_notes: Software/Test\n")
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 1)
+        for wall in walls:
+            self.assertIn(f"- {wall}\n", result.stdout)
+
+        path = self.repo / ".claude" / "settings.json"
+        settings = json.loads(path.read_text())
+        settings["permissions"]["deny"] += [
+            "Agent(caveman:cavecrew-reviewer)",
+            "Agent(caveman:cavecrew-builder)",
+            "Agent(caveman:cavecrew-investigator)",
+        ]
+        settings["env"] = {"ENABLE_STOP_REVIEW": "0", "ENABLE_COMMIT_REVIEW": "0", "SG_PUSH_SWEEP": "0"}
+        write(path, json.dumps(settings))
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Claude repo", result.stdout)
 
     def test_a_changed_kit_file_fails(self) -> None:
         self.init()
