@@ -23,6 +23,7 @@ CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 CLAUDE_HOOKS = SKILL_ROOT.parent / "claude" / "hooks"
 SELECTOR = SKILL_ROOT / "scripts" / "select_mutants.py"
 NOTES_PATH = SKILL_ROOT / "scripts" / "notes_path.py"
+GUARD_ASKS = SKILL_ROOT.parent / "test" / "fixtures" / "git-guard-asks.json"
 
 _spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
 if _spec is None or _spec.loader is None:
@@ -386,6 +387,22 @@ class DenyWallScopeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stderr, "")
 
+    def test_a_heredoc_body_or_an_exclusion_is_not_a_read(self) -> None:
+        held = self.HELD_OUT
+        walls = (lambda p: self.run_claude("deny-acceptance-to-subagents.sh", p).returncode == 2,
+                 lambda p: self.run_claude("deny-path.sh", p, held).returncode == 2,
+                 lambda p: "deny" in self.run_codex(p, held).stdout)
+        allowed = (f"cat > brief.md <<'EOF'\nNever read {held}.\nEOF", f"git diff -- . ':!{held}'",
+                   f"git log -- ':(exclude){held}'", f"grep -rn --exclude-dir={held} foo .",
+                   f"grep -rn foo . | grep -v {held}", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"')
+        blocked = (f"git diff -- . ':!x' {held}/a.py", f"cat > f <<'EOF'\nx\nEOF\ncat {held}/a.py",
+                   f"grep -v x {held}/a.py")
+        for wall in walls:
+            for command in allowed:
+                self.assertFalse(wall(self.subagent({"command": command})), command)
+            for command in blocked:
+                self.assertTrue(wall(self.subagent({"command": command})), command)
+
     def test_the_wall_ignores_a_controller_call(self) -> None:
         result = self.run_claude(
             "deny-acceptance-to-subagents.sh",
@@ -673,6 +690,8 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
             input=json.dumps({"cwd": self.repo, "tool_input": {"command": command}}),
             text=True, capture_output=True, check=False, env=env,
         )
+        if result.returncode == 2:
+            return "deny"
         return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] if result.stdout else "allow"
 
     def test_plain_feature_branch_push_runs(self) -> None:
@@ -842,11 +861,36 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
             self.assertEqual(self.decision("cd ~/feature && git push", "main", env=env), "ask")
             self.assertEqual(self.decision("cd ~/feature && git push", env=env), "allow")
 
-    def test_an_unparseable_git_line_asks(self) -> None:
-        # A heredoc with an apostrophe fails the parser.
+    def test_an_unparseable_line_asks_only_for_a_push(self) -> None:
         for command in ("python3 - <<'EOF'\nprint(\"it's the git log\")\nEOF",
-                        "python3 - <<'EOF'\nprint(\"it's the git log\")\nEOF\ngit push"):
+                        "python3 - <<'EOF'\nprint(\"it's the git log\")\nEOF\ngit push",
+                        "git log --grep \"it's"):
+            self.assertEqual(self.decision(command), "allow", command)
+        self.assertEqual(self.decision("git push origin feat \"it's"), "ask")
+
+    def test_only_what_the_shell_runs_is_checked(self) -> None:
+        # A heredoc body is text unless its line feeds it to a shell. A quoted string
+        # is a command only in a segment that runs a shell.
+        for command in ("cat > notes.md <<'EOF'\ngit push origin main\nEOF",
+                        "cat <<-EOF\n\tgit push origin main\n\tEOF\ngit status",
+                        'echo "cd x && git push origin main"', "grep -n 'git push origin main' notes.md",
+                        'run "cd x; git push origin main"'):
+            self.assertEqual(self.decision(command), "allow", command)
+        for command in ("bash <<'EOF'\ngit push origin main\nEOF", "ssh host <<'EOF'\ngit push origin main\nEOF",
+                        "cat <<'EOF' | sh\ngit push origin main\nEOF", "cat > x <<'EOF'\nx\nEOF\ngit push origin main",
+                        "eval 'git push origin main'", "su -c 'git push origin main'",
+                        "cat <<'EOF'\ngit status\ngit push origin main"):
             self.assertEqual(self.decision(command), "ask", command)
+
+    def test_a_push_from_an_unknown_repository_asks(self) -> None:
+        self.assertEqual(self.decision(f"git -C {self.repo}/nope push origin feat"), "ask")
+
+    def test_the_regression_commands_ask_only_for_a_real_push(self) -> None:
+        # The 53 commands the 1.4 guard asked on (permission prompt analysis,
+        # 2026-10-13). One is a real push to main.
+        for case in json.loads(GUARD_ASKS.read_text()):
+            expected = "ask" if case["real_push"] else "allow"
+            self.assertEqual(self.decision(case["cmd"]), expected, case["cmd"][:300])
 
     def test_remote_config_that_reaches_other_branches_asks(self) -> None:
         subprocess.run(["git", "-C", self.repo, "config", "remote.origin.push", "+refs/heads/*:refs/heads/*"], check=True)
@@ -944,6 +988,26 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         "git subtree --prefix lib -q push origin feat"):
             self.assertEqual(self.decision(command), "ask", command)
         self.assertEqual(self.decision("git subtree split -P lib"), "allow")
+
+class ClaudeGitGuardSubagentTests(unittest.TestCase):
+    """A hook ask from a subagent reaches the human, so a subagent gets a deny instead."""
+
+    def run_guard(self, payload: dict) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", str(CLAUDE_HOOKS / "git-guard.sh")], input=json.dumps(payload),
+                              text=True, capture_output=True, check=False)
+
+    def test_a_subagent_push_that_would_ask_is_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            subprocess.run(["git", "-C", repo, "init", "-q", "-b", "feat"], check=True)
+            command = {"command": "git push origin main"}
+            sub = self.run_guard({"cwd": repo, "agent_id": "a1", "tool_input": command})
+            self.assertEqual((sub.returncode, sub.stdout), (2, ""))
+            self.assertIn("Push from the main session", sub.stderr)
+            main = self.run_guard({"cwd": repo, "tool_input": command})
+            self.assertEqual(json.loads(main.stdout)["hookSpecificOutput"]["permissionDecision"], "ask")
+            feature = self.run_guard({"cwd": repo, "agent_id": "a1", "tool_input": {"command": "git push origin feat"}})
+            self.assertEqual((feature.returncode, feature.stdout), (0, ""))
+
 
 class CodexGitGuardPushTests(ClaudeGitGuardPushTests):
     """The Codex guard holds the same push rule. Codex cannot ask, so every ask is a deny."""

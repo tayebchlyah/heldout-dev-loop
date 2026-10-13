@@ -13,9 +13,14 @@
 # dot segment or a capital letter does not walk past the wall.
 input=$(cat)
 candidates=$(printf '%s' "$input" | jq -r '
+  # A heredoc body and an exclusion (:!x, :(exclude)x, --exclude-dir=x, grep -v x)
+  # name a path without reaching it.
+  def clean: gsub("<<-?[ \t]*(?<q>[\u0027\"]?)(?<d>[A-Za-z_][A-Za-z0-9_.-]*)\\k<q>(?<r>[^\n]*)\n(?:[^\n]*\n)*?\t*\\k<d>(?=\n|$)"; "<<\(.d)\(.r)")
+    | gsub("(:!|:\\([^)]*exclude[^)]*\\)|--exclude-dir=)[^ \t\n;|&]*"; "")
+    | gsub("(?<g>grep( +-[A-Za-z]+)* +-[A-Za-z]*v[A-Za-z]*) +[^ \t\n;|&]+"; "\(.g)");
   def fields:
     [ .tool_input.file_path?, .tool_input.path?, .tool_input.notebook_path?,
-      .tool_input.pattern?, .tool_input.command?, .tool_input.glob?,
+      .tool_input.pattern?, (.tool_input.command? | strings | clean), .tool_input.glob?,
       .tool_input.paths?, .tool_input.files?, .tool_input.url?,
       .tool_input.source?, .tool_input.destination?, .tool_input.directory? ]
     | [ .[] | .. | strings ];
