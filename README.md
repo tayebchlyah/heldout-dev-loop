@@ -5,18 +5,18 @@ Stage-driven development loop for Claude Code and Codex. One stage per invocatio
 ## Install
 
 ```bash
-npx github:tchlyah/dev-loop
+npx github:tchlyah/dev-loop#<tag> init
 ```
 
 The repository is private, so this works only once your Git or SSH credentials reach it (`git ls-remote git@github.com:tchlyah/dev-loop.git` should succeed). Otherwise npx fails to fetch it.
 
-Flags: `--yes`, `--dry-run`, `--harness=claude|codex|both`, `--vault=<path>`, `--link`.
+Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`), `--vault=<path>` (`--global`), `--link` (works only with `--global`).
 
 The vault can also come from `DEV_LOOP_VAULT`. A re-run keeps the vault already in `~/.agents/dev-loop.config.json`, so only an explicit new value replaces it; `--vault=` with an empty value is that explicit answer for "no vault" and clears it. If no vault is set, `~/.agents/dev-loop.config.json` gets `vault: null`, the installer says so, and `check_setup.py` reports it as a top-level failure: `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>`.
 
 ## Commands
 
-Run each from the top level of a git repository, with a release tag:
+Run each with a release tag. Run `init` and `upgrade` from the top level of a git repository; `uninstall-global` runs from anywhere:
 
 ```bash
 npx github:tchlyah/dev-loop#<tag> init              # install the kit into this repository
