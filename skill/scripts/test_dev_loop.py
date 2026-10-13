@@ -54,6 +54,18 @@ notes_path = importlib.util.module_from_spec(_notes_spec)
 sys.modules["notes_path"] = notes_path
 _notes_spec.loader.exec_module(notes_path)
 
+# The devloop CLI tests live in test_devloop.py; importing the classes here
+# keeps `python3 skill/scripts/test_dev_loop.py` the one command for the suite.
+_devloop_tests_spec = importlib.util.spec_from_file_location("test_devloop", SKILL_ROOT / "scripts" / "test_devloop.py")
+if _devloop_tests_spec is None or _devloop_tests_spec.loader is None:
+    raise ImportError("cannot load test_devloop module")
+test_devloop = importlib.util.module_from_spec(_devloop_tests_spec)
+_devloop_tests_spec.loader.exec_module(test_devloop)
+StatusTests = test_devloop.StatusTests
+LoggedTests = test_devloop.LoggedTests
+GateTests = test_devloop.GateTests
+CiWaitTests = test_devloop.CiWaitTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
@@ -137,6 +149,48 @@ class UsesDevLoopTests(unittest.TestCase):
     def test_neither_does_not_count(self) -> None:
         self.assertFalse(self.uses({"AGENTS.md": "# Plain\n"}))
         self.assertFalse(self.uses({}))
+
+
+class ProjectConfigTests(unittest.TestCase):
+    def check(self, config: dict) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            write(Path(tmp) / "dev-loop.json", json.dumps(config))
+            return check_setup.check_project_config(Path(tmp))
+
+    def test_unknown_commands_key_fails(self) -> None:
+        self.assertEqual(
+            self.check({"commands": {"gate": "make gate", "deploy": "x"}}),
+            ["unknown commands key in dev-loop.json: deploy"],
+        )
+
+    def test_empty_command_fails(self) -> None:
+        self.assertEqual(
+            self.check({"commands": {"gate": "", "stack_up": 3}}),
+            [
+                "commands.gate in dev-loop.json must be a non-empty string",
+                "commands.stack_up in dev-loop.json must be a non-empty string",
+            ],
+        )
+
+    def test_bad_merge_value_fails(self) -> None:
+        self.assertEqual(self.check({"merge": "yes"}), ["merge in dev-loop.json must be auto or human"])
+
+    def test_valid_commands_and_merge_pass(self) -> None:
+        commands = {key: f"run {key}" for key in check_setup.COMMAND_KEYS}
+        self.assertEqual(self.check({"commands": commands, "merge": "human"}), [])
+        self.assertEqual(self.check({"merge": "auto"}), [])
+        self.assertEqual(self.check({}), [])
+
+    def test_checker_reports_the_config_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            write(Path(tmp) / "dev-loop.json", json.dumps({"merge": "yes"}))
+            result = subprocess.run(
+                [sys.executable, str(CHECKER), "--harness", "claude", "--home", tmp, "--repo", tmp],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertIn("- merge in dev-loop.json must be auto or human", result.stdout)
 
 
 class SkillContractTests(unittest.TestCase):
@@ -2031,6 +2085,18 @@ class SelectMutantsTests(unittest.TestCase):
             for diff in diffs:
                 with self.subTest(diff=diff):
                     self.assertEqual(select_mutants.classify(diff), expected)
+
+    def test_base_option_sets_the_diff_base(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root), {"AGENTS.md": PY_AGENTS, "pyproject.toml": MUTMUT_CONFIG, "src/pkg/mod.py": MODULE_BASE}
+            )
+            first = commit_changes(repo, {"src/pkg/mod.py": MODULE_BASE.replace("x + 1", "x + 2")})
+            second = commit_changes(repo, {"src/pkg/mod.py": MODULE_BASE.replace("x + 1", "x + 2").replace("x - 1", "x - 2")})
+            _, older, _ = self.select(repo, first)
+            _, newer, _ = self.select(repo, second)
+            self.assertEqual(older["patterns"], ["pkg.mod.x_changed__mutmut_*", "pkg.mod.x_untouched__mutmut_*"])
+            self.assertEqual(newer["patterns"], ["pkg.mod.x_untouched__mutmut_*"])
 
     def test_no_mutable_change_selects_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as root:
