@@ -22,7 +22,7 @@ Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md` (the name before Po
 
 Stage 1 sizes the work:
 
-- Track S: one session, no spec, no plan, branch `<prefix>/<slug>`. Stage 1, Stage 5, Stage 6 review wave and triage only, Stage 7. `devloop status` never reports Stage 6 for Track S.
+- Track S: one session, no spec, no plan, branch `<prefix>/<slug>`. Stage 1, Stage 5, Stage 6 review wave and triage only, Stage 7. `devloop status` reports Track S Stage 6 until the `review-done` marker exists.
 - Track M: Session A, then Session B. Build `superpowers:executing-plans`.
 - Track L: Session A, then Session B. Build `superpowers:subagent-driven-development`. Spec adds threat model. Never auto-merged.
 
@@ -89,7 +89,7 @@ Set `review_status: approved` in spec frontmatter. Under each superseded line in
 
 ## 3 Acceptance
 Start in the feature worktree (see Where each stage runs), then `git fetch origin`, `git rebase origin/main`.
-Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and glossary path.
+Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and glossary path, plus the feature slug (`feature` from `devloop status`).
 It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. No human review. One commit for both.
 Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after a spec oracle change: a Supersedes line or an escaped bug. Controller never writes a test there.
 
@@ -110,7 +110,7 @@ Deferred findings go to the project note `## Deferred` in the notes folder, not 
 ## 6 Feature gate
 Start: `git fetch origin`, `git rebase origin/main`. Fresh stack: `commands.stack_reset`, else `docker compose --profile test up -d --build --wait` when the repo has a compose test profile. `GATE_SHA` = HEAD. `commands.<key>` = key of `commands` in `dev-loop.json`.
 Then run the selected route's feature gate. Order: review wave, triage, fix wave, acceptance loop. Each step is one real skill, agent, tool, or command invocation.
-Track S: review wave, triage and fix wave only. No acceptance loop, no ledger line. Then Stage 7.
+Track S: review wave, triage and fix wave only. No acceptance loop, no ledger line. After the wave and triage: `mkdir -p "$(git rev-parse --git-dir)/dev-loop"`, then `git rev-parse HEAD > "$(git rev-parse --git-dir)/dev-loop/review-done"`. Then Stage 7.
 Review wave: the route's three reviewers, whole branch against `main`. Review wave runs once per feature, before any acceptance run, all reviewers pinned to `GATE_SHA`. Never rerun it. A fix never reruns a reviewer.
 Triage, controller. Merge the tables, dedupe by file and line. Defect = CONFIRMED finding and one of: (a) finding that quotes a spec `## Acceptance oracle` line or a glossary invariant; (b) correctness finding; (c) security finding. Act On list: defects only, at most 5, lead's judgment picks. Defect past the cap: `## Deferred`. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Same standards finding in two or more places: `## Gardener`, marked lint candidate. Every other finding: `## Gardener`, not fixed, no test.
 `## Gardener` in the project note: standards findings and non-defect items, triaged weekly. `## Deferred` holds at most 20 open items. At the cap, Stage 1 triages before it frames new work. Open security item in `## Deferred` blocks a release.

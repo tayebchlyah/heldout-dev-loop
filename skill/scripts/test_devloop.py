@@ -3,14 +3,18 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 DEVLOOP = Path(__file__).resolve().parent / "devloop.py"
 
@@ -148,6 +152,11 @@ class StatusTests(Sandbox):
         self.assertEqual((out["stage"], out["feature"], out["track"]), (5, "tiny", "S"))
         self.assertNotIn("features", out)
         self.commit(self.repo, "a.txt", "a\n")
+        out = self.status()
+        self.assertEqual(out["stage"], 6)
+        self.assertIn("review-done", out["next"])
+        marker = self.repo / ".git" / "dev-loop" / "review-done"
+        put(marker, git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual(self.status()["stage"], 7)
 
     def test_stage_2_unapproved_spec(self) -> None:
@@ -225,6 +234,43 @@ class StatusTests(Sandbox):
         self.commit(self.repo, "tests/acceptance/api/test_widget_flow.py", "def test_flow():\n    pass\n")
         git(self.repo, "update-ref", "refs/remotes/origin/feat/widget", "HEAD")
         self.assertEqual(self.status("--feature", "widget")["stage"], 3)
+
+    def test_slug_matches_a_whole_token_only(self) -> None:
+        holds = load_devloop().holds_slug
+        self.assertTrue(holds("api/test_add_widget.py", "add-widget"))
+        self.assertTrue(holds("e2e/add-widget.spec.ts", "add-widget"))
+        self.assertFalse(holds("api/test_oauth_login.py", "auth"))
+        self.spec(feature="auth")
+        self.commit(self.repo, "tests/acceptance/api/test_oauth_login.py", "def test_flow():\n    pass\n")
+        self.assertEqual(self.status("--feature", "auth")["stage"], 3)
+
+    def test_merged_branch_without_worktree_is_shipped(self) -> None:
+        self.spec()
+        git(self.repo, "switch", "-q", "-c", "feat/widget")
+        self.commit(self.repo, "widget.py", "WIDGET = 1\n")
+        git(self.repo, "switch", "-q", "main")
+        self.commit(self.repo, "other.txt", "other\n")
+        git(self.repo, "cherry-pick", "feat/widget")
+        git(self.repo, "push", "-q", "origin", "main")
+        self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
+        # Stale remote-tracking ref, local branch deleted after the merge.
+        git(self.repo, "update-ref", "refs/remotes/origin/feat/widget", "feat/widget")
+        git(self.repo, "branch", "-q", "-D", "feat/widget")
+        self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
+
+    def test_rebase_in_progress_is_its_own_stage(self) -> None:
+        git(self.repo, "switch", "-q", "-c", "fix/tiny")
+        self.commit(self.repo, "a.txt", "mine\n")
+        git(self.repo, "switch", "-q", "main")
+        self.commit(self.repo, "a.txt", "theirs\n")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "switch", "-q", "fix/tiny")
+        subprocess.run([*GIT, "rebase", "origin/main"], cwd=self.repo, capture_output=True)
+        for args in [(), ("--feature", "tiny")]:
+            out = self.status(*args)
+            with self.subTest(args=args):
+                self.assertEqual((out["stage"], out["feature"]), ("rebase", "tiny"))
+                self.assertIn("finish or abort the rebase", out["next"])
 
     def test_main_lists_open_features(self) -> None:
         self.spec(review="draft")
@@ -374,6 +420,13 @@ elif args[:2] == ["pr", "checks"] and "--watch" in args:
     assert args[2] == "7", args
     if mode == "timeout":
         time.sleep(30)
+    if mode == "nochecks" or (mode == "late" and not os.path.exists(os.path.join(os.environ["FAKE_GH_DIR"], "seen"))):
+        if mode == "late":
+            open(os.path.join(os.environ["FAKE_GH_DIR"], "seen"), "w").close()
+        print("no checks reported on the 'feat/x' branch", file=sys.stderr)
+        sys.exit(1)
+    if mode == "late":
+        sys.exit(0)
     sys.exit(0 if mode == "green" else 1)
 elif args[:2] == ["pr", "checks"]:
     print(json.dumps([
@@ -427,6 +480,20 @@ class CiWaitTests(unittest.TestCase):
         code, out = self.wait("nopr")
         self.assertEqual((code, out["state"]), (1, "no-pr"))
 
+    def test_no_checks_yet_retries_until_checks_exist(self) -> None:
+        module = load_devloop()
+        module.CHECKS_RETRY_SECONDS = 0.05
+        env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "FAKE_GH": "late", "FAKE_GH_DIR": str(self.root)}
+        args = argparse.Namespace(pr=None, timeout=1.0)
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()) as out:
+            code = module.cmd_ci_wait(args)
+        self.assertEqual((code, json.loads(out.getvalue())["state"]), (0, "pass"))
+        env["FAKE_GH"] = "nochecks"
+        args.timeout = 0.005
+        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()) as out:
+            code = module.cmd_ci_wait(args)
+        self.assertEqual((code, json.loads(out.getvalue())["state"]), (1, "timeout"))
+
     def test_other_pr_view_failure_is_an_error(self) -> None:
         code, out = self.wait("autherror")
         self.assertEqual((code, out["state"]), (1, "error"))
@@ -450,6 +517,15 @@ TEN_RULES = [
 ]
 IMPLEMENTERS = [REPO_ROOT / "claude" / "agents" / "implementer.md", REPO_ROOT / "codex" / "agents" / "implementer.toml"]
 SPEC_TESTERS = [REPO_ROOT / "claude" / "agents" / "spec-tester.md", REPO_ROOT / "codex" / "agents" / "spec-tester.toml"]
+
+
+class ProjectConfigShapeTests(unittest.TestCase):
+    def test_non_object_config_is_a_failure_line(self) -> None:
+        check_setup = load_check_setup()
+        for raw in ["[]", '"x"', "3"]:
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as tmp:
+                put(Path(tmp) / "dev-loop.json", raw)
+                self.assertEqual(check_setup.check_project_config(Path(tmp)), ["dev-loop.json must hold a JSON object"])
 
 
 class InstructionContractTests(unittest.TestCase):
@@ -481,6 +557,14 @@ class InstructionContractTests(unittest.TestCase):
         for path in SPEC_TESTERS:
             with self.subTest(path=path.name):
                 self.assertIn("one test per acceptance flow", path.read_text())
+
+    def test_spec_testers_name_files_after_the_slug(self) -> None:
+        for path in SPEC_TESTERS:
+            with self.subTest(path=path.name):
+                text = path.read_text()
+                self.assertIn("tests/acceptance/api/test_<slug>.py", text)
+                self.assertIn("tests/acceptance/e2e/<slug>.spec.ts", text)
+        self.assertIn("feature slug", stage_text(3))
 
     def test_no_double_check_in_kit_prompts(self) -> None:
         banned = ["double-check", "double check", "use a subagent to verify", "narration"]

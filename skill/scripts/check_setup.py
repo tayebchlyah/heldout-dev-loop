@@ -89,6 +89,8 @@ def check_project_config(repo: Path) -> list[str]:
     """The optional `commands` map and `merge` value of dev-loop.json."""
     failures: list[str] = []
     config = load_json(repo / "dev-loop.json", failures)
+    if not isinstance(config, dict):
+        return failures + ["dev-loop.json must hold a JSON object"]
     commands = config.get("commands", {})
     if not isinstance(commands, dict):
         return failures + ["commands in dev-loop.json must be an object"]
