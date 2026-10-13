@@ -629,6 +629,20 @@ class CodexHookBehaviorTests(unittest.TestCase):
             self.assertIn("scope=changed", json.loads(first.stdout)["reason"])
             self.assertEqual(second.stdout, "")
 
+    def test_gate_runs_the_mapped_gate_command_first(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = Path(root)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True, stderr=subprocess.DEVNULL)
+            write(repo / "dev-loop.json", json.dumps({"commands": {"gate": "echo mapped scope=$GATE_SCOPE; exit 1"}}))
+            result = self.run_hook("gate.sh", {"cwd": str(repo), "stop_hook_active": False})
+            self.assertIn("mapped scope=changed", json.loads(result.stdout)["reason"])
+            gate = repo / "scripts" / "gate.sh"
+            write(gate, "#!/bin/sh\necho script gate\nexit 1\n")
+            os.chmod(gate, 0o755)
+            result = self.run_hook("gate.sh", {"cwd": str(repo), "stop_hook_active": False})
+            self.assertIn("mapped scope=changed", json.loads(result.stdout)["reason"])
+            self.assertNotIn("script gate", result.stdout)
+
 
 class ClaudeGateTests(unittest.TestCase):
     """The Claude Stop and SubagentStop gate, and its SubagentStart snapshot."""
@@ -703,6 +717,16 @@ class ClaudeGateTests(unittest.TestCase):
                 {"hook_event_name": "SubagentStop", "agent_id": "a4", "agent_type": "general-purpose"},
             )
             self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
+
+    def test_stop_runs_the_mapped_gate_command_first(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            write(repo / "dev-loop.json", json.dumps({"commands": {"gate": "echo mapped scope=$GATE_SCOPE; exit 1"}}))
+            result = self.hook("gate.sh", repo, {"hook_event_name": "Stop"})
+            self.assertIn("mapped scope=changed", json.loads(result.stdout)["reason"])
+            (repo / "scripts" / "gate.sh").unlink()
+            result = self.hook("gate.sh", repo, {"hook_event_name": "Stop"})
+            self.assertIn("mapped scope=changed", json.loads(result.stdout)["reason"])
 
 
 class ClaudeGitGuardPushTests(unittest.TestCase):
@@ -1582,7 +1606,11 @@ class FeatureWorktreeContractTests(unittest.TestCase):
         self.assertIn("Never dispatch a subagent", claude_tester)
 
     def test_a_stage_ends_with_a_full_gate(self) -> None:
-        self.assertIn("End every stage that changed the repo with a direct `scripts/gate.sh`", SKILL.read_text())
+        self.assertIn(
+            "End every stage that changed the repo with a direct gate: `commands.gate` from `dev-loop.json` "
+            "when mapped, else `scripts/gate.sh`",
+            SKILL.read_text(),
+        )
 
 class SelectMutantsTests(unittest.TestCase):
     def select(self, repo: Path, base: str) -> tuple[int, dict, str]:
