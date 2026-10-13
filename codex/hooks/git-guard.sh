@@ -49,6 +49,10 @@ FEEDERS = {"xargs", "parallel", "find", "fd"}
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
 START = os.environ["CWD"]
+# Git refuses an alias that shadows a builtin. Empty when git cannot list them, so
+# every command from an unknown folder asks.
+_r = subprocess.run(["git", "--list-cmds=builtins"], capture_output=True, text=True)
+BUILTINS = set(_r.stdout.split()) if _r.returncode == 0 else set()
 
 
 def ask(reason):
@@ -162,8 +166,10 @@ def check_push(repo, args, drift):
 
 
 def check_git(args, cwds, drift, fed):
-    repos, i, config = cwds, 0, []
+    repos, i, config, gitdir = cwds, 0, [], False
     while i < len(args) and args[i].startswith("-"):
+        # --git-dir and --work-tree point git at a repo the guard does not resolve.
+        gitdir |= args[i].split("=", 1)[0] in ("--git-dir", "--work-tree")
         if args[i] in GLOBAL_ARG and i + 1 < len(args):
             if args[i] == "-C":
                 repos = resolve(repos, args[i + 1])
@@ -174,10 +180,18 @@ def check_git(args, cwds, drift, fed):
             config.append(args[i])
         i += 1
     sub = args[i] if i < len(args) else ""
-    repo = next((r for r in sorted(repos, key=str) if r is not None), START)
+    if gitdir:
+        repos = repos | {None}
+    if sub == "send-pack" or (sub == "subtree" and "push" in args[i + 1:]):
+        ask("a send-pack or subtree push")
     if sub != "push":
+        # The alias may live in any repo the line can be in. From a folder the guard
+        # cannot follow, any command that may be an alias asks.
+        if None in repos and sub and sub not in BUILTINS:
+            ask("a git command from a folder the guard cannot follow")
         aliases = [c for c in config if c.startswith("alias.")]
-        if sub and "push" in " ".join(aliases + [git(repo, "config", "--get", f"alias.{sub}")[1]]):
+        if sub and "push" in " ".join(aliases + [git(START if r is None else r, "config", "--get", f"alias.{sub}")[1]
+                                                 for r in repos]):
             ask("a git alias that pushes")
         if sub in MOVES_HEAD:
             drift.add("head")
@@ -188,16 +202,27 @@ def check_git(args, cwds, drift, fed):
         ask("a push whose arguments come from another command")
     if config:
         ask("a push with config overrides")
-    # Each repo the push may run in, the session start for a cwd the parser lost.
-    for r in sorted({START if r is None else r for r in repos}):
+    if gitdir:
+        ask("a push with --git-dir or --work-tree")
+    if None in repos:
+        ask("a push from a folder the guard cannot follow")
+    for r in sorted(repos):
         check_push(r, args[i + 1:], drift)
 
 
 def check(cmd, cwds, drift):
-    # cwds holds every directory the line can be in at this point. A cd replaces
-    # it only when "&&" follows, the one case where the next command surely runs in
-    # the new directory. After ; & | or || the old ones stay possible: a cd before
-    # ";" may never have run (after && or ||, inside if, a loop or a function body).
+    # cwds holds every directory the line can be in at this point. A cd (or
+    # pushd) replaces it only when all of these hold, the one case where the next
+    # command surely runs in the new directory: the line start, "&&" or ";" comes
+    # before it and "&&" follows; its target is absolute or starts with ~; cd is
+    # the first word after any NAME=value words; its first argument is no option
+    # (-P, --) or stack move (+1); and no HOME= sits anywhere in the line when the
+    # target is ~ or ~/x. Else the old ones stay possible, plus None for a target
+    # the guard cannot read: a cd before ";" may never have run (after && or ||,
+    # inside if, a loop or a function body), true || cd x && git push is
+    # (true || cd x) && git push, a push without the cd, and CDPATH, set in the
+    # line or the user's profile, can send a relative cd anywhere. A cd that is
+    # not the first word (builtin cd, if cd, eval cd) adds None.
     # A ( ), $( ) or backtick body is a subshell: its end adds the cwds from
     # before it back. A ) that closes no subshell means a stray ) (a case pattern,
     # an escaped paren) closed one too early, so the parse is unreliable: cwds
@@ -209,21 +234,37 @@ def check(cmd, cwds, drift):
     except ValueError:
         # Unbalanced quotes, often a heredoc body.
         ask("a git command the guard cannot parse")
-    subshells, seen, lost = [], set(cwds), unreliable(cmd, segs)
+    subshells, seen, lost, prev = [], set(cwds), unreliable(cmd, segs), ""
     for seg, sep in segs:
         for tok in seg:
             if any(c in tok for c in " \t;&|"):
                 check(tok, cwds, drift)
-        # NAME=value words before a cd do not stop it from running.
-        words = seg
+        # NAME=value words before a cd do not stop it from running. CDPATH, HOME
+        # or OLDPWD change where it lands, so its target becomes unknown.
+        words, moved = seg, False
         while words and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            moved |= words[0].split("=", 1)[0] in ("CDPATH", "HOME", "OLDPWD")
             words = words[1:]
         if words and words[0] in ("cd", "pushd", "popd"):
-            to = words[1] if len(words) > 1 else "~"
-            new = {None} if words[0] == "popd" else resolve(cwds, to)
-            cwds = new if sep == "&&" and not lost else cwds | new
+            # A bare pushd, an option (cd -P) and a stack move (pushd +1) land in a
+            # folder the guard cannot read.
+            to = words[1] if len(words) > 1 else "~" if words[0] == "cd" else "+"
+            # A HOME= anywhere in the line may have moved ~ before this cd.
+            moved |= "HOME=" in os.environ["CMD"] and (to == "~" or to.startswith("~/"))
+            new = {None} if words[0] == "popd" or moved or to.startswith(("-", "+")) else resolve(cwds, to)
+            # A relative target never narrows. CDPATH, set earlier in the line or in
+            # the user's profile, can send it elsewhere, except after ./ or ../.
+            rooted = os.path.isabs(to) or to.startswith("~")
+            if not rooted and to.split("/")[0] not in (".", ".."):
+                new = new | {None}
+            cwds = new if prev in ("", "&&", ";") and sep == "&&" and rooted and not lost else cwds | new
             seen |= cwds
         else:
+            # A cd behind a wrapper (builtin, command, eval, if, {, !) is not
+            # followed: the line may be anywhere after it.
+            if any(w in ("cd", "pushd", "popd") for w in words[1:]):
+                cwds = cwds | {None}
+                seen |= cwds
             if any(t.startswith("GIT_") and "=" in t for t in seg):
                 drift.add("refs")
             # Every git word counts, not only the first: in "sudo -u git git commit" the
@@ -231,7 +272,9 @@ def check(cmd, cwds, drift):
             for k, tok in enumerate(seg):
                 if os.path.basename(tok) == "git":
                     fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
-                    check_git(seg[k + 1:], cwds, drift, fed)
+                    # env -C or --chdir before git runs it in a folder the guard does not follow.
+                    chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
+                    check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
         for c in sep:
             if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
                 # A union, not a swap: a ) that closes no subshell (a case pattern,
@@ -242,6 +285,7 @@ def check(cmd, cwds, drift):
                     cwds, lost = set(seen), True
             elif c in "(" + chr(96):
                 subshells.append((c, cwds))
+        prev = sep
 
 
 check(os.environ["CMD"], {os.environ["CWD"]}, set())
