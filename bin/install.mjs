@@ -59,7 +59,6 @@ async function main() {
     [{ target: configResult.path, action: configResult.changed ? 'write' : 'skip', backup: configResult.backup, added: [], skipped: [], notes: [] }, ...reports],
     flags,
     home,
-    config,
   )
 }
 
@@ -78,15 +77,9 @@ function asker(rl) {
   }
 }
 
-function report(reports, flags, home, config) {
+function report(reports, flags, home) {
   console.log(flags.dryRun ? 'dry run, nothing written' : 'installed')
   console.log(`mode: ${flags.link ? 'link' : 'copy'}`)
-
-  // Ruling R1: config.vault can be null. The installer still succeeds, but
-  // says how to set it, since a silent null is easy to miss.
-  if (config.vault === null) {
-    console.log('vault not set; pass --vault=<path> or set DEV_LOOP_VAULT to set it')
-  }
 
   printReports(reports, flags, (path) => path.replace(home, '~'))
 }

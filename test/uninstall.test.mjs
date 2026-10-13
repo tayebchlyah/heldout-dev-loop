@@ -43,8 +43,7 @@ const FOREIGN_GUARD = '/opt/vault-guard/git-guard.sh'
 // told otherwise, a foreign vault guard in the user settings.
 function globalInstall({ guard = true } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
-  const vault = mkdtempSync(join(tmpdir(), 'dev-loop-vault-'))
-  run(home, ['--global', '--yes', '--harness=both', `--vault=${vault}`])
+  run(home, ['--global', '--yes', '--harness=both'])
   writeFileSync(join(home, '.claude/agents/other.md'), 'mine\n')
   if (guard) {
     const path = join(home, '.claude/settings.json')
