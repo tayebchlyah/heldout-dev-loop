@@ -230,6 +230,20 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("--detach GATE_SHA", claude)
         self.assertNotIn("Rerun step 1.", claude)
 
+    def test_the_glossary_is_glossary_md_else_context_md(self) -> None:
+        text = SKILL.read_text()
+        self.assertIn("Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md`", text)
+        self.assertIn("Both exist: `GLOSSARY.md` wins.", text)
+        self.assertIn("`test -f GLOSSARY.md || test -f CONTEXT.md` fails", text)
+        self.assertIn("first terms of `GLOSSARY.md`", text)
+        self.assertIn("spec path and glossary path", text)
+        self.assertIn("or a glossary invariant;", text)
+        for agent in (CLAUDE_HOOKS.parent / "agents" / "spec-tester.md", CODEX_ASSETS / "agents" / "spec-tester.toml"):
+            self.assertIn("the glossary (GLOSSARY.md, else CONTEXT.md)", agent.read_text(), agent.name)
+
+    def test_every_superpowers_size_continues_to_spec(self) -> None:
+        self.assertIn("every size continues to Stage 2 Spec", SKILL.read_text())
+
     def test_setup_checker_exists(self) -> None:
         self.assertTrue(CHECKER.is_file())
 
