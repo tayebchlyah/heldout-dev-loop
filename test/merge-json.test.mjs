@@ -167,3 +167,13 @@ test('removeHookCommands leaves a malformed event or group alone', () => {
   assert.deepEqual(JSON.parse(text).hooks, { Stop: 'nonsense', PreToolUse: [{ matcher: 'x' }] })
   assert.deepEqual(removed, ['PreToolUse: gate.sh'])
 })
+
+test('a known old dev-loop SessionStart entry is replaced, any other dev-loop.json command is kept', () => {
+  const old = 'd="${CLAUDE_PROJECT_DIR:-.}"; { [ -f "$d/dev-loop.json" ] || grep -qs \'^vault_notes:\' "$d/AGENTS.md"; } && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0'
+  const mine = 'test -f dev-loop.json && echo mine'
+  const current = { SessionStart: [{ matcher: 'm', hooks: [{ type: 'command', command: old }, { type: 'command', command: mine }] }] }
+  const fragment = { SessionStart: [{ matcher: 'm', hooks: [{ type: 'command', command: 'new dev-loop.json' }] }] }
+  const { value, removed } = mergeHooks(current, fragment)
+  assert.deepEqual(value.SessionStart[0].hooks.map((hook) => hook.command), ['new dev-loop.json', mine])
+  assert.deepEqual(removed, [`SessionStart: ${old}`])
+})
