@@ -84,22 +84,13 @@ def write(path: Path, text: str = "") -> None:
     path.write_text(text)
 
 
-class ConfigCheckTests(unittest.TestCase):
-    def test_missing_config_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            failures = check_setup.check_config(home, home / "repo", {})
-            self.assertIn("missing dev-loop config", " ".join(failures))
-            self.assertIn("npx github:tchlyah/dev-loop#<tag> init", " ".join(failures))
-            self.assertNotIn("--global", " ".join(failures))
-
+class NotesCheckTests(unittest.TestCase):
     def test_repo_without_a_notes_path_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             repo = Path(tmp) / "repo"
-            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
             write(repo / "dev-loop.json", "{}")
-            failures = check_setup.check_config(home, repo, {})
+            failures = check_setup.check_notes(home, repo, {})
             self.assertEqual(len(failures), 1)
             self.assertTrue(failures[0].startswith(f"missing notes path for {repo}. Write "), failures)
             self.assertIn("dev-loop.local.json", failures[0])
@@ -109,9 +100,8 @@ class ConfigCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             repo = Path(tmp) / "repo"
-            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
             write(repo / "dev-loop.json", "{}")
-            failures = check_setup.check_config(home, repo, {"DEV_LOOP_NOTES": str(Path(tmp) / "nope")})
+            failures = check_setup.check_notes(home, repo, {"DEV_LOOP_NOTES": str(Path(tmp) / "nope")})
             self.assertEqual(len(failures), 1)
             self.assertIn("notes folder does not exist", failures[0])
 
@@ -121,18 +111,9 @@ class ConfigCheckTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             notes = Path(tmp) / "notes"
             notes.mkdir()
-            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
             write(repo / "dev-loop.json", "{}")
             write(repo / "dev-loop.local.json", json.dumps({"notes": str(notes)}))
-            self.assertEqual(check_setup.check_config(home, repo, {}), [])
-
-    def test_repo_not_using_dev_loop_needs_no_notes_path(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            repo = Path(tmp) / "repo"
-            repo.mkdir()
-            write(home / ".agents" / "dev-loop.config.json", json.dumps({"user_name": "ada"}))
-            self.assertEqual(check_setup.check_config(home, repo, {}), [])
+            self.assertEqual(check_setup.check_notes(home, repo, {}), [])
 
 
 class UsesDevLoopTests(unittest.TestCase):
@@ -193,6 +174,20 @@ class ProjectConfigTests(unittest.TestCase):
                 check=False,
             )
             self.assertIn("- merge in dev-loop.json must be auto or human", result.stdout)
+
+    def test_checker_without_dev_loop_json_prints_one_init_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for harness in ["claude", "codex"]:
+                result = subprocess.run(
+                    [sys.executable, str(CHECKER), "--harness", harness, "--home", tmp, "--repo", tmp],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    (result.returncode, result.stdout),
+                    (1, f"{harness}: FAIL\n- no dev-loop.json in {tmp}. Run npx github:tchlyah/dev-loop#<tag> init\n"),
+                )
 
 
 class SkillContractTests(unittest.TestCase):
@@ -1161,282 +1156,6 @@ class GitGuardParityTests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout), (0, ""), f"{guard.parent.parent.name}: {command!r}")
 
 
-class SetupCheckerTests(unittest.TestCase):
-    def run_checker(self, harness: str, home: Path) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [
-                sys.executable,
-                str(CHECKER),
-                "--harness",
-                harness,
-                "--home",
-                str(home),
-                "--repo",
-                str(home / "repo"),
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-    def write_valid_config(self, home: Path) -> None:
-        notes = home / "notes"
-        notes.mkdir(exist_ok=True)
-        write(
-            home / ".agents" / "dev-loop.config.json",
-            json.dumps({"user_name": "ada", "harnesses": ["claude", "codex"]}),
-        )
-        write(home / "repo" / "dev-loop.local.json", json.dumps({"notes": str(notes)}))
-
-    def make_valid_claude(self, home: Path) -> None:
-        self.write_valid_config(home)
-        for name in ["gate.sh", "gate-snapshot.sh", "tree-hash.sh", "deny-path.sh", "deny-acceptance-to-subagents.sh", "git-guard.sh"]:
-            write(home / ".claude" / "hooks" / name, "#!/bin/sh\n")
-        write(home / ".claude" / "agents" / "implementer.md", "name: implementer\n")
-        write(home / ".claude" / "agents" / "spec-tester.md", "name: spec-tester\n")
-        write(
-            home / "repo" / ".claude" / "settings.json",
-            json.dumps(
-                {
-                    "permissions": {
-                        "deny": [
-                            "Agent(caveman:cavecrew-reviewer)",
-                            "Agent(caveman:cavecrew-builder)",
-                            "Agent(caveman:cavecrew-investigator)",
-                        ]
-                    },
-                    "env": {
-                        "ENABLE_STOP_REVIEW": "0",
-                        "ENABLE_COMMIT_REVIEW": "0",
-                        "SG_PUSH_SWEEP": "0",
-                    },
-                }
-            ),
-        )
-        write(
-            home / ".claude" / "settings.json",
-            json.dumps(
-                {
-                    "permissions": {
-                        "deny": [
-                            "Skill(superpowers:verification-before-completion)",
-                            "Read(./.env)",
-                            "Read(./.env.*)",
-                        ]
-                    },
-                    "hooks": {"SessionStart": [], "Stop": [], "SubagentStart": [], "SubagentStop": [], "PreToolUse": []},
-                }
-            ),
-        )
-
-    def make_valid_codex(self, home: Path) -> None:
-        self.write_valid_config(home)
-        for name in ["gate.sh", "git-guard.sh", "deny-path.sh", "session-start.sh"]:
-            write(home / ".codex" / "hooks" / name, "#!/bin/sh\n")
-        agent_profiles = {
-            "implementer": "dev-implementer",
-            "spec-tester": "dev-spec-tester",
-            "task-reviewer": "dev-read-only",
-            "final-reviewer": "dev-read-only",
-            "security-reviewer": "dev-read-only",
-        }
-        for name, profile in agent_profiles.items():
-            write(
-                home / ".codex" / "agents" / f"{name}.toml",
-                f'name = "{name.replace("-", "_")}"\ndescription = "test"\n'
-                f'developer_instructions = "test"\ndefault_permissions = "{profile}"\n',
-            )
-        write(
-            home / ".codex" / "config.toml",
-            'default_permissions = "dev-workspace"\n'
-            '[features]\nhooks = true\n'
-            '[permissions.dev-workspace]\nextends = ":workspace"\n'
-            '[permissions.dev-workspace.filesystem.":workspace_roots"]\n'
-            '"**/.env" = "deny"\n"**/.env.*" = "deny"\n'
-            '[permissions.dev-read-only]\nextends = ":read-only"\n'
-            '[permissions.dev-read-only.filesystem.":workspace_roots"]\n'
-            '"**/.env" = "deny"\n"**/.env.*" = "deny"\n'
-            '[permissions.dev-implementer]\nextends = "dev-workspace"\n'
-            '[permissions.dev-implementer.filesystem.":workspace_roots"]\n'
-            '"tests/acceptance" = "deny"\n"tests/acceptance/**" = "deny"\n'
-            '[permissions.dev-spec-tester]\nextends = "dev-workspace"\n'
-            '[permissions.dev-spec-tester.filesystem.":workspace_roots"]\n'
-            '"src" = "deny"\n"src/**" = "deny"\n"app" = "deny"\n"app/**" = "deny"\n'
-            '"backend" = "deny"\n"backend/**" = "deny"\n"frontend" = "deny"\n"frontend/**" = "deny"\n'
-            f'[hooks.state."{home}/.codex/hooks.json:pre_tool_use:0:0"]\ntrusted_hash = "sha256:test"\n'
-            f'[hooks.state."{home}/.codex/hooks.json:session_start:0:0"]\ntrusted_hash = "sha256:test"\n'
-            f'[hooks.state."{home}/.codex/hooks.json:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:test"\n'
-            f'[hooks.state."{home}/.codex/hooks.json:subagent_stop:0:0"]\ntrusted_hash = "sha256:test"\n'
-            f'[hooks.state."{home}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:test"\n',
-        )
-        write(
-            home / ".codex" / "hooks.json",
-            json.dumps({"hooks": {"SessionStart": [], "PreToolUse": [], "Stop": [], "SubagentStop": []}}),
-        )
-        write(
-            home / ".codex" / "rules" / "default.rules",
-            'prefix_rule(pattern=[["git", "/usr/bin/git"], "push"], decision="prompt", match=["git push"])\n'
-            'prefix_rule(pattern=["git", "-C"], decision="prompt", match=["git -C /tmp/repo push"])\n'
-            'prefix_rule(pattern=[["git", "/usr/bin/git"], "reset", "--hard"], decision="forbidden", match=["git reset --hard"])\n',
-        )
-        for name in check_setup.CODEX_SKILLS:
-            write(home / ".agents" / "skills" / name / "SKILL.md", f"name: {name}\n")
-
-    def test_valid_claude_setup_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_claude(home)
-            result = self.run_checker("claude", home)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_missing_claude_gate_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_claude(home)
-            (home / ".claude" / "hooks" / "gate.sh").unlink()
-            result = self.run_checker("claude", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("gate.sh", result.stdout)
-
-    def test_repo_with_dev_loop_json_only_gets_the_repo_deny_checks(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_claude(home)
-            write(home / "repo" / "AGENTS.md", "# Plain\n")
-            write(home / "repo" / "dev-loop.json", "{}")
-            (home / "repo" / ".claude" / "settings.json").unlink()
-            result = self.run_checker("claude", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("settings.json", result.stdout)
-
-    def test_valid_codex_setup_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            result = self.run_checker("codex", home)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_codex_hooks_disabled_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            config = (home / ".codex" / "config.toml").read_text().replace("hooks = true", "hooks = false")
-            write(home / ".codex" / "config.toml", config)
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("hooks", result.stdout)
-
-    def test_codex_untrusted_hook_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            config_path = home / ".codex" / "config.toml"
-            config = config_path.read_text().replace(":stop:0:0", ":ignored:0:0")
-            write(config_path, config)
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("trusted Codex hook hash: stop", result.stdout)
-
-    def test_missing_codex_agent_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            (home / ".codex" / "agents" / "spec-tester.toml").unlink()
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("spec-tester.toml", result.stdout)
-
-    def test_missing_codex_review_agent_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            (home / ".codex" / "agents" / "security-reviewer.toml").unlink()
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("security-reviewer.toml", result.stdout)
-
-    def test_missing_codex_skill_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            (home / ".agents" / "skills" / "grilling" / "SKILL.md").unlink()
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("grilling", result.stdout)
-
-    def test_codex_legacy_sandbox_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            config = (home / ".codex" / "config.toml").read_text() + 'sandbox_mode = "workspace-write"\n'
-            write(home / ".codex" / "config.toml", config)
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("sandbox_mode", result.stdout)
-
-    def test_codex_missing_env_deny_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            config = (home / ".codex" / "config.toml").read_text().replace('"**/.env.*" = "deny"\n', "")
-            write(home / ".codex" / "config.toml", config)
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(".env.*", result.stdout)
-
-    def test_codex_missing_agent_path_wall_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            config = home / ".codex" / "config.toml"
-            write(config, config.read_text().replace('"tests/acceptance/**" = "deny"\n', ""))
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("tests/acceptance", result.stdout)
-
-    def test_codex_missing_stop_gate_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            hooks = json.loads((home / ".codex" / "hooks.json").read_text())
-            del hooks["hooks"]["Stop"]
-            write(home / ".codex" / "hooks.json", json.dumps(hooks))
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Stop", result.stdout)
-
-    def test_missing_claude_env_deny_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_claude(home)
-            settings = json.loads((home / ".claude" / "settings.json").read_text())
-            settings["permissions"]["deny"].remove("Read(./.env.*)")
-            write(home / ".claude" / "settings.json", json.dumps(settings))
-            result = self.run_checker("claude", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Read(./.env.*)", result.stdout)
-
-    def test_a_legacy_claude_failure_prints_once(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_claude(home)
-            (home / ".claude" / "hooks" / "gate.sh").unlink()
-            result = self.run_checker("claude", home)
-            self.assertEqual(result.stdout.count(f"- missing {home / '.claude' / 'hooks' / 'gate.sh'}\n"), 1, result.stdout)
-
-    def test_missing_push_prompt_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            home = Path(root)
-            self.make_valid_codex(home)
-            write(
-                home / ".codex" / "rules" / "default.rules",
-                'prefix_rule(pattern=["git", "reset", "--hard"], decision="forbidden")\n',
-            )
-            result = self.run_checker("codex", home)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("git push", result.stdout)
-
-
 PACKAGE_ROOT = SKILL_ROOT.parent
 INSTALLER = PACKAGE_ROOT / "bin" / "install.mjs"
 
@@ -1633,12 +1352,6 @@ class ProjectSetupCheckerTests(unittest.TestCase):
                         "Run npx github:tchlyah/dev-loop#<tag> uninstall-global",
                         result.stdout,
                     )
-
-    def test_without_dev_loop_json_the_global_checks_run(self) -> None:
-        result = self.run_checker("claude")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("missing dev-loop config", result.stdout)
-
 
 class ManifestCheckTests(unittest.TestCase):
     CHANGED = ". Move the change to dev-loop, then run upgrade"

@@ -642,13 +642,10 @@ class SkillStackContractTests(unittest.TestCase):
             path = Path(tmp) / "settings.json"
             path.write_text(json.dumps({"permissions": {"deny": ["Read(./.env)", "Read(./.env.*)"]}}))
             failures: list[str] = []
-            check_setup.check_claude_settings(path, failures, project=True)
+            check_setup.check_claude_settings(path, failures)
             for rule in PROJECT_SKILL_DENIES:
                 with self.subTest(rule=rule):
                     self.assertIn(f"missing Claude deny: {rule}", failures)
-            failures = []
-            check_setup.check_claude_settings(path, failures)
-            self.assertNotIn("missing Claude deny: Skill(superpowers:brainstorming)", failures)
 
     def test_stage_1_uses_grilling_only(self) -> None:
         self.assert_only_denied("superpowers:brainstorming")
