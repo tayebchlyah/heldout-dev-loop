@@ -117,9 +117,9 @@ class SkillContractTests(unittest.TestCase):
 
     def test_claude_bootstrap_contract_remains(self) -> None:
         required = [
-            "~/.claude/hooks/gate.sh",
-            "~/.claude/agents/implementer.md",
-            "~/.claude/agents/spec-tester.md",
+            ".dev-loop/hooks/claude/gate.sh",
+            ".claude/agents/implementer.md",
+            ".claude/agents/spec-tester.md",
             ".claude/settings.json",
             "mattpocock-skills:domain-modeling",
             "mattpocock-skills:grilling",
@@ -151,9 +151,9 @@ class SkillContractTests(unittest.TestCase):
 
     def test_codex_branch_is_declared(self) -> None:
         self.assertIn("references/codex.md", self.skill)
-        self.assertIn("~/.codex/agents/implementer.toml", self.instructions)
-        self.assertIn("~/.codex/agents/spec-tester.toml", self.instructions)
-        self.assertIn("~/.codex/agents/task-reviewer.toml", self.instructions)
+        self.assertIn(".codex/agents/implementer.toml", self.instructions)
+        self.assertIn(".codex/agents/spec-tester.toml", self.instructions)
+        self.assertIn(".codex/agents/task-reviewer.toml", self.instructions)
 
     def test_codex_branch_uses_real_codex_operations(self) -> None:
         codex = (SKILL_ROOT / "references" / "codex.md").read_text()

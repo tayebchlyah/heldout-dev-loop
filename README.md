@@ -14,6 +14,21 @@ Flags: `--yes`, `--dry-run`, `--harness=claude|codex|both`, `--vault=<path>`, `-
 
 The vault can also come from `DEV_LOOP_VAULT`. A re-run keeps the vault already in `~/.agents/dev-loop.config.json`, so only an explicit new value replaces it; `--vault=` with an empty value is that explicit answer for "no vault" and clears it. If no vault is set, `~/.agents/dev-loop.config.json` gets `vault: null`, the installer says so, and `check_setup.py` reports it as a top-level failure: `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop --vault=<path>`.
 
+## Commands
+
+Run each from the top level of a git repository, with a release tag:
+
+```bash
+npx github:tchlyah/dev-loop#<tag> init              # install the kit into this repository
+npx github:tchlyah/dev-loop#<tag> upgrade           # update the kit to the tag's version
+npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global install
+npx github:tchlyah/dev-loop#<tag> --global          # run the 1.4 global install (1.5.x only)
+```
+
+`init` writes `dev-loop.json`, `.dev-loop/MANIFEST.json`, the skill in `.agents/skills/dev-loop/` and the files of the chosen harnesses (`--harness=claude|codex|both`) under `.claude/`, `.codex/` and `.dev-loop/hooks/`. `--notes=<path>` sets the notes folder in the gitignored `dev-loop.local.json`. Commit the result. Kit files are never edited in a project: change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit unless `--force`. `--link` works only with `--global`. A call with no command prints the usage and exits 1.
+
+The sections below describe the `--global` flow.
+
 ## What it installs
 
 | Target | Content |
@@ -53,6 +68,15 @@ python3 skill/scripts/test_dev_loop.py  # skill suite
 ```
 
 ## Verify
+
+In a project with `dev-loop.json`:
+
+```bash
+python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
+python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
+```
+
+With `--global`:
 
 ```bash
 python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
