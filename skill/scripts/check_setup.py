@@ -21,6 +21,8 @@ from notes_path import NotesPathError, resolve  # noqa: E402
 
 
 CODEX_SKILLS = ["domain-modeling", "grilling", "codebase-design", "code-review", "research", "handoff"]
+COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed")
+MERGE_VALUES = ("auto", "human")
 EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
 EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 STRYKER_CONFIGS = [
@@ -77,6 +79,23 @@ def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) ->
     except NotesPathError as exc:
         return [re.sub(r"^no notes path", "missing notes path", str(exc))]
     return []
+
+
+def check_project_config(repo: Path) -> list[str]:
+    """The optional `commands` map and `merge` value of dev-loop.json."""
+    failures: list[str] = []
+    config = load_json(repo / "dev-loop.json", failures)
+    commands = config.get("commands", {})
+    if not isinstance(commands, dict):
+        return failures + ["commands in dev-loop.json must be an object"]
+    for key, value in commands.items():
+        if key not in COMMAND_KEYS:
+            failures.append(f"unknown commands key in dev-loop.json: {key}")
+        elif not isinstance(value, str) or not value.strip():
+            failures.append(f"commands.{key} in dev-loop.json must be a non-empty string")
+    if config.get("merge", "auto") not in MERGE_VALUES:
+        failures.append("merge in dev-loop.json must be auto or human")
+    return failures
 
 
 def check_claude_settings(path: Path, failures: list[str]) -> None:
@@ -468,6 +487,7 @@ def main() -> int:
     if (args.repo / "dev-loop.json").exists():
         failures, action_groups = check_project(args.home, args.repo, args.harness)
         failures += check_notes(args.home, args.repo)
+        failures += check_project_config(args.repo)
     elif args.harness == "claude":
         failures = check_config(args.home, args.repo)
         failures += check_claude(args.home, args.repo)
