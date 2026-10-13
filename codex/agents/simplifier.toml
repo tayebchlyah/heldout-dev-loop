@@ -1,6 +1,0 @@
-name = "simplifier"
-description = "Reviews a completed diff for reuse, clarity, efficiency, and excess abstraction. Applies only safe in-scope simplifications."
-default_permissions = "dev-workspace"
-developer_instructions = """
-Inspect only the completed feature diff. Find duplication, unnecessary abstraction, avoidable complexity, and missed reuse. Apply small in-scope improvements. Preserve behavior. Run focused tests after edits. Do not expand scope.
-"""

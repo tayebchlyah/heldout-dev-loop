@@ -492,6 +492,21 @@ test('upgrade deletes a kit file the package dropped, and the folder it leaves e
   assert.equal('.agents/skills/dev-loop/extra/deep/notes.md' in readJson(join(repo, '.dev-loop/MANIFEST.json')).files, false)
 })
 
+test('upgrade of a project with the 1.5.0 simplifier agent deletes it', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => {
+    writeFileSync(join(root, 'codex/agents/simplifier.toml'), 'name = "simplifier"\n')
+    const plan = join(root, 'lib/plan.mjs')
+    writeFileSync(plan, readFileSync(plan, 'utf8').replace("'final-reviewer.toml',", "'simplifier.toml', 'final-reviewer.toml',"))
+  })
+  run(older, 'init', repo, home, ['--yes', '--harness=codex'])
+  assert.ok(existsSync(join(repo, '.codex/agents/simplifier.toml')))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(existsSync(join(repo, '.codex/agents/simplifier.toml')), false)
+  assert.ok(existsSync(join(repo, '.codex/agents/final-reviewer.toml')))
+})
+
 test('upgrade refuses a local edit to a kit file, names it, and writes nothing', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes'])
