@@ -102,3 +102,9 @@ test('the fragments merge into the project files with project commands', () => {
 
   assert.deepEqual(projectFragments({ packageRoot, harnesses: ['claude'] }).map((action) => action.target), ['.claude/settings.json'])
 })
+
+test('the kit has no simplifier', () => {
+  const kit = buildKit({ packageRoot, harnesses: ['claude', 'codex'] })
+  assert.ok(!kit.files.some((file) => file.path.includes('simplifier')))
+  assert.ok(kit.files.some((file) => file.path === '.codex/agents/final-reviewer.toml'))
+})
