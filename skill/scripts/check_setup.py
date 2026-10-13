@@ -14,6 +14,8 @@ import tomllib
 from pathlib import Path
 from typing import Mapping
 
+# Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from notes_path import NotesPathError, resolve  # noqa: E402
 
