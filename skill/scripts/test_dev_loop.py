@@ -915,6 +915,17 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         f"bash <<'EOF'\ncd {feature} && true\nEOF\ngit push"):
             self.assertEqual(self.decision(command, "main"), "ask", command)
 
+    def test_a_variable_holding_a_tilde_inside_its_path_is_followed(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            feature = os.path.join(root, "iCloud~md~obsidian", "f")
+            os.makedirs(feature)
+            for args in (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]):
+                subprocess.run(["git", "-C", feature, *args], check=True,
+                               env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+            self.assertEqual(self.decision(f'F="{feature}"; cd "$F" && git push', "main"), "allow")
+            self.assertEqual(self.decision(f'F="~{feature}"; cd "$F" && git push', "main"), "ask")
+
     def test_the_reset_and_rm_walls_skip_a_heredoc_body(self) -> None:
         reset, rm = "git re" + "set --hard", "rm -rf " + "/"
         for command in (f"cat > n.md <<'EOF'\nnever {reset} or {rm}\nEOF", f"cat <<-EOF\n\t{reset}\n\tEOF"):
