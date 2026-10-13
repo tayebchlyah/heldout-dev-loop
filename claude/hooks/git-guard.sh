@@ -116,8 +116,10 @@ def record(words):
         line = os.environ["CMD"]
         once = (len(re.findall(rf"(?<![\w$]){name}=", line)) == 1
                 and not re.search(rf"(?<![\w${{]){name}(?![\w=}}])", line))
-        # A ~ inside an absolute path is text (iCloud~md~obsidian).
-        if once and os.path.isabs(value) and not (EXPANDS - {"~"}) & set(value):
+        # A ~ after a word character is text (iCloud~md~obsidian). An assignment
+        # also expands a ~ after : or =, so any other ~ makes the value unknown.
+        if (once and os.path.isabs(value) and not (EXPANDS - {"~"}) & set(value)
+                and not re.search(r"(?<!\w)~", value)):
             VARS[name] = value
 
 
