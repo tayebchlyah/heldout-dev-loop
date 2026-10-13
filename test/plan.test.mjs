@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildPlan, assertLinkSource } from '../lib/plan.mjs'
+import { buildPlan, runPlan, assertLinkSource } from '../lib/plan.mjs'
 
 const repoRoot = '/repo'
 const home = '/home/x'
@@ -77,4 +77,21 @@ test('the Codex config merge reports the tables it skips', () => {
   const actions = buildPlan({ repoRoot, home, harnesses: ['codex'], mode: 'copy' })
   const config = actions.find((action) => action.target === '/home/x/.codex/config.toml')
   assert.equal(config.kind, 'merge-toml')
+})
+
+test('a merge applies its rewrite to the fragment before rendering the home template', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dev-loop-rewrite-'))
+  const source = join(dir, 'fragment.json')
+  writeFileSync(source, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: '{{HOME}}/.codex/hooks/gate.sh' }] }] } }))
+  const seen = []
+  const rewrite = (text) => {
+    seen.push(text)
+    return text.replace('{{HOME}}/.codex/hooks/gate.sh', 'project-gate.sh')
+  }
+  const target = join(dir, 'hooks.json')
+  runPlan([{ kind: 'merge-json', merge: 'hooks', source, target, template: true, rewrite }], { dryRun: false, home: '/home/with space' })
+  assert.ok(seen[0].includes('{{HOME}}'))
+  const written = readFileSync(target, 'utf8')
+  assert.ok(written.includes('project-gate.sh'))
+  assert.ok(!written.includes('{{HOME}}'))
 })
