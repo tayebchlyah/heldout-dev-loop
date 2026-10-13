@@ -6,8 +6,8 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 
 ## Repo map
 
-- `bin/install.mjs` — installer entry point. Flags: `--yes`, `--dry-run`, `--link`, `--harness=claude|codex|both`, `--vault=<path>`. Also reads `DEV_LOOP_VAULT`.
-- `lib/` — installer internals: `args.mjs` (flag parsing), `config.mjs` (config load/write), `fsops.mjs` (copy/link/backup), `merge-json.mjs`, `merge-lines.mjs`, `merge-toml.mjs` (per-format merge routing), `plan.mjs` (builds the install plan).
+- `bin/install.mjs` — installer entry point. Commands: `init`, `upgrade`, `uninstall-global`, `--global` (the 1.4 flow, kept for 1.5.x only). No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--link` (only with `--global`), `--harness=claude|codex|both`, `--notes=<path>` (`init`), `--vault=<path>`. Also reads `DEV_LOOP_VAULT`.
+- `lib/` — installer internals: `args.mjs` (flag parsing), `config.mjs` (config load/write), `fsops.mjs` (copy/link/backup), `merge-json.mjs`, `merge-lines.mjs`, `merge-toml.mjs` (per-format merge routing), `plan.mjs` (builds the install plan), `kit.mjs` (project kit file list, path rewrite), `manifest.mjs` (`.dev-loop/MANIFEST.json` write and compare), `project.mjs` (`init` and `upgrade`), `uninstall.mjs` (`uninstall-global`).
 - `skill/SKILL.md` — the dev-loop skill payload. `skill/references/` — harness-specific reference docs (`claude.md`, `codex.md`). `skill/scripts/check_setup.py` — post-install verifier. `skill/scripts/test_dev_loop.py` — skill regression suite.
 - `claude/` — Claude Code payload: agents, hooks, `settings.fragment.json` (merged into `~/.claude/settings.json`).
 - `codex/` — Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (line-merged only, never copied or linked: it holds the user's own allowlist).
@@ -22,7 +22,23 @@ python3 skill/scripts/test_dev_loop.py  # skill suite
 
 Both must pass before any commit. `.github/workflows/ci.yml` runs both on every PR and on `main`. Merge a PR only when its `test` check is green.
 
-## Install targets (what `bin/install.mjs` writes)
+## Project kit (what `init` and `upgrade` write, repo-relative)
+
+| Target | Content | How |
+| --- | --- | --- |
+| `dev-loop.json` | `version`, `harnesses` | write |
+| `dev-loop.local.json` | `notes` path, gitignored (`init` adds the `.gitignore` line) | write, only with a notes path |
+| `.dev-loop/MANIFEST.json` | version, sha256 of each kit file | write |
+| `.dev-loop/hooks/claude/`, `.dev-loop/hooks/codex/` | shell walls | kit |
+| `.agents/skills/dev-loop/` | skill, harness refs, scripts | kit |
+| `.claude/skills/dev-loop` | link to `../../.agents/skills/dev-loop` | link |
+| `.claude/agents/`, `.codex/agents/` | subagents | kit |
+| `.codex/rules/dev-loop.rules` | Codex command rules | kit |
+| `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml` | hook entries, deny rules, permission tables | merge |
+
+MANIFEST rule: kit files are never edited in a project. Change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit or a deleted kit file unless `--force`. A kit file gets no backup (git holds it). A merged file gets `<file>.bak-<timestamp>`.
+
+## Global install targets (`--global`, the 1.4 flow, 1.5.x only)
 
 | Target | Content | How |
 | --- | --- | --- |
@@ -41,6 +57,15 @@ Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. A r
 Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it as a plain top-level failure line, not under "User actions required": `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop --vault=<path>`.
 
 ## Verify after install
+
+Project mode (applies when `dev-loop.json` exists):
+
+```bash
+python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
+python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
+```
+
+Global mode (1.4):
 
 ```bash
 python3 ~/.agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
