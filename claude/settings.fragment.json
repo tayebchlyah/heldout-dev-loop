@@ -71,6 +71,10 @@
   "permissions": {
     "deny": [
       "Skill(superpowers:verification-before-completion)",
+      "Skill(superpowers:test-driven-development)",
+      "Skill(superpowers:systematic-debugging)",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:finishing-a-development-branch)",
       "Read(./.env)",
       "Read(./.env.*)"
     ]

@@ -66,6 +66,7 @@ LoggedTests = test_devloop.LoggedTests
 GateTests = test_devloop.GateTests
 CiWaitTests = test_devloop.CiWaitTests
 InstructionContractTests = test_devloop.InstructionContractTests
+SkillStackContractTests = test_devloop.SkillStackContractTests
 
 
 def all_instructions() -> str:
@@ -223,7 +224,7 @@ class SkillContractTests(unittest.TestCase):
             ".claude/settings.json",
             "mattpocock-skills:domain-modeling",
             "mattpocock-skills:grilling",
-            "superpowers:brainstorming",
+            "mattpocock-skills:prototype",
         ]
         for value in required:
             with self.subTest(value=value):
@@ -235,8 +236,8 @@ class SkillContractTests(unittest.TestCase):
             "tests/acceptance/",
             "pytest tests/acceptance -q --tb=no",
             "superpowers:subagent-driven-development",
-            "superpowers:finishing-a-development-branch",
-            "Option 1 is rebase",
+            "mattpocock-skills:pr",
+            "gh pr merge --rebase",
             "Never invoke `superpowers:verification-before-completion`",
         ]
         for value in required:
@@ -298,9 +299,6 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("or a glossary invariant;", text)
         for agent in (CLAUDE_HOOKS.parent / "agents" / "spec-tester.md", CODEX_ASSETS / "agents" / "spec-tester.toml"):
             self.assertIn("the glossary (GLOSSARY.md, else CONTEXT.md)", agent.read_text(), agent.name)
-
-    def test_every_superpowers_size_continues_to_spec(self) -> None:
-        self.assertIn("every size continues to Stage 2 Spec", SKILL.read_text())
 
     def test_setup_checker_exists(self) -> None:
         self.assertTrue(CHECKER.is_file())
@@ -1295,7 +1293,7 @@ class SetupCheckerTests(unittest.TestCase):
             'prefix_rule(pattern=["git", "-C"], decision="prompt", match=["git -C /tmp/repo push"])\n'
             'prefix_rule(pattern=[["git", "/usr/bin/git"], "reset", "--hard"], decision="forbidden", match=["git reset --hard"])\n',
         )
-        for name in ["domain-modeling", "grilling", "codebase-design", "code-review", "research", "handoff"]:
+        for name in check_setup.CODEX_SKILLS:
             write(home / ".agents" / "skills" / name / "SKILL.md", f"name: {name}\n")
 
     def test_valid_claude_setup_passes(self) -> None:

@@ -499,5 +499,128 @@ class InstructionContractTests(unittest.TestCase):
         self.assertNotIn("GATE_SHA", text)
 
 
+REFERENCES = SKILL_ROOT / "references"
+REPLACED_SKILLS = [
+    "superpowers:brainstorming",
+    "superpowers:test-driven-development",
+    "superpowers:systematic-debugging",
+    "superpowers:finishing-a-development-branch",
+]
+PROJECT_SKILL_DENIES = [
+    "Skill(superpowers:verification-before-completion)",
+    "Skill(superpowers:test-driven-development)",
+    "Skill(superpowers:systematic-debugging)",
+    "Skill(superpowers:brainstorming)",
+    "Skill(superpowers:finishing-a-development-branch)",
+]
+
+
+def load_check_setup():
+    spec = importlib.util.spec_from_file_location("check_setup_for_stack", SKILL_ROOT / "scripts" / "check_setup.py")
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load check_setup module")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def stage_text(number: int) -> str:
+    skill = (SKILL_ROOT / "SKILL.md").read_text()
+    start = skill.index(f"\n## {number} ")
+    end = skill.find("\n## ", start + 1)
+    return skill[start:] if end == -1 else skill[start:end]
+
+
+class SkillStackContractTests(unittest.TestCase):
+    """D16, D18, D22 and the 2.0.0 pipeline: the skill each stage names."""
+
+    def setUp(self) -> None:
+        self.claude = (REFERENCES / "claude.md").read_text()
+        self.codex = (REFERENCES / "codex.md").read_text()
+
+    def assert_only_denied(self, name: str) -> None:
+        for path in [SKILL_ROOT / "SKILL.md", *sorted(REFERENCES.glob("*.md"))]:
+            for line in path.read_text().splitlines():
+                if name in line:
+                    with self.subTest(path=path.name, line=line):
+                        self.assertIn(f"Skill({name})", line)
+
+    def test_codex_skill_list(self) -> None:
+        self.assertEqual(
+            load_check_setup().CODEX_SKILLS,
+            ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"],
+        )
+
+    def test_claude_project_check_requires_the_skill_denies(self) -> None:
+        check_setup = load_check_setup()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            path.write_text(json.dumps({"permissions": {"deny": ["Read(./.env)", "Read(./.env.*)"]}}))
+            failures: list[str] = []
+            check_setup.check_claude_settings(path, failures, project=True)
+            for rule in PROJECT_SKILL_DENIES:
+                with self.subTest(rule=rule):
+                    self.assertIn(f"missing Claude deny: {rule}", failures)
+            failures = []
+            check_setup.check_claude_settings(path, failures)
+            self.assertNotIn("missing Claude deny: Skill(superpowers:brainstorming)", failures)
+
+    def test_stage_1_uses_grilling_only(self) -> None:
+        self.assert_only_denied("superpowers:brainstorming")
+        stage = stage_text(1)
+        for value in ["grilling", "prototype", "/wayfinder", "Track S", "one-line reason"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage)
+        for value in ["mattpocock-skills:grilling", "mattpocock-skills:prototype"]:
+            self.assertIn(value, self.claude)
+        for value in ["`grilling`", "`prototype`"]:
+            self.assertIn(value, self.codex)
+
+    def test_spec_reference_holds_builder_check_and_notices(self) -> None:
+        spec = (REFERENCES / "spec.md").read_text()
+        for value in [
+            "feature:", "track:", "review_status:", "## Acceptance oracle", "Supersedes", "## Assumptions",
+            "the ideal number is one",
+            "You've been handed a design document",
+            "nothing important left",
+            "Copyright (c) 2025 Jesse Vincent",
+            "Run STRIDE over each boundary",
+            "Adversarial review. Find what is wrong with this artifact.",
+            "Copyright (c) 2025 Addy Osmani",
+            "MIT License",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, spec)
+        self.assertIn("references/spec.md", stage_text(2))
+
+    def test_stage_4_writes_plans(self) -> None:
+        self.assertIn("superpowers:writing-plans", stage_text(4))
+
+    def test_stage_5_executor_by_track(self) -> None:
+        stage = stage_text(5)
+        for value in [
+            "Tracks S and M: `superpowers:executing-plans`",
+            "Track L: `superpowers:subagent-driven-development`",
+            "`tdd`", "`diagnosing-bugs`", "references/building.md", "references/tests.md",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage)
+        for name in ["superpowers:test-driven-development", "superpowers:systematic-debugging"]:
+            self.assert_only_denied(name)
+        for value in ["superpowers:executing-plans", "mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs"]:
+            self.assertIn(value, self.claude)
+        for value in ["superpowers:executing-plans", "`tdd`", "`diagnosing-bugs`"]:
+            self.assertIn(value, self.codex)
+
+    def test_stage_7_is_dev_loop_own_with_pr(self) -> None:
+        stage = stage_text(7)
+        self.assert_only_denied("superpowers:finishing-a-development-branch")
+        for value in ["`pr`", "git rebase origin/main", "gh pr merge --rebase"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage)
+        self.assertIn("mattpocock-skills:pr", self.claude)
+        self.assertIn("`pr`", self.codex)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
