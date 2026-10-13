@@ -738,10 +738,10 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         self.assertEqual(self.decision(f"cd {main}; git status"), "allow")
 
     def test_a_push_from_a_folder_the_guard_cannot_follow_asks(self) -> None:
-        # Spec D2(c): cd $D stays unknown. From a feature session the unknown folder
-        # may be the main repo, so it does not fall back to the session start.
+        # A cd $D the line does not set stays unknown. From a feature session the
+        # unknown folder may be the main repo, so it does not fall back to the session start.
         main = self.main_repo
-        for command in (f"D={main}; cd $D && git push", f"cd {main} && cd - && git push",
+        for command in ("cd $D && git push", f"cd {main} && cd - && git push",
                         f"pushd {main}; popd && git push"):
             self.assertEqual(self.decision(command), "ask", command)
 
@@ -830,13 +830,14 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                                     "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
             bt, rel = chr(96), "../" + os.path.basename(feature)
             for command in (f"cd {feature}; git push", f"cd {rel}; git push", f"(cd {feature}); git push",
-                            f"(cd {feature}) && git push", f"D={feature}; cd $D && git push",
+                            f"(cd {feature}) && git push",
                             f"cd {feature} && cd \"$OLDPWD\" && git push", f"cd {feature} && cd - && git push",
                             f"(echo \\) && cd {feature} && true); git push",
                             f"echo $(echo \\) && cd {feature} && true); git push",
                             f"echo {bt}cd {feature}; true{bt}; git push", "sudo -u git git push"):
                 self.assertEqual(self.decision(command, "main"), "ask", command)
             for command in (f"cd {feature} && git push", f"cd {feature} && (git status) && git push",
+                            f"D={feature}; cd $D && git push",
                             f"git -C {feature} push"):
                 self.assertEqual(self.decision(command, "main"), "allow", command)
         main = os.path.basename(self.main_repo)
@@ -881,6 +882,32 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         "eval 'git push origin main'", "su -c 'git push origin main'",
                         "cat <<'EOF'\ngit status\ngit push origin main"):
             self.assertEqual(self.decision(command), "ask", command)
+
+    def test_a_cd_into_a_variable_the_line_surely_set_is_followed(self) -> None:
+        # The session is on main. The push runs in the feature repo only when the
+        # variable surely holds its path.
+        feature, main = self.feature_repo, self.main_repo
+        parent, name = os.path.dirname(feature), os.path.basename(feature)
+        for command in (f'F={feature}; cd "$F" && git push', f"F={feature} && cd $F && git push",
+                        f"export F={feature}; cd ${{F}} && git push", f'P={parent}; cd "$P/{name}" && git push',
+                        f'F={feature}; git -C "$F" push', f"W={feature}\ngit add x && git commit -F - <<'EOF'\nmsg\nEOF\ncd $W && git push"):
+            self.assertEqual(self.decision(command, "main"), "allow", command)
+        for command in (f"true && F={feature}; cd $F && git push", f"true || F={feature}; cd $F && git push",
+                        f"(F={feature}); cd $F && git push", f"sh -c 'F={feature}'; cd $F && git push",
+                        f"F={feature}; F={main}; cd $F && git push", f"F={feature}; read F; cd $F && git push",
+                        f"F={feature}; unset F; cd $F && git push", f"for F in {main}; do :; done; F={feature}; cd $F && git push",
+                        f"F=../{name}; cd $F && git push", f"F={feature}$X; cd $F && git push",
+                        f"F={feature}; F+=x; cd $F && git push", f"cd $F && F={feature}; git push", f"F={feature}; git commit -F x && cd $F && git push",
+                        f"bash <<'EOF'\ncd {feature} && true\nEOF\ngit push"):
+            self.assertEqual(self.decision(command, "main"), "ask", command)
+
+    def test_the_reset_and_rm_walls_skip_a_heredoc_body(self) -> None:
+        reset, rm = "git re" + "set --hard", "rm -rf " + "/"
+        for command in (f"cat > n.md <<'EOF'\nnever {reset} or {rm}\nEOF", f"cat <<-EOF\n\t{reset}\n\tEOF"):
+            self.assertEqual(self.decision(command), "allow", command)
+        for command in (f"bash <<'EOF'\n{reset}\nEOF", f"cat > n.md <<'EOF'\nx\nEOF\n{reset}",
+                        f"cat > n.md <<'EOF'\nx\nEOF\n{rm}", f"cat <<'EOF'\nno end line\n{reset}"):
+            self.assertIn(self.decision(command), ("deny", "ask"), command)
 
     def test_a_bare_push_from_an_unknown_repository_asks(self) -> None:
         # A folder made earlier in the line does not exist yet, so a named feature
@@ -981,9 +1008,9 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         # Only the main repo holds the alias, and the guard cannot see the line is there.
         main = self.main_repo
         subprocess.run(["git", "-C", main, "config", "alias.p", "push"], check=True)
-        for command in (f"D={main}; cd $D && git p", f"git --git-dir={main}/.git p", f"env -C {main} git p"):
+        for command in ("cd $D && git p", f"git --git-dir={main}/.git p", f"env -C {main} git p"):
             self.assertEqual(self.decision(command), "ask", command)
-        self.assertEqual(self.decision(f"D={main}; cd $D && git status"), "allow")
+        self.assertEqual(self.decision("cd $D && git status"), "allow")
 
     def test_send_pack_and_subtree_push_ask(self) -> None:
         for command in ("git send-pack origin feat", "git send-pack --all origin",
