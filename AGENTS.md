@@ -17,10 +17,10 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 
 `python3 .agents/skills/dev-loop/scripts/devloop.py <command>`. One JSON object on stdout. Exit 0 success, 1 failure the JSON describes, 2 usage error.
 
-- `status [--feature <slug>]`: `stage`, `check`, `next`, `feature`, `track`, `worktree`. Default branch: lists open features. Reads local state only, never fetches.
+- `status [--feature <slug>]`: `stage` (0 to 7, `shipped`, or `rebase` while a rebase is in progress), `check`, `next`, `feature`, `track`, `worktree`. Default branch: lists open features. Track S: Stage 6 until `$(git rev-parse --git-dir)/dev-loop/review-done` exists. Reads local state only, never fetches.
 - `logged -- <cmd>`: full output to `$(git rev-parse --git-dir)/dev-loop/logs/<name>-<timestamp>.log`. JSON `exit`, `log`, `seconds`, `tail`.
 - `gate --summary`: `commands.gate`, else `scripts/gate.sh`. JSON `exit`, `log`, `seconds`, `failures`, `slowest` (JUnit XML in `DEVLOOP_REPORT_DIR`, else `[]` and `hint`).
-- `ci wait [--pr <n>] [--timeout <min>]`: JSON `state` (`pass`, `fail`, `timeout`, `no-pr`), `failed_job`, `first_error`, `url`.
+- `ci wait [--pr <n>] [--timeout <min>]`: no check registered yet: retries every 15 s within the timeout. JSON `state` (`pass`, `fail`, `timeout`, `no-pr`), `failed_job`, `first_error`, `url`.
 
 ## Build and test
 

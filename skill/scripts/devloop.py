@@ -27,6 +27,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from notes_path import NotesPathError, resolve  # noqa: E402
 
+CHECKS_RETRY_SECONDS = 15
 FAILED_CHECK_STATES = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 JUNIT_HINT = (
     "No JUnit XML in $DEVLOOP_REPORT_DIR. Make the gate write it there: "
@@ -80,14 +81,28 @@ def find_plan(notes: Path, spec: Path) -> Path | None:
     return plans[-1] if plans else None
 
 
+def rebasing(worktree: Path) -> str | None:
+    """The branch a rebase in progress in the worktree rewrites ("" when unknown), or None with no rebase."""
+    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    for name in ("rebase-merge", "rebase-apply") if git_dir else ():
+        state = Path(git_dir) / name
+        if state.is_dir():
+            head = state / "head-name"
+            return head.read_text().strip().removeprefix("refs/heads/") if head.is_file() else ""
+    return None
+
+
 def feature_checkout(repo: Path, slug: str) -> tuple[Path | None, str | None]:
-    """The worktree and the branch `<prefix>/<slug>`. A branch with no worktree gives (None, branch)."""
+    """The worktree and the branch `<prefix>/<slug>`. A branch with no worktree gives (None, branch).
+    A worktree mid-rebase is detached: its branch comes from the rebase state."""
     worktree: Path | None = None
     for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
         if line.startswith("worktree "):
             worktree = Path(line[len("worktree "):])
         elif line.startswith("branch refs/heads/") and line.endswith(f"/{slug}"):
             return worktree, line[len("branch refs/heads/"):]
+        elif line == "detached" and worktree and (rebasing(worktree) or "").endswith(f"/{slug}"):
+            return worktree, rebasing(worktree)
     for branch in (git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads") or "").splitlines():
         if branch.endswith(f"/{slug}"):
             return None, branch
@@ -101,8 +116,10 @@ def cherry(repo: Path, branch: str) -> list[str] | None:
 
 
 def holds_slug(path: str, slug: str) -> bool:
-    """An acceptance path (relative to the acceptance folder) that belongs to the feature."""
-    return any(name in path.lower() for name in (slug, slug.replace("-", "_")))
+    """An acceptance path (relative to the acceptance folder) that holds the slug as a whole token.
+    `-` and `_` count as the same character."""
+    token = re.escape(slug.replace("_", "-"))
+    return re.search(rf"(?<![a-z0-9]){token}(?![a-z0-9])", path.lower().replace("_", "-")) is not None
 
 
 def has_acceptance(worktree: Path, slug: str) -> bool:
@@ -110,11 +127,14 @@ def has_acceptance(worktree: Path, slug: str) -> bool:
     return any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*"))
 
 
-def shipped_without_branch(repo: Path, slug: str) -> bool:
-    """No `origin/<prefix>/<slug>` branch, and an acceptance file for the slug on the default branch."""
+def remote_branch(repo: Path, slug: str) -> str | None:
+    """`origin/<prefix>/<slug>`, or None."""
     remotes = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin") or ""
-    if any(ref.endswith(f"/{slug}") and ref.count("/") >= 2 for ref in remotes.splitlines()):
-        return False
+    return next((ref for ref in remotes.splitlines() if ref.endswith(f"/{slug}") and ref.count("/") >= 2), None)
+
+
+def shipped_without_branch(repo: Path, slug: str) -> bool:
+    """An acceptance file for the slug on the default branch. For a feature with no branch, local or remote."""
     prefix = "tests/acceptance/"
     files = git(repo, "ls-tree", "-r", "--name-only", DEFAULT_BRANCH, prefix) or ""
     return any(holds_slug(f[len(prefix):], slug) for f in files.splitlines() if f.startswith(prefix))
@@ -133,11 +153,14 @@ def result(stage: int | str, check: str, next_: str, feature: str | None = None,
 
 
 FETCH = "git fetch origin, then run devloop status again"
+REBASE = "finish or abort the rebase, then rerun status"
 DEFAULT_BRANCH = "main"
 
 
 def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
     worktree, branch = feature_checkout(repo, slug)
+    if worktree is not None and rebasing(worktree) is not None:
+        return result("rebase", f"rebase in progress in {worktree}", REBASE, slug, None, worktree)
     matches = [path for name, path in specs(notes) if name == slug]
     if not matches:
         if branch is None:
@@ -148,6 +171,11 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
         if not lines:
             return result(5, f"Track S: {branch} has no commit ahead of origin/main", "Stage 5 Build", slug, "S", worktree)
         if any(line.startswith("+") for line in lines):
+            git_dir = git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
+            marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
+            if marker is None or not marker.is_file():
+                return result(6, "Track S: no review-done marker in the git dir", "Stage 6 review wave and triage, "
+                              "then write the review-done marker", slug, "S", worktree)
             return result(7, f"Track S: {branch} has commits not on origin/main", "Stage 7 Ship", slug, "S", worktree)
         return result("shipped", f"git cherry origin/main {branch} lists no + commit", "none", slug, "S", worktree)
 
@@ -160,8 +188,12 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
 
     if fields.get("review_status") != "approved":
         return at(2, f"spec {spec.name} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
-    if branch is None and shipped_without_branch(repo, slug):
+    known = branch or remote_branch(repo, slug)
+    if known is None and shipped_without_branch(repo, slug):
         return at("shipped", f"no branch for {slug}, its acceptance file is on {DEFAULT_BRANCH}", "none")
+    lines = cherry(repo, known) if known else None
+    if lines and not any(line.startswith("+") for line in lines):
+        return at("shipped", f"git cherry origin/main {known} lists no + commit", "none")
     if worktree is None:
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
     if not has_acceptance(worktree, slug):
@@ -200,6 +232,11 @@ def detect(repo: Path, feature: str | None, notes: Path) -> dict:
         branch = git(repo, "symbolic-ref", "--short", "-q", "HEAD")
         if branch and "/" in branch:
             return detect_feature(repo, branch.rsplit("/", 1)[1], notes)
+        head = None if branch else rebasing(repo)
+        if head is not None:
+            if "/" in head:
+                return detect_feature(repo, head.rsplit("/", 1)[1], notes)
+            return result("rebase", "rebase in progress", REBASE)
         features = []
         for slug in dict.fromkeys(name for name, _ in specs(notes)):
             found = detect_feature(repo, slug, notes)
@@ -348,11 +385,20 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
         return emit(payload, 1)
     pr = json.loads(view.stdout)
     number, payload["url"] = str(pr["number"]), pr["url"]
-    try:
-        watch = gh("pr", "checks", number, "--watch", "--interval", "30", timeout=args.timeout * 60)
-    except subprocess.TimeoutExpired:
-        payload["state"] = "timeout"
-        return emit(payload, 1)
+    deadline = time.monotonic() + args.timeout * 60
+    while True:
+        try:
+            watch = gh("pr", "checks", number, "--watch", "--interval", "30", timeout=max(deadline - time.monotonic(), 0))
+        except subprocess.TimeoutExpired:
+            watch = None
+        # Right after a push no check is registered yet: gh exits 1 with "no checks reported".
+        if watch is not None and "no checks reported" in watch.stderr and time.monotonic() + CHECKS_RETRY_SECONDS < deadline:
+            time.sleep(CHECKS_RETRY_SECONDS)
+            continue
+        if watch is None or "no checks reported" in watch.stderr:
+            payload["state"] = "timeout"
+            return emit(payload, 1)
+        break
     if watch.returncode == 0:
         payload["state"] = "pass"
         return emit(payload, 0)
