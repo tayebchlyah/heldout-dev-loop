@@ -305,3 +305,69 @@ test('writeKit replaces a link that points elsewhere', () => {
   assert.deepEqual(reports.map((entry) => entry.action), ['replace'])
   assert.equal(readlinkSync(join(repo, 'links/kept')), '../skill')
 })
+
+test('init refuses a real directory at the skill link path, names it, and writes nothing', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, '.claude/skills/dev-loop'), { recursive: true })
+  writeFileSync(join(repo, '.claude/skills/dev-loop/mine.md'), 'mine\n')
+  initFails(repo, home, ['--yes', '--harness=claude'], /\.claude\/skills\/dev-loop/)
+  assert.deepEqual(entries(repo), ['.claude'])
+  assert.equal(readFileSync(join(repo, '.claude/skills/dev-loop/mine.md'), 'utf8'), 'mine\n')
+})
+
+test('init replaces a skill link that points elsewhere', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, '.claude/skills'), { recursive: true })
+  symlinkSync('../../elsewhere', join(repo, '.claude/skills/dev-loop'))
+  init(repo, home, ['--yes', '--harness=claude'])
+  assert.equal(readlinkSync(join(repo, '.claude/skills/dev-loop')), '../../.agents/skills/dev-loop')
+})
+
+test('init refuses a symlinked .codex folder that leads out of the repository, and writes nothing', () => {
+  const { home, repo } = setup()
+  const outside = mkdtempSync(join(tmpdir(), 'dev-loop-outside-'))
+  symlinkSync(outside, join(repo, '.codex'))
+  initFails(repo, home, ['--yes'], /\.codex/)
+  assert.deepEqual(readdirSync(outside), [])
+  assert.deepEqual(entries(repo), ['.codex'])
+})
+
+test('init refuses a .claude/settings.json that is a symlink, and writes nothing', () => {
+  const { home, repo } = setup()
+  const outside = mkdtempSync(join(tmpdir(), 'dev-loop-outside-'))
+  writeFileSync(join(outside, 'settings.json'), '{}\n')
+  mkdirSync(join(repo, '.claude'))
+  symlinkSync(join(outside, 'settings.json'), join(repo, '.claude/settings.json'))
+  initFails(repo, home, ['--yes', '--harness=claude'], /\.claude\/settings\.json/)
+  assert.equal(readFileSync(join(outside, 'settings.json'), 'utf8'), '{}\n')
+  assert.deepEqual(entries(repo), ['.claude'])
+})
+
+test('init refuses a symlinked skill folder and a symlinked .gitignore', () => {
+  for (const path of ['.agents/skills/dev-loop', '.gitignore']) {
+    const { home, repo } = setup()
+    const outside = mkdtempSync(join(tmpdir(), 'dev-loop-outside-'))
+    mkdirSync(dirname(join(repo, path)), { recursive: true })
+    symlinkSync(outside, join(repo, path))
+    initFails(repo, home, ['--yes', '--harness=claude'], new RegExp(path.replace(/\./g, '\\.')))
+    assert.deepEqual(readdirSync(outside), [])
+  }
+})
+
+test('init does not expand ~user in the notes path', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(home, 'user/x'), { recursive: true })
+  initFails(repo, home, ['--yes', '--harness=claude', '--notes=~user/x'], /~user\/x/)
+  assert.deepEqual(entries(repo), [])
+})
+
+test('init backs up an existing dev-loop.local.json before replacing it', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, 'docs'))
+  writeFileSync(join(repo, 'dev-loop.local.json'), '{"notes": "old"}\n')
+  init(repo, home, ['--yes', '--harness=claude', '--notes=docs'])
+  assert.deepEqual(readJson(join(repo, 'dev-loop.local.json')), { notes: 'docs' })
+  const backups = readdirSync(repo).filter((name) => name.startsWith('dev-loop.local.json.bak-'))
+  assert.equal(backups.length, 1)
+  assert.equal(readFileSync(join(repo, backups[0]), 'utf8'), '{"notes": "old"}\n')
+})
