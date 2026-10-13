@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { CLAUDE_AGENTS, CLAUDE_HOOKS, CODEX_AGENTS, CODEX_HOOKS } from '../lib/plan.mjs'
+import { CLAUDE_AGENTS, CLAUDE_HOOKS, KIT_CODEX_AGENTS, LEGACY_CODEX_AGENTS, CODEX_HOOKS } from '../lib/plan.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const bin = join(packageRoot, 'bin', 'install.mjs')
@@ -33,7 +33,7 @@ const DEV_LOOP_FILES = [
   '.claude/skills/dev-loop',
   ...CLAUDE_AGENTS.map((name) => `.claude/agents/${name}`),
   ...CLAUDE_HOOKS.map((name) => `.claude/hooks/${name}`),
-  ...CODEX_AGENTS.map((name) => `.codex/agents/${name}`),
+  ...KIT_CODEX_AGENTS.map((name) => `.codex/agents/${name}`),
   ...CODEX_HOOKS.map((name) => `.codex/hooks/${name}`),
 ]
 
@@ -92,7 +92,7 @@ test('uninstall-global moves every dev-loop file to a backup and removes the hoo
   for (const name of CLAUDE_HOOKS) {
     assert.ok(readdirSync(join(home, '.claude/hooks')).some((file) => file.startsWith(`${name}.bak-`)), name)
   }
-  for (const name of CODEX_AGENTS) {
+  for (const name of KIT_CODEX_AGENTS) {
     assert.ok(readdirSync(join(home, '.codex/agents')).some((file) => file.startsWith(`${name}.bak-`)), name)
   }
 
@@ -114,6 +114,16 @@ test('uninstall-global moves every dev-loop file to a backup and removes the hoo
   for (const item of ['deny rules', '.codex/config.toml', '.codex/rules/default.rules', '.agents/dev-loop.config.json']) {
     assert.match(output, new RegExp(`^\\s*kept .*${item.replace(/\./g, '\\.')}`, 'm'), item)
   }
+})
+
+test('uninstall-global still removes the 1.4 simplifier agent', () => {
+  assert.ok(LEGACY_CODEX_AGENTS.includes('simplifier.toml'))
+  assert.ok(!KIT_CODEX_AGENTS.includes('simplifier.toml'))
+  const home = globalInstall()
+  writeFileSync(join(home, '.codex/agents/simplifier.toml'), 'name = "simplifier"\n')
+  run(home, ['uninstall-global'])
+  assert.equal(existsSync(join(home, '.codex/agents/simplifier.toml')), false)
+  assert.ok(readdirSync(join(home, '.codex/agents')).some((file) => file.startsWith('simplifier.toml.bak-')))
 })
 
 test('uninstall-global with no vault guard refuses, names the guard, where to move it and --force, and changes nothing', () => {
