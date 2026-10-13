@@ -496,7 +496,7 @@ test('upgrade of a project with the 1.5.0 simplifier agent deletes it', () => {
   const { home, repo } = setup()
   const older = fakePackage('98.0.0', (root) => {
     writeFileSync(join(root, 'codex/agents/simplifier.toml'), 'name = "simplifier"\n')
-    const plan = join(root, 'lib/plan.mjs')
+    const plan = join(root, 'lib/kit.mjs')
     writeFileSync(plan, readFileSync(plan, 'utf8').replace("'final-reviewer.toml',", "'simplifier.toml', 'final-reviewer.toml',"))
   })
   run(older, 'init', repo, home, ['--yes', '--harness=codex'])
@@ -505,6 +505,30 @@ test('upgrade of a project with the 1.5.0 simplifier agent deletes it', () => {
   upgrade(repo, home, [], fakePackage('99.0.0'))
   assert.equal(existsSync(join(repo, '.codex/agents/simplifier.toml')), false)
   assert.ok(existsSync(join(repo, '.codex/agents/final-reviewer.toml')))
+})
+
+// The SessionStart command a 1.5.0 project holds in its .claude/settings.json.
+const SESSION_START_1_5 = 'd="${CLAUDE_PROJECT_DIR:-.}"; { [ -f "$d/dev-loop.json" ] || grep -qs \'^vault_notes:\' "$d/AGENTS.md"; } && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0'
+
+test('upgrade from 1.5 leaves one SessionStart entry', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => {
+    const path = join(root, 'claude/settings.fragment.json')
+    const fragment = readJson(path)
+    fragment.hooks.SessionStart[0].hooks[0].command = SESSION_START_1_5
+    writeFileSync(path, JSON.stringify(fragment, null, 2))
+  })
+  run(older, 'init', repo, home, ['--yes', '--harness=claude'])
+  const settings = join(repo, '.claude/settings.json')
+  const custom = readJson(settings)
+  custom.hooks.SessionStart[0].hooks.push({ type: 'command', command: 'echo mine' })
+  writeFileSync(settings, JSON.stringify(custom, null, 2))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const commands = readJson(settings).hooks.SessionStart.flatMap((group) => group.hooks.map((hook) => hook.command))
+  const current = readJson(join(packageRoot, 'claude/settings.fragment.json')).hooks.SessionStart[0].hooks[0].command
+  assert.deepEqual(commands.filter((command) => command.includes('dev-loop.json')), [current])
+  assert.ok(commands.includes('echo mine'))
 })
 
 test('upgrade refuses a local edit to a kit file, names it, and writes nothing', () => {
@@ -803,8 +827,8 @@ function renamedHooksPackage(nextVersion) {
     }
     renameSync(join(root, 'claude/hooks/gate.sh'), join(root, 'claude/hooks/stop-gate.sh'))
     renameSync(join(root, 'codex/hooks/session-start.sh'), join(root, 'codex/hooks/repo-start.sh'))
-    edit('lib/plan.mjs', "CLAUDE_HOOKS = ['gate.sh'", "CLAUDE_HOOKS = ['stop-gate.sh'")
-    edit('lib/plan.mjs', "'session-start.sh']", "'repo-start.sh']")
+    edit('lib/kit.mjs', "CLAUDE_HOOKS = ['gate.sh'", "CLAUDE_HOOKS = ['stop-gate.sh'")
+    edit('lib/kit.mjs', "'session-start.sh']", "'repo-start.sh']")
     edit('claude/settings.fragment.json', '/.claude/hooks/gate.sh"', '/.claude/hooks/stop-gate.sh"')
     edit('codex/hooks.fragment.json', '/.codex/hooks/session-start.sh"', '/.codex/hooks/repo-start.sh"')
   })

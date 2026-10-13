@@ -13,7 +13,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 ## Skill and agent names
 
 - Domain work: `mattpocock-skills:domain-modeling`, `mattpocock-skills:codebase-design`, `mattpocock-skills:code-review`.
-- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Tracks S, M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`.
+- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Track M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`.
 - Denied in the project, never invoke: `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
 - Acceptance author: `spec-tester`.
 - SDD implementers: `subagent_type: implementer`.
@@ -25,7 +25,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
 1. **Review wave, once, in parallel.** In one message, three Agent calls, all `general-purpose` with `model: opus`. Each reviews the whole branch `main...GATE_SHA`, report only, no fixes, and returns a table: file, line, finding, verdict or severity, reviewer. Never `caveman:cavecrew-*`.
-   - Invoke skill `code-review`, args `high`. No `--fix`.
+   - Invoke skill `code-review`, args `high <feature branch>`: effort `high`, the feature branch as target (no target reviews only the working diff). No `--fix`.
    - Invoke skill `mattpocock-skills:code-review`, fixed point `main`.
    - Invoke skill `security-review`.
 2. **Triage, controller.** SKILL.md Stage 6.
