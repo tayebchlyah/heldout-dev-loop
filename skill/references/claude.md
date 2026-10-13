@@ -24,10 +24,12 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
-1. **Review wave, once, in parallel.** In one message, three Agent calls, all `general-purpose` with `model: opus`. Each reviews the whole branch `main...GATE_SHA`, report only, no fixes, and returns a table: file, line, finding, verdict or severity, reviewer. Never `caveman:cavecrew-*`.
+1. **Review wave, once, in parallel.** In one message, four Agent calls, all `general-purpose` with `model: opus`. Three reviewers: native `code-review`, Pocock (Pocock = two desks: spec, standards), `security-review`. Each call works in the feature worktree on `main...GATE_SHA`: whole branch, report only, no fixes. Returns a table: file, line, finding, verdict or severity, reviewer. Never `caveman:cavecrew-*`.
    - Invoke skill `code-review`, args `high <feature branch>`: effort `high`, the feature branch as target (no target reviews only the working diff). No `--fix`.
-   - Invoke skill `mattpocock-skills:code-review`, fixed point `main`.
-   - Invoke skill `security-review`.
+   - Invoke skill `security-review`. Review `git diff main...GATE_SHA` from the feature worktree, not the working tree.
+   - Pocock spec desk: read `mattpocock-skills:code-review` SKILL.md, do its spec desk only, fixed point `main`.
+   - Pocock standards desk: read `mattpocock-skills:code-review` SKILL.md, do its standards desk only, fixed point `main`.
+   - Both desks: direct Agent calls, no nested agents. A desk started inside a subagent reports after its parent hands back.
 2. **Triage, controller.** SKILL.md Stage 6.
 3. **Fix wave.** One `implementer` per file cluster, one at a time, for the Act On defects. Each passes `scripts/devloop.py gate --summary`.
 4. **Acceptance loop.** SKILL.md Stage 6. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. Failures only when `commands.acceptance_failed` is absent: `pytest tests/acceptance --lf -q --tb=no`, `npx playwright test tests/acceptance --last-failed`. Every run after a fix repeats the stack reset first. Stale image run does not count.
