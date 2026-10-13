@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { parseArgs } from '../lib/args.mjs'
 import { buildConfig, writeConfig } from '../lib/config.mjs'
 import { buildPlan, runPlan, assertLinkSource } from '../lib/plan.mjs'
-import { runInit } from '../lib/project.mjs'
+import { runInit, runUpgrade } from '../lib/project.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -20,7 +20,6 @@ const USAGE = `usage: dev-loop <command> [flags]
 const notImplemented = (name) => () => {
   throw new Error(`${name} is not implemented`)
 }
-const runUpgrade = notImplemented('upgrade')
 const runUninstallGlobal = notImplemented('uninstall-global')
 
 async function main() {

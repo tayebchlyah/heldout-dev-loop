@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { assertValidToml } from './helpers.mjs'
 import { buildKit } from '../lib/kit.mjs'
 import { compareManifest } from '../lib/manifest.mjs'
-import { readVersion, writeKit } from '../lib/project.mjs'
+import { readVersion, releaseNotes, writeKit } from '../lib/project.mjs'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
@@ -370,4 +370,215 @@ test('init backs up an existing dev-loop.local.json before replacing it', () => 
   const backups = readdirSync(repo).filter((name) => name.startsWith('dev-loop.local.json.bak-'))
   assert.equal(backups.length, 1)
   assert.equal(readFileSync(join(repo, backups[0]), 'utf8'), '{"notes": "old"}\n')
+})
+
+// A copy of the package with another version, so that upgrade has something
+// to move to. `edit` changes the copy before it is used.
+function fakePackage(nextVersion, edit = () => {}) {
+  const root = mkdtempSync(join(tmpdir(), 'dev-loop-pkg-'))
+  for (const name of ['bin', 'lib', 'skill', 'claude', 'codex', 'package.json']) {
+    cpSync(join(packageRoot, name), join(root, name), { recursive: true })
+  }
+  const pkg = readJson(join(root, 'package.json'))
+  writeFileSync(join(root, 'package.json'), `${JSON.stringify({ ...pkg, version: nextVersion }, null, 2)}\n`)
+  edit(root)
+  return root
+}
+
+function run(pkg, command, repo, home, args) {
+  return execFileSync('node', [join(pkg, 'bin', 'install.mjs'), command, ...args], {
+    cwd: repo,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    env: { ...process.env, HOME: home },
+  })
+}
+
+const upgrade = (repo, home, args = [], pkg = packageRoot) => run(pkg, 'upgrade', repo, home, args)
+
+function upgradeFails(repo, home, args, pattern, pkg = packageRoot) {
+  assert.throws(() => upgrade(repo, home, args, pkg), (error) => {
+    assert.equal(error.status, 1)
+    assert.match(error.stdout + error.stderr, pattern)
+    return true
+  })
+}
+
+// Every path under the repository (except .git) with its content or link
+// target, so a test can prove a run changed nothing.
+function snapshot(repo, relative = '') {
+  const result = {}
+  for (const name of readdirSync(join(repo, relative)).sort()) {
+    if (relative === '' && name === '.git') continue
+    const path = relative ? `${relative}/${name}` : name
+    const stat = lstatSync(join(repo, path))
+    if (stat.isSymbolicLink()) result[path] = `link:${readlinkSync(join(repo, path))}`
+    else if (stat.isDirectory()) Object.assign(result, { [path]: 'dir' }, snapshot(repo, path))
+    else result[path] = `${stat.mode}:${readFileSync(join(repo, path), 'utf8')}`
+  }
+  return result
+}
+
+test('upgrade to a newer package sets the new version in dev-loop.json and MANIFEST.json, and keeps other keys', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  const devLoop = readJson(join(repo, 'dev-loop.json'))
+  writeFileSync(join(repo, 'dev-loop.json'), `${JSON.stringify({ ...devLoop, extra: { keep: true } }, null, 2)}\n`)
+
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.deepEqual(readJson(join(repo, 'dev-loop.json')), { version: '99.0.0', harnesses: ['claude'], extra: { keep: true } })
+  const manifest = readJson(join(repo, '.dev-loop/MANIFEST.json'))
+  assert.equal(manifest.version, '99.0.0')
+  assert.deepEqual(compareManifest(repo, manifest), { changed: [], missing: [] })
+  assert.equal(existsSync(join(repo, '.codex')), false, 'upgrade reads the harnesses from dev-loop.json')
+  assert.doesNotMatch(output, /## \[/, 'no CHANGELOG.md in the package prints no notes')
+})
+
+test('upgrade replaces a kit file the package changed, with no backup', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  const pkg = fakePackage('99.0.0', (root) => writeFileSync(join(root, 'skill/SKILL.md'), 'new skill\n'))
+  upgrade(repo, home, [], pkg)
+  assert.equal(readFileSync(join(repo, '.agents/skills/dev-loop/SKILL.md'), 'utf8'), 'new skill\n')
+  assert.equal(readdirSync(join(repo, '.agents/skills/dev-loop')).some((name) => name.includes('.bak')), false)
+})
+
+test('upgrade deletes a kit file the package dropped, and the folder it leaves empty', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => {
+    mkdirSync(join(root, 'skill/extra/deep'), { recursive: true })
+    writeFileSync(join(root, 'skill/extra/deep/notes.md'), 'notes\n')
+  })
+  run(older, 'init', repo, home, ['--yes', '--harness=claude'])
+  assert.ok(existsSync(join(repo, '.agents/skills/dev-loop/extra/deep/notes.md')))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(existsSync(join(repo, '.agents/skills/dev-loop/extra')), false)
+  assert.ok(existsSync(join(repo, '.agents/skills/dev-loop/SKILL.md')))
+  assert.equal('.agents/skills/dev-loop/extra/deep/notes.md' in readJson(join(repo, '.dev-loop/MANIFEST.json')).files, false)
+})
+
+test('upgrade refuses a local edit to a kit file, names it, and writes nothing', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  writeFileSync(join(repo, '.claude/agents/implementer.md'), 'mine\n')
+  const before = snapshot(repo)
+  const pkg = fakePackage('99.0.0', (root) => writeFileSync(join(root, 'skill/SKILL.md'), 'new skill\n'))
+  upgradeFails(repo, home, [], /\.claude\/agents\/implementer\.md[\s\S]*move the change to dev-loop first/, pkg)
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade refuses when the user deleted a kit file, as for an edit', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  rmSync(join(repo, '.dev-loop/hooks/codex/gate.sh'))
+  const before = snapshot(repo)
+  upgradeFails(repo, home, [], /\.dev-loop\/hooks\/codex\/gate\.sh[\s\S]*move the change to dev-loop first/, fakePackage('99.0.0'))
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade --force replaces an edited kit file and restores a deleted one', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const original = readFileSync(join(repo, '.claude/agents/implementer.md'), 'utf8')
+  writeFileSync(join(repo, '.claude/agents/implementer.md'), 'mine\n')
+  rmSync(join(repo, '.dev-loop/hooks/codex/gate.sh'))
+  upgrade(repo, home, ['--force'], fakePackage('99.0.0'))
+  assert.equal(readFileSync(join(repo, '.claude/agents/implementer.md'), 'utf8'), original)
+  assert.ok(lstatSync(join(repo, '.dev-loop/hooks/codex/gate.sh')).mode & 0o111)
+  assert.deepEqual(compareManifest(repo, readJson(join(repo, '.dev-loop/MANIFEST.json'))), { changed: [], missing: [] })
+})
+
+test('upgrade to an older package refuses, names git revert, and writes nothing', () => {
+  const { home, repo } = setup()
+  run(fakePackage('99.1.0'), 'init', repo, home, ['--yes', '--harness=claude'])
+  const before = snapshot(repo)
+  upgradeFails(repo, home, [], /git revert/, fakePackage('99.0.10'))
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade compares versions as three numbers', () => {
+  const { home, repo } = setup()
+  run(fakePackage('99.9.0'), 'init', repo, home, ['--yes', '--harness=claude'])
+  upgrade(repo, home, [], fakePackage('99.10.0'))
+  assert.equal(readJson(join(repo, 'dev-loop.json')).version, '99.10.0')
+})
+
+test('upgrade with the same version applies the kit again', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const before = snapshot(repo)
+  const output = upgrade(repo, home)
+  assert.match(output, /0 changed/)
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade with no dev-loop.json refuses and names init', () => {
+  const { home, repo } = setup()
+  upgradeFails(repo, home, [], /init/)
+  assert.deepEqual(entries(repo), [])
+})
+
+test('upgrade --dry-run writes nothing', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const before = snapshot(repo)
+  const pkg = fakePackage('99.0.0', (root) => writeFileSync(join(root, 'skill/SKILL.md'), 'new skill\n'))
+  const output = upgrade(repo, home, ['--dry-run'], pkg)
+  assert.match(output, /dry run, nothing written/)
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade refuses a symlinked .codex folder that leads out of the repository, and writes nothing', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const outside = join(mkdtempSync(join(tmpdir(), 'dev-loop-outside-')), 'codex')
+  renameSync(join(repo, '.codex'), outside)
+  symlinkSync(outside, join(repo, '.codex'))
+  const before = snapshot(outside)
+  upgradeFails(repo, home, [], /\.codex/, fakePackage('99.0.0'))
+  assert.deepEqual(snapshot(outside), before)
+})
+
+test('upgrade prints the release notes of the package CHANGELOG.md', () => {
+  const { home, repo } = setup()
+  run(fakePackage('99.0.0'), 'init', repo, home, ['--yes', '--harness=claude'])
+  const pkg = fakePackage('99.2.0', (root) => writeFileSync(join(root, 'CHANGELOG.md'), [
+    '# Changelog', '', '## [99.2.0] - 2026-10-13', '', '- two', '', '## [v99.1.0]', '', '- one', '', '## [99.0.0]', '', '- zero', '',
+  ].join('\n')))
+  const output = upgrade(repo, home, [], pkg)
+  assert.match(output, /- two/)
+  assert.match(output, /- one/)
+  assert.doesNotMatch(output, /- zero/)
+})
+
+test('releaseNotes returns the sections after the old version, up to and including the new one', () => {
+  const changelog = [
+    '# Changelog',
+    '',
+    '## [Unreleased]',
+    '',
+    '- later',
+    '',
+    '## [v1.6.0] - 2026-11-01',
+    '',
+    '- six',
+    '',
+    '## [1.5.1] - 2026-10-20',
+    '',
+    '- five one',
+    '',
+    '## [v1.5.0] - 2026-10-13',
+    '',
+    '- five',
+    '',
+    '## [1.4.0] - 2026-09-01',
+    '',
+    '- four',
+    '',
+  ].join('\n')
+  assert.equal(releaseNotes(changelog, '1.4.0', '1.5.1'), '## [1.5.1] - 2026-10-20\n\n- five one\n\n## [v1.5.0] - 2026-10-13\n\n- five')
+  assert.equal(releaseNotes(changelog, '1.5.0', '1.6.0'), '## [v1.6.0] - 2026-11-01\n\n- six\n\n## [1.5.1] - 2026-10-20\n\n- five one')
+  assert.equal(releaseNotes(changelog, '1.5.1', '1.5.1'), '')
+  assert.equal(releaseNotes(changelog, '1.4.0', '1.10.0'), releaseNotes(changelog, '1.4.0', '1.6.0'))
 })
