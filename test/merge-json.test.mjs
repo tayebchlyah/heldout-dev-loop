@@ -59,6 +59,15 @@ test('mergeSettings handles a missing file and keeps other top-level keys', () =
   assert.equal(JSON.parse(second.text).model, 'opus')
 })
 
+test('mergeSettings adds a missing env variable and keeps the value the user set', () => {
+  const current = JSON.stringify({ env: { A: 'mine', OTHER: 'x' } })
+  const result = mergeSettings(current, { ...fragment, env: { A: '0', B: '0' } })
+  assert.deepEqual(JSON.parse(result.text).env, { A: 'mine', OTHER: 'x', B: '0' })
+  assert.ok(result.added.includes('env B=0'))
+  assert.ok(!result.added.some((entry) => entry.startsWith('env A')))
+  assert.equal(JSON.parse(mergeSettings(null, fragment).text).env, undefined)
+})
+
 test('mergeSettings on an already merged file reports no addition', () => {
   const first = mergeSettings(null, fragment)
   const second = mergeSettings(first.text, fragment)

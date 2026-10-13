@@ -84,7 +84,9 @@ test('the fragments merge into the project files with project commands', () => {
   const settings = actions[0]
   const claude = JSON.parse(settings.rewrite(readFileSync(settings.source, 'utf8')))
   assert.equal(claude.hooks.Stop[0].hooks[0].command, `${CLAUDE}gate.sh"`)
-  assert.equal(claude.permissions.deny.length, 3)
+  assert.equal(claude.permissions.deny.length, 6)
+  assert.ok(claude.permissions.deny.includes('Agent(caveman:cavecrew-reviewer)'))
+  assert.deepEqual(claude.env, { ENABLE_STOP_REVIEW: '0', ENABLE_COMMIT_REVIEW: '0', SG_PUSH_SWEEP: '0' })
 
   const hooks = actions[1]
   const raw = readFileSync(hooks.source, 'utf8')

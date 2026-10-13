@@ -34,7 +34,7 @@ Both must pass before any commit. `.github/workflows/ci.yml` runs both on every 
 | `.claude/skills/dev-loop` | link to `../../.agents/skills/dev-loop` | link |
 | `.claude/agents/`, `.codex/agents/` | subagents | kit |
 | `.codex/rules/dev-loop.rules` | Codex command rules | kit |
-| `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml` | hook entries, deny rules, permission tables | merge |
+| `.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml` | hook entries, deny rules (incl. the Claude repo contract: 3 caveman agent denies), `env` (`ENABLE_STOP_REVIEW`, `ENABLE_COMMIT_REVIEW`, `SG_PUSH_SWEEP` = `0`, never overriding a user value), permission tables | merge |
 
 Upgrade: `npx github:tchlyah/dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tchlyah/dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither.
 
