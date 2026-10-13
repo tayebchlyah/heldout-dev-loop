@@ -1,6 +1,6 @@
 ---
 name: dev-loop
-description: Use at the start of any coding session, and after finishing any task, in a repo whose AGENTS.md declares a vault_notes path. Detects the current stage from repo and vault state, runs that one stage, stops.
+description: Use at the start of any coding session, and after finishing any task, in a repo with dev-loop.json at its root (or, until 1.6, an AGENTS.md that declares vault_notes). Detects the current stage from repo and notes state, runs that one stage, stops.
 ---
 
 # Dev loop
@@ -15,10 +15,7 @@ Select one harness route before detecting the stage:
 
 Run `scripts/check_setup.py --harness claude|codex --repo .`. Stage 0 owns any failure. Do not infer Codex readiness from Claude files, or Claude readiness from Codex files.
 
-Read `vault_notes:` from repo AGENTS.md. Specs and plans live there, never in repo.
-Read the vault root from `vault` in `~/.agents/dev-loop.config.json`. `$VAULT` below means that value.
-
-Full design, gates and failure modes: vault note `Software/Agent Instructions/Agent Development Workflow.md`.
+Run `scripts/notes_path.py`. `$NOTES` below means its output. Specs and plans live in the notes folder. It fails: Stage 0 owns it.
 
 ## Detect the stage
 
@@ -27,10 +24,10 @@ Run in order. First failing check is the stage.
 | Check | Stage |
 |---|---|
 | `test -f CONTEXT.md` fails, or `git rev-parse HEAD` fails | 0 Bootstrap |
-| No spec in `$VAULT/<vault_notes>/specs/` for requested work | 1 Frame |
+| No spec in `$NOTES/specs/` for requested work | 1 Frame |
 | Spec exists, frontmatter `review_status` not `approved` | 2 Spec |
 | Spec approved, `tests/acceptance/` has no test for it | 3 Acceptance |
-| Acceptance exists, no plan in `$VAULT/<vault_notes>/plans/` | 4 Plan |
+| Acceptance exists, no plan in `$NOTES/plans/` | 4 Plan |
 | Plan exists, ledger `.superpowers/sdd/<plan>/progress.md` incomplete | 5 Build |
 | Ledger complete, acceptance not yet green on this branch | 6 Feature gate |
 | Feature gate passed, branch not integrated | 7 Ship |
@@ -53,6 +50,7 @@ Layout: PyPA src layout, `uv init --package`. One stack: `src/<pkg>/` + `tests/u
 Write `scripts/gate.sh`: runs only the stack `git diff --name-only HEAD` touched. python: ruff, pyright, `pytest tests/unit`. go: `go vet`, `go test ./...`. ui: biome, `tsc --noEmit`, `vitest run`. Never E2E.
 `ui` in stacks: `docker-compose` test profile with seeded fixtures, for Stage 6 E2E. Else skip.
 Mutation setup per stack, as [references/mutation.md](references/mutation.md) section Setup states. `check_setup.py` verifies it.
+Notes path: ask for it, the folder must exist. Write `{"notes": "<path>"}` to `dev-loop.local.json` in the main worktree. Add it to `.gitignore` when `git check-ignore` says it is not ignored.
 Done when `scripts/gate.sh` blocks a deliberately broken unit test.
 
 ## 1 Frame
@@ -61,10 +59,10 @@ Done when brainstorming has named the path out loud.
 
 ## 2 Spec
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
-Continue `superpowers:brainstorming`. Spec to `$VAULT/<vault_notes>/specs/`.
+Continue `superpowers:brainstorming`. Spec to `$NOTES/specs/`.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
-Supersedes: read the earlier specs in `$VAULT/<vault_notes>/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
+Supersedes: read the earlier specs in `$NOTES/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
 Stop when the user approves. Do not let brainstorming invoke writing-plans: acceptance tests (Stage 3) come before the plan.
 Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`.
 
@@ -76,14 +74,14 @@ Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, on
 Stop. Tell the user to run `/clear` before Stage 4.
 
 ## 4 Plan
-Invoke `superpowers:writing-plans`. Plan to `$VAULT/<vault_notes>/plans/`.
+Invoke `superpowers:writing-plans`. Plan to `$NOTES/plans/`.
 Plan never references `tests/acceptance/`. Choose subagent-driven at handoff.
 
 ## 5 Build
 Invoke `superpowers:subagent-driven-development`. Work in the feature worktree: SDD's worktree step reuses it and creates none.
 Use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
 Ledger gets `## Discoveries` section, one line per surprise.
-Deferred findings go to vault project note `## Deferred`, not to ledger.
+Deferred findings go to the project note `## Deferred` in the notes folder, not to ledger.
 
 ## 6 Feature gate
 Run the selected route's feature gate. Order: review wave, triage, fix wave, acceptance loop. Each step is one real skill, agent, tool, or command invocation. Report six lines at the end, one per gate step (acceptance, simplify, code review, spec review, mutation, security): pass or fail. Complete only when all six pass.

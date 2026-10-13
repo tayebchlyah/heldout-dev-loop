@@ -2,13 +2,13 @@
 
 ## Purpose
 
-dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. One stage per invocation: detect repo/vault state, run that one stage, stop.
+dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. One stage per invocation: detect repo and notes state, run that one stage, stop.
 
 ## Repo map
 
-- `bin/install.mjs`: installer entry point. Commands: `init`, `upgrade`, `uninstall-global`, `--global` (the 1.4 flow, kept for 1.5.x only). No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--link` (only with `--global`), `--harness=claude|codex|both`, `--notes=<path>` (`init`), `--vault=<path>`. Also reads `DEV_LOOP_VAULT`.
+- `bin/install.mjs`: installer entry point. Commands: `init`, `upgrade`, `uninstall-global`, `--global` (the 1.4 flow, kept for 1.5.x only). No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--link` (only with `--global`), `--harness=claude|codex|both`, `--notes=<path>` (`init`).
 - `lib/`: installer internals: `args.mjs` (flag parsing), `config.mjs` (config load/write), `fsops.mjs` (copy/link/backup), `merge-json.mjs`, `merge-lines.mjs`, `merge-toml.mjs` (per-format merge routing), `plan.mjs` (builds the install plan), `kit.mjs` (project kit file list, path rewrite), `manifest.mjs` (`.dev-loop/MANIFEST.json` write and compare), `project.mjs` (`init` and `upgrade`), `uninstall.mjs` (`uninstall-global`).
-- `skill/SKILL.md` — the dev-loop skill payload. `skill/references/` — harness-specific reference docs (`claude.md`, `codex.md`). `skill/scripts/check_setup.py` — post-install verifier. `skill/scripts/test_dev_loop.py` — skill regression suite.
+- `skill/SKILL.md`: the dev-loop skill payload. `skill/references/`: harness-specific reference docs (`claude.md`, `codex.md`). `skill/scripts/check_setup.py`: post-install verifier. `skill/scripts/notes_path.py`: notes path resolver. `skill/scripts/test_dev_loop.py`: skill regression suite.
 - `claude/` — Claude Code payload: agents, hooks, `settings.fragment.json` (merged into `~/.claude/settings.json`).
 - `codex/` — Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (line-merged only, never copied or linked: it holds the user's own allowlist).
 - `test/*.test.mjs` — installer suite (Node's built-in test runner).
@@ -43,7 +43,7 @@ MANIFEST rule: kit files are never edited in a project. Change dev-loop, then ru
 | Target | Content | How |
 | --- | --- | --- |
 | `~/.agents/skills/dev-loop/` | skill, harness refs, scripts | copy or link |
-| `~/.agents/dev-loop.config.json` | vault path (nullable), user name, harnesses | write |
+| `~/.agents/dev-loop.config.json` | user name, harnesses | write |
 | `~/.claude/skills/dev-loop` | link to the skill | link |
 | `~/.claude/agents/`, `~/.claude/hooks/` | subagents, shell walls | copy or link |
 | `~/.claude/settings.json` | hook entries + 3 deny rules | merge |
@@ -54,7 +54,7 @@ MANIFEST rule: kit files are never edited in a project. Change dev-loop, then ru
 
 Backups: every file the installer replaces goes to `<file>.bak-<timestamp>`. A replaced skill goes to `<root>/backups/skills/<name>.bak-<timestamp>` instead (for example `~/.agents/backups/skills/`), because a backup inside a skills folder is discovered as a second skill. It never removes or reorders an entry it did not add. On a `config.toml` table collision (user already declares a table the fragment also declares), the user's table wins and the installer prints one line naming it.
 
-Vault: may be unset. Then `~/.agents/dev-loop.config.json` has `vault: null`, the installer says so, and `check_setup.py` reports it as a plain top-level failure line, not under "User actions required": `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>`.
+Notes path: `skill/scripts/notes_path.py` resolves it (`DEV_LOOP_NOTES`, `dev-loop.local.json` in the worktree then the main worktree, `notes` in `dev-loop.json`, then the 1.4 fallback `vault` + `vault_notes:`). Unset: `check_setup.py` reports a plain top-level failure line, not under "User actions required": `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`. A re-run keeps an existing `vault` key in the config.
 
 ## Verify after install
 

@@ -10,9 +10,9 @@ npx github:tchlyah/dev-loop#<tag> init
 
 The repository is private, so this works only once your Git or SSH credentials reach it (`git ls-remote git@github.com:tchlyah/dev-loop.git` should succeed). Otherwise npx fails to fetch it.
 
-Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`), `--vault=<path>` (`--global`), `--link` (works only with `--global`).
+Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`), `--link` (works only with `--global`).
 
-The vault can also come from `DEV_LOOP_VAULT`. A re-run keeps the vault already in `~/.agents/dev-loop.config.json`, so only an explicit new value replaces it; `--vault=` with an empty value is that explicit answer for "no vault" and clears it. If no vault is set, `~/.agents/dev-loop.config.json` gets `vault: null`, the installer says so, and `check_setup.py` reports it as a top-level failure: `missing vault in dev-loop config: <path>. Rerun npx github:tchlyah/dev-loop#<tag> --global --vault=<path>`.
+`check_setup.py` reports a repo with no notes path as a top-level failure: `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`.
 
 ## Commands
 
@@ -34,7 +34,7 @@ The sections below describe the `--global` flow.
 | Target | Content |
 | --- | --- |
 | `~/.agents/skills/dev-loop/` | the skill, its harness references and its scripts |
-| `~/.agents/dev-loop.config.json` | vault path, user name, harnesses |
+| `~/.agents/dev-loop.config.json` | user name, harnesses |
 | `~/.claude/skills/dev-loop` | link to the skill |
 | `~/.claude/agents/`, `~/.claude/hooks/` | the subagents and the shell walls |
 | `~/.claude/settings.json` | hook entries and three deny rules, merged |
