@@ -1378,6 +1378,65 @@ class ProjectSetupCheckerTests(unittest.TestCase):
                         result.stdout,
                     )
 
+    def edit_codex_config(self, old: str, new: str) -> None:
+        config = self.repo / ".codex" / "config.toml"
+        text = config.read_text()
+        self.assertIn(old, text)
+        write(config, text.replace(old, new))
+
+    def assert_codex_failure(self, line: str) -> None:
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"- {line}\n", result.stdout)
+
+    def test_codex_legacy_sandbox_mode_fails(self) -> None:
+        self.init("codex")
+        self.edit_codex_config('default_permissions = "dev-workspace"\n',
+                               'default_permissions = "dev-workspace"\nsandbox_mode = "workspace-write"\n')
+        self.assert_codex_failure("legacy sandbox_mode disables permission-profile enforcement")
+
+    def test_codex_missing_env_filesystem_deny_fails(self) -> None:
+        self.init("codex")
+        self.edit_codex_config('"**/.env.*" = "deny"\n', "")
+        self.assert_codex_failure("missing Codex filesystem deny: **/.env.*")
+
+    def test_codex_missing_implementer_acceptance_wall_fails(self) -> None:
+        self.init("codex")
+        self.edit_codex_config('"tests/acceptance/**" = "deny"\n', "")
+        self.assert_codex_failure("missing Codex role deny in dev-implementer: tests/acceptance/**")
+
+    def test_codex_missing_push_prompt_rule_fails(self) -> None:
+        self.init("codex")
+        write(
+            self.repo / ".codex" / "rules" / "dev-loop.rules",
+            'prefix_rule(pattern=["git", "reset", "--hard"], decision="forbidden")\n',
+        )
+        self.assert_codex_failure('missing git push prompt: decision="prompt"')
+
+    def test_codex_missing_agent_toml_fails(self) -> None:
+        self.init("codex")
+        path = self.repo / ".codex" / "agents" / "security-reviewer.toml"
+        path.unlink()
+        self.assert_codex_failure(f"missing {path}")
+
+    def test_codex_missing_stop_hook_event_fails(self) -> None:
+        self.init("codex")
+        path = self.repo / ".codex" / "hooks.json"
+        hooks = json.loads(path.read_text())
+        del hooks["hooks"]["Stop"]
+        write(path, json.dumps(hooks))
+        self.assert_codex_failure("missing Codex hook event: Stop")
+
+    def test_claude_missing_env_glob_deny_fails(self) -> None:
+        self.init("claude")
+        path = self.repo / ".claude" / "settings.json"
+        settings = json.loads(path.read_text())
+        settings["permissions"]["deny"].remove("Read(./.env.*)")
+        write(path, json.dumps(settings))
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("- missing Claude deny: Read(./.env.*)\n", result.stdout)
+
 class ManifestCheckTests(unittest.TestCase):
     CHANGED = ". Move the change to dev-loop, then run upgrade"
 
