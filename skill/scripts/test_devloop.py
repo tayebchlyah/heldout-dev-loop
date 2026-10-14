@@ -525,7 +525,7 @@ class CiWaitTests(unittest.TestCase):
 
     def test_no_checks_yet_retries_until_checks_exist(self) -> None:
         module = load_devloop()
-        module.CHECKS_RETRY_SECONDS = 0.05
+        setattr(module, "CHECKS_RETRY_SECONDS", 0.05)
         env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "FAKE_GH": "late", "FAKE_GH_DIR": str(self.root)}
         args = argparse.Namespace(pr=None, timeout=1.0)
         with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()) as out:
