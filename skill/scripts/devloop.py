@@ -84,7 +84,9 @@ def find_plan(notes: Path, spec: Path) -> Path | None:
 def rebasing(worktree: Path) -> str | None:
     """The branch a rebase in progress in the worktree rewrites ("" when unknown), or None with no rebase."""
     git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
-    for name in ("rebase-merge", "rebase-apply") if git_dir else ():
+    if git_dir is None:
+        return None
+    for name in ("rebase-merge", "rebase-apply"):
         state = Path(git_dir) / name
         if state.is_dir():
             head = state / "head-name"
@@ -197,7 +199,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
     lines = cherry(repo, known) if known else None
     if lines and not any(line.startswith("+") for line in lines):
         return at("shipped", f"git cherry origin/main {known} lists no + commit", "none")
-    if worktree is None:
+    if worktree is None or branch is None:  # A worktree always comes with its branch.
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
     if not has_acceptance(worktree, slug):
         return at(3, f"no acceptance file for {slug}", "Stage 3 Acceptance: dispatch spec-tester")
