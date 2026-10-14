@@ -7,10 +7,10 @@ Read this file when the nightly mutation job runs, or when Stage 0 sets up mutat
 Mutation is a nightly job on `main`, not a gate step. From the repository root, run one command:
 
 ```
-BASE=$(git rev-list -1 --before='24 hours ago' main); python3 .agents/skills/dev-loop/scripts/select_mutants.py --base "${BASE:-$(git rev-list --max-parents=0 main)}" --head main --run
+BASE=$(git rev-list -1 --before='24 hours ago' main); python3 .agents/skills/dev-loop/scripts/select_mutants.py --base "${BASE:-$(git rev-list --max-parents=0 main | tail -n 1)}" --head main --run
 ```
 
-Base: `main` 24 h ago. No commit that old (a repo younger than a day): the root commit.
+Base: `main` 24 h ago. No commit that old (a repo younger than a day): the root commit (the oldest when `main` has several: one base, one value).
 
 The script computes the selection from the diff `<base>..main`, runs the tools on that selection only, and prints the report. `--base` defaults to the merge base with `main`. The same diff always gives the same selection, so the report is comparable between runs.
 
@@ -25,7 +25,7 @@ Exit codes:
 Stage 0 writes this workflow for a new repo with CI only, for example `.github/workflows/mutation.yml`. An existing repo gets none.
 
 - Trigger: a schedule, cron once a day, on `main`.
-- One job. Check out `main` with full history, install the dev dependencies, then run the command of [Run](#run): `BASE=$(git rev-list -1 --before='24 hours ago' main); python3 .agents/skills/dev-loop/scripts/select_mutants.py --base "${BASE:-$(git rev-list --max-parents=0 main)}" --head main --run`.
+- One job. Check out `main` with full history, install the dev dependencies, then run the command of [Run](#run): `BASE=$(git rev-list -1 --before='24 hours ago' main); python3 .agents/skills/dev-loop/scripts/select_mutants.py --base "${BASE:-$(git rev-list --max-parents=0 main | tail -n 1)}" --head main --run`.
 - Save its stdout to a file. Upload that report as an artifact, pass or fail.
 - Fail the job on survivors: a report line `functions that need one unit test: <n>` with `n` above 0. Exit code `2` or any other non-zero code fails it too.
 
