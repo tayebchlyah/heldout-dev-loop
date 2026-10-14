@@ -186,6 +186,8 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
     def at(stage: int | str, check: str, next_: str) -> dict:
         return result(stage, check, next_, slug, track, worktree)
 
+    if fields.get("shipped"):
+        return at("shipped", f"spec {spec.name} has shipped: {fields['shipped']}", "none")
     if fields.get("review_status") != "approved":
         return at(2, f"spec {spec.name} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
     known = branch or remote_branch(repo, slug)
