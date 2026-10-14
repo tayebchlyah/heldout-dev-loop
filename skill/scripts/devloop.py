@@ -174,7 +174,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
             git_dir = git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
             marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
             if marker is None or not marker.is_file():
-                return result(6, "Track S: no review-done marker in the git dir", "Stage 6 review wave and triage, "
+                return result(6, "Track S: no review-done marker in the git dir", "Stage 6 review wave, triage, fix wave, "
                               "then write the review-done marker", slug, "S", worktree)
             return result(7, f"Track S: {branch} has commits not on origin/main", "Stage 7 Ship", slug, "S", worktree)
         return result("shipped", f"git cherry origin/main {branch} lists no + commit", "none", slug, "S", worktree)
