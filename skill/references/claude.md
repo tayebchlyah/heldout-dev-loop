@@ -31,7 +31,7 @@ Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
    - Pocock standards desk: read `mattpocock-skills:code-review` SKILL.md, do its standards desk only, fixed point `main`.
    - Both desks: direct Agent calls, no nested agents. A desk started inside a subagent reports after its parent hands back.
 2. **Triage, controller.** SKILL.md Stage 6.
-3. **Fix wave.** One `implementer` per file cluster, one at a time, for the Act On defects. Each passes `scripts/devloop.py gate --summary`.
+3. **Fix wave.** One `implementer` per file cluster, one at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
 4. **Acceptance loop.** SKILL.md Stage 6. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. Failures only when `commands.acceptance_failed` is absent: `pytest tests/acceptance --lf -q --tb=no`, `npx playwright test tests/acceptance --last-failed`. Every run after a fix repeats the stack reset first. Stale image run does not count.
 
 No `/verify` step. `/verify` is a real bundled skill but user-invoked only; the model cannot call it. Playwright E2E is the model's live check. The user may type `/verify` after the gate.

@@ -155,6 +155,7 @@ class StatusTests(Sandbox):
         out = self.status()
         self.assertEqual(out["stage"], 6)
         self.assertIn("review-done", out["next"])
+        self.assertIn("fix wave, then write the review-done marker", out["next"])
         marker = self.repo / ".git" / "dev-loop" / "review-done"
         put(marker, git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual(self.status()["stage"], 7)
@@ -758,6 +759,21 @@ class ReviewWaveContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, self.stage)
 
+    def test_every_defect_is_fixed(self) -> None:
+        self.assertNotIn("Defect past the cap", self.stage)
+        self.assertIn("Every defect is fixed, no cap", self.stage)
+        self.assertIn("More than 5 defects: fix all, say so in the final report", self.stage)
+        self.assertIn("at most 5 optional non-defect items", self.stage)
+        self.assertIn("passes when its defects are fixed", self.stage)
+        for name in ["claude.md", "codex.md"]:
+            with self.subTest(path=name):
+                self.assertIn("Act On list: every defect", (REFERENCES / name).read_text())
+
+    def test_track_s_marker_comes_after_the_fix_wave(self) -> None:
+        line = next(line for line in self.stage.splitlines() if line.startswith("Track S:"))
+        self.assertIn("After the fix wave: `mkdir -p", line)
+        self.assertLess(line.index("fix wave only"), line.index("review-done"))
+
     def test_gate_writes_ledger_line(self) -> None:
         self.assertIn("`Feature gate: green at <sha>`", self.stage)
         self.assertIn("progress.md", self.stage)
@@ -816,8 +832,8 @@ class TracksContractTests(unittest.TestCase):
     def test_track_s_has_no_spec_and_no_plan(self) -> None:
         self.assertIn("Track S: no spec, no plan", stage_text(1))
         self.assertIn("Track S: no plan, no executor", stage_text(5))
-        self.assertIn("then the Stage 6 review wave and triage, then Stage 7", stage_text(5))
-        self.assertIn("Stage 1, Stage 5, Stage 6 review wave and triage only, Stage 7", self.header)
+        self.assertIn("then the Stage 6 review wave, triage and fix wave, then Stage 7", stage_text(5))
+        self.assertIn("Stage 1, Stage 5, Stage 6 review wave, triage and fix wave only, Stage 7", self.header)
         self.assertIn("after green CI and the Stage 6 review wave", stage_text(7))
         self.assertNotIn("Tracks S and M", self.skill)
         self.assertNotIn("Tracks S, M", (REFERENCES / "claude.md").read_text())
