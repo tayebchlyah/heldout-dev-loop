@@ -134,4 +134,4 @@ PR body through the route's `pr` skill. It names the door (one-way or two-way) a
 `scripts/devloop.py ci wait`. `state` `fail`: read `failed_job` and `first_error`, fix, push, wait again. Three red rounds: stop, report.
 Merge rule, `merge` in `dev-loop.json`. `merge: auto` (default): after green CI and the Stage 6 review wave, merge a Track S or M PR that is a two-way door with a small blast radius. A one-way door or Track L waits for the user. `merge: human`: every PR waits for the user.
 Open security item in `## Deferred` blocks a release. Never merge a release PR or push a tag while one is open.
-Merge by `gh pr merge --rebase`, never a merge commit. Report once (autonomy grant).
+Merge by `gh pr merge --rebase`, never a merge commit. Right after the merge: write `shipped: <merge date>` (`YYYY-MM-DD`) and `pr: <PR url>` into the spec frontmatter in the notes folder. Track S: no spec, skip. Report once (autonomy grant).

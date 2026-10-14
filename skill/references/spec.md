@@ -10,6 +10,8 @@ type: spec
 feature: <slug>
 track: S|M|L
 review_status: draft
+shipped:
+pr:
 ---
 
 # <Title>
@@ -37,7 +39,7 @@ Every earlier `## Acceptance oracle` line this spec contradicts, quoted, each wi
 Every decision taken without the user. Session B adds to it.
 ```
 
-`feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves.
+`feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
 
 Seam rule. Source: Matt Pocock skills v1.3.1, `skills/engineering/to-spec/SKILL.md` line 15 (https://github.com/mattpocock/skills), copied verbatim:
 
