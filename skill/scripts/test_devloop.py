@@ -230,6 +230,20 @@ class StatusTests(Sandbox):
         self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
         self.assertEqual(self.status()["features"], [])
 
+    def test_shipped_field_wins_over_an_open_branch(self) -> None:
+        self.spec(shipped="2026-10-01", pr="https://example.invalid/pr/1")
+        wt = self.worktree()
+        self.commit(wt, "widget.py", "WIDGET = 1\n")
+        out = self.status(cwd=wt)
+        self.assertEqual(out["stage"], "shipped")
+        self.assertIn("shipped: 2026-10-01", out["check"])
+        self.assertEqual(self.status()["features"], [])
+
+    def test_empty_shipped_field_keeps_it_open(self) -> None:
+        self.spec(shipped="", pr="")
+        self.worktree()
+        self.assertEqual(self.status("--feature", "widget")["stage"], 3)
+
     def test_remote_feature_branch_keeps_it_open(self) -> None:
         self.spec()
         self.commit(self.repo, "tests/acceptance/api/test_widget_flow.py", "def test_flow():\n    pass\n")
@@ -678,7 +692,7 @@ class SkillStackContractTests(unittest.TestCase):
     def test_spec_reference_holds_builder_check_and_notices(self) -> None:
         spec = (REFERENCES / "spec.md").read_text()
         for value in [
-            "feature:", "track:", "review_status:", "## Acceptance oracle", "Supersedes", "## Assumptions",
+            "feature:", "track:", "review_status:", "\nshipped:\npr:\n", "## Acceptance oracle", "Supersedes", "## Assumptions",
             "the ideal number is one",
             "You've been handed a design document",
             "nothing important left",
@@ -835,6 +849,8 @@ class TracksContractTests(unittest.TestCase):
             "git fetch origin", "git rebase origin/main", "scripts/devloop.py gate --summary",
             "scripts/devloop.py ci wait", "`merge: auto`", "`merge: human`", "two-way door", "blast radius",
             "Track L", "gh pr merge --rebase", "security item in `## Deferred`",
+            "Right after the merge: write `shipped: <merge date>`", "`pr: <PR url>`",
+            "into the spec frontmatter in the notes folder", "Track S: no spec, skip",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, stage)
@@ -885,7 +901,7 @@ class SpecGapContractTests(unittest.TestCase):
         agents = (REPO_ROOT / "AGENTS.md").read_text()
         for value in ["`status [--repo <path>] [--feature <slug>]`", "`logged [--name <name>] -- <cmd>`",
                       "`error` with `message`", "`features`: each spec not shipped",
-                      "An approved spec with neither is left out"]:
+                      "An approved spec with neither is left out", "`shipped: <YYYY-MM-DD>`", "`pr: <url>`"]:
             with self.subTest(value=value):
                 self.assertIn(value, agents)
 
