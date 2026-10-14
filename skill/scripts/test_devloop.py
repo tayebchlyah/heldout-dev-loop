@@ -276,12 +276,28 @@ class StatusTests(Sandbox):
     def test_main_lists_open_features(self) -> None:
         self.spec(review="draft")
         self.spec(name="20261003 Gadget.md", feature="gadget")
+        git(self.repo, "branch", "feat/gadget")
         out = self.status()
         self.assertEqual(out["stage"], 1)
         self.assertEqual(
             out["features"],
             [{"feature": "widget", "stage": 2, "worktree": None}, {"feature": "gadget", "stage": 3, "worktree": None}],
         )
+
+    def test_main_leaves_out_an_approved_spec_with_no_branch_and_no_worktree(self) -> None:
+        self.spec(name="20250101 Old Feature.md", feature="F1")
+        self.spec(name="20261003 Draft.md", feature="draft", review="draft")
+        self.spec(name="20261004 Remote.md", feature="remote")
+        git(self.repo, "update-ref", "refs/remotes/origin/feat/remote", "HEAD")
+        self.spec()
+        wt = self.worktree()
+        self.assertEqual(
+            self.status()["features"],
+            [{"feature": "widget", "stage": 3, "worktree": str(wt)},
+             {"feature": "draft", "stage": 2, "worktree": None},
+             {"feature": "remote", "stage": 3, "worktree": None}],
+        )
+        self.assertEqual(self.status("--feature", "F1")["stage"], 3)
 
     def test_slug_from_title(self) -> None:
         self.assertEqual(load_devloop().slug_from_title("20250901 Fix: the API, v2.md"), "fix-the-api-v2")
@@ -868,7 +884,8 @@ class SpecGapContractTests(unittest.TestCase):
     def test_agents_md_documents_the_cli_as_built(self) -> None:
         agents = (REPO_ROOT / "AGENTS.md").read_text()
         for value in ["`status [--repo <path>] [--feature <slug>]`", "`logged [--name <name>] -- <cmd>`",
-                      "`error` with `message`", "`features`: each spec not shipped"]:
+                      "`error` with `message`", "`features`: each spec not shipped",
+                      "An approved spec with neither is left out"]:
             with self.subTest(value=value):
                 self.assertIn(value, agents)
 

@@ -238,7 +238,11 @@ def detect(repo: Path, feature: str | None, notes: Path) -> dict:
                 return detect_feature(repo, head.rsplit("/", 1)[1], notes)
             return result("rebase", "rebase in progress", REBASE)
         features = []
-        for slug in dict.fromkeys(name for name, _ in specs(notes)):
+        for slug, spec in dict(specs(notes)).items():
+            # Approved, no branch, no worktree: left out, no stage computed. `--feature <slug>` still resolves it.
+            if (frontmatter(spec).get("review_status") == "approved"
+                    and feature_checkout(repo, slug) == (None, None) and remote_branch(repo, slug) is None):
+                continue
             found = detect_feature(repo, slug, notes)
             if found["stage"] != "shipped":
                 features.append({"feature": slug, "stage": found["stage"], "worktree": found["worktree"]})
