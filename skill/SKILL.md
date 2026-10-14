@@ -22,7 +22,7 @@ Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md` (the name before Po
 
 Stage 1 sizes the work:
 
-- Track S: one session, no spec, no plan, branch `<prefix>/<slug>`. Stage 1, Stage 5, Stage 6 review wave and triage only, Stage 7. `devloop status` reports Track S Stage 6 until the `review-done` marker exists.
+- Track S: one session, no spec, no plan, branch `<prefix>/<slug>`. Stage 1, Stage 5, Stage 6 review wave, triage and fix wave only, Stage 7. `devloop status` reports Track S Stage 6 until the `review-done` marker exists, written after the fix wave.
 - Track M: Session A, then Session B. Build `superpowers:executing-plans`.
 - Track L: Session A, then Session B. Build `superpowers:subagent-driven-development`. Spec adds threat model. Never auto-merged.
 
@@ -100,7 +100,7 @@ Plan never references `tests/acceptance/`. At handoff: Track M inline execution,
 Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or one seam, the brief names each file it changes, the task needs no ruling from another task. A task that fails: split it before Stage 5.
 
 ## 5 Build
-Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then the Stage 6 review wave and triage, then Stage 7.
+Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then the Stage 6 review wave, triage and fix wave, then Stage 7.
 Tracks M and L: executor by spec `track:`. Track M: `superpowers:executing-plans`. Track L: `superpowers:subagent-driven-development`. Work in the feature worktree: the executor's worktree step reuses it and creates none.
 Skip the executor's final whole-branch review: the Stage 6 review wave replaces it. Keep its workspace: the ledger stays.
 Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. A test that needs a running stack: `commands.stack_up`, else `docker compose --profile test up -d --wait`. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
@@ -111,11 +111,11 @@ Deferred findings go to the project note `## Deferred` in the notes folder, not 
 ## 6 Feature gate
 Start: `git fetch origin`, `git rebase origin/main`. Fresh stack: `commands.stack_reset`, else `docker compose --profile test up -d --build --wait` when the repo has a compose test profile. `GATE_SHA` = HEAD. `commands.<key>` = key of `commands` in `dev-loop.json`.
 Then run the selected route's feature gate. Order: review wave, triage, fix wave, acceptance loop. Each step is one real skill, agent, tool, or command invocation.
-Track S: review wave, triage and fix wave only. No acceptance loop, no ledger line. After the wave and triage: `mkdir -p "$(git rev-parse --git-dir)/dev-loop"`, then `git rev-parse HEAD > "$(git rev-parse --git-dir)/dev-loop/review-done"`. Then Stage 7.
+Track S: review wave, triage and fix wave only. No acceptance loop, no ledger line. After the fix wave: `mkdir -p "$(git rev-parse --git-dir)/dev-loop"`, then `git rev-parse HEAD > "$(git rev-parse --git-dir)/dev-loop/review-done"`. Then Stage 7.
 Review wave: the route's three reviewers, whole branch against `main`. Review wave runs once per feature, before any acceptance run, all reviewers pinned to `GATE_SHA`. Never rerun it. A fix never reruns a reviewer.
-Triage, controller. Merge the tables, dedupe by file and line. Defect = CONFIRMED finding and one of: (a) finding that quotes a spec `## Acceptance oracle` line or a glossary invariant; (b) correctness finding; (c) security finding. Act On list: defects only, at most 5, lead's judgment picks. Defect past the cap: `## Deferred`. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Same standards finding in two or more places: `## Gardener`, marked lint candidate. Every other finding: `## Gardener`, not fixed, no test.
+Triage, controller. Merge the tables, dedupe by file and line. Defect = CONFIRMED finding and one of: (a) finding that quotes a spec `## Acceptance oracle` line or a glossary invariant; (b) correctness finding; (c) security finding. Every defect is fixed, no cap. More than 5 defects: fix all, say so in the final report, sign the slice was too large. Act On list: every defect, plus at most 5 optional non-defect items, lead's judgment picks. Quote the line or the verdict in the fix commit. (b) and (c) get a unit test, never an acceptance test. Same standards finding in two or more places: `## Gardener`, marked lint candidate. Every other non-defect finding: `## Gardener`, not fixed, no test.
 `## Gardener` in the project note: standards findings and non-defect items, triaged weekly. `## Deferred` holds at most 20 open items. At the cap, Stage 1 triages before it frames new work. Open security item in `## Deferred` blocks a release.
-Fix wave: one `implementer` per file cluster, one at a time, for the Act On defects. Each passes `scripts/devloop.py gate --summary` (`exit` 0). Red: read `failures` and `log` from its JSON.
+Fix wave: one `implementer` per file cluster, one at a time, for the Act On list. Each passes `scripts/devloop.py gate --summary` (`exit` 0). Red: read `failures` and `log` from its JSON.
 Acceptance loop. Run: `commands.acceptance`, else the route's runner lines. Full run once, then fix rounds on failures only (`commands.acceptance_failed`, else `pytest --lf`, `npx playwright test --last-failed`), then one final full run. Fix until green against the frozen suite.
 Before each rerun, classify every failure as product, test or environment, with evidence. Product: fix round through `implementer`. Test: the held-out test contradicts the spec: `spec-tester` fixes it, quoting the spec line. Environment: stack, data, tool version or race (a read before the write it asserts, a resource shared with a parallel test, a tool version CI and local disagree on). Fix it once at its root, confirm under CI load. Repo flaky-test rules, when `AGENTS.md` points at them, say how. Never rerun to green: a rerun, a retry or a raised global timeout is not a fix.
 Progress guard: every round must reduce the failing count. Two rounds without a reduction, or one test red after three rounds: stop, report, ask the user. Never ship red, never defer a red acceptance test.
@@ -124,7 +124,7 @@ Escaped bug: the user adds the oracle line to spec first, `spec-tester` adds the
 Red acceptance test of an earlier feature whose line this spec does not supersede: a regression. It goes through the fix loop like any red test. If the user rules it a conflict nobody listed, it takes the escaped bug path.
 Unplanned environment, deployment or infra gap discovered by the gate: new slice with its own spec. Never a fix round.
 Deployment or infra work explicitly named in the approved spec or plan stays in the current slice. Implement and verify it normally; do not reclassify planned work as a gap.
-End: append `Feature gate: green at <sha>` to the ledger `.superpowers/sdd/<plan basename>/progress.md`. `<sha>` = HEAD after the final full run (`GATE_SHA` when no fix landed). Report four lines: acceptance, then each of the three reviewers (passes when its Act On defects are fixed), pass or fail. Complete only when all four pass.
+End: append `Feature gate: green at <sha>` to the ledger `.superpowers/sdd/<plan basename>/progress.md`. `<sha>` = HEAD after the final full run (`GATE_SHA` when no fix landed). Report four lines: acceptance, then each of the three reviewers (passes when its defects are fixed), pass or fail. Complete only when all four pass.
 Never invoke `superpowers:verification-before-completion`. The shell gate owns routine verification.
 
 ## 7 Ship
