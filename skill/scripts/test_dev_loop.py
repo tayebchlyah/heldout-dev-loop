@@ -1593,7 +1593,7 @@ class MutationContractTests(unittest.TestCase):
     def test_nightly_base_falls_back_to_the_root_commit(self) -> None:
         line = ("BASE=$(git rev-list -1 --before='24 hours ago' main); "
                 "python3 .agents/skills/dev-loop/scripts/select_mutants.py "
-                '--base "${BASE:-$(git rev-list --max-parents=0 main)}" --head main --run')
+                '--base "${BASE:-$(git rev-list --max-parents=0 main | tail -n 1)}" --head main --run')
         for heading in ["## Run", "## Nightly CI"]:
             with self.subTest(section=heading):
                 self.assertIn(line, test_devloop.section(SKILL_ROOT / "references" / "mutation.md", heading))
