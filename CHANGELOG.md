@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.0] - 2026-10-13
+## [2.0.0] - 2026-10-14
 
 ### ♻️ Refactors & Cleanup
 
@@ -16,6 +16,14 @@
 
 - [`1185d29`](https://github.com/tchlyah/dev-loop/commit/1185d2907540ebcfdb9346ec09fc1a21a1cd6505) - **cli**: devloop status, logged, gate --summary and ci wait, commands map
 
+- [`6f4ee58`](https://github.com/tchlyah/dev-loop/commit/6f4ee58b5ce000a7c6cb61470d2efa9033be9d95) - **cli**: Mark a spec shipped by its shipped: frontmatter field, written at Stage 7
+
+
+
+### 🎨 UI/UX & Accessibility
+
+- [`5bc7d69`](https://github.com/tchlyah/dev-loop/commit/5bc7d695de6aada0a2292decd3b7c8370cc46972) - **cli**: Narrow optional values so devloop.py and its tests pass pyright basic
+
 
 
 ### 🐛 Bug Fixes
@@ -29,6 +37,16 @@
 - [`47c2e21`](https://github.com/tchlyah/dev-loop/commit/47c2e2127b14c75e21db62eb7f6218cd492cd52f) - **hooks**: Run the mapped commands.gate in the Stop and SubagentStop gate
 
 - [`b6e70a5`](https://github.com/tchlyah/dev-loop/commit/b6e70a5f5bda8cd5a0f1aaf8d1b3cc8a5e280a4a) - **skill**: Run the Pocock desks and every reviewer in the feature worktree
+
+- [`df04e2c`](https://github.com/tchlyah/dev-loop/commit/df04e2c4b8582099494b7717464d4858f6553035) - **skill**: Fix every defect, write the Track S review marker after the fix wave
+
+- [`12942d3`](https://github.com/tchlyah/dev-loop/commit/12942d30a6c9d6b3c3cf041c95152d579406c6df) - **mutation**: Fall back to the root commit when main has no commit 24 hours old
+
+- [`d8cfc62`](https://github.com/tchlyah/dev-loop/commit/d8cfc622f55ad7be26bf78fd3e07d42a630c1811) - **cli**: List only open specs on main: unapproved, or with a branch or worktree
+
+- [`bb53cf8`](https://github.com/tchlyah/dev-loop/commit/bb53cf81d983ddd023b05a854c6199cc33b62903) - **cli**: Compare feature slugs without case: spec, branch, --feature, acceptance file
+
+- [`59f82ed`](https://github.com/tchlyah/dev-loop/commit/59f82ed1074920a13e325f5de24ce00c177d96eb) - **mutation**: Take one root commit when main has several
 
 
 
@@ -47,6 +65,14 @@
 - [`4bca392`](https://github.com/tchlyah/dev-loop/commit/4bca3923d8d74846cb21e5772fea14af5d7ac4ca) - **changelog**: Regenerate CHANGELOG.md for v2.0.0
 
 - [`931439d`](https://github.com/tchlyah/dev-loop/commit/931439d29ebaa1bb2253678f87766cf14300d824) - **skill**: Describe the nightly CI workflow, the app CLI skeleton and stack_up
+
+- [`2895fbb`](https://github.com/tchlyah/dev-loop/commit/2895fbbe14568313e6bfd327f3e48882edf2beb2) - **changelog**: Regenerate CHANGELOG.md for v2.0.0 after the review wave fixes
+
+
+
+### 🧪 Tests & Quality
+
+- [`13437ee`](https://github.com/tchlyah/dev-loop/commit/13437eeeee0c99d87cba20a77e0f531146e6d681) - **check**: Cover the live Codex and Claude checks on project-mode fixtures
 
 
 ## [1.5.0] - 2026-10-13
