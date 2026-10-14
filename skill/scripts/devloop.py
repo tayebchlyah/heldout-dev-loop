@@ -72,7 +72,7 @@ def frontmatter(path: Path) -> dict[str, str]:
 def specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
     for path in sorted((notes / "specs").glob("*.md")):
-        found.append((frontmatter(path).get("feature") or slug_from_title(path.name), path))
+        found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
     return found
 
 
@@ -94,17 +94,17 @@ def rebasing(worktree: Path) -> str | None:
 
 def feature_checkout(repo: Path, slug: str) -> tuple[Path | None, str | None]:
     """The worktree and the branch `<prefix>/<slug>`. A branch with no worktree gives (None, branch).
-    A worktree mid-rebase is detached: its branch comes from the rebase state."""
+    A worktree mid-rebase is detached: its branch comes from the rebase state. Branch case is ignored."""
     worktree: Path | None = None
     for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
         if line.startswith("worktree "):
             worktree = Path(line[len("worktree "):])
-        elif line.startswith("branch refs/heads/") and line.endswith(f"/{slug}"):
+        elif line.startswith("branch refs/heads/") and line.lower().endswith(f"/{slug}"):
             return worktree, line[len("branch refs/heads/"):]
-        elif line == "detached" and worktree and (rebasing(worktree) or "").endswith(f"/{slug}"):
+        elif line == "detached" and worktree and (rebasing(worktree) or "").lower().endswith(f"/{slug}"):
             return worktree, rebasing(worktree)
     for branch in (git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads") or "").splitlines():
-        if branch.endswith(f"/{slug}"):
+        if branch.lower().endswith(f"/{slug}"):
             return None, branch
     return None, None
 
@@ -130,7 +130,7 @@ def has_acceptance(worktree: Path, slug: str) -> bool:
 def remote_branch(repo: Path, slug: str) -> str | None:
     """`origin/<prefix>/<slug>`, or None."""
     remotes = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin") or ""
-    return next((ref for ref in remotes.splitlines() if ref.endswith(f"/{slug}") and ref.count("/") >= 2), None)
+    return next((ref for ref in remotes.splitlines() if ref.lower().endswith(f"/{slug}") and ref.count("/") >= 2), None)
 
 
 def shipped_without_branch(repo: Path, slug: str) -> bool:
@@ -158,6 +158,7 @@ DEFAULT_BRANCH = "main"
 
 
 def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
+    slug = slug.lower()  # The one slug normalization: spec names, branches and acceptance paths compare in lower case.
     worktree, branch = feature_checkout(repo, slug)
     if worktree is not None and rebasing(worktree) is not None:
         return result("rebase", f"rebase in progress in {worktree}", REBASE, slug, None, worktree)

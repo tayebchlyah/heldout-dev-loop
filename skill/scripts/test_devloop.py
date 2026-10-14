@@ -313,6 +313,18 @@ class StatusTests(Sandbox):
         )
         self.assertEqual(self.status("--feature", "F1")["stage"], 3)
 
+    def test_slug_comparison_ignores_case(self) -> None:
+        self.spec(feature="F1", review="draft")
+        self.assertEqual(self.status("--feature", "f1")["stage"], 2)
+        self.spec(feature="F1")
+        path = self.root / "wt-f1"
+        git(self.repo, "worktree", "add", "-q", "-b", "feat/f1", str(path), "origin/main")
+        out = self.status(cwd=path)
+        self.assertEqual((out["stage"], out["feature"], out["track"]), (3, "f1", "M"))
+        put(path / "tests" / "acceptance" / "api" / "test_f1.py", "def test_flow():\n    pass\n")
+        self.assertEqual(self.status("--feature", "F1")["stage"], 4)
+        self.assertEqual(self.status()["features"], [{"feature": "f1", "stage": 4, "worktree": str(path.resolve())}])
+
     def test_slug_from_title(self) -> None:
         self.assertEqual(load_devloop().slug_from_title("20250901 Fix: the API, v2.md"), "fix-the-api-v2")
 
