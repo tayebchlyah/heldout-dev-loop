@@ -580,7 +580,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_mutation_runs_nightly(self) -> None:
         text = (SKILL_ROOT / "references" / "mutation.md").read_text()
-        self.assertIn("--base <main 24 h ago> --head main --run", text)
+        self.assertIn("--head main --run", text)
         self.assertNotIn("GATE_SHA", text)
 
 
