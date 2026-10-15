@@ -216,11 +216,13 @@ def take(lock, wait: float) -> bool:
 
 def drain(queue: Path) -> list[tuple[str, Path]]:
     """The queued events in order, as (event, resolved cwd); the queue file is deleted. Bad lines are dropped."""
+    taken = queue.with_name(f".{queue.name}.{os.getpid()}.drain")
     try:
-        text = queue.read_text()
-        queue.unlink()
+        os.replace(queue, taken)  # An append after the rename lands in a new queue file.
     except FileNotFoundError:
         return []
+    text = taken.read_text()
+    taken.unlink()
     events = []
     for line in text.splitlines():
         try:
