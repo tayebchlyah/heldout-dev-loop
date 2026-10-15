@@ -241,6 +241,12 @@ def kit_version(top: Path) -> str:
         return "0.0.0"
 
 
+def board_text(kit: str) -> str:
+    """`Dev Loop Board.md` as the kit template renders it for version `kit`."""
+    text = TEMPLATE.read_text().replace("/*VERSION*/", kit, 1)
+    return text.replace("/*RENDER_JS*/", TEMPLATE.with_name("render.js").read_text().rstrip("\n"), 1)
+
+
 def board_note(top: Path, folder: Path, payload: dict) -> None:
     """D24: write `Dev Loop Board.md` when it is missing or its frontmatter version is older than the kit version."""
     kit = kit_version(top)
@@ -250,10 +256,8 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
         if have is not None and store.version_key(have) >= store.version_key(kit):
             payload["board_note"] = str(path)
             return
-    text = TEMPLATE.read_text().replace("/*VERSION*/", kit, 1)
-    text = text.replace("/*RENDER_JS*/", TEMPLATE.with_name("render.js").read_text().rstrip("\n"), 1)
     try:
-        store.write_file(folder, store.BOARD_NOTE, text)
+        store.write_file(folder, store.BOARD_NOTE, board_text(kit))
     except store.LinkError:
         payload["skipped"].append(skip("link"))
         return
