@@ -1251,7 +1251,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
     def trust_codex(self) -> None:
         main = self.main_checkout()
         lines = [f'[projects."{main}"]', 'trust_level = "trusted"']
-        for event in ["session_start", "pre_tool_use", "stop", "subagent_stop"]:
+        for event in ["session_start", "user_prompt_submit", "pre_tool_use", "stop", "subagent_stop"]:
             lines += [f'[hooks.state."{main}/.codex/hooks.json:{event}:0:0"]', 'trusted_hash = "sha256:test"']
         write(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         for name in check_setup.CODEX_SKILLS:
