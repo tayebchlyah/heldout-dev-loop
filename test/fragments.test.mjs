@@ -33,6 +33,14 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
         },
       ],
     },
+    {
+      matcher: 'startup|resume|clear|compact',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/board.sh session-start', timeout: 5 }],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.UserPromptSubmit, [
+    { hooks: [{ type: 'command', command: '~/.claude/hooks/board.sh prompt', timeout: 5 }] },
   ])
 
   assert.deepEqual(fragment.hooks.PreToolUse, [
@@ -105,6 +113,30 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
           command: '{{HOME}}/.codex/hooks/session-start.sh',
           timeout: 5,
           statusMessage: 'Checking repository workflow',
+        },
+      ],
+    },
+    {
+      matcher: 'startup|resume|clear|compact',
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/board.sh session-start',
+          timeout: 5,
+          statusMessage: 'Updating dev-loop board',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.UserPromptSubmit, [
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/board.sh prompt',
+          timeout: 5,
+          statusMessage: 'Updating dev-loop board',
         },
       ],
     },

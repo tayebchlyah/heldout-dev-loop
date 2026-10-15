@@ -12,6 +12,17 @@
             "statusMessage": "Checking repository workflow"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/board.sh session-start",
+            "timeout": 5,
+            "statusMessage": "Updating dev-loop board"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -47,6 +58,18 @@
             "command": "{{HOME}}/.codex/hooks/gate.sh",
             "timeout": 600,
             "statusMessage": "Running repository gate"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/board.sh prompt",
+            "timeout": 5,
+            "statusMessage": "Updating dev-loop board"
           }
         ]
       }
