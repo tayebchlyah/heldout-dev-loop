@@ -515,7 +515,9 @@ test('upgrade from 1.5 leaves one SessionStart entry', () => {
   const older = fakePackage('98.0.0', (root) => {
     const path = join(root, 'claude/settings.fragment.json')
     const fragment = readJson(path)
+    fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
     fragment.hooks.SessionStart[0].hooks[0].command = SESSION_START_1_5
+    delete fragment.hooks.UserPromptSubmit
     writeFileSync(path, JSON.stringify(fragment, null, 2))
   })
   run(older, 'init', repo, home, ['--yes', '--harness=claude'])
@@ -829,7 +831,7 @@ function renamedHooksPackage(nextVersion) {
     renameSync(join(root, 'claude/hooks/gate.sh'), join(root, 'claude/hooks/stop-gate.sh'))
     renameSync(join(root, 'codex/hooks/session-start.sh'), join(root, 'codex/hooks/repo-start.sh'))
     edit('lib/kit.mjs', "CLAUDE_HOOKS = ['gate.sh'", "CLAUDE_HOOKS = ['stop-gate.sh'")
-    edit('lib/kit.mjs', "'session-start.sh']", "'repo-start.sh']")
+    edit('lib/kit.mjs', "'session-start.sh',", "'repo-start.sh',")
     edit('claude/settings.fragment.json', '/.claude/hooks/gate.sh"', '/.claude/hooks/stop-gate.sh"')
     edit('codex/hooks.fragment.json', '/.codex/hooks/session-start.sh"', '/.codex/hooks/repo-start.sh"')
   })
@@ -910,4 +912,25 @@ test('upgrade with no hook change leaves the hook files byte-identical', () => {
   for (const dir of ['.claude', '.codex']) {
     assert.equal(readdirSync(join(repo, dir)).some((name) => name.includes('.bak-')), false)
   }
+})
+
+test('upgrade from 2.0.0 adds the board hook entries once', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => {
+    for (const path of ['claude/settings.fragment.json']) {
+      const fragment = readJson(join(root, path))
+      fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
+      delete fragment.hooks.UserPromptSubmit
+      writeFileSync(join(root, path), JSON.stringify(fragment, null, 2))
+    }
+  })
+  run(older, 'init', repo, home, ['--yes', '--harness=claude'])
+  const settings = join(repo, '.claude/settings.json')
+  const board = (file) =>
+    JSON.stringify(readJson(file).hooks).split('board.sh').length - 1
+  assert.equal(board(settings), 0)
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(board(settings), 2)
+  upgrade(repo, home, [], fakePackage('99.0.1'))
+  assert.equal(board(settings), 2)
 })
