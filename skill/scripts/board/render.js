@@ -72,7 +72,7 @@ function renderBoard(features, nowMs, opts) {
   const model = (f) => {
     const done = f.tasks.filter((t) => t.state === "done");
     const doing = f.tasks.find((t) => t.state === "doing");
-    const durs = done.map((t) => ms(t.done) - ms(t.started)).filter((d) => isFinite(d) && d > 0);
+    const durs = done.map((t) => ms(t.done) - ms(t.started)).filter((d) => isFinite(d) && d >= 0);
     const mean = durs.length ? sum(durs) / durs.length : NaN;
     const running = doing && isFinite(ms(doing.started)) ? nowMs - ms(doing.started) : 0;
     // D28: Stage 5 only, from the done tasks.
@@ -171,7 +171,7 @@ function renderBoard(features, nowMs, opts) {
   } else {
     const decs = rows.filter((m) => m.f.decisions.length);
     const panel = needs.length || decs.length
-      ? `<div class="you-panel"><h2>Needs you</h2><ul>${needs.map((m) => `<li><strong>${esc(m.f.title)}</strong>: ${esc(m.f.waiting)}. Waiting ${dur(nowMs - ms(m.f.updated))}.</li>`).join("")}${decs.map((m) => m.f.decisions.map((d) => `<li><strong>${esc(m.f.title)}</strong> went on with a default: ${esc(d)}</li>`).join("")).join("")}</ul></div>`
+      ? `<div class="you-panel"><h2>Needs you</h2><ul>${needs.map((m) => `<li><strong>${esc(m.f.title)}</strong>: ${esc(m.f.waiting)}.</li>`).join("")}${decs.map((m) => m.f.decisions.map((d) => `<li><strong>${esc(m.f.title)}</strong> went on with a default: ${esc(d)}</li>`).join("")).join("")}</ul></div>`
       : "";
     const counts = STAGES.map((_, i) => [i + 1, rows.filter((m) => m.f.stage === i + 1).length]).filter(([, c]) => c)
       .map(([n, c]) => `<span><strong>${c}</strong> in ${label(n)}</span>`).join("");
