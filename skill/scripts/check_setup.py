@@ -76,6 +76,43 @@ def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) ->
     return []
 
 
+def vault_root(notes: Path) -> Path:
+    """D19: the nearest parent of the notes path that holds `.obsidian`, else the notes path."""
+    notes = notes.resolve()
+    return next((p for p in [notes, *notes.parents] if (p / ".obsidian").is_dir()), notes)
+
+
+def dataview_ready(root: Path) -> bool:
+    try:
+        plugins = json.loads((root / ".obsidian" / "community-plugins.json").read_text())
+        data = json.loads((root / ".obsidian" / "plugins" / "dataview" / "data.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(plugins, list) and "dataview" in plugins and isinstance(data, dict) and data.get("enableDataviewJs") is True
+
+
+def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    """D24, D34: user actions for the board note in an Obsidian vault. Nothing when the notes path does not resolve."""
+    try:
+        notes = resolve(repo, os.environ if env is None else env, home)
+    except NotesPathError:
+        return []
+    root = vault_root(Path(notes))
+    actions = []
+    if (root / ".obsidian").is_dir() and not dataview_ready(root):
+        actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
+    if (root / ".git").exists():
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/dev-loop-board/"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+        )
+        if ignored.returncode != 0:
+            actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
+    return actions
+
+
 def check_project_config(repo: Path) -> list[str]:
     """The optional `commands` map and `merge` value of dev-loop.json."""
     failures: list[str] = []
@@ -434,6 +471,7 @@ def main() -> int:
     failures += check_notes(args.home, args.repo)
     failures += check_project_config(args.repo)
     failures += check_mutation(args.repo)
+    action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
 
     if failures or action_groups:
         print(f"{args.harness}: FAIL")
@@ -443,7 +481,7 @@ def main() -> int:
             print()
             print("User actions required (expected manual steps, not install defects):")
             for heading, items in action_groups:
-                print(f"- {heading} ({'; '.join(items)})")
+                print(f"- {heading} ({'; '.join(items)})" if items else f"- {heading}")
         return 1
     print(f"{args.harness}: PASS")
     return 0

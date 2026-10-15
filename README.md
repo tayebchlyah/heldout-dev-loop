@@ -40,6 +40,7 @@ npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global inst
 - `status`: the current stage of the work, with the check that chose it and the next action. On the default branch it lists the open features.
 - `logged -- <cmd>`: runs a long command and writes its full output to a log file under the git folder.
 - `gate --summary`: runs `commands.gate`, else `scripts/gate.sh`, and reports the exit code, the log, the failure lines and the slowest tests.
+- `board`: writes a status note per feature to the `dev-loop-board` folder of the notes folder, writes `Dev Loop Board.md` (needs the Obsidian Dataview plugin with JavaScript queries on), and runs a local page at `http://127.0.0.1:7777/` (`DEVLOOP_BOARD_PORT` sets the port). Hooks run it; `--claim <slug>` shows a new spec at Stage 2. Add `dev-loop-board/` to the vault `.gitignore`: `check_setup.py` reports both.
 - `ci wait`: waits for the checks of the current branch's pull request, and on a failure names the failed job and its first error.
 
 ## Before the first `init` on a machine
