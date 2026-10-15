@@ -81,7 +81,7 @@ Propose the track, S, M or L, with a one-line reason. Track S: no spec, no plan.
 
 ## 2 Spec
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
-Write the spec from [references/spec.md](references/spec.md) to `$NOTES/specs/`. Run its builder check. Track L: its threat model. One-way door: its doubt review.
+Write the spec from [references/spec.md](references/spec.md) to `$NOTES/specs/`. Run its builder check. Then once: `scripts/devloop.py board --claim <slug>`. Track L: its threat model. One-way door: its doubt review.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
 Supersedes: read the earlier specs in `$NOTES/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
@@ -134,4 +134,4 @@ PR body through the route's `pr` skill. It names the door (one-way or two-way) a
 `scripts/devloop.py ci wait`. `state` `fail`: read `failed_job` and `first_error`, fix, push, wait again. Three red rounds: stop, report.
 Merge rule, `merge` in `dev-loop.json`. `merge: auto` (default): after green CI and the Stage 6 review wave, merge a Track S or M PR that is a two-way door with a small blast radius. A one-way door or Track L waits for the user. `merge: human`: every PR waits for the user.
 Open security item in `## Deferred` blocks a release. Never merge a release PR or push a tag while one is open.
-Merge by `gh pr merge --rebase`, never a merge commit. Right after the merge: write `shipped: <merge date>` (`YYYY-MM-DD`) and `pr: <PR url>` into the spec frontmatter in the notes folder. Track S: no spec, skip. Report once (autonomy grant).
+Merge by `gh pr merge --rebase`, never a merge commit. Right after the merge: write `shipped: <merge date>` (`YYYY-MM-DD`) and `pr: <PR url>` into the spec frontmatter in the notes folder. Track S: no spec, skip. Then `git fetch origin`. Report once (autonomy grant).
