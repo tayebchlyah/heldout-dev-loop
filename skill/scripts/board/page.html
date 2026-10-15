@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- dev-loop board page. server.py serves it with render.js inline at RENDER_JS. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>dev-loop board</title>
+<style>
+  html, body { margin: 0; }
+  #app .dlb { min-height: 100vh; border-radius: 0; padding: 28px max(20px, calc((100vw - 1180px) / 2)) 96px; }
+  #err { position: fixed; top: 8px; right: 8px; font: 12px system-ui; color: #fff; background: #b42318; padding: 4px 8px; border-radius: 4px; }
+  #err:empty { display: none; }
+  .themes { position: fixed; bottom: 16px; right: 16px; display: flex; gap: 2px; background: Canvas; color: CanvasText;
+    border: 1px solid GrayText; border-radius: 8px; padding: 3px; font: 600 12px system-ui; z-index: 10; }
+  .themes button { font: inherit; background: none; border: 0; color: inherit; padding: 5px 9px; border-radius: 5px; cursor: pointer; }
+  .themes button:focus-visible { outline: 2px solid CanvasText; }
+  .themes button[aria-pressed="true"] { background: CanvasText; color: Canvas; }
+</style>
+</head>
+<body>
+<div id="app"></div><div id="err" role="status"></div>
+<div class="themes" role="group" aria-label="Theme">
+  <button data-theme="">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button>
+</div>
+<script>
+/*RENDER_JS*/
+let theme = localStorage.getItem("dlb-theme") || "";
+let features = [], here = "", me = "", newerSchema = 0;
+const open = new Set();
+
+function draw() {
+  document.getElementById("app").innerHTML = renderBoard(features, Date.now(), { theme: theme || null, open, here, me, newerSchema });
+  document.querySelectorAll(".themes [data-theme]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.theme === theme)));
+}
+async function tick() {
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    features = data.features; here = data.here; me = data.me; newerSchema = data.newer_schema;
+    document.getElementById("err").textContent = "";
+  } catch (e) {
+    document.getElementById("err").textContent = "Board server not reachable. Run devloop.py board to start it.";
+  }
+  draw();
+}
+document.getElementById("app").addEventListener("toggle", (e) => {
+  const k = e.target.dataset && e.target.dataset.key;
+  if (k) e.target.open ? open.add(k) : open.delete(k);
+}, true);
+document.querySelectorAll(".themes [data-theme]").forEach((b) => b.onclick = () => { theme = b.dataset.theme; localStorage.setItem("dlb-theme", theme); draw(); });
+tick();
+setInterval(tick, 5000);
+</script>
+</body>
+</html>
