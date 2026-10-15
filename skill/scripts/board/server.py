@@ -38,34 +38,45 @@ LOG = Path(tempfile.gettempdir()) / "dev-loop-board.log"
 
 
 class Index:
-    """D21: finds the notes at most once per WALK_EVERY seconds, reads them on every request."""
+    """D21: finds the board folders at most once per WALK_EVERY seconds, lists and reads their notes on every request."""
 
     def __init__(self, roots: list[Path]) -> None:
-        self.roots, self.paths, self.walked = roots, [], float("-inf")
+        self.roots, self.folders, self.walked = roots, [], float("-inf")
         self.lock = threading.Lock()
 
-    def walk(self) -> list[Path]:
-        found: list[Path] = []
+    def walk(self) -> list[str]:
+        found: list[str] = []
         for root in self.roots:
-            for folder, dirs, files in os.walk(root, followlinks=False):
+            for folder, dirs, _ in os.walk(root, followlinks=False):
                 dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(folder, d))]
-                if os.path.basename(folder) != FOLDER:
-                    continue
-                for name in sorted(files):
-                    path = Path(folder) / name
-                    if name.endswith(".md") and not name.startswith(".") and not path.is_symlink():
-                        found.append(path)
-                        if len(found) >= MAX_NOTES:
-                            return found
+                if os.path.basename(folder) == FOLDER:
+                    found.append(folder)
+        return found
+
+    def notes(self, folders: list[str]) -> list[Path]:
+        found: list[Path] = []
+        for folder in folders:
+            if os.path.islink(folder):  # B2: a cached folder swapped for a link is not listed.
+                continue
+            try:
+                names = sorted(os.listdir(folder))
+            except OSError:
+                continue
+            for name in names:
+                path = Path(folder) / name
+                if name.endswith(".md") and not name.startswith(".") and path.is_file() and not path.is_symlink():
+                    found.append(path)
+                    if len(found) >= MAX_NOTES:
+                        return found
         return found
 
     def status(self) -> tuple[list[dict], int]:
         with self.lock:
             if time.monotonic() - self.walked > WALK_EVERY:
-                self.paths, self.walked = self.walk(), time.monotonic()
-            paths = list(self.paths)
+                self.folders, self.walked = self.walk(), time.monotonic()
+            folders = list(self.folders)
         features, newer = [], 0
-        for path in paths:
+        for path in self.notes(folders):
             try:
                 # O_NOFOLLOW: a note swapped for a link after the walk is not read (B2).
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -188,8 +199,8 @@ def ensure(port: int, version: str, roots: list[Path], here: str, me: str) -> di
         stopped = stop(port)
         if stopped["state"] != "stopped":
             return stopped
-        newest = max([version, str(found.get("version"))], key=store.version_key)
-        return start(port, newest, theirs + [r for r in roots if r not in theirs], here, me, "restarted")
+        # D3: the label names the code that runs, this kit's server.py.
+        return start(port, version, theirs + [r for r in roots if r not in theirs], here, me, "restarted")
     except Exception as exc:  # D20: a server error never fails `board`.
         return {"state": "error", "url": url, "message": f"{type(exc).__name__}: {exc}"}
 
