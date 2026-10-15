@@ -83,6 +83,13 @@ BoardShipTests = test_board.BoardShipTests
 BoardServerTests = test_board.BoardServerTests
 BoardHookTests = test_board.BoardHookTests
 
+_board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", SKILL_ROOT / "scripts" / "test_board_robust.py")
+if _board_robust_spec is None or _board_robust_spec.loader is None:
+    raise ImportError("cannot load test_board_robust module")
+test_board_robust = importlib.util.module_from_spec(_board_robust_spec)
+_board_robust_spec.loader.exec_module(test_board_robust)
+BoardRobustTests = test_board_robust.BoardRobustTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
