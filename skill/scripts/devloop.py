@@ -5,6 +5,8 @@
   devloop.py logged [--name NAME] -- CMD...          run CMD, full output to a log file
   devloop.py gate --summary                           run the gate through `logged`, summarize it
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
+  devloop.py board [--repo PATH] [--event E] [--claim SLUG] [--no-serve] [--stop-server]
+                                                      write the status notes of this machine
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -426,6 +428,37 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     return emit(payload, 1)
 
 
+# board
+
+
+def cmd_board(args: argparse.Namespace) -> int:
+    port = os.environ.get("DEVLOOP_BOARD_PORT") or "7777"
+    server = {"state": "disabled", "url": f"http://127.0.0.1:{port}/"}
+    if args.stop_server:
+        return emit({"notes": [], "removed": [], "board_note": None, "skipped": [], "server": server}, 0)
+    repo = Path(args.repo).resolve()
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    hook_cwd = None
+    if args.event:
+        try:
+            cwd = json.loads(sys.stdin.read()).get("cwd")
+        except (ValueError, AttributeError):
+            cwd = None
+        hook_cwd = Path(cwd) if isinstance(cwd, str) and cwd else None
+    # Lazy: the old tests load this file with importlib and must not need the board package.
+    sys.path.insert(0, str(Path(__file__).parent))
+    from board import writer
+
+    code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event, hook_cwd=hook_cwd,
+                               claim=args.claim)
+    if code == 0:
+        payload["server"] = server
+    return emit(payload, code)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -455,6 +488,14 @@ def main() -> int:
     wait.add_argument("--pr", type=int)
     wait.add_argument("--timeout", type=float, default=30, help="minutes")
     wait.set_defaults(run=cmd_ci_wait)
+
+    board = commands.add_parser("board")
+    board.add_argument("--repo", default=".")
+    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-stop"])
+    board.add_argument("--claim")
+    board.add_argument("--no-serve", action="store_true")
+    board.add_argument("--stop-server", action="store_true")
+    board.set_defaults(run=cmd_board)
 
     args = parser.parse_args()
     return args.run(args)
