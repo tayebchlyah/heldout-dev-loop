@@ -5,13 +5,17 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
+import signal
 import subprocess
 import sys
 import threading
 import time
 import unittest
 
-from test_board import DEVLOOP, MACHINE, PROJECT, Board, git, note_name, note_text, put, read_note, snapshot
+from board import server
+from test_board import (DEVLOOP, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put, read_note,
+                        snapshot)
 
 
 class BoardRobustTests(Board):
@@ -173,6 +177,35 @@ class BoardRobustTests(Board):
         self.ok()
         self.assertEqual(self.own_notes(), {})
         self.assertEqual(json.loads(features.read_text()), [])
+
+    def test_new_note_shows_before_the_folder_walk_expires(self) -> None:
+        """D8: folders are cached for 60 s, the .md files of each folder are listed on every request."""
+        note = {"type": "dev-loop-status", "schema": 1, "feature": "alpha"}
+        put(self.board_dir / "a.md", note_text(note))
+        index = server.Index([self.vault])
+        self.assertEqual([f["feature"] for f in index.status()[0]], ["alpha"])
+        put(self.board_dir / "b.md", note_text({**note, "feature": "beta"}))
+        put(self.board_dir / ".c.md", note_text({**note, "feature": "hidden"}))
+        os.symlink(self.board_dir / "a.md", self.board_dir / "d.md")
+        self.assertEqual([f["feature"] for f in index.status()[0]], ["alpha", "beta"])
+
+    def test_restart_carries_this_kit_version(self) -> None:
+        """D3: a newer server without this root is restarted with the version of this kit, the code it runs."""
+        other = self.root / "other-vault"
+        other.mkdir()
+        self.assertEqual(server.start(self.port, "99.0.0", [other], "x", "y", "started")["state"], "started")
+        self.addCleanup(self.stop_port)
+        self.worktree("tiny", prefix="fix")
+        code, out = self.board(serve=True, timeout=90)
+        self.assertEqual((code, out["server"]["state"]), (0, "restarted"), out)
+        found = health(self.port)
+        assert found is not None
+        self.assertEqual(found["version"], VERSION)
+
+    def stop_port(self) -> None:
+        found = health(self.port, timeout=1)
+        if found and isinstance(found.get("pid"), int):
+            os.kill(found["pid"], signal.SIGKILL)
 
 
 if __name__ == "__main__":
