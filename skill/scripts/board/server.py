@@ -23,6 +23,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+if __package__:
+    from . import store
+else:  # Run as a script by `start`: the board folder is sys.path[0].
+    import store
+
 HERE = Path(__file__).resolve().parent
 NAME = "dev-loop board"
 FOLDER = "dev-loop-board"
@@ -30,36 +35,6 @@ MAX_BYTES = 65536
 MAX_NOTES = 500
 WALK_EVERY = 60
 LOG = Path(tempfile.gettempdir()) / "dev-loop-board.log"
-
-
-def root_of(notes: Path) -> Path:
-    """D19: the nearest parent of the notes path that holds `.obsidian`, else the notes path."""
-    notes = notes.resolve()
-    return next((p for p in [notes, *notes.parents] if (p / ".obsidian").is_dir()), notes)
-
-
-def version_key(text: object) -> tuple[int, ...]:
-    try:
-        return tuple(int(part) for part in str(text).split("."))
-    except ValueError:
-        return ()
-
-
-def parse(data: bytes) -> dict | None:
-    """Schema 1 frontmatter, each value JSON. None when any part does not parse or the frontmatter is cut."""
-    try:
-        lines = data.decode().splitlines()
-        if not lines or lines[0] != "---":
-            return None
-        fields = {}
-        for line in lines[1:lines.index("---", 1)]:
-            key, sep, value = line.partition(":")
-            if not sep:
-                return None
-            fields[key.strip()] = json.loads(value.strip())
-        return fields
-    except (UnicodeDecodeError, ValueError):
-        return None
 
 
 class Index:
@@ -95,7 +70,7 @@ class Index:
                 # O_NOFOLLOW: a note swapped for a link after the walk is not read (B2).
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
                 with os.fdopen(fd, "rb") as handle:
-                    fields = parse(handle.read(MAX_BYTES))
+                    fields = store.parse(handle.read(MAX_BYTES))
             except OSError:
                 continue
             if not fields or fields.get("type") != "dev-loop-status":
@@ -208,12 +183,12 @@ def ensure(port: int, version: str, roots: list[Path], here: str, me: str) -> di
         if kind != "board":
             return failure(kind, url, port)
         theirs = [Path(r) for r in found.get("roots") or [] if isinstance(r, str)]
-        if version_key(found.get("version")) >= version_key(version) and all(r in theirs for r in roots):
+        if store.version_key(found.get("version")) >= store.version_key(version) and all(r in theirs for r in roots):
             return {"state": "running", "url": url}
         stopped = stop(port)
         if stopped["state"] != "stopped":
             return stopped
-        newest = max([version, str(found.get("version"))], key=version_key)
+        newest = max([version, str(found.get("version"))], key=store.version_key)
         return start(port, newest, theirs + [r for r in roots if r not in theirs], here, me, "restarted")
     except Exception as exc:  # D20: a server error never fails `board`.
         return {"state": "error", "url": url, "message": f"{type(exc).__name__}: {exc}"}

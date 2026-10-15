@@ -62,21 +62,41 @@ def note_name(machine_id: str, project: str, feature: str) -> str:
     return f"{project}-{feature}-{digest}.md"
 
 
-def read_note(path: Path) -> dict | None:
-    """The frontmatter of a status note, each value JSON. None when any part does not parse."""
+def root_of(notes: Path) -> Path:
+    """D19: the nearest parent of the notes path that holds `.obsidian`, else the notes path."""
+    notes = notes.resolve()
+    return next((p for p in [notes, *notes.parents] if (p / ".obsidian").is_dir()), notes)
+
+
+def version_key(text: object) -> tuple[int, ...]:
     try:
-        lines = path.read_text().splitlines()
+        return tuple(int(part) for part in str(text).split("."))
+    except ValueError:
+        return ()
+
+
+def parse(data: bytes) -> dict | None:
+    """Schema 1 frontmatter, each value JSON. None when any part does not parse or the frontmatter is cut."""
+    try:
+        lines = data.decode().splitlines()
         if not lines or lines[0] != "---":
             return None
-        end = lines.index("---", 1)
         fields = {}
-        for line in lines[1:end]:
+        for line in lines[1:lines.index("---", 1)]:
             key, sep, value = line.partition(":")
             if not sep:
                 return None
             fields[key.strip()] = json.loads(value.strip())
         return fields
-    except (OSError, UnicodeDecodeError, ValueError, IndexError):
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
+def read_note(path: Path) -> dict | None:
+    """The frontmatter of a status note, each value JSON. None when the file cannot be read or does not parse."""
+    try:
+        return parse(path.read_bytes())
+    except OSError:
         return None
 
 
