@@ -5,14 +5,9 @@
 input=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
 board() {
-  cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
-  [ -n "$cwd" ] || return 0
-  top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || return 0
-  cli="$top/.agents/skills/dev-loop/scripts/devloop.py"
-  [ -f "$cli" ] || return 0
   ev=stop
   [ "$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)" = SubagentStop ] && ev=subagent-stop
-  (cd "$cwd" && printf '%s' "$input" | python3 "$cli" board --event "$ev" >/dev/null 2>&1 &)
+  printf '%s' "$input" | sh "$(dirname "$0")/board.sh" "$ev"
 }
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)" = true ] && { board; exit 0; }
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)

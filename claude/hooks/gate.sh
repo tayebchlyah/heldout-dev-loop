@@ -9,14 +9,9 @@
 IN=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
 board() {
-  local cwd top cli ev=stop
-  cwd=$(echo "$IN" | jq -r '.cwd // empty')
-  [ -n "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-.}"
-  top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || return 0
-  cli="$top/.agents/skills/dev-loop/scripts/devloop.py"
-  [ -f "$cli" ] || return 0
+  local ev=stop
   [ "$(echo "$IN" | jq -r '.hook_event_name // empty')" = "SubagentStop" ] && ev=subagent-stop
-  (cd "$cwd" && printf '%s' "$IN" | python3 "$cli" board --event "$ev" >/dev/null 2>&1 &)
+  printf '%s' "$IN" | bash "$(dirname "$0")/board.sh" "$ev"
 }
 [ "$(echo "$IN" | jq -r '.stop_hook_active // false')" = "true" ] && { board; exit 0; }
 cd "${CLAUDE_PROJECT_DIR:-.}" || { board; exit 0; }

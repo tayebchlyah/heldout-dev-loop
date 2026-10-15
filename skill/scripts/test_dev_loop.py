@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 from pathlib import Path
@@ -810,6 +811,79 @@ class ClaudeGateTests(unittest.TestCase):
             (repo / "scripts" / "gate.sh").unlink()
             result = self.hook("gate.sh", repo, {"hook_event_name": "Stop"})
             self.assertIn("mapped scope=changed", json.loads(result.stdout)["reason"])
+
+
+class BoardHookLaunchTests(unittest.TestCase):
+    """D1, D12, O1: how board.sh and gate.sh start `devloop.py board`. Hooks run from a kit layout copy;
+    each repo holds a fake devloop.py that sleeps BOARD_SLEEP seconds, then logs its label, cwd and stdin."""
+
+    FAKE = (
+        "#!/usr/bin/env python3\nimport json, os, sys, time\ndata = sys.stdin.read()\n"
+        "time.sleep(float(os.environ.get('BOARD_SLEEP', '0')))\n"
+        "with open(os.environ['BOARD_TEST_LOG'], 'a') as log:\n"
+        "    log.write(json.dumps({'label': %r, 'cwd': os.getcwd(), 'stdin': data}) + '\\n')\n"
+    )
+    HOOKS = {"claude": CLAUDE_HOOKS, "codex": CODEX_ASSETS / "hooks"}
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.log = self.root / "board.jsonl"
+
+    def repo(self, path: Path, label: str) -> Path:
+        subprocess.run(["git", "init", "-q", str(path)], check=True, stderr=subprocess.DEVNULL)
+        write(path / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py", self.FAKE % label)
+        for harness, source in self.HOOKS.items():
+            target = path / ".dev-loop" / "hooks" / harness
+            target.mkdir(parents=True)
+            for script in source.iterdir():
+                shutil.copy2(script, target / script.name)
+        return path
+
+    def start(self, repo: Path, harness: str, script: str, args: list[str], cwd: Path, sleep: str):
+        payload = {"cwd": str(cwd), "hook_event_name": "Stop", "stop_hook_active": False}
+        env = {**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "BOARD_TEST_LOG": str(self.log), "BOARD_SLEEP": sleep}
+        shell = "bash" if harness == "claude" else "sh"
+        return subprocess.Popen([shell, str(repo / ".dev-loop" / "hooks" / harness / script), *args], cwd=repo,
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True), payload
+
+    def calls(self, count: int, wait: float) -> list[dict]:
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            lines = self.log.read_text().splitlines() if self.log.exists() else []
+            if len(lines) >= count:
+                break
+            time.sleep(0.1)
+        time.sleep(0.5)
+        return [json.loads(line) for line in (self.log.read_text().splitlines() if self.log.exists() else [])]
+
+    def test_d1_o1_hook_returns_while_board_runs(self) -> None:
+        repo = self.repo(self.root / "project", "A")
+        for harness, script, args in [("claude", "board.sh", ["prompt"]), ("claude", "gate.sh", []),
+                                      ("codex", "board.sh", ["prompt"]), ("codex", "gate.sh", [])]:
+            with self.subTest(harness=harness, script=script):
+                self.log.unlink(missing_ok=True)
+                began = time.monotonic()
+                proc, payload = self.start(repo, harness, script, args, repo, "3")
+                out, _ = proc.communicate(json.dumps(payload), timeout=30)
+                elapsed = time.monotonic() - began
+                calls = self.calls(1, 6)
+                self.assertLess(elapsed, 1.5)
+                self.assertEqual((proc.returncode, out), (0, ""))
+                self.assertEqual([c["label"] for c in calls], ["A"])
+
+    def test_d12_claude_hooks_run_the_project_cli_not_the_cwd_one(self) -> None:
+        repo = self.repo(self.root / "project", "A")
+        nested = self.repo(repo / "nested", "B")
+        for script, args in [("board.sh", ["prompt"]), ("gate.sh", [])]:
+            with self.subTest(script=script):
+                self.log.unlink(missing_ok=True)
+                proc, payload = self.start(repo, "claude", script, args, nested, "0")
+                proc.communicate(json.dumps(payload), timeout=30)
+                calls = self.calls(1, 6)
+                self.assertEqual([c["label"] for c in calls], ["A"])
+                self.assertEqual((calls[0]["cwd"], json.loads(calls[0]["stdin"])["cwd"]), (str(nested), str(nested)))
 
 
 class ClaudeGitGuardPushTests(unittest.TestCase):
