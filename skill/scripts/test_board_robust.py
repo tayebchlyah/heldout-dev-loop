@@ -68,6 +68,16 @@ class BoardRobustTests(Board):
                 self.assertIsInstance(payload.get("error"), str)
                 self.assertEqual(path.read_text(), text)
 
+    def test_bad_port_env_reports_error(self) -> None:
+        """Review Focus 5: DEVLOOP_BOARD_PORT that is not a port: exit 0, server.state error with a message."""
+        self.worktree("tiny", prefix="fix")
+        for port in ("abc", "70000"):
+            with self.subTest(port=port):
+                code, payload = self.board(env={**self.env, "DEVLOOP_BOARD_PORT": port}, serve=True)
+                self.assertEqual(code, 0, payload)
+                self.assertEqual(payload["server"]["state"], "error")
+                self.assertTrue(payload["server"].get("message"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
