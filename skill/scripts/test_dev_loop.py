@@ -136,6 +136,69 @@ class NotesCheckTests(unittest.TestCase):
             self.assertEqual(check_setup.check_notes(home, repo, {}), [])
 
 
+class BoardVaultCheckTests(unittest.TestCase):
+    GITIGNORE_LINE = "add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git"
+
+    def setup_vault(self, tmp: str, dataview: bool, js: bool, git: bool, ignore: bool) -> tuple[Path, Path, Path]:
+        home = Path(tmp) / "home"
+        repo = Path(tmp) / "repo"
+        vault = Path(tmp) / "vault"
+        notes = vault / "Project"
+        notes.mkdir(parents=True)
+        write(repo / "dev-loop.json", "{}")
+        write(repo / "dev-loop.local.json", json.dumps({"notes": str(notes)}))
+        (vault / ".obsidian").mkdir()
+        if dataview:
+            write(vault / ".obsidian" / "community-plugins.json", json.dumps(["dataview"]))
+            write(vault / ".obsidian" / "plugins" / "dataview" / "data.json", json.dumps({"enableDataviewJs": js}))
+        if git:
+            subprocess.run(["git", "init", "-q", str(vault)], check=True)
+            if ignore:
+                write(vault / ".gitignore", "dev-loop-board/\n")
+        return home, repo, vault
+
+    def actions(self, **kw: bool) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            home, repo, _ = self.setup_vault(tmp, **kw)
+            return check_setup.check_board_vault(home, repo, {})
+
+    def test_missing_dataview_plugin_names_dataview_and_javascript_queries(self) -> None:
+        lines = self.actions(dataview=False, js=False, git=False, ignore=False)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("Dataview", lines[0])
+        self.assertIn("JavaScript queries", lines[0])
+
+    def test_dataview_without_javascript_queries_is_reported(self) -> None:
+        lines = self.actions(dataview=True, js=False, git=False, ignore=False)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("JavaScript queries", lines[0])
+
+    def test_vault_git_without_the_board_ignore_is_reported(self) -> None:
+        lines = self.actions(dataview=True, js=True, git=True, ignore=False)
+        self.assertEqual(lines, [self.GITIGNORE_LINE])
+
+    def test_ready_vault_has_no_lines(self) -> None:
+        self.assertEqual(self.actions(dataview=True, js=True, git=True, ignore=True), [])
+
+    def test_unresolved_notes_path_has_no_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            write(repo / "dev-loop.json", "{}")
+            self.assertEqual(check_setup.check_board_vault(Path(tmp) / "home", repo, {}), [])
+
+    def test_lines_print_under_user_actions_not_as_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home, repo, _ = self.setup_vault(tmp, dataview=False, js=False, git=True, ignore=False)
+            result = subprocess.run(
+                [sys.executable, str(CHECKER), "--harness", "claude", "--home", str(home), "--repo", str(repo)],
+                capture_output=True, text=True, check=False)
+            head, _, actions = result.stdout.partition("User actions required")
+            self.assertIn("Dataview", actions)
+            self.assertIn(self.GITIGNORE_LINE, actions)
+            self.assertNotIn("Dataview", head)
+            self.assertNotIn(self.GITIGNORE_LINE, head)
+
+
 class UsesDevLoopTests(unittest.TestCase):
     def uses(self, files: dict[str, str]) -> bool:
         with tempfile.TemporaryDirectory() as tmp:
