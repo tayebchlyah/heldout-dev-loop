@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import re
 import sys
 import time
@@ -59,8 +60,9 @@ def section(text: str, heading: str) -> str:
     return found.group(1).strip() if found else ""
 
 
-def tasks(plan: Path | None, ledger: Path | None, before: list, stage5: str | None, now: str) -> list[dict]:
-    """D14: plan headings, done from the ledger at its first sight; the first task not done is `doing`."""
+def tasks(plan: Path | None, ledger: Path | None, before: list, stage5: str | None, now: str,
+          building: bool) -> list[dict]:
+    """D14: plan headings, done from the ledger at its first sight; from Stage 5, the first task not done is `doing`."""
     if plan is None:
         return []
     titles: dict[int, str] = {}
@@ -75,7 +77,7 @@ def tasks(plan: Path | None, ledger: Path | None, before: list, stage5: str | No
     for n in sorted(titles):
         seen = old.get(n, {})
         task: dict = {"n": n, "title": titles[n], "state": "todo"}
-        if n in complete or not doing:
+        if n in complete or (building and not doing):
             started = seen.get("started") or previous_done or stage5
             if started:
                 task["started"] = started
@@ -119,7 +121,7 @@ def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, 
         "track": found["track"] or "",
         "stage": stage,
         "stage_times": times,
-        "tasks": tasks(plan, ledger, before, times.get("5"), now),
+        "tasks": tasks(plan, ledger, before, times.get("5"), now, stage >= 5),
         "waiting": waiting,
         "decisions": [a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else [],
         "assumptions_baseline": baseline,
@@ -140,6 +142,9 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     if dl.git(repo, "rev-parse", "HEAD") is None or not glossary:
         payload["skipped"].append(skip("stage-0"))
         return 0, payload
+    if any((notes / "specs").glob(".*.icloud")):  # D5: an evicted spec would drop claims and notes.
+        payload["skipped"].append(skip("placeholder"))
+        return 0, payload
     specs = dict(dl.specs(notes))
     claim = claim.lower() if claim else None
     if claim and claim not in specs:
@@ -153,21 +158,77 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         return 0, payload
     state = common / "dev-loop"
     state.mkdir(parents=True, exist_ok=True)
+    queue = state / "board-events.jsonl"
     with open(state / "board.lock", "a+") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not take(lock, 10 if claim else 0):
+            if claim:  # D7: a claim is never dropped silently.
+                return 1, {"error": "board lock busy, claim not saved"}
+            if event and hook_cwd:  # D2: the lock holder applies it.
+                line = json.dumps({"event": event, "cwd": str(hook_cwd), "at": time.strftime(TIME, time.gmtime())})
+                fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+                with os.fdopen(fd, "a") as handle:
+                    handle.write(line + "\n")
             payload["skipped"].append(skip("busy"))
             return 0, payload
+        found: dict[str, dict] = {}
+
+        def detect(slug: str) -> dict:
+            if slug not in found:
+                found[slug] = dl.detect_feature(repo, slug, notes)
+            return found[slug]
+
+        # D10: claims. A claim goes when its feature has a worktree here, ships, or has no spec.
+        tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
+        claims_file = state / "board-claims.json"
+        old_claims = read_slugs(claims_file)
+        claims = [c for c in dict.fromkeys([*old_claims, claim] if claim else old_claims)
+                  if c not in tree_slugs and c in specs and detect(c)["stage"] != "shipped"]
+        if claims != old_claims:
+            claims_file.write_text(json.dumps(claims) + "\n")
         folder = notes_real / "dev-loop-board"
         if folder.is_symlink():
             payload["skipped"].append(skip("link"))
             return 0, payload
         folder.mkdir(exist_ok=True)
-        write(dl, repo, notes, home, folder, state, specs, trees, claim, payload, event,
-              hook_cwd.resolve() if event and hook_cwd else None)
+        events = [*drain(queue), *([(event, hook_cwd.resolve())] if event and hook_cwd else [])]
+        while True:
+            write(dl, repo, notes, home, folder, state, specs, trees, claims, detect, payload, events)
+            events = drain(queue)  # D2: events queued during this write.
+            if not events:
+                break
+        payload["notes"] = list(dict.fromkeys(payload["notes"]))
         board_note(Path(top), folder, payload)
     return 0, payload
+
+
+def take(lock, wait: float) -> bool:
+    """Flock `lock`, retrying for up to `wait` seconds."""
+    end = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            if time.monotonic() >= end:
+                return False
+            time.sleep(0.1)
+
+
+def drain(queue: Path) -> list[tuple[str, Path]]:
+    """The queued events in order, as (event, resolved cwd); the queue file is deleted. Bad lines are dropped."""
+    try:
+        text = queue.read_text()
+        queue.unlink()
+    except FileNotFoundError:
+        return []
+    events = []
+    for line in text.splitlines():
+        try:
+            item = json.loads(line)
+            events.append((str(item["event"]), Path(str(item["cwd"])).resolve()))
+        except (ValueError, TypeError, KeyError):
+            continue
+    return events
 
 
 def version(text: str) -> tuple[int, ...]:
@@ -207,36 +268,25 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
 
 
 def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, state: Path, specs: dict[str, Path],
-          trees: dict[Path, str | None], claim: str | None, payload: dict, event: str | None,
-          cwd: Path | None) -> None:
+          trees: dict[Path, str | None], claims: list[str], detect, payload: dict,
+          events: list[tuple[str, Path]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     machine = store.load_machine(home)
     project = store.project_name(repo)
-    found: dict[str, dict] = {}
-
-    def detect(slug: str) -> dict:
-        if slug not in found:
-            found[slug] = dl.detect_feature(repo, slug, notes)
-        return found[slug]
-
-    # D10: claims. A claim goes when its feature has a worktree here, ships, or has no spec.
     tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
-    claims_file = state / "board-claims.json"
-    old_claims = read_slugs(claims_file)
-    claims = [c for c in dict.fromkeys([*old_claims, claim] if claim else old_claims)
-              if c not in tree_slugs and c in specs and detect(c)["stage"] != "shipped"]
-    if claims != old_claims:
-        claims_file.write_text(json.dumps(claims) + "\n")
 
-    # D16: the session scope of an event: the feature of the worktree that holds the cwd (the deepest one), or
-    # the claims in the main worktree on the default branch.
-    scope: list[str] = []
-    holders = [root for root in trees if cwd and inside(cwd, root)]
-    if holders:
+    def scope(cwd: Path) -> list[str]:
+        """D16: the feature of the worktree that holds the cwd (the deepest one), or the claims in the main
+        worktree on the default branch."""
+        holders = [root for root in trees if inside(cwd, root)]
+        if not holders:
+            return []
         root = max(holders, key=lambda r: len(str(r)))
         slug = trees[root]
-        scope = [slug] if slug else claims if root == next(iter(trees)) else []
+        return [slug] if slug else claims if root == next(iter(trees)) else []
+
+    scoped = [(event, scope(cwd)) for event, cwd in events]
 
     # D9: the write set. `kept` holds every feature whose own note must stay: written or skipped.
     kept: set[str] = set()
@@ -264,10 +314,14 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
         waiting = str(old.get("waiting") or "")
         if slug in claims and stage == 3 and result["worktree"] is None:
             waiting = "start Session B"
-        elif slug in scope and event == "stop":
-            waiting = STOP_WAITING.get(stage, waiting)
-        elif slug in scope and event in ("prompt", "session-start"):
-            waiting = ""
+        else:
+            if waiting == "start Session B":  # D6: its condition no longer holds.
+                waiting = ""
+            for event, features in scoped:
+                if slug in features and event == "stop":
+                    waiting = STOP_WAITING.get(stage, waiting)
+                elif slug in features and event in ("prompt", "session-start"):
+                    waiting = ""
         fields = merge(dl, old, slug, result, specs.get(slug), notes, machine, project, now, waiting)
         try:
             store.write_file(folder, name, store.note_text(fields))
