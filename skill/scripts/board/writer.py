@@ -13,6 +13,9 @@ from types import ModuleType
 from . import store
 
 TIME = "%Y-%m-%dT%H:%M:%SZ"
+STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
+                5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
+TEMPLATE = Path(__file__).with_name("board-note.md")
 
 
 def skip(reason: str, feature: str | None = None) -> dict:
@@ -86,7 +89,7 @@ def tasks(plan: Path | None, ledger: Path | None, before: list, stage5: str | No
 
 
 def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, notes: Path,
-          machine: dict, project: str, now: str) -> dict:
+          machine: dict, project: str, now: str, waiting: str) -> dict:
     """The new status note of one feature from its detect result, its spec, plan and ledger, and its old note."""
     stage: int = found["stage"]
     times = dict(old["stage_times"]) if isinstance(old.get("stage_times"), dict) else {}
@@ -117,7 +120,7 @@ def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, 
         "stage": stage,
         "stage_times": times,
         "tasks": tasks(plan, ledger, before, times.get("5"), now),
-        "waiting": old.get("waiting", ""),
+        "waiting": waiting,
         "decisions": [a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else [],
         "assumptions_baseline": baseline,
         "shipped_at": "",
@@ -132,7 +135,9 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     if top is None or not (Path(top) / "dev-loop.json").is_file():
         payload["skipped"].append(skip("no-dev-loop"))
         return 0, payload
-    if dl.detect(repo, None, notes)["stage"] == 0:
+    # Stage 0 (the conditions of `detect`, without its scan of every spec): no HEAD, or no glossary.
+    glossary = any((Path(top) / name).is_file() for name in ("GLOSSARY.md", "CONTEXT.md"))
+    if dl.git(repo, "rev-parse", "HEAD") is None or not glossary:
         payload["skipped"].append(skip("stage-0"))
         return 0, payload
     specs = dict(dl.specs(notes))
@@ -159,12 +164,46 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             payload["skipped"].append(skip("link"))
             return 0, payload
         folder.mkdir(exist_ok=True)
-        write(dl, repo, notes, home, folder, state, specs, trees, claim, payload)
+        write(dl, repo, notes, home, folder, state, specs, trees, claim, payload, event,
+              hook_cwd.resolve() if event and hook_cwd else None)
+        board_note(Path(top), folder, payload)
     return 0, payload
 
 
+def version(text: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(part) for part in text.strip().strip("\"'").split("."))
+    except ValueError:
+        return ()
+
+
+def board_note(top: Path, folder: Path, payload: dict) -> None:
+    """D24: write `Dev Loop Board.md` when it is missing or its frontmatter version is older than the kit version."""
+    try:
+        kit = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
+    except (OSError, ValueError, KeyError, TypeError):
+        kit = "0.0.0"
+    path = folder / store.BOARD_NOTE
+    if path.is_file() and not path.is_symlink():
+        lines = path.read_text().splitlines()
+        head = lines[1:lines.index("---", 1)] if lines[:1] == ["---"] and "---" in lines[1:] else []
+        have = next((version(line.partition(":")[2]) for line in head if line.startswith("version:")), ())
+        if have >= version(kit):
+            payload["board_note"] = str(path)
+            return
+    text = TEMPLATE.read_text().replace("/*VERSION*/", kit, 1)
+    text = text.replace("/*RENDER_JS*/", TEMPLATE.with_name("render.js").read_text().rstrip("\n"), 1)
+    try:
+        store.write_file(folder, store.BOARD_NOTE, text)
+    except store.LinkError:
+        payload["skipped"].append(skip("link"))
+        return
+    payload["board_note"] = str(path)
+
+
 def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, state: Path, specs: dict[str, Path],
-          trees: dict[Path, str | None], claim: str | None, payload: dict) -> None:
+          trees: dict[Path, str | None], claim: str | None, payload: dict, event: str | None,
+          cwd: Path | None) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     machine = store.load_machine(home)
@@ -184,6 +223,15 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
               if c not in tree_slugs and c in specs and detect(c)["stage"] != "shipped"]
     if claims != old_claims:
         claims_file.write_text(json.dumps(claims) + "\n")
+
+    # D16: the session scope of an event: the feature of the worktree that holds the cwd (the deepest one), or
+    # the claims in the main worktree on the default branch.
+    scope: list[str] = []
+    holders = [root for root in trees if cwd and inside(cwd, root)]
+    if holders:
+        root = max(holders, key=lambda r: len(str(r)))
+        slug = trees[root]
+        scope = [slug] if slug else claims if root == next(iter(trees)) else []
 
     # D9: the write set. `kept` holds every feature whose own note must stay: written or skipped.
     kept: set[str] = set()
@@ -206,9 +254,16 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
             payload["skipped"].append(skip("placeholder", slug))
             continue
         old = store.read_note(path) if path.exists() else {}
-        if old is None or (old and old.get("machine_id") != machine["id"]):
-            continue  # D2: a file we cannot prove our own stays unchanged.
-        fields = merge(dl, old, slug, result, specs.get(slug), notes, machine, project, now)
+        if old is None or (old and old.get("machine_id") != machine["id"]) or (old and old.get("shipped_at")):
+            continue  # D2: a file we cannot prove our own stays unchanged. D12: a shipped note is never rewritten.
+        waiting = str(old.get("waiting") or "")
+        if slug in claims and stage == 3 and result["worktree"] is None:
+            waiting = "start Session B"
+        elif slug in scope and event == "stop":
+            waiting = STOP_WAITING.get(stage, waiting)
+        elif slug in scope and event in ("prompt", "session-start"):
+            waiting = ""
+        fields = merge(dl, old, slug, result, specs.get(slug), notes, machine, project, now, waiting)
         try:
             store.write_file(folder, name, store.note_text(fields))
         except store.LinkError:
@@ -222,6 +277,8 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
     old_features = read_slugs(features_file)
     features = [f for f in old_features if f not in kept] + sorted(kept)
     own_names: set[str] = set()
+    own_features: set[str] = set()
+    shipped: list[tuple[str, Path]] = []
     for path in sorted(folder.glob("*.md")):
         if path.name.startswith(".") or path.name == store.BOARD_NOTE or path.is_symlink():
             continue
@@ -232,12 +289,28 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
         if not isinstance(feature, str) or path.name != store.note_name(machine["id"], project, feature):
             continue  # A sync conflict copy is left alone.
         own_names.add(path.name)
-        if (fields.get("shipped_at") or feature in kept or feature not in old_features
-                or detect(feature)["stage"] == "shipped"):
+        if not fields.get("shipped_at") and feature not in kept and detect(feature)["stage"] == "shipped":
+            # D12: the first run that sees the ship sets shipped_at, once.
+            fields.update(shipped_at=now, updated=now)
+            try:
+                store.write_file(folder, path.name, store.note_text(fields))
+            except store.LinkError:
+                payload["skipped"].append(skip("link", feature))
+                continue
+            payload["notes"].append(str(path))
+        if fields.get("shipped_at"):
+            shipped.append((str(fields["shipped_at"]), path))
+            continue
+        if feature in kept or feature not in old_features:
+            own_features.add(feature)
             continue
         path.unlink()
         payload["removed"].append(str(path))
-        features.remove(feature)
+    # D12: keep the own shipped notes of the 3 latest shipped_at in this project.
+    for _, path in sorted(shipped, reverse=True)[3:]:
+        path.unlink()
+        payload["removed"].append(str(path))
+    features = [f for f in features if f in kept or f in own_features]
     if features != old_features:
         features_file.write_text(json.dumps(features) + "\n")
 

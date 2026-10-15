@@ -452,8 +452,11 @@ def cmd_board(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(Path(__file__).parent))
     from board import writer
 
-    code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event, hook_cwd=hook_cwd,
-                               claim=args.claim)
+    try:
+        code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
+                                   hook_cwd=hook_cwd, claim=args.claim)
+    except Exception as exc:  # A bad machine.json, an undecodable spec, an OSError: JSON, never a traceback.
+        return emit({"error": f"{type(exc).__name__}: {exc}"}, 1)
     if code == 0:
         payload["server"] = server
     return emit(payload, code)
