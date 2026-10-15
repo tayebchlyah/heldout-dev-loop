@@ -17,6 +17,7 @@ from typing import Mapping
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
+from board import store  # noqa: E402
 from notes_path import NotesPathError, resolve  # noqa: E402
 
 
@@ -76,12 +77,6 @@ def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) ->
     return []
 
 
-def vault_root(notes: Path) -> Path:
-    """D19: the nearest parent of the notes path that holds `.obsidian`, else the notes path."""
-    notes = notes.resolve()
-    return next((p for p in [notes, *notes.parents] if (p / ".obsidian").is_dir()), notes)
-
-
 def dataview_ready(root: Path) -> bool:
     try:
         plugins = json.loads((root / ".obsidian" / "community-plugins.json").read_text())
@@ -97,7 +92,7 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         notes = resolve(repo, os.environ if env is None else env, home)
     except NotesPathError:
         return []
-    root = vault_root(Path(notes))
+    root = store.root_of(Path(notes))
     actions = []
     if (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
