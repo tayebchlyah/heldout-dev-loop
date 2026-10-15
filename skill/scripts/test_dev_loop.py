@@ -187,6 +187,22 @@ class BoardVaultCheckTests(unittest.TestCase):
             write(repo / "dev-loop.json", "{}")
             self.assertEqual(check_setup.check_board_vault(Path(tmp) / "home", repo, {}), [])
 
+    def test_board_note_at_the_kit_version_with_another_body_is_reported(self) -> None:
+        """D11, D24: a board note at the kit version whose body is not the kit template: one line to delete it."""
+        from board import writer
+
+        line = "Dev Loop Board.md differs from the dev-loop template: delete it, the next board run writes it again"
+        kit = writer.board_text("2.1.0")
+        planted = kit + "\n```dataviewjs\ndv.el('p', 'planted')\n```\n"
+        rows = [(kit, []), (planted, [line]), (planted.replace('"2.1.0"', '"2.0.9"'), []),
+                (planted.replace('"2.1.0"', '"99.0.0"'), [])]
+        for text, expected in rows:
+            with self.subTest(text=text[:30]), tempfile.TemporaryDirectory() as tmp:
+                home, repo, vault = self.setup_vault(tmp, dataview=True, js=True, git=False, ignore=False)
+                write(repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "2.1.0", "files": {}}))
+                write(vault / "Project" / "dev-loop-board" / "Dev Loop Board.md", text)
+                self.assertEqual(check_setup.check_board_vault(home, repo, {}), expected)
+
     def test_lines_print_under_user_actions_not_as_failures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home, repo, _ = self.setup_vault(tmp, dataview=False, js=False, git=True, ignore=False)
