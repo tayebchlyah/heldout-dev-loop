@@ -177,12 +177,17 @@ def version(text: str) -> tuple[int, ...]:
         return ()
 
 
+def kit_version(top: Path) -> str:
+    """The `version` of `.dev-loop/MANIFEST.json`, else "0.0.0"."""
+    try:
+        return str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return "0.0.0"
+
+
 def board_note(top: Path, folder: Path, payload: dict) -> None:
     """D24: write `Dev Loop Board.md` when it is missing or its frontmatter version is older than the kit version."""
-    try:
-        kit = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
-    except (OSError, ValueError, KeyError, TypeError):
-        kit = "0.0.0"
+    kit = kit_version(top)
     path = folder / store.BOARD_NOTE
     if path.is_file() and not path.is_symlink():
         lines = path.read_text().splitlines()

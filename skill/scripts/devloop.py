@@ -432,10 +432,17 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
 
 
 def cmd_board(args: argparse.Namespace) -> int:
-    port = os.environ.get("DEVLOOP_BOARD_PORT") or "7777"
-    server = {"state": "disabled", "url": f"http://127.0.0.1:{port}/"}
+    raw = os.environ.get("DEVLOOP_BOARD_PORT") or "7777"
+    port = int(raw) if raw.isascii() and raw.isdigit() and 0 < int(raw) < 65536 else None
+    bad_port = {"state": "error", "url": f"http://127.0.0.1:{raw}/",
+                "message": f"DEVLOOP_BOARD_PORT is not a port: {raw}"}
+    # Lazy: the old tests load this file with importlib and must not need the board package.
+    sys.path.insert(0, str(Path(__file__).parent))
+    from board import server, store, writer
+
     if args.stop_server:
-        return emit({"notes": [], "removed": [], "board_note": None, "skipped": [], "server": server}, 0)
+        stopped = server.stop(port) if port is not None else bad_port
+        return emit({"notes": [], "removed": [], "board_note": None, "skipped": [], "server": stopped}, 0)
     repo = Path(args.repo).resolve()
     try:
         notes = resolve(repo, os.environ, Path.home())
@@ -448,18 +455,25 @@ def cmd_board(args: argparse.Namespace) -> int:
         except (ValueError, AttributeError):
             cwd = None
         hook_cwd = Path(cwd) if isinstance(cwd, str) and cwd else None
-    # Lazy: the old tests load this file with importlib and must not need the board package.
-    sys.path.insert(0, str(Path(__file__).parent))
-    from board import writer
 
     try:
         code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
                                    hook_cwd=hook_cwd, claim=args.claim)
+        if code != 0:
+            return emit(payload, code)
+        whole = {s["reason"] for s in payload["skipped"]} & {"no-dev-loop", "notes-in-repo"}
+        if args.no_serve or whole:
+            payload["server"] = {"state": "disabled", "url": f"http://127.0.0.1:{raw}/"}
+        elif port is None:
+            payload["server"] = bad_port
+        else:
+            machine = store.load_machine(Path.home())
+            top = Path(git(repo, "rev-parse", "--show-toplevel") or repo)
+            payload["server"] = server.ensure(port, writer.kit_version(top), [server.root_of(notes)], machine["id"],
+                                              machine["owner"])
     except Exception as exc:  # A bad machine.json, an undecodable spec, an OSError: JSON, never a traceback.
         return emit({"error": f"{type(exc).__name__}: {exc}"}, 1)
-    if code == 0:
-        payload["server"] = server
-    return emit(payload, code)
+    return emit(payload, 0)
 
 
 class Parser(argparse.ArgumentParser):
