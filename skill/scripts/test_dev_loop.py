@@ -71,6 +71,18 @@ ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
 TracksContractTests = test_devloop.TracksContractTests
 SpecGapContractTests = test_devloop.SpecGapContractTests
 
+# The board oracle tests (spec-tester, held out) live in test_board.py.
+_board_tests_spec = importlib.util.spec_from_file_location("test_board", SKILL_ROOT / "scripts" / "test_board.py")
+if _board_tests_spec is None or _board_tests_spec.loader is None:
+    raise ImportError("cannot load test_board module")
+test_board = importlib.util.module_from_spec(_board_tests_spec)
+_board_tests_spec.loader.exec_module(test_board)
+BoardWriterTests = test_board.BoardWriterTests
+BoardEventTests = test_board.BoardEventTests
+BoardShipTests = test_board.BoardShipTests
+BoardServerTests = test_board.BoardServerTests
+BoardHookTests = test_board.BoardHookTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
