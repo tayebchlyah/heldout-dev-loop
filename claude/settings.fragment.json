@@ -10,6 +10,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/board.sh session-start",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -63,6 +73,17 @@
             "type": "command",
             "command": "~/.claude/hooks/gate-snapshot.sh",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/board.sh prompt",
+            "timeout": 5
           }
         ]
       }
