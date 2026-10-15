@@ -17,7 +17,7 @@ from typing import Mapping
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
-from board import store  # noqa: E402
+from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve  # noqa: E402
 
 
@@ -105,6 +105,13 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         )
         if ignored.returncode != 0:
             actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
+    # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
+    note = Path(notes) / "dev-loop-board" / store.BOARD_NOTE
+    kit = writer.kit_version(repo)
+    if note.is_file() and not note.is_symlink():
+        have = (store.read_note(note) or {}).get("version")
+        if store.version_key(have) == store.version_key(kit) and note.read_text() != writer.board_text(kit):
+            actions.append(f"{store.BOARD_NOTE} differs from the dev-loop template: delete it, the next board run writes it again")
     return actions
 
 
