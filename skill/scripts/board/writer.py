@@ -233,13 +233,6 @@ def drain(queue: Path) -> list[tuple[str, Path]]:
     return events
 
 
-def version(text: str) -> tuple[int, ...]:
-    try:
-        return tuple(int(part) for part in text.strip().strip("\"'").split("."))
-    except ValueError:
-        return ()
-
-
 def kit_version(top: Path) -> str:
     """The `version` of `.dev-loop/MANIFEST.json`, else "0.0.0"."""
     try:
@@ -253,10 +246,8 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
     kit = kit_version(top)
     path = folder / store.BOARD_NOTE
     if path.is_file() and not path.is_symlink():
-        lines = path.read_text().splitlines()
-        head = lines[1:lines.index("---", 1)] if lines[:1] == ["---"] and "---" in lines[1:] else []
-        have = next((version(line.partition(":")[2]) for line in head if line.startswith("version:")), ())
-        if have >= version(kit):
+        have = (store.read_note(path) or {}).get("version")
+        if have is not None and store.version_key(have) >= store.version_key(kit):
             payload["board_note"] = str(path)
             return
     text = TEMPLATE.read_text().replace("/*VERSION*/", kit, 1)
