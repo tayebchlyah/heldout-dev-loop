@@ -21,3 +21,40 @@ test('renderBoard returns HTML for notes with missing or wrongly typed values', 
   )
   assert.equal(typeof html, 'string')
 })
+
+function loadRender() {
+  const ctx = {}
+  vm.createContext(ctx)
+  vm.runInContext(readFileSync(RENDER, 'utf8'), ctx)
+  return ctx.renderBoard
+}
+
+const T0 = Date.parse('2026-10-15T12:00:00Z')
+const stamp = (min) => new Date(T0 - min * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+const baseNote = (over) => ({
+  type: 'dev-loop-status', schema: 1, project: 'acme-widgets', feature: 'gadget', title: 'Gadget Export',
+  description: '', machine_id: '0123456789abcdef', owner: 'Robin', machine: 'lab-mac', track: 'M', stage: 5,
+  stage_times: { 1: stamp(300), 5: stamp(60) }, tasks: [], waiting: '', decisions: [], assumptions_baseline: [],
+  shipped_at: '', updated: stamp(5), ...over,
+})
+
+test('D4: a Needs you entry shows no waiting duration', () => {
+  const html = loadRender()([baseNote({ stage: 2, waiting: 'approve the spec', updated: stamp(90) })], T0, {})
+  assert.ok(html.includes('approve the spec'))
+  assert.ok(!html.includes('Waiting '))
+})
+
+test('D9: done tasks of zero duration still give a Time left at Stage 5', () => {
+  const tasks = [
+    { state: 'done', started: stamp(10), done: stamp(10) },
+    { state: 'todo' },
+  ]
+  const html = loadRender()([baseNote({ tasks })], T0, {})
+  assert.ok(html.includes('data-time-left'))
+})
+
+test('O4: render.js holds no triple backtick and no closing script tag', () => {
+  const src = readFileSync(RENDER, 'utf8')
+  assert.ok(!src.includes('```'))
+  assert.ok(!src.includes('</script'))
+})
