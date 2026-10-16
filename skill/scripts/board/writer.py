@@ -133,6 +133,7 @@ def merge(ctx: Context, old: dict, slug: str, found: dict, spec: Path | None, no
         "owner": ctx.machine["owner"],
         "machine": ctx.machine["machine"],
         "track": found["track"] or "",
+        "acceptance": ctx.dl.frontmatter(spec).get("acceptance", "").lower() if spec else "",
         "stage": stage,
         "stage_times": times,
         "tasks": tasks(plan, ledger, before, times.get("5"), now, stage >= 5),
