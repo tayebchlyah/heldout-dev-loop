@@ -258,6 +258,53 @@ class BoardRobustTests(Board):
         self.ok()
         self.assertEqual(sorted(json.loads(state.read_text())["features"]), ["tiny"])
 
+    def test_seeded_old_kit_note_keeps_its_updated(self) -> None:
+        """Board Robustness D1, D2: the first run of the new kit on an old-kit note (no backfilled key) keeps its
+        `updated`, so an idle feature stays idle after the upgrade."""
+        wt, plan = self.stage5("alpha", "Alpha Report")
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        path = self.own_notes()["alpha"]
+        old = {k: v for k, v in read_note(path).items() if k != "backfilled"}
+        old["updated"] = "2026-10-01T00:00:00Z"
+        path.write_text(note_text(old))
+        (self.repo / ".git" / "dev-loop" / "board-state.json").unlink()
+        self.ok(cwd=wt)
+        note = read_note(path)
+        self.assertEqual(note["updated"], "2026-10-01T00:00:00Z")
+        self.assertIn("backfilled", note)
+
+    def test_hand_edited_time_is_restored_with_the_same_updated(self) -> None:
+        """Board Robustness D1: a parsed note with a hand-changed time is written again with the state time and the
+        same `updated`."""
+        wt, plan = self.stage5("alpha", "Alpha Report")
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        path = self.own_notes()["alpha"]
+        before = read_note(path)
+        path.write_text(note_text({**before, "stage_times": {**before["stage_times"], "5": "2020-01-01T00:00:00Z"}}))
+        time.sleep(1.1)
+        self.ok(cwd=wt)
+        self.assertEqual(read_note(path), before)
+
+    def test_spec_change_while_the_note_does_not_parse_moves_updated(self) -> None:
+        """Board Robustness D1: a note that does not parse is written again; a spec title change in that run is a
+        real change, so `updated` moves."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        self.ok(cwd=wt)
+        path = self.own_notes()["alpha"]
+        state = self.repo / ".git" / "dev-loop" / "board-state.json"
+        data = json.loads(state.read_text())
+        data["features"]["alpha"]["updated"] = "2026-10-01T00:00:00Z"
+        state.write_text(json.dumps(data))
+        path.write_text("---\nstage: [5\n---\n")
+        spec = self.notes / "specs" / "20261001 Alpha Report.md"
+        spec.write_text(spec.read_text().replace("# Alpha Report", "# Alpha Summary"))
+        self.ok(cwd=wt)
+        note = read_note(path)
+        self.assertEqual(note["title"], "Alpha Summary")
+        self.assertNotEqual(note["updated"], "2026-10-01T00:00:00Z")
+
     def test_new_note_shows_before_the_folder_walk_expires(self) -> None:
         """D8: folders are cached for 60 s, the .md files of each folder are listed on every request."""
         note = {"type": "dev-loop-status", "schema": 1, "feature": "alpha"}
