@@ -108,6 +108,8 @@ def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, 
     worktree = found["worktree"]
     ledger = Path(worktree) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and worktree else None
     before = old["tasks"] if isinstance(old.get("tasks"), list) else []
+    # A1: a Track S branch with commits ahead records its last commit, so a ship is seen once the branch is gone.
+    head = dl.git(Path(worktree), "rev-parse", "HEAD") if spec is None and worktree and stage in (6, 7) else None
     return {
         "type": "dev-loop-status",
         "schema": 1,
@@ -125,6 +127,7 @@ def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, 
         "waiting": waiting,
         "decisions": [a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else [],
         "assumptions_baseline": baseline,
+        **({"head": head} if head else {}),
         "shipped_at": "",
         "updated": now,
     }
@@ -199,6 +202,15 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
         board_note(Path(top), folder, payload)
     return 0, payload
+
+
+def merged_head(dl: ModuleType, repo: Path, fields: dict, found: dict) -> bool:
+    """A1: a Track S note whose branch is gone (Stage 1) and whose `head` has no + line in `git cherry origin/main`."""
+    head = fields.get("head")
+    if found["stage"] != 1 or not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head):
+        return False
+    lines = dl.cherry(repo, head)
+    return lines is not None and not any(line.startswith("+") for line in lines)
 
 
 def take(lock, wait: float) -> bool:
@@ -345,7 +357,9 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
         if not isinstance(feature, str) or path.name != store.note_name(machine["id"], project, feature):
             continue  # A sync conflict copy is left alone.
         own_names.add(path.name)
-        if not fields.get("shipped_at") and feature not in kept and detect(feature)["stage"] == "shipped":
+        if not fields.get("shipped_at") and feature not in kept and (
+                detect(feature)["stage"] == "shipped"
+                or feature in old_features and merged_head(dl, repo, fields, detect(feature))):
             # D12: the first run that sees the ship sets shipped_at, once.
             fields.update(shipped_at=now, updated=now)
             try:
