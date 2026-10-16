@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.1.1] - 2026-10-16
+
+### ✨ New Features
+
+- [`506ca30`](https://github.com/tchlyah/dev-loop/commit/506ca308e3b924b970357e5ba7efe2e0fa9ad567) - **board**: Write status notes to dev-loop-board/features and serve both folders *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`f9c7a22`](https://github.com/tchlyah/dev-loop/commit/f9c7a22f4cb4d93f14cba11b27fa9c77f00498d5) - **board**: Keep the board state in board-state.json and rewrite an own note that does not parse *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`e2c588a`](https://github.com/tchlyah/dev-loop/commit/e2c588aedbeb6d6dc978a0055d84afbb790dd2d8) - **cli**: Report board skips and a newer worktree kit in devloop status *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`ea8f084`](https://github.com/tchlyah/dev-loop/commit/ea8f084d64295c8793da5a728d01fc5ab45fde41) - **board**: Take stage and task times from the files, and doing tasks from the session task list and the briefs *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`2d59685`](https://github.com/tchlyah/dev-loop/commit/2d59685b907479c4ba5d8253a642e93fdcd20a16) - **hooks**: Refresh the board after task-start, task-done, commits and task list changes *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`50b358b`](https://github.com/tchlyah/dev-loop/commit/50b358bc33f22ee02761369dbcee5c9988dc7c0b) - **board**: Show the plan number of each task and mark estimated times *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🐛 Bug Fixes
+
+- [`1c66019`](https://github.com/tchlyah/dev-loop/commit/1c6601929d76e243c22e0f65373a88c0547135fc) - **board**: Move updated only when a board value changes, not on a repair *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`53ae3eb`](https://github.com/tchlyah/dev-loop/commit/53ae3ebeaf132bc61ee774c4b14c2957e7a072d7) - **board**: Queue every busy run, and read git again in each catch-up pass *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`c73b75e`](https://github.com/tchlyah/dev-loop/commit/c73b75e325ebd7e6c870ed21544afdbf4fd99f3e) - **board**: Read worktrees, specs and claims again in each catch-up pass *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`1ab5ef8`](https://github.com/tchlyah/dev-loop/commit/1ab5ef89157308954d6d617297296daa33c041b8) - **board**: Move an own legacy note that does not parse, report a crashed run, keep claims when a spec is evicted *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 📝 Documentation & Content
+
+- [`23e9952`](https://github.com/tchlyah/dev-loop/commit/23e9952551aaab540c93a30f953032dc32c9d8a8) - **skill**: Hooks own the board, one checklist item per plan task, stop on a newer worktree kit *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`18c1a90`](https://github.com/tchlyah/dev-loop/commit/18c1a90f066305f273e2da8fa0e4e65d0fc346ff) - **agents**: Document the board error skip, the features link skip and the 2.1.0 board upgrade steps *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🔹 Other Changes
+
+- [`963a978`](https://github.com/tchlyah/dev-loop/commit/963a978a2ddde4664606017a4555f4baf97de905) - Run the skill suite in parallel, one process per CPU *(PR [#19](https://github.com/tchlyah/dev-loop/pull/19) by [@tchlyah](https://github.com/tchlyah))*
+
+
+### 🧪 Tests & Quality
+
+- [`fc51243`](https://github.com/tchlyah/dev-loop/commit/fc51243251f7b5d872979b5b59ac917f68d1d8c3) - **board**: Add board robustness oracle tests from the spec *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`4871acc`](https://github.com/tchlyah/dev-loop/commit/4871acc25546e5c504f389eb2fc23d7ae868b28a) - **board**: Give the o18 oracle test a ledger, as Board Robustness D6 needs *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
 ## [2.1.0] - 2026-10-16
 
 ### ♻️ Refactors & Cleanup
@@ -83,6 +133,12 @@
 ### 🔒 Security
 
 - [`29db98f`](https://github.com/tchlyah/dev-loop/commit/29db98f169c5a0057a3a7f9462895c55bad6954f) - **setup**: D11: report a board note at the kit version whose body is not the kit template *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🔖 Release & Versioning
+
+- [`e442cba`](https://github.com/tchlyah/dev-loop/commit/e442cba41c600ca994b88613b0a0375690818554) - **release**: dev-loop 2.1.0 *(PR [#17](https://github.com/tchlyah/dev-loop/pull/17) by [@tchlyah](https://github.com/tchlyah))*
 
 
 
