@@ -14,7 +14,7 @@ _Avoid_: client, IDE, agent
 
 **Kit**:
 The dev-loop files a project receives whole and never edits: the skill, its scripts, the subagents, the hooks.
-_Avoid_: payload, bundle, vendored copy
+_Avoid_: bundle, vendored copy
 
 **Kit file**:
 One file of the kit, owned by dev-loop and changed only by an upgrade.
