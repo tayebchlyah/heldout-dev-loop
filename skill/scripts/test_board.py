@@ -25,6 +25,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import Callable, TypeVar
 
 SCRIPTS = Path(__file__).resolve().parent
 DEVLOOP = SCRIPTS / "devloop.py"
@@ -39,6 +40,15 @@ OTHER = {"id": "fedcba9876543210", "machine": "bench-pc", "owner": "Casey"}
 BOARD_NOTE = "Dev Loop Board.md"
 ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 HOOK_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit", "stop": "Stop", "subagent-stop": "SubagentStop"}
+
+# Cost marker (tests.md rule 6): `slow` only tags a test that runs over the 1 s cheap budget; nothing skips it.
+Test = TypeVar("Test", bound=Callable)
+
+
+def slow(test: Test) -> Test:
+    setattr(test, "slow", True)
+    return test
+
 
 GIT = ["git", "-c", "user.email=robin@example.invalid", "-c", "user.name=Robin Quill", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false"]
@@ -422,6 +432,7 @@ class BoardWriterTests(Board):
         for stage, at in times.items():
             self.assertEqual(after.get(stage), at)
 
+    @slow
     def test_o10_note_of_another_machine_never_changes(self) -> None:
         """O10, D2: a file with another machine_id stays unchanged after any run, also after the ship."""
         wt, _ = self.stage5("gadget", "Gadget Export")
@@ -524,32 +535,42 @@ class BoardWriterTests(Board):
         self.assertEqual(snapshot(self.vault), before)
         self.assertLess(elapsed, 10)
 
-    def test_o15_board_folder_link_is_left_unchanged(self) -> None:
-        """O15, D7: a `dev-loop-board` folder that is a link: link and target unchanged, `link` listed."""
-        self.worktree("tiny", prefix="fix")
-        target = self.root / "elsewhere-board"
-        target.mkdir()
-        self.board_dir.symlink_to(target)
-        out = self.ok()
-        self.assertTrue(self.board_dir.is_symlink())
-        self.assertEqual(os.readlink(self.board_dir), str(target))
-        self.assertEqual(list(target.iterdir()), [])
-        self.assertTrue(self.skipped(out, "link"), out)
+    def test_o15_link_is_left_unchanged(self) -> None:
+        """O15, D7: a link in the board folder: link and target unchanged, `link` listed. Rows: the
+        `dev-loop-board` folder is a link; an own note path is a link."""
 
-    def test_o15_note_link_is_left_unchanged(self) -> None:
-        """O15, D7: an own note path that is a link: link and target unchanged, `link` listed."""
-        wt = self.worktree("tiny", prefix="fix")
-        self.ok()
-        path = self.own_notes()["tiny"]
-        path.unlink()
-        target = self.root / "outside.md"
-        target.write_text("outside\n")
-        path.symlink_to(target)
-        out = self.event("stop", wt)
-        self.assertTrue(path.is_symlink())
-        self.assertEqual(os.readlink(path), str(target))
-        self.assertEqual(target.read_text(), "outside\n")
-        self.assertTrue(self.skipped(out, "link"), out)
+        def board_folder_link() -> tuple[Path, Path, dict]:
+            self.worktree("tiny", prefix="fix")
+            target = self.root / "elsewhere-board"
+            target.mkdir()
+            self.board_dir.symlink_to(target)
+            out = self.ok()
+            self.assertEqual(list(target.iterdir()), [])
+            return self.board_dir, target, out
+
+        def note_link() -> tuple[Path, Path, dict]:
+            wt = self.worktree("tiny", prefix="fix")
+            self.ok()
+            path = self.own_notes()["tiny"]
+            path.unlink()
+            target = self.root / "outside.md"
+            target.write_text("outside\n")
+            path.symlink_to(target)
+            out = self.event("stop", wt)
+            self.assertEqual(target.read_text(), "outside\n")
+            return path, target, out
+
+        for n, (name, run) in enumerate((("board folder link", board_folder_link), ("note link", note_link))):
+            with self.subTest(name):
+                if n:
+                    self.setUp()  # a fresh fixture per row, removed by doCleanups below
+                try:
+                    link, target, out = run()
+                    self.assertTrue(link.is_symlink())
+                    self.assertEqual(os.readlink(link), str(target))
+                    self.assertTrue(self.skipped(out, "link"), out)
+                finally:
+                    self.doCleanups()
 
     def test_o16_link_above_the_board_folder_works(self) -> None:
         """O16, D7: a notes path through a link above `dev-loop-board` works."""
@@ -583,6 +604,7 @@ class BoardWriterTests(Board):
         self.assertEqual(note["description"], "Gadget Export for the widget shop.")
         self.assertRegex(note["updated"], ISO_Z)
 
+    @slow
     def test_o18_second_run_keeps_stage_times(self) -> None:
         """O18, D13: a second run keeps every stage_times value of the first."""
         wt, _ = self.stage5("gadget", "Gadget Export")
@@ -595,6 +617,7 @@ class BoardWriterTests(Board):
         for stage, at in first.items():
             self.assertEqual(second[stage], at)
 
+    @slow
     def test_o19_task_done_and_next_started_share_one_time(self) -> None:
         """O19, D14: a new `Task N: complete` sets done on N and started on N+1 to the same time."""
         wt, plan = self.stage5("gadget", "Gadget Export")
@@ -637,6 +660,7 @@ class BoardWriterTests(Board):
         self.assertFalse(path.exists())
         self.assertIn(str(path), [str(Path(p).resolve()) for p in out["removed"]])
 
+    @slow
     def test_o28_writes_only_in_its_own_board_folder(self) -> None:
         """O28, D1: no write outside <notes>/dev-loop-board/ of its own project."""
         other = self.vault / "Projects" / "Other Thing" / "dev-loop-board"
@@ -747,6 +771,7 @@ class BoardEventTests(Board):
         note = self.note("gadget")
         self.assertEqual((note["stage"], note["waiting"]), (3, "start Session B"))
 
+    @slow
     def test_f2_session_b_continues_the_claimed_note(self) -> None:
         """F2, O9, O19: the worktree note continues the Stage 2 time; tasks 1 and 2 done, task 3 running."""
         spec = self.spec("gadget", "Gadget Export", review="draft")
@@ -775,6 +800,7 @@ class BoardEventTests(Board):
         self.assertTrue(tasks[0]["done"] and tasks[1]["done"])
         self.assertEqual(tasks[2]["started"], tasks[1]["done"])
 
+    @slow
     def test_f3_another_machine_note_is_left_alone(self) -> None:
         """F3, O10: machine A (claimed Stage 3) never changes the Stage 5 note of machine B."""
         spec = self.spec("gadget", "Gadget Export", review="draft")
@@ -804,6 +830,7 @@ class BoardShipTests(Board):
     def ship(self, title: str, day: str = "2026-10-15") -> None:
         self.set_field(self.notes / "specs" / f"20261001 {title}.md", "shipped", day)
 
+    @slow
     def test_o24_ship_sets_shipped_at_once(self) -> None:
         """O24, D12: the next run after the ship sets shipped_at; later runs leave the note unchanged."""
         wt, _ = self.stage5("gadget", "Gadget Export")
@@ -827,24 +854,6 @@ class BoardShipTests(Board):
         self.event("stop", wt)
         self.assertNotIn("gadget", self.own_notes())
 
-    def test_o26_four_shipped_notes_keep_the_three_latest(self) -> None:
-        """O26, D12: with 4 own shipped notes in one project, the next run keeps the 3 latest shipped_at."""
-        slugs = ["one", "two", "three", "four"]
-        for slug in slugs:
-            self.spec(slug, f"Feature {slug.title()}")
-            self.worktree(slug)
-        self.ok()
-        self.assertEqual(set(self.own_notes()), set(slugs))
-        for slug in slugs:
-            time.sleep(1.1)
-            self.ship(f"Feature {slug.title()}")
-            self.ok()
-        self.ok()
-        own = self.own_notes()
-        self.assertEqual(set(own), {"two", "three", "four"})
-        for path in own.values():
-            self.assertTrue(read_note(path)["shipped_at"])
-
     def test_o61_shipped_note_is_never_rewritten(self) -> None:
         """O61, D12: a run does not rewrite an existing own shipped note."""
         self.worktree("tiny", prefix="fix")
@@ -858,23 +867,55 @@ class BoardShipTests(Board):
         self.event("stop", self.repo)
         self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
 
-    def test_o62_folder_with_four_shipped_notes_keeps_the_three_latest(self) -> None:
-        """O62, D12: 4 own shipped notes: the next run deletes the oldest shipped_at; a foreign one stays."""
-        self.worktree("tiny", prefix="fix")
-        self.board_dir.mkdir(parents=True)
-        shipped = {"north": "2026-10-03", "south": "2026-10-01", "east": "2026-10-04", "west": "2026-10-02"}
-        for slug, day in shipped.items():
-            put(self.board_dir / note_name(MACHINE["id"], PROJECT, slug),
-                note_text(status_note(feature=slug, machine_id=MACHINE["id"], owner="Robin", machine="lab-mac",
-                                      stage=7, shipped_at=f"{day}T10:00:00Z")))
-        foreign = self.board_dir / note_name(OTHER["id"], PROJECT, "ancient")
-        put(foreign, note_text(status_note(feature="ancient", shipped_at="2026-09-01T10:00:00Z")))
-        foreign_before = (foreign.read_bytes(), foreign.stat().st_mtime_ns)
-        out = self.ok()
-        self.assertEqual(set(self.own_notes()), {"north", "east", "west", "tiny"})
-        south = self.board_dir / note_name(MACHINE["id"], PROJECT, "south")
-        self.assertIn(str(south), [str(Path(p).resolve()) for p in out["removed"]])
-        self.assertEqual((foreign.read_bytes(), foreign.stat().st_mtime_ns), foreign_before)
+    @slow
+    def test_o26_o62_four_shipped_notes_keep_the_three_latest(self) -> None:
+        """O26, O62, D12: 4 own shipped notes in one project: the next run keeps the 3 latest shipped_at.
+        Rows: O26, four features shipped one by one; O62, a folder with four shipped notes and a foreign
+        one, where the run deletes the oldest and the foreign note stays."""
+
+        def shipped_one_by_one() -> set[str]:
+            slugs = ["one", "two", "three", "four"]
+            for slug in slugs:
+                self.spec(slug, f"Feature {slug.title()}")
+                self.worktree(slug)
+            self.ok()
+            self.assertEqual(set(self.own_notes()), set(slugs))
+            for slug in slugs:
+                time.sleep(1.1)
+                self.ship(f"Feature {slug.title()}")
+                self.ok()
+            self.ok()
+            for path in self.own_notes().values():
+                self.assertTrue(read_note(path)["shipped_at"])
+            return {"two", "three", "four"}
+
+        def folder_with_four_shipped() -> set[str]:
+            self.worktree("tiny", prefix="fix")
+            self.board_dir.mkdir(parents=True)
+            shipped = {"north": "2026-10-03", "south": "2026-10-01", "east": "2026-10-04", "west": "2026-10-02"}
+            for slug, day in shipped.items():
+                put(self.board_dir / note_name(MACHINE["id"], PROJECT, slug),
+                    note_text(status_note(feature=slug, machine_id=MACHINE["id"], owner="Robin", machine="lab-mac",
+                                          stage=7, shipped_at=f"{day}T10:00:00Z")))
+            foreign = self.board_dir / note_name(OTHER["id"], PROJECT, "ancient")
+            put(foreign, note_text(status_note(feature="ancient", shipped_at="2026-09-01T10:00:00Z")))
+            foreign_before = (foreign.read_bytes(), foreign.stat().st_mtime_ns)
+            out = self.ok()
+            south = self.board_dir / note_name(MACHINE["id"], PROJECT, "south")
+            self.assertIn(str(south), [str(Path(p).resolve()) for p in out["removed"]])
+            self.assertEqual((foreign.read_bytes(), foreign.stat().st_mtime_ns), foreign_before)
+            return {"north", "east", "west", "tiny"}
+
+        for n, (name, run) in enumerate((("O26 shipped one by one", shipped_one_by_one),
+                                         ("O62 folder with four shipped notes", folder_with_four_shipped))):
+            with self.subTest(name):
+                if n:
+                    self.setUp()  # a fresh fixture per row, removed by doCleanups below
+                try:
+                    expected = run()
+                    self.assertEqual(set(self.own_notes()), expected)
+                finally:
+                    self.doCleanups()
 
 
 class BoardServerTests(Board):
@@ -931,6 +972,7 @@ class BoardServerTests(Board):
         self.addCleanup(sock.close)
         return sock
 
+    @slow
     def test_o34_server_failure_does_not_fail_board(self) -> None:
         """O34, D20: the port held by something else: exit 0, server.state error, port-busy or stalled."""
 
@@ -939,7 +981,7 @@ class BoardServerTests(Board):
                 self.send_response(404)
                 self.end_headers()
 
-            def log_message(self, *args) -> None:
+            def log_message(self, format: str, *args: object) -> None:
                 pass
 
         with self.subTest("another http server"):
@@ -1009,6 +1051,7 @@ class BoardServerTests(Board):
         assert now is not None
         self.assertEqual((now["version"], now["pid"]), (VERSION, old["pid"]))
 
+    @slow
     def test_o39_server_without_this_root_is_replaced_with_both(self) -> None:
         """O39, D20: a running server without the root of this project is replaced by one with both roots."""
         self.serve()
@@ -1110,27 +1153,39 @@ class BoardServerTests(Board):
         for feature in api["features"]:
             self.assertEqual((feature["type"], feature["schema"]), ("dev-loop-status", 1))
 
-    def test_o47_at_most_500_notes(self) -> None:
-        """O47, D21: the server reads at most 500 notes."""
-        bulk = self.vault / "Projects" / "Bulk" / "dev-loop-board"
-        for n in range(510):
-            put(bulk / f"n{n:03}.md", note_text(status_note(project="bulk", feature=f"bulk-{n:03}")))
-        self.serve()
-        self.assertLessEqual(len(self.api()["features"]), 500)
+    @slow
+    def test_o47_read_limits(self) -> None:
+        """O47, D21: the server read limits. Rows: at most 500 notes; at most the first 64 KB of a note."""
 
-    def test_o47_at_most_64_kb_of_a_note(self) -> None:
-        """O47, D21: the server reads at most the first 64 KB of a note."""
-        folder = self.vault / "Projects" / "Big" / "dev-loop-board"
-        # The title line comes after a 70 KB description, so it sits past the first 64 KB.
-        fields = status_note(project="big", feature="big-note", description="x" * 70000)
-        fields.pop("title")
-        put(folder / "big.md", note_text({**fields, "title": "Far Title"}))
-        put(folder / "small.md", note_text(status_note(project="big", feature="small-one")))
-        self.serve()
-        status, _, body = request(self.port, "/api/status")
-        self.assertEqual(status, 200)
-        self.assertIn(b"small-one", body)
-        self.assertNotIn(b"Far Title", body)
+        def at_most_500_notes() -> None:
+            bulk = self.vault / "Projects" / "Bulk" / "dev-loop-board"
+            for n in range(510):
+                put(bulk / f"n{n:03}.md", note_text(status_note(project="bulk", feature=f"bulk-{n:03}")))
+            self.serve()
+            self.assertLessEqual(len(self.api()["features"]), 500)
+
+        def at_most_64_kb_of_a_note() -> None:
+            folder = self.vault / "Projects" / "Big" / "dev-loop-board"
+            # The title line comes after a 70 KB description, so it sits past the first 64 KB.
+            fields = status_note(project="big", feature="big-note", description="x" * 70000)
+            fields.pop("title")
+            put(folder / "big.md", note_text({**fields, "title": "Far Title"}))
+            put(folder / "small.md", note_text(status_note(project="big", feature="small-one")))
+            self.serve()
+            status, _, body = request(self.port, "/api/status")
+            self.assertEqual(status, 200)
+            self.assertIn(b"small-one", body)
+            self.assertNotIn(b"Far Title", body)
+
+        for n, (name, run) in enumerate((("at most 500 notes", at_most_500_notes),
+                                         ("at most 64 KB of a note", at_most_64_kb_of_a_note))):
+            with self.subTest(name):
+                if n:
+                    self.setUp()  # a fresh fixture per row, removed by doCleanups below
+                try:
+                    run()
+                finally:
+                    self.doCleanups()  # stops the server and removes the row fixture
 
 
 FAKE_DEVLOOP = """#!/usr/bin/env python3
@@ -1203,6 +1258,7 @@ class BoardHookTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--event") + 1], event)
         self.assertEqual(json.loads(board[0]["stdin"]).get("cwd"), str(self.repo))
 
+    @slow
     def test_o32_f5_blocked_stop_runs_no_board(self) -> None:
         """O32, F5: gate.sh that blocks a stop does not run `board`, so waiting does not change. The same
         stop with a passing gate runs it: the control that the fake devloop.py is reachable."""
@@ -1217,6 +1273,7 @@ class BoardHookTests(unittest.TestCase):
                 self.hook(harness, "gate.sh", "Stop")
                 self.assert_board_event(self.calls(wait=6), "stop")
 
+    @slow
     def test_o33_gate_runs_board_quietly_when_it_does_not_block(self) -> None:
         """O33, D15: a passing gate.sh runs `board --event stop|subagent-stop`; stdout empty, exit 0, also
         when board fails."""
@@ -1229,6 +1286,7 @@ class BoardHookTests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout), (0, ""))
                     self.assert_board_event(self.calls(wait=6), name)
 
+    @slow
     def test_o33_board_sh_runs_board_quietly(self) -> None:
         """O33, D15: board.sh runs `board --event session-start` and `--event prompt`; stdout empty, exit 0,
         also when board fails."""
