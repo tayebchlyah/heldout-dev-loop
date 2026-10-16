@@ -60,6 +60,17 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
     },
   ])
 
+  assert.deepEqual(fragment.hooks.PostToolUse, [
+    {
+      matcher: 'Bash',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/board.sh post-tool', timeout: 5 }],
+    },
+    {
+      matcher: 'TaskCreate|TaskUpdate',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/board.sh post-tool', timeout: 5 }],
+    },
+  ])
+
   assert.deepEqual(fragment.hooks.Stop, [
     { hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh', timeout: 600 }] },
   ])
@@ -151,6 +162,20 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
           command: '{{HOME}}/.codex/hooks/git-guard.sh',
           timeout: 5,
           statusMessage: 'Checking command safety',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.PostToolUse, [
+    {
+      matcher: 'Bash',
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/board.sh post-tool',
+          timeout: 5,
+          statusMessage: 'Updating dev-loop board',
         },
       ],
     },
