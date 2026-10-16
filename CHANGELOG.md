@@ -1,78 +1,171 @@
 # Changelog
 
-## [2.0.0] - 2026-10-14
+## [2.1.0] - 2026-10-16
 
 ### ♻️ Refactors & Cleanup
 
-- [`a4bf4e3`](https://github.com/tchlyah/dev-loop/commit/a4bf4e374ef3bf9d597be35256a91f7e177e3e6b) - **skill**: v2 skill stack: grilling, writing-plans, native or SDD, Pocock tdd and pr
+- [`3aef282`](https://github.com/tchlyah/dev-loop/commit/3aef282d3bb9ab86c06068bc4ef7f9e141326699) - **board**: O2: one home in store.py for the frontmatter parse, version_key and root_of *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`95ac2d3`](https://github.com/tchlyah/dev-loop/commit/95ac2d3ce6681280e81bf0d1cf9f957a0d795c3c) - **gate**: One review wave of three reviewers, no simplify, mutation nightly
+- [`e753e6e`](https://github.com/tchlyah/dev-loop/commit/e753e6e6dabb26cc6a435b681469cf9140c23bb8) - **board**: A3, A4: group the shared run values of merge and write in a Context, one-line comments *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`d9e2ea8`](https://github.com/tchlyah/dev-loop/commit/d9e2ea820c022fc527c9b7f0a19da1c4fe5e9758) - **check**: Replace the dead global check with one init line
+- [`26500b4`](https://github.com/tchlyah/dev-loop/commit/26500b49585df7e2e04271307435aa74c0fb7570) - **board**: Oracle tests: table rows for paired cases, slow markers, log_message signature *(PR [#12](https://github.com/tchlyah/dev-loop/pull/12) by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### ⚡️ Performance
+
+- [`60496c2`](https://github.com/tchlyah/dev-loop/commit/60496c2e228a78307351e81d4f179cccce5b2f1e) - **board**: A2: write a status note only on a change, list it in notes either way *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`8e74f6d`](https://github.com/tchlyah/dev-loop/commit/8e74f6d0c6f9ac3c301351972638e20e55112e2b) - **tests**: E1: skill suite from about 238 s to 145 s *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
 ### ✨ New Features
 
-- [`1185d29`](https://github.com/tchlyah/dev-loop/commit/1185d2907540ebcfdb9346ec09fc1a21a1cd6505) - **cli**: devloop status, logged, gate --summary and ci wait, commands map
+- [`c22db3d`](https://github.com/tchlyah/dev-loop/commit/c22db3d0e15287b94def5d71b1bcd042dc004391) - **board**: Render the progress board with renderBoard *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`6f4ee58`](https://github.com/tchlyah/dev-loop/commit/6f4ee58b5ce000a7c6cb61470d2efa9033be9d95) - **cli**: Mark a spec shipped by its shipped: frontmatter field, written at Stage 7
+- [`8d86d88`](https://github.com/tchlyah/dev-loop/commit/8d86d88f134da5281cc26706eed6c25e9f8e2e79) - **board**: Write status notes with devloop.py board *(commit by [@tchlyah](https://github.com/tchlyah))*
 
+- [`e6c8772`](https://github.com/tchlyah/dev-loop/commit/e6c8772df00aa5e02fd3c37f25b4de9a3e913e94) - **board**: Track waiting, ship and the Obsidian board note *(commit by [@tchlyah](https://github.com/tchlyah))*
 
+- [`d02b7e3`](https://github.com/tchlyah/dev-loop/commit/d02b7e3e0aeb09493c8de66e33bfdb5648d4265c) - **board**: Serve the board on 127.0.0.1 *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-### 🎨 UI/UX & Accessibility
+- [`017e26f`](https://github.com/tchlyah/dev-loop/commit/017e26f4a4503f3cbe2263fa09b32575af1cbd08) - **hooks**: Update the board on session start, prompt and stop *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`5bc7d69`](https://github.com/tchlyah/dev-loop/commit/5bc7d695de6aada0a2292decd3b7c8370cc46972) - **cli**: Narrow optional values so devloop.py and its tests pass pyright basic
+- [`950186a`](https://github.com/tchlyah/dev-loop/commit/950186ae7ce64ae3bd15f91d8cb8116b4685a281) - **cli**: Skip Stage 3 for a spec with acceptance: regression or none *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`5053b28`](https://github.com/tchlyah/dev-loop/commit/5053b28ea390181abbab9ed2f8b61c5e4ec35e4e) - **board**: Leave Stage 3 out of the bar for a spec with acceptance: regression or none *(PR [#14](https://github.com/tchlyah/dev-loop/pull/14) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`234dafe`](https://github.com/tchlyah/dev-loop/commit/234dafe02623c0785bca945b451aa3febedf366b) - **skill**: Keep the stage and task checklist in the native plan tool *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`6522aac`](https://github.com/tchlyah/dev-loop/commit/6522aacecfda56ba6ec4cb8d2122e330d7c5f315) - **install**: Set CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in the project Claude settings *(PR [#15](https://github.com/tchlyah/dev-loop/pull/15) by [@tchlyah](https://github.com/tchlyah))*
+
+- [`b076017`](https://github.com/tchlyah/dev-loop/commit/b076017ee7cd5c767856062d365e7b320ca44e9f) - **mutation**: Commit a fix-wave test only when a rerun on the listed functions shows it kills a listed mutant *(PR [#16](https://github.com/tchlyah/dev-loop/pull/16) by [@tchlyah](https://github.com/tchlyah))*
 
 
 
 ### 🐛 Bug Fixes
 
-- [`e08e5d5`](https://github.com/tchlyah/dev-loop/commit/e08e5d55b7b0ff6a12f53f6681c8a277bd212258) - **cli**: Ship a merged feature with no branch, never read a failed git cherry as empty
+- [`16abf56`](https://github.com/tchlyah/dev-loop/commit/16abf56d87b2601d840262960337a8cb5cb30853) - **board**: D4, D9, O4: drop the Waiting duration from Needs you, count zero-length tasks in the time left mean, guard inline embeds *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`a374e8c`](https://github.com/tchlyah/dev-loop/commit/a374e8c88f0d181a44ad60c2e40950a31514b577) - **skill**: Send Track S through the review wave, replace only known old SessionStart commands
+- [`171cff5`](https://github.com/tchlyah/dev-loop/commit/171cff5cd0e539d185f2fccbc94ee10f73d2a220) - **hooks**: D1, D12, O1: detach the board run, take the Claude CLI from the project, gate.sh calls board.sh *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`4d9c4bd`](https://github.com/tchlyah/dev-loop/commit/4d9c4bd804782cac7eb6680d614e1f4ed1be9116) - **cli**: Fix devloop status detection, ci wait retry and spec-tester naming
+- [`94ebb6f`](https://github.com/tchlyah/dev-loop/commit/94ebb6f2fd85bfbed693cafd39371e6f1d8683d1) - **board**: D2, D5, D6, D7, D10, O5: queue busy events, skip on spec placeholders, wait for the lock on a claim *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`47c2e21`](https://github.com/tchlyah/dev-loop/commit/47c2e2127b14c75e21db62eb7f6218cd492cd52f) - **hooks**: Run the mapped commands.gate in the Stop and SubagentStop gate
+- [`d75191f`](https://github.com/tchlyah/dev-loop/commit/d75191f93e96d7e568cf715a9162fa1f33a8b3a6) - **board**: D2 drain race: rename board-events.jsonl to a unique temp name before reading it *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`b6e70a5`](https://github.com/tchlyah/dev-loop/commit/b6e70a5f5bda8cd5a0f1aaf8d1b3cc8a5e280a4a) - **skill**: Run the Pocock desks and every reviewer in the feature worktree
+- [`57dfb13`](https://github.com/tchlyah/dev-loop/commit/57dfb13b16765f96b5fd468af1ab69578f6e2dd8) - **board**: D3, D8: a restarted server carries this kit's version, list the notes of the cached folders on every request *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`df04e2c`](https://github.com/tchlyah/dev-loop/commit/df04e2c4b8582099494b7717464d4858f6553035) - **skill**: Fix every defect, write the Track S review marker after the fix wave
+- [`d0419bb`](https://github.com/tchlyah/dev-loop/commit/d0419bb17ee160e34708a6571795895f1a08d38e) - **board**: A1: ship a Track S note by its recorded head once its branch is gone *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`12942d3`](https://github.com/tchlyah/dev-loop/commit/12942d30a6c9d6b3c3cf041c95152d579406c6df) - **mutation**: Fall back to the root commit when main has no commit 24 hours old
+- [`0f3ca2c`](https://github.com/tchlyah/dev-loop/commit/0f3ca2ceffe521442c4545f20c7e69ce2b7f47bb) - **check**: B1 to B3: board vault opt-outs, no git or fake .git skips the ignore line, prerelease version_key *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`d8cfc62`](https://github.com/tchlyah/dev-loop/commit/d8cfc622f55ad7be26bf78fd3e07d42a630c1811) - **cli**: List only open specs on main: unapproved, or with a branch or worktree
+- [`78c6fb7`](https://github.com/tchlyah/dev-loop/commit/78c6fb72a4cd18ef1229ad49d42931931023a86f) - **board**: C1 to C4: skip a FIFO note, stop waits for a refused port, a racing run reports running, trust a pid only from the pidfile *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`bb53cf8`](https://github.com/tchlyah/dev-loop/commit/bb53cf81d983ddd023b05a854c6199cc33b62903) - **cli**: Compare feature slugs without case: spec, branch, --feature, acceptance file
+- [`e9b264c`](https://github.com/tchlyah/dev-loop/commit/e9b264c21e3965e8efd2b2bbdc4773cd01f33fb7) - **board**: Fix D1 to D3: group by owner and machine, split task segments at Stage 5 only, guard Codex upgrade dedupe *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`59f82ed`](https://github.com/tchlyah/dev-loop/commit/59f82ed1074920a13e325f5de24ce00c177d96eb) - **mutation**: Take one root commit when main has several
-
-
-
-### 💥 Breaking Changes
-
-- [`b4c4caa`](https://github.com/tchlyah/dev-loop/commit/b4c4caa3a4d2063b6c86670381dbff19eb635c02) - **skill**: Tracks, chained sessions, devloop status detection, no 1.4 fallbacks
+- [`56bc023`](https://github.com/tchlyah/dev-loop/commit/56bc0233d0e9553cc5f21a3882cc375a2cdb6fe1) - **board**: C5: a run whose own child is not the board ends it before it returns *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
 ### 📝 Documentation & Content
 
-- [`1b3320c`](https://github.com/tchlyah/dev-loop/commit/1b3320c14e5fb4f9f02f80f37399da02f2f867e7) - **skill**: Ponytail rules, vendor scope paragraphs and test rules for implementers
+- [`d0eeb00`](https://github.com/tchlyah/dev-loop/commit/d0eeb00684ff88d5d30c86d563c2021f30892867) - **board**: Document the board and check its Obsidian setup *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`a2f20a2`](https://github.com/tchlyah/dev-loop/commit/a2f20a24ed33ed5b2f82e19cb3cc07b50fa63e94) - **skill**: Match vendor quote, trim test rules, fix building.md headings
+- [`1fa2f92`](https://github.com/tchlyah/dev-loop/commit/1fa2f9266f85d1e38ca6f391128c93091ca3162a) - **board**: Fetch after the merge on every track *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`4bca392`](https://github.com/tchlyah/dev-loop/commit/4bca3923d8d74846cb21e5772fea14af5d7ac4ca) - **changelog**: Regenerate CHANGELOG.md for v2.0.0
+- [`564e641`](https://github.com/tchlyah/dev-loop/commit/564e641153049a9b11997c584ea178dc4e63b9e8) - **board**: O3: Align AGENTS.md board line and repo map with the code *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`931439d`](https://github.com/tchlyah/dev-loop/commit/931439d29ebaa1bb2253678f87766cf14300d824) - **skill**: Describe the nightly CI workflow, the app CLI skeleton and stack_up
+- [`c3eb06f`](https://github.com/tchlyah/dev-loop/commit/c3eb06fc4439f21a9854c80964f929ddc1caccc0) - **board**: F1: Document head, write-on-change, pidfile and the local.json opt-outs in AGENTS.md *(commit by [@tchlyah](https://github.com/tchlyah))*
 
-- [`2895fbb`](https://github.com/tchlyah/dev-loop/commit/2895fbbe14568313e6bfd327f3e48882edf2beb2) - **changelog**: Regenerate CHANGELOG.md for v2.0.0 after the review wave fixes
+
+
+### 🔒 Security
+
+- [`29db98f`](https://github.com/tchlyah/dev-loop/commit/29db98f169c5a0057a3a7f9462895c55bad6954f) - **setup**: D11: report a board note at the kit version whose body is not the kit template *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 
 ### 🧪 Tests & Quality
 
-- [`13437ee`](https://github.com/tchlyah/dev-loop/commit/13437eeeee0c99d87cba20a77e0f531146e6d681) - **check**: Cover the live Codex and Claude checks on project-mode fixtures
+- [`023dec5`](https://github.com/tchlyah/dev-loop/commit/023dec5cf647ce80c1bd7ebd8a492b24b08bec19) - **board**: Add progress board oracle tests from the spec *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+## [2.0.0] - 2026-10-14
+
+### ♻️ Refactors & Cleanup
+
+- [`338a1d8`](https://github.com/tchlyah/dev-loop/commit/338a1d8eba0066fd8b870431523334c7856a1283) - **skill**: v2 skill stack: grilling, writing-plans, native or SDD, Pocock tdd and pr *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`c2277f9`](https://github.com/tchlyah/dev-loop/commit/c2277f973e357483a5dfa2259a6e5b355a23a624) - **gate**: One review wave of three reviewers, no simplify, mutation nightly *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`08b98ba`](https://github.com/tchlyah/dev-loop/commit/08b98bac76de98dddca25665d41590903c09dd7d) - **check**: Replace the dead global check with one init line *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### ✨ New Features
+
+- [`86b6ec6`](https://github.com/tchlyah/dev-loop/commit/86b6ec62207cb4f2162f181dc7994a7411ecd4c0) - **cli**: devloop status, logged, gate --summary and ci wait, commands map *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`8529967`](https://github.com/tchlyah/dev-loop/commit/85299673295ef634d107dd41917a96374487fa81) - **cli**: Mark a spec shipped by its shipped: frontmatter field, written at Stage 7 *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🎨 UI/UX & Accessibility
+
+- [`f41be64`](https://github.com/tchlyah/dev-loop/commit/f41be647b8d91fb5a283084afeb6f89ad73b6ab9) - **cli**: Narrow optional values so devloop.py and its tests pass pyright basic *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🐛 Bug Fixes
+
+- [`8f88540`](https://github.com/tchlyah/dev-loop/commit/8f8854004af3be2e4af319eda026c6cd0c1487ba) - **cli**: Ship a merged feature with no branch, never read a failed git cherry as empty *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`d8413ed`](https://github.com/tchlyah/dev-loop/commit/d8413eda3970949a30a717accefee92b2c2488f7) - **skill**: Send Track S through the review wave, replace only known old SessionStart commands *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`da952df`](https://github.com/tchlyah/dev-loop/commit/da952df17c92bb3aa96e898cabb61bb649260e37) - **cli**: Fix devloop status detection, ci wait retry and spec-tester naming *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`877a787`](https://github.com/tchlyah/dev-loop/commit/877a787e778553842506978a5f43a97f98b4274f) - **hooks**: Run the mapped commands.gate in the Stop and SubagentStop gate *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`5748491`](https://github.com/tchlyah/dev-loop/commit/5748491e4514867e67090d1af3dbd0e7d7bd45ad) - **skill**: Run the Pocock desks and every reviewer in the feature worktree *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`056c336`](https://github.com/tchlyah/dev-loop/commit/056c33696b6330387a60349b54de4da69e69d123) - **skill**: Fix every defect, write the Track S review marker after the fix wave *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`aa7e62a`](https://github.com/tchlyah/dev-loop/commit/aa7e62aed4aefd15d6489d393e08ef261639d0ad) - **mutation**: Fall back to the root commit when main has no commit 24 hours old *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`294623f`](https://github.com/tchlyah/dev-loop/commit/294623f7cdb71daf20dd6d26bbd82fa6f00672ff) - **cli**: List only open specs on main: unapproved, or with a branch or worktree *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`83d2111`](https://github.com/tchlyah/dev-loop/commit/83d2111b02fdbb6f2c07c69c7b2fa7d2c6899449) - **cli**: Compare feature slugs without case: spec, branch, --feature, acceptance file *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`1bb0f30`](https://github.com/tchlyah/dev-loop/commit/1bb0f30b97c27043b4be9ff0865be4a079f345ec) - **mutation**: Take one root commit when main has several *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 💥 Breaking Changes
+
+- [`497d90f`](https://github.com/tchlyah/dev-loop/commit/497d90f2f081b67d4fb9c220b4d255111821246b) - **skill**: Tracks, chained sessions, devloop status detection, no 1.4 fallbacks *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 📝 Documentation & Content
+
+- [`73bb685`](https://github.com/tchlyah/dev-loop/commit/73bb6854e1037f744501162b248a6c5c4911130d) - **skill**: Ponytail rules, vendor scope paragraphs and test rules for implementers *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`359c812`](https://github.com/tchlyah/dev-loop/commit/359c8121622557394b4eec0d1c9bf98e8b002192) - **skill**: Match vendor quote, trim test rules, fix building.md headings *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`16658bb`](https://github.com/tchlyah/dev-loop/commit/16658bbe1411f0ad0350761e419f8fe8f5f5e32c) - **changelog**: Regenerate CHANGELOG.md for v2.0.0 *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`f2d76c3`](https://github.com/tchlyah/dev-loop/commit/f2d76c399e300cf7aafb6a8eace435605b8924a0) - **skill**: Describe the nightly CI workflow, the app CLI skeleton and stack_up *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`4214e1e`](https://github.com/tchlyah/dev-loop/commit/4214e1e8515006f9f0ad2822cbfac241944788b4) - **changelog**: Regenerate CHANGELOG.md for v2.0.0 after the review wave fixes *(commit by [@tchlyah](https://github.com/tchlyah))*
+
+- [`0d663b8`](https://github.com/tchlyah/dev-loop/commit/0d663b884262c0e3505505bf9b306d1c6fc4f379) - **changelog**: Regenerate CHANGELOG.md for v2.0.0 *(PR [#10](https://github.com/tchlyah/dev-loop/pull/10) by [@tchlyah](https://github.com/tchlyah))*
+
+
+
+### 🧪 Tests & Quality
+
+- [`38f69c4`](https://github.com/tchlyah/dev-loop/commit/38f69c442a85d3d25cd87d11feb834dde5a3d73d) - **check**: Cover the live Codex and Claude checks on project-mode fixtures *(commit by [@tchlyah](https://github.com/tchlyah))*
 
 
 ## [1.5.0] - 2026-10-13
