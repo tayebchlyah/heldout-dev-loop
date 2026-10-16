@@ -507,6 +507,30 @@ class BoardRobustTests(Board):
                 self.assertEqual((code, out["server"]["state"]), (0, "port-busy"), out)
                 self.assertEqual((named.poll(), recorded.poll()), (None, None))
 
+    def test_task_10_in_progress_is_not_task_1(self) -> None:
+        """Review Focus (Task 4, D9 a): a native `Task 10: x` in progress makes only task 10 `doing`, not task 1."""
+        claude = self.root / "claude-config"
+        self.env["CLAUDE_CONFIG_DIR"] = str(claude)
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=10)
+        self.ledger(wt, plan, *(f"Task {n}: complete" for n in range(2, 10)))
+        put(claude / "tasks" / "sess-north" / "1.json",
+            json.dumps({"id": "1", "subject": "Task 10: x", "status": "in_progress"}) + "\n")
+        self.ok("--event", "prompt", cwd=wt, stdin={"session_id": "sess-north", "cwd": str(wt)})
+        states = [t["state"] for t in self.note("gadget")["tasks"]]
+        self.assertEqual(states, ["todo"] + ["done"] * 8 + ["doing"])
+
+    def test_hook_input_without_session_id_is_ignored(self) -> None:
+        """Review Focus (Task 4, D12): a hook input with no session_id, or a non-string one, maps no session."""
+        wt, _ = self.stage5("gadget", "Gadget Export")
+        for stdin in ({"cwd": str(wt)}, {"cwd": str(wt), "session_id": 7}):
+            with self.subTest(stdin=stdin):
+                self.ok("--event", "stop", cwd=wt, stdin=stdin)
+                state = json.loads((self.repo / ".git" / "dev-loop" / "board-state.json").read_text())
+                self.assertEqual(state.get("sessions"), {})
+        self.ok("--event", "stop", cwd=wt, stdin={"cwd": str(wt), "session_id": "sess-north"})
+        state = json.loads((self.repo / ".git" / "dev-loop" / "board-state.json").read_text())
+        self.assertEqual(state["sessions"]["sess-north"]["feature"], "gadget")  # The control: a string id maps.
+
 
 class VersionKeyTests(unittest.TestCase):
     def test_a_prerelease_compares_by_its_leading_integers(self) -> None:
