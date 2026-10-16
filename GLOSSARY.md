@@ -100,7 +100,7 @@ The live view of open features, built from the status notes every machine writes
 _Avoid_: dashboard, kanban
 
 **Status note**:
-One note per feature per machine that the board shows. Only hooks write it.
+One note per feature per machine that the board shows. Only board runs write it, never a person or an agent.
 
 **Claim**:
 The mark that one machine works on a feature, set when its spec is written.
