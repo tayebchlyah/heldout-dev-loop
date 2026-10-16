@@ -1895,7 +1895,7 @@ class ModelAliasContractTests(unittest.TestCase):
 class PlanToolContractTests(unittest.TestCase):
     def test_skill_keeps_the_checklist_in_the_native_plan_tool(self) -> None:
         section = test_devloop.section(SKILL, "## Detect the stage")
-        for value in ["`TaskCreate`/`TaskUpdate` in Claude", "`update_plan` in Codex", "One item per stage and plan task"]:
+        for value in ["`TaskCreate` item per stage", "subject `Task N: <plan heading>`", "Codex: no plan tool", "`task-start` for each task"]:
             with self.subTest(value=value):
                 self.assertIn(value, section)
 

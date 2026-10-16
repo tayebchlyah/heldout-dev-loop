@@ -27,7 +27,7 @@ Stage 1 sizes the work:
 - Track L: Session A, then Session B. Build `superpowers:subagent-driven-development`. Spec adds threat model. Never auto-merged.
 
 Session A: Stages 1 and 2, on `main`. Stops at the spec approval. Track S: Stage 1, then build in the same session under the grant.
-Session B: Stages 3 to 7 chained, under the grant. Each stage ends, run `scripts/devloop.py status` again, run the next stage.
+Session B: Stages 3 to 7 chained, under the grant. Each stage ends, run `scripts/devloop.py status` again, run the next stage. Session B start, `status` has `kit_drift`: stop; tell the user to merge the kit upgrade to `main` and start a new session there. Kit upgrade: own PR on `main` before Session B.
 
 Autonomy grant (Session B, Track S after Stage 1):
 
@@ -52,7 +52,9 @@ Verification budget. The kit enforces no time cap: a hook the harness kills is a
 
 Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left.
 
-Keep the stage and task checklist in the native plan tool: `TaskCreate`/`TaskUpdate` in Claude, `update_plan` in Codex. One item per stage and plan task, updated at each transition.
+Checklist. Claude: one `TaskCreate` item per stage; end of Stage 4: one item per plan task, subject `Task N: <plan heading>`; `in_progress` at start, `completed` after its ledger line; close a stage item before the next. Codex: no plan tool, the ledger is the record. Both: `task-start` for each task, inline too.
+
+Board: hooks write it. Never edit a status note. Never send `devloop.py` JSON to `/dev/null`. `status` has `board`: tell the user the board did not update, with the reasons.
 
 ## Where each stage runs
 
@@ -83,7 +85,7 @@ Propose the track, S, M or L, with a one-line reason. Track S: no spec, no plan.
 
 ## 2 Spec
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask the user. The analysis below reads current specs and current code.
-Write the spec from [references/spec.md](references/spec.md) to `$NOTES/specs/`. Run its builder check. Then once: `scripts/devloop.py board --claim <slug>`. Track L: its threat model. One-way door: its doubt review.
+Write the spec from [references/spec.md](references/spec.md) to `$NOTES/specs/`. Run its builder check. Then once, the only board command: `scripts/devloop.py board --claim <slug>`. Track L: its threat model. One-way door: its doubt review.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in stacks: also routes and accessible names.
 Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types), later tasks are vertical slices. One stack: no contract task.
 Supersedes: read the earlier specs in `$NOTES/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
