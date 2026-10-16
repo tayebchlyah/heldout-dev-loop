@@ -33,6 +33,6 @@ Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
    - Custom read-only agent `security_reviewer`.
 2. **Triage, controller.** SKILL.md Stage 6.
 3. **Fix wave.** Custom agent `implementer`, one file cluster at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
-4. **Acceptance loop.** SKILL.md Stage 6. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
+4. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.
