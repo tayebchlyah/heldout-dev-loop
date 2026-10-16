@@ -15,6 +15,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -78,9 +79,11 @@ class Index:
         features, newer = [], 0
         for path in self.notes(folders):
             try:
-                # O_NOFOLLOW: a note swapped for a link after the walk is not read (B2).
-                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                # O_NOFOLLOW, O_NONBLOCK, S_ISREG: a note swapped for a link or a FIFO after the listing is not read (B2).
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
                 with os.fdopen(fd, "rb") as handle:
+                    if not stat.S_ISREG(os.fstat(fd).st_mode):
+                        continue
                     fields = store.parse(handle.read(MAX_BYTES))
             except OSError:
                 continue
@@ -137,8 +140,13 @@ def make_server(port: int, version: str, roots: list[Path], here: str, me: str) 
     return Server(("127.0.0.1", port), Handler)
 
 
+def pidfile(port: int) -> Path:
+    return Path.home() / ".config" / "dev-loop" / f"board-server.{port}.pid"
+
+
 def probe(port: int) -> tuple[str, dict]:
-    """GET /health: `none` (refused), `stalled` (no answer in 2 s), `busy` (not a board), or `board`."""
+    """GET /health: `none` (refused), `stalled` (no answer in 2 s), `busy` (not a board, or a pid that is not the
+    pidfile's), or `board`."""
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
     try:
         conn.request("GET", "/health", headers={"Host": f"127.0.0.1:{port}"})
@@ -156,9 +164,14 @@ def probe(port: int) -> tuple[str, dict]:
         found = json.loads(body)
     except ValueError:
         return "busy", {}
-    if response.status == 200 and isinstance(found, dict) and found.get("name") == NAME:
-        return "board", found
-    return "busy", {}
+    if response.status != 200 or not isinstance(found, dict) or found.get("name") != NAME:
+        return "busy", {}
+    try:
+        recorded = pidfile(port).read_text().strip()
+    except OSError:
+        recorded = None
+    # C4: a pid is trusted (and signalled) only when the server that holds the port recorded it at start.
+    return ("board", found) if recorded == str(found.get("pid")) else ("busy", {})
 
 
 def failure(kind: str, url: str, port: int) -> dict:
@@ -181,6 +194,9 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
         if probe(port)[0] == "board":
             return {"state": state, "url": url}
         time.sleep(0.1)
+    kind, found = probe(port)  # C3: our child lost the port to a board that another run started at the same moment.
+    if kind == "board" and all(str(r) in (found.get("roots") or []) for r in roots):
+        return {"state": "running", "url": url}
     return {"state": "error", "url": url, "message": f"the board server did not start on port {port}, see {LOG}"}
 
 
@@ -206,7 +222,7 @@ def ensure(port: int, version: str, roots: list[Path], here: str, me: str) -> di
 
 
 def stop(port: int) -> dict:
-    """SIGTERM the board server on this port, then wait up to 5 s until /health fails."""
+    """SIGTERM the board server on this port, then wait up to 5 s until the port refuses connections."""
     url = f"http://127.0.0.1:{port}/"
     try:
         kind, found = probe(port)
@@ -219,7 +235,7 @@ def stop(port: int) -> dict:
             return {"state": "error", "url": url, "message": f"the board on port {port} reports no valid pid"}
         os.kill(pid, signal.SIGTERM)
         deadline = time.monotonic() + 5
-        while probe(port)[0] == "board":
+        while probe(port)[0] != "none":
             if time.monotonic() > deadline:
                 return {"state": "error", "url": url, "message": f"the board server (pid {pid}) did not stop"}
             time.sleep(0.1)
@@ -236,7 +252,16 @@ def main() -> None:
     parser.add_argument("--me", required=True)
     parser.add_argument("--root", type=Path, action="append", required=True)
     args = parser.parse_args()
-    make_server(args.port, args.version, args.root, args.here, args.me).serve_forever()
+    httpd = make_server(args.port, args.version, args.root, args.here, args.me)
+    path, pid = pidfile(args.port), str(os.getpid())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(pid + "\n")
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # Run the cleanup below on `stop`.
+    try:
+        httpd.serve_forever()
+    finally:
+        if path.exists() and path.read_text().strip() == pid:
+            path.unlink()
 
 
 if __name__ == "__main__":
