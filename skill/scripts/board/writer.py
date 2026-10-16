@@ -174,21 +174,24 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     if dl.git(repo, "rev-parse", "HEAD") is None or not glossary:
         payload["skipped"].append(skip("stage-0"))
         return 0, payload
+    common = Path(dl.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
+    state_dir = common / "dev-loop"
+    now = time.strftime(TIME, time.gmtime())
     if any((notes / "specs").glob(".*.icloud")):  # D5: an evicted spec would drop claims and notes.
         payload["skipped"].append(skip("placeholder"))
+        state.save_last_run(state_dir, now, payload["skipped"])
         return 0, payload
     specs = dict(dl.specs(notes))
     claim = claim.lower() if claim else None
     if claim and claim not in specs:
         return 1, {"error": f"no spec for {claim} in {notes / 'specs'}"}
 
-    common = Path(dl.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     trees = worktrees(dl, repo)
     notes_real = notes.resolve()
     if any(inside(notes_real, root) for root in [*trees, common]):
         payload["skipped"].append(skip("notes-in-repo"))
+        state.save_last_run(state_dir, now, payload["skipped"])
         return 0, payload
-    state_dir = common / "dev-loop"
     state_dir.mkdir(parents=True, exist_ok=True)
     queue = state_dir / "board-events.jsonl"
     with open(state_dir / "board.lock", "a+") as lock:
@@ -222,10 +225,12 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         folder = notes_real / "dev-loop-board"
         if folder.is_symlink():
             payload["skipped"].append(skip("link"))
+            state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         folder.mkdir(exist_ok=True)
         if (folder / FEATURES).is_symlink():
             payload["skipped"].append(skip("link"))
+            state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         (folder / FEATURES).mkdir(exist_ok=True)
         events = [*drain(queue), *([(event, hook_cwd.resolve())] if event and hook_cwd else [])]
@@ -236,6 +241,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             events = drain(queue)  # D2: events queued during this write.
             if not events:
                 break
+        ctx.data["last_run"] = {"at": now, "skipped": payload["skipped"]}
         state.save(state_dir, ctx.data)
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
         board_note(Path(top), folder, payload)
