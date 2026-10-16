@@ -17,6 +17,7 @@ from . import store
 TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
                 5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
+FEATURES = "features"
 TEMPLATE = Path(__file__).with_name("board-note.md")
 
 
@@ -208,6 +209,10 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             payload["skipped"].append(skip("link"))
             return 0, payload
         folder.mkdir(exist_ok=True)
+        if (folder / FEATURES).is_symlink():
+            payload["skipped"].append(skip("link"))
+            return 0, payload
+        (folder / FEATURES).mkdir(exist_ok=True)
         events = [*drain(queue), *([(event, hook_cwd.resolve())] if event and hook_cwd else [])]
         ctx = Context(dl, repo, notes, folder, state, store.load_machine(home), store.project_name(repo))
         while True:
@@ -296,7 +301,8 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
           payload: dict, events: list[tuple[str, Path]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
-    folder, machine, project = ctx.folder, ctx.machine, ctx.project
+    board, machine, project = ctx.folder, ctx.machine, ctx.project
+    folder = board / FEATURES
     tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
 
     def scope(cwd: Path) -> list[str]:
@@ -330,6 +336,14 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         if not path.exists() and (folder / f".{name}.icloud").exists():
             payload["skipped"].append(skip("placeholder", slug))
             continue
+        legacy = board / name  # D3, D4: a note in `dev-loop-board/` moves into `features/`.
+        if legacy.is_file() and not legacy.is_symlink():
+            mine = store.read_note(legacy)
+            if mine and mine.get("machine_id") == machine["id"] and not mine.get("shipped_at"):
+                if path.exists():
+                    legacy.unlink()
+                else:
+                    os.replace(legacy, path)
         old = store.read_note(path) if path.exists() else {}
         if old is None or (old and old.get("machine_id") != machine["id"]) or (old and old.get("shipped_at")):
             continue  # D2: a file we cannot prove our own stays unchanged. D12: a shipped note is never rewritten.
@@ -362,7 +376,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     own_names: set[str] = set()
     own_features: set[str] = set()
     shipped: list[tuple[str, Path]] = []
-    for path in sorted(folder.glob("*.md")):
+    for path in [*sorted(folder.glob("*.md")), *sorted(board.glob("*.md"))]:
         if path.name.startswith(".") or path.name == store.BOARD_NOTE or path.is_symlink():
             continue
         fields = store.read_note(path)
@@ -371,6 +385,10 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         if not isinstance(feature, str) or path.name != store.note_name(machine["id"], project, feature):
             continue  # A sync conflict copy is left alone.
+        if path.name in own_names:  # D4: an own note in both folders: the `dev-loop-board/` copy goes.
+            path.unlink()
+            payload["removed"].append(str(path))
+            continue
         own_names.add(path.name)
         if not fields.get("shipped_at") and feature not in kept and (
                 detect(feature)["stage"] == "shipped"
@@ -378,7 +396,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             # D12: the first run that sees the ship sets shipped_at, once.
             fields.update(shipped_at=now, updated=now)
             try:
-                store.write_file(folder, path.name, store.note_text(fields))
+                store.write_file(path.parent, path.name, store.note_text(fields))
             except store.LinkError:
                 payload["skipped"].append(skip("link", feature))
                 continue
@@ -399,4 +417,6 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     if features != old_features:
         features_file.write_text(json.dumps(features) + "\n")
 
-    store.clean_temps(folder, own_names | {p.name for p in map(Path, payload["notes"])}, stamp)
+    names = own_names | {p.name for p in map(Path, payload["notes"])}
+    store.clean_temps(folder, names, stamp)
+    store.clean_temps(board, names, stamp)
