@@ -175,7 +175,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     state.mkdir(parents=True, exist_ok=True)
     queue = state / "board-events.jsonl"
     with open(state / "board.lock", "a+") as lock:
-        if not take(lock, 10 if claim else 0):
+        # DEVLOOP_TEST_CLAIM_WAIT: tests only, a shorter D7 claim wait than the spec's 10 s.
+        if not take(lock, float(os.environ.get("DEVLOOP_TEST_CLAIM_WAIT") or 10) if claim else 0):
             if claim:  # D7: a claim is never dropped silently.
                 return 1, {"error": "board lock busy, claim not saved"}
             if event and hook_cwd:  # D2: the lock holder applies it.
@@ -185,6 +186,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                     handle.write(line + "\n")
             payload["skipped"].append(skip("busy"))
             return 0, payload
+        dl.cache_git()  # Under the lock: the git state this run reads no longer changes under it.
         found: dict[str, dict] = {}
 
         def detect(slug: str) -> dict:
