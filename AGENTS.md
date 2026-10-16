@@ -30,6 +30,8 @@ npm test                                # installer suite: node --test test/*.te
 python3 skill/scripts/test_dev_loop.py  # skill suite
 ```
 
+Skill suite runs test ids in parallel, 5 per `python -m unittest` process, one process per CPU (`DEVLOOP_TEST_JOBS`, `1`: serial). Arguments (a test name): plain unittest.
+
 Both must pass before any commit. `.github/workflows/ci.yml` runs both on every PR and on `main`. Merge a PR only when its `test` check is green.
 
 ## Project kit (what `init` and `upgrade` write, repo-relative)

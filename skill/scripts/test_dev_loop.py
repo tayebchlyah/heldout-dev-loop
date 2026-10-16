@@ -2439,5 +2439,44 @@ class NotesPathTests(unittest.TestCase):
         self.assertTrue(result.stderr.startswith(f"no notes path for {self.repo}."))
 
 
+def flat(suite: unittest.TestSuite):
+    for test in suite:
+        yield from flat(test) if isinstance(test, unittest.TestSuite) else [test]
+
+
+def run_parallel(jobs: int) -> int:
+    """Every test id of this suite, five per `python3 -m unittest` process, `jobs` processes at a time.
+
+    The tests start processes (git, devloop.py, hooks) and wait on them, so the suite is bound by process
+    start time, not CPU: parallel processes cut the wall time. Each test owns its temp dirs and port."""
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromModule(sys.modules[__name__])
+    if loader.errors:
+        print("\n".join(map(str, loader.errors)), file=sys.stderr)
+        return 1
+    ids = list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1) for test in flat(suite)))
+    chunks = [ids[i:i + 5] for i in range(0, len(ids), 5)]
+
+    def run(chunk: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, "-m", "unittest", *chunk], cwd=Path(__file__).parent,
+                              capture_output=True, text=True)
+
+    start = time.monotonic()
+    with ThreadPoolExecutor(jobs) as pool:
+        results = list(pool.map(run, chunks))
+    ran = sum(int(m.group(1)) for r in results if (m := re.search(r"^Ran (\d+) tests?", r.stderr, re.MULTILINE)))
+    failed = [r for r in results if r.returncode != 0]
+    for result in failed:
+        print(result.stderr, file=sys.stderr)
+    ok = not failed and ran == len(ids)
+    print(f"Ran {ran} of {len(ids)} tests in {time.monotonic() - start:.1f}s, {jobs} jobs: {'OK' if ok else 'FAILED'}")
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    # Arguments (test names, -k, -v): plain unittest. DEVLOOP_TEST_JOBS=1: serial run.
+    jobs = int(os.environ.get("DEVLOOP_TEST_JOBS") or os.cpu_count() or 1)
+    if len(sys.argv) > 1 or jobs <= 1:
+        unittest.main(verbosity=2)
+    else:
+        sys.exit(run_parallel(jobs))
