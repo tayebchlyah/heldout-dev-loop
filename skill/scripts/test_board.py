@@ -24,6 +24,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, TypeVar
 
@@ -300,10 +301,11 @@ class Board(unittest.TestCase):
         return self.repo / ".git" / "dev-loop" / "board-claims.json"
 
     def own_notes(self, machine_id: str = MACHINE["id"]) -> dict[str, Path]:
+        """Status notes of machine_id in `dev-loop-board/features/` and `dev-loop-board/` (Board Robustness D4)."""
         found = {}
         if not self.board_dir.is_dir():
             return found
-        for path in sorted(self.board_dir.glob("*.md")):
+        for path in [*sorted(self.board_dir.glob("features/*.md")), *sorted(self.board_dir.glob("*.md"))]:
             if path.name == BOARD_NOTE or path.name.startswith(".") or path.is_symlink():
                 continue
             fields = read_note(path)
@@ -324,11 +326,12 @@ class Board(unittest.TestCase):
 
 class BoardWriterTests(Board):
     def test_o1_note_path_type_schema_and_machine_id(self) -> None:
-        """O1: in a feature worktree, writes <notes>/dev-loop-board/<project>-<slug>-<hash>.md."""
+        """O1, superseded by Board Robustness oracle 1: in a feature worktree, writes
+        <notes>/dev-loop-board/features/<project>-<slug>-<hash>.md."""
         wt, _ = self.stage5("gadget", "Gadget Export")
         out = self.ok(cwd=wt)
-        path = self.board_dir / note_name(MACHINE["id"], PROJECT, "gadget")
-        self.assertTrue(path.is_file(), sorted(p.name for p in self.board_dir.iterdir()))
+        path = self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, "gadget")
+        self.assertTrue(path.is_file(), sorted(str(p.relative_to(self.board_dir)) for p in self.board_dir.rglob("*")))
         fields = read_note(path)
         self.assertEqual((fields["type"], fields["schema"], fields["machine_id"]), ("dev-loop-status", 1, MACHINE["id"]))
         self.assertIn(str(path), [str(Path(p).resolve()) for p in out["notes"]])
@@ -628,22 +631,33 @@ class BoardWriterTests(Board):
         for stage, at in first.items():
             self.assertEqual(second[stage], at)
 
-    @slow
-    def test_o19_task_done_and_next_started_share_one_time(self) -> None:
-        """O19, D14: a new `Task N: complete` sets done on N and started on N+1 to the same time."""
+    def test_o19_task_times_come_from_the_files(self) -> None:
+        """O19, superseded by Board Robustness oracles 11 to 13: Task 1 `done` is the mtime of its tests log,
+        Task 2 `done` the committer date of <b> in its `complete` line, Task 3 `started` the birth time of its
+        brief. On macOS a utime earlier than the birth time moves the birth time back too."""
         wt, plan = self.stage5("gadget", "Gadget Export")
-        self.ok(cwd=wt)
-        note = self.note("gadget")
-        self.assertEqual([t["state"] for t in note["tasks"]], ["doing", "todo", "todo"])
-        self.assertEqual(note["tasks"][0]["started"], note["stage_times"]["5"])
-        time.sleep(1.1)
-        self.ledger(wt, plan, "Task 1: complete")
+        folder = wt / ".superpowers" / "sdd" / plan.stem
+        first = git(wt, "rev-parse", "--short", "HEAD").strip()
+        put(wt / "gadget.txt", "export\n")
+        git(wt, "add", "gadget.txt")
+        subprocess.run([*GIT, "commit", "-q", "-m", "gadget"], cwd=wt, check=True, capture_output=True,
+                       env={**os.environ, "GIT_COMMITTER_DATE": "2026-10-03T10:20:30+02:00"})
+        last = git(wt, "rev-parse", "--short", "HEAD").strip()
+        now = int(time.time())
+        put(folder / "task-1-tests.log", "ok\n")
+        os.utime(folder / "task-1-tests.log", (now - 7200, now - 7200))
+        put(folder / "task-3-brief.md", "# Task 3\n")
+        os.utime(folder / "task-3-brief.md", (now - 3600, now - 3600))
+        self.ledger(wt, plan, "Task 1: complete", f"Task 2: complete (commits {first}..{last}, tests green)")
+        st = (folder / "task-3-brief.md").stat()
+        brief = getattr(st, "st_birthtime", st.st_mtime)
         self.ok(cwd=wt)
         tasks = self.note("gadget")["tasks"]
-        self.assertEqual([t["n"] for t in tasks], [1, 2, 3])
-        self.assertEqual([t["state"] for t in tasks], ["done", "doing", "todo"])
-        self.assertRegex(tasks[0]["done"], ISO_Z)
-        self.assertEqual(tasks[1]["started"], tasks[0]["done"])
+        self.assertEqual([t["state"] for t in tasks], ["done", "done", "doing"])
+        at = lambda value: datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        self.assertLess(abs(at(tasks[0]["done"]) - (now - 7200)), 1)
+        self.assertEqual(at(tasks[1]["done"]), at("2026-10-03T08:20:30Z"))
+        self.assertLess(abs(at(tasks[2]["started"]) - brief), 1)
 
     def test_o23_decisions_are_assumptions_added_after_stage_3(self) -> None:
         """O23, D18: decisions lists only the Assumptions items added after the first run at Stage 3 or later."""
@@ -1136,10 +1150,12 @@ class BoardServerTests(Board):
                 self.assertNotIn("access-control-allow-origin", headers, path)
 
     def test_o42_o43_f6_f7_api_status_lists_only_status_notes_under_roots(self) -> None:
-        """O42, O43, F6, F7: notes in every dev-loop-board under the roots; links, dot names, schema 2 and
-        folders outside the roots are left out; schema 2 counts in newer_schema."""
+        """O42 (superseded by Board Robustness oracle 28), O43, F6, F7: notes in every dev-loop-board folder and
+        its features/ subfolder under the roots; links, dot names, schema 2 and folders outside the roots are
+        left out; schema 2 counts in newer_schema."""
         other = self.vault / "Projects" / "Other Thing" / "dev-loop-board"
         put(other / "zephyr.md", note_text(status_note(project="other-thing", feature="zephyr-sync")))
+        put(other / "features" / "zephyr-two.md", note_text(status_note(project="other-thing", feature="zephyr-two")))
         put(other / "plain.md", "---\ntype: \"meeting\"\nfeature: \"meeting-note\"\n---\nnotes\n")
         put(other / "data.json", json.dumps(status_note(feature="json-file")))
         put(other / ".hidden.md", note_text(status_note(feature="dot-file")))
@@ -1155,7 +1171,7 @@ class BoardServerTests(Board):
         self.serve()
         api = self.api()
         features = {f.get("feature") for f in api["features"]}
-        self.assertLessEqual({"tiny", "zephyr-sync"}, features)
+        self.assertLessEqual({"tiny", "zephyr-sync", "zephyr-two"}, features)
         for left_out in ("meeting-note", "json-file", "dot-file", "future-thing", "via-link", "in-trash",
                          "dot-folder", "linked-folder", "secret-plan"):
             self.assertNotIn(left_out, features)

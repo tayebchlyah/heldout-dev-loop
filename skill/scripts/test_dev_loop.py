@@ -94,6 +94,21 @@ test_board_robust = importlib.util.module_from_spec(_board_robust_spec)
 _board_robust_spec.loader.exec_module(test_board_robust)
 BoardRobustTests = test_board_robust.BoardRobustTests
 
+# The board robustness oracle tests (spec-tester, held out) live in test_board_robustness.py.
+_board_robustness_spec = importlib.util.spec_from_file_location("test_board_robustness",
+                                                                SKILL_ROOT / "scripts" / "test_board_robustness.py")
+if _board_robustness_spec is None or _board_robustness_spec.loader is None:
+    raise ImportError("cannot load test_board_robustness module")
+test_board_robustness = importlib.util.module_from_spec(_board_robustness_spec)
+_board_robustness_spec.loader.exec_module(test_board_robustness)
+RobustnessStateTests = test_board_robustness.RobustnessStateTests
+RobustnessTimeTests = test_board_robustness.RobustnessTimeTests
+RobustnessEventTests = test_board_robustness.RobustnessEventTests
+RobustnessKitTests = test_board_robustness.RobustnessKitTests
+RobustnessHookTests = test_board_robustness.RobustnessHookTests
+RobustnessServerTests = test_board_robustness.RobustnessServerTests
+RobustnessFlowTests = test_board_robustness.RobustnessFlowTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
