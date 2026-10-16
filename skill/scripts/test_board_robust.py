@@ -7,6 +7,7 @@ import fcntl
 import http.server
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -108,6 +109,38 @@ class BoardRobustTests(Board):
         self.ok()
         self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
         self.assertFalse((self.repo / ".git" / "dev-loop" / "board-events.jsonl").exists())
+
+    def test_catch_up_pass_writes_a_worktree_made_while_the_holder_writes(self) -> None:
+        """D13: a worktree made once the holder has listed them: the queued busy event makes a second pass that
+        reads the worktrees again and writes the new feature's note. The holder's git calls are slow (a wrapper)."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        slow_bin = self.root / "slow-bin"
+        put(slow_bin / "git", f'#!/bin/sh\nsleep 0.3\nexec "{shutil.which("git")}" "$@"\n')
+        (slow_bin / "git").chmod(0o755)
+        holder = subprocess.Popen([sys.executable, str(DEVLOOP), "board", "--no-serve"], cwd=wt,
+                                  env={**self.env, "PATH": f"{slow_bin}{os.pathsep}{self.env['PATH']}"},
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: holder.poll() is None and holder.kill())
+        lock = self.repo / ".git" / "dev-loop" / "board.lock"
+        deadline = time.monotonic() + 30
+        while True:
+            self.assertIsNone(holder.poll(), "the holder ended before it held the lock")
+            self.assertLess(time.monotonic(), deadline, "no lock held in 30 s")
+            if lock.exists():
+                with open(lock, "a+") as handle:
+                    try:
+                        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except OSError:
+                        break
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+            time.sleep(0.02)
+        self.spec("beta", "Beta Report")
+        self.worktree("beta")
+        out = self.ok("--event", "stop", stdin={"session_id": "s", "cwd": str(self.repo), "hook_event_name": "Stop"})
+        self.assertTrue(self.skipped(out, "busy", None), f"the holder had ended: {out}")
+        result, err = holder.communicate(timeout=90)
+        self.assertEqual(holder.returncode, 0, result + err)
+        self.assertEqual(self.note("beta")["stage"], 3)
 
     def test_spec_placeholder_skips_the_whole_run(self) -> None:
         """D5: an iCloud placeholder in specs/: skip `placeholder`, exit 0, claims and notes unchanged."""
