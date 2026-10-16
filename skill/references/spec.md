@@ -9,6 +9,7 @@ Stage 2 writes the spec from this template to `$NOTES/specs/`. Then the builder 
 type: spec
 feature: <slug>
 track: S|M|L
+acceptance:
 review_status: draft
 shipped:
 pr:
@@ -28,6 +29,7 @@ Seams under test. Prefer an existing seam, the highest one. The ideal number of 
 
 ## Acceptance oracle
 One line per observable behaviour. Each line testable, quoted later by tests and reviewers.
+`acceptance: regression` or `none`: one line, why no user or system flow changes.
 
 ## Acceptance flows
 One flow per user journey. `spec-tester` writes one test per flow.

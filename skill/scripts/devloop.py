@@ -174,6 +174,7 @@ def result(stage: int | str, check: str, next_: str, feature: str | None = None,
 FETCH = "git fetch origin, then run devloop status again"
 REBASE = "finish or abort the rebase, then rerun status"
 DEFAULT_BRANCH = "main"
+SKIP_ACCEPTANCE = ("regression", "none")  # Spec `acceptance:` values with no Stage 3: the slice changes no flow.
 
 
 def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
@@ -218,7 +219,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
         return at("shipped", f"git cherry origin/main {known} lists no + commit", "none")
     if worktree is None or branch is None:  # A worktree always comes with its branch.
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
-    if not has_acceptance(worktree, slug):
+    if fields.get("acceptance", "").lower() not in SKIP_ACCEPTANCE and not has_acceptance(worktree, slug):
         return at(3, f"no acceptance file for {slug}", "Stage 3 Acceptance: dispatch spec-tester")
     plan = find_plan(notes, spec)
     if plan is None:
