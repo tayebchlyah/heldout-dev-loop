@@ -513,7 +513,16 @@ def cmd_board(args: argparse.Namespace) -> int:
             payload["server"] = server.ensure(port, writer.kit_version(top), [store.root_of(notes)], machine["id"],
                                               machine["owner"])
     except Exception as exc:  # A bad machine.json, an undecodable spec, an OSError: JSON, never a traceback.
-        return emit({"error": f"{type(exc).__name__}: {exc}"}, 1)
+        error = f"{type(exc).__name__}: {exc}"
+        try:  # A hook drops the JSON: `last_run` shows the crash in `status`. Best effort.
+            from board import state
+            common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+            if common:
+                state.save_last_run(Path(common) / "dev-loop", time.strftime(writer.TIME, time.gmtime()),
+                                    [{"feature": None, "reason": "error", "message": error}])
+        except Exception:
+            pass
+        return emit({"error": error}, 1)
     return emit(payload, 0)
 
 
