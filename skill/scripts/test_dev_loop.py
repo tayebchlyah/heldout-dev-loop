@@ -1475,7 +1475,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             "Agent(caveman:cavecrew-builder)",
             "Agent(caveman:cavecrew-investigator)",
         ]
-        settings.setdefault("env", {}).update({"ENABLE_STOP_REVIEW": "0", "ENABLE_COMMIT_REVIEW": "0", "SG_PUSH_SWEEP": "0"})
+        settings.setdefault("env", {}).update({"ENABLE_STOP_REVIEW": "0", "ENABLE_COMMIT_REVIEW": "0", "SG_PUSH_SWEEP": "0", "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"})
         path.write_text(json.dumps(settings))
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1549,6 +1549,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             "missing Claude repo env: ENABLE_STOP_REVIEW=0",
             "missing Claude repo env: ENABLE_COMMIT_REVIEW=0",
             "missing Claude repo env: SG_PUSH_SWEEP=0",
+            "missing Claude repo env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1",
         ]
         self.init("claude")
         result = self.run_checker("claude")
@@ -1863,6 +1864,14 @@ class ModelAliasContractTests(unittest.TestCase):
         for path in [*(SKILL_ROOT.parent / "claude" / "agents").glob("*.md"), SKILL, *(SKILL_ROOT / "references").glob("*.md")]:
             with self.subTest(path=path.name):
                 self.assertIsNone(pinned.search(path.read_text()))
+
+class PlanToolContractTests(unittest.TestCase):
+    def test_skill_keeps_the_checklist_in_the_native_plan_tool(self) -> None:
+        section = test_devloop.section(SKILL, "## Detect the stage")
+        for value in ["`TaskCreate`/`TaskUpdate` in Claude", "`update_plan` in Codex", "One item per stage and plan task"]:
+            with self.subTest(value=value):
+                self.assertIn(value, section)
+
 
 class FeatureWorktreeContractTests(unittest.TestCase):
     def test_stages_three_to_seven_run_in_the_feature_worktree(self) -> None:
