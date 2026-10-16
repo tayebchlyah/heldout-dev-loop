@@ -6,7 +6,7 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 
 ## Repo map
 
-Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`dev-loop.json` `version`). Edit source only: `skill/`, `claude/`, `codex/`, `bin/`, `lib/`. Never edit installed kit (`.agents/skills/dev-loop/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag, after each release.
+Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/dev-loop/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag, after each release. Kit source: `skill/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else in the repo is edited normally.
 
 - `bin/install.mjs`: installer entry point. Commands: `init`, `upgrade`, `uninstall-global`. No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`).
 - `lib/`: installer internals: `args.mjs` (flag parsing), `fsops.mjs` (backup names), `merge-json.mjs`, `merge-toml.mjs` (per-format merge), `plan.mjs` (runs the merges), `kit.mjs` (project kit file list, path rewrite), `manifest.mjs` (`.dev-loop/MANIFEST.json` write and compare), `project.mjs` (`init` and `upgrade`), `uninstall.mjs` (`uninstall-global`, frozen 1.4 file and hook lists).
@@ -14,6 +14,9 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json` (merged into the project `.claude/settings.json`).
 - `codex/`: Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (kit file `.codex/rules/dev-loop.rules`).
 - `test/*.test.mjs`: installer suite (Node's built-in test runner).
+- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
+- `GLOSSARY.md`: domain terms (Stage 0).
+- `dev-loop.json`: this repo's own project marker, kit version.
 
 ## devloop CLI
 
@@ -32,7 +35,9 @@ npm test                                # installer suite: node --test test/*.te
 python3 skill/scripts/test_dev_loop.py  # skill suite
 ```
 
-Skill suite runs test ids in parallel, 5 per `python -m unittest` process, one process per CPU (`DEVLOOP_TEST_JOBS`, `1`: serial). Arguments (a test name): plain unittest.
+Skill suite runs test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` processes at a time (default one per CPU, `1`: one at a time). `DEVLOOP_REPORT_DIR` set: writes JUnit `skill.xml` there; a chunk process that dies counts each of its ids as an error. Arguments (a test name): plain unittest, no report.
+
+`scripts/gate.sh` runs both (the full gate).
 
 Both must pass before any commit. `.github/workflows/ci.yml` runs both on every PR and on `main`. Merge a PR only when its `test` check is green.
 
