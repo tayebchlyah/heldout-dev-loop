@@ -15,6 +15,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from board import server
@@ -236,9 +237,21 @@ class BoardRobustTests(Board):
         """D3: a newer server without this root is restarted with the version of this kit, the code it runs."""
         other = self.root / "other-vault"
         other.mkdir()
-        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):  # C4: its pidfile goes to the sandboxed HOME.
+        real_popen = subprocess.Popen
+        children: list[subprocess.Popen] = []
+
+        def spawn(*args: Any, **kwargs: Any) -> subprocess.Popen:
+            children.append(real_popen(*args, **kwargs))
+            return children[-1]
+
+        def reap() -> None:
+            self.stop_port()
+            for child in children:
+                child.wait(timeout=10)  # No ResourceWarning for a child nobody waited on.
+
+        self.addCleanup(reap)
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}), mock.patch.object(subprocess, "Popen", spawn):  # C4: its pidfile goes to the sandboxed HOME.
             self.assertEqual(server.start(self.port, "99.0.0", [other], "x", "y", "started")["state"], "started")
-        self.addCleanup(self.stop_port)
         self.worktree("tiny", prefix="fix")
         code, out = self.board(serve=True, timeout=90)
         self.assertEqual((code, out["server"]["state"]), (0, "restarted"), out)
