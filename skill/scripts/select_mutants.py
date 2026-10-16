@@ -19,6 +19,7 @@ same selection, whatever the working tree holds.
 Run from the repository root:
   python3 select_mutants.py --head GATE_SHA           # print the selection
   python3 select_mutants.py --head GATE_SHA --run     # run the tools on it
+  python3 select_mutants.py --base BASE --head HEAD --run --only UNIT ...  # rerun listed functions
 """
 
 from __future__ import annotations
@@ -145,6 +146,8 @@ class Gap:
 
 @dataclass
 class Selection:
+    base: str
+    head: str
     mutmut_root: str | None = None
     patterns: list[str] = field(default_factory=list[str])
     stryker_root: str | None = None
@@ -334,7 +337,7 @@ def declared_stacks(repo: Path, head: str, files: list[str]) -> set[str]:
 
 
 def select(repo: Path, base: str, head: str) -> Selection:
-    out = Selection()
+    out = Selection(base, head)
     changed = changed_lines(repo, base, head)
     files = tracked_files(repo, head)
     stacks = declared_stacks(repo, head, files)
@@ -463,7 +466,7 @@ def run_stryker(repo: Path, sel: Selection) -> ToolResult:
 
 
 def report(sel: Selection, results: dict[str, ToolResult] | None) -> str:
-    lines: list[str] = []
+    lines = [f"base: {sel.base}", f"head: {sel.head}"]
     if sel.mutmut_root:
         lines.append(f"mutmut root: {sel.mutmut_root}")
         lines.append(f"mutmut functions selected: {len(sel.patterns)}")
@@ -502,6 +505,7 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true", help="run mutmut and Stryker on the selection")
     parser.add_argument("--json", action="store_true", help="print the selection as JSON")
+    parser.add_argument("--only", nargs="+", metavar="UNIT", help="keep only these report functions or files")
     args = parser.parse_args()
 
     repo = Path(git(args.repo, "rev-parse", "--show-toplevel").strip())
@@ -512,6 +516,13 @@ def main() -> int:
     except SetupError as error:
         print(f"mutation setup missing: {error}. Stage 0 owns it: see references/mutation.md, Setup.", file=sys.stderr)
         return 2
+    if args.only:
+        units = {p.removesuffix("__mutmut_*") for p in sel.patterns} | {r.rpartition(":")[0] for r in sel.stryker_ranges}
+        missing = [u for u in args.only if u not in units]
+        if missing:
+            parser.error(f"--only {' '.join(missing)}: not in the selection of {base}..{head}, pass the report base")
+        sel.patterns = [p for p in sel.patterns if p.removesuffix("__mutmut_*") in args.only]
+        sel.stryker_ranges = [r for r in sel.stryker_ranges if r.rpartition(":")[0] in args.only]
     if args.json:
         payload = {
             "base": base,

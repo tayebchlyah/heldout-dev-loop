@@ -1826,6 +1826,18 @@ class MutationContractTests(unittest.TestCase):
             with self.subTest(section=heading):
                 self.assertIn(line, test_devloop.section(SKILL_ROOT / "references" / "mutation.md", heading))
 
+    def test_fix_wave_commits_a_test_only_when_it_kills_a_listed_mutant(self) -> None:
+        fix = test_devloop.section(SKILL_ROOT / "references" / "mutation.md", "## Fix")
+        for value in [
+            "home test file",
+            "public entry",
+            "select_mutants.py --base <report base> --head HEAD --run --only",
+            "kills no listed mutant",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, fix)
+        self.assertIn("kills one or more listed mutants", (SKILL_ROOT / "references" / "tests.md").read_text())
+
     def test_fix_wave_writes_one_test_per_function_in_parallel(self) -> None:
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
         for value in ["one unit test per listed function", "in parallel", "Run mutmut once per night", "only_mutate"]:
@@ -1917,9 +1929,9 @@ class FeatureWorktreeContractTests(unittest.TestCase):
         )
 
 class SelectMutantsTests(unittest.TestCase):
-    def select(self, repo: Path, base: str) -> tuple[int, dict, str]:
+    def select(self, repo: Path, base: str, *extra: str) -> tuple[int, dict, str]:
         result = subprocess.run(
-            [sys.executable, str(SELECTOR), "--repo", str(repo), "--head", "HEAD", "--base", base, "--json"],
+            [sys.executable, str(SELECTOR), "--repo", str(repo), "--head", "HEAD", "--base", base, "--json", *extra],
             text=True,
             capture_output=True,
             check=False,
@@ -2109,6 +2121,54 @@ class SelectMutantsTests(unittest.TestCase):
             code, sel, err = self.select(repo, base)
             self.assertEqual(code, 0, err)
             self.assertEqual((sel["patterns"], sel["stryker_ranges"]), ([], []))
+
+    def test_only_keeps_the_listed_functions_and_files(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = make_git_repo(
+                Path(root),
+                {
+                    "AGENTS.md": "stacks: python, ui\n",
+                    "pyproject.toml": MUTMUT_CONFIG,
+                    "src/pkg/mod.py": MODULE_BASE,
+                    "frontend/stryker.config.json": json.dumps({"mutate": ["src/**/*.ts"]}),
+                    "frontend/src/a.ts": "export const a = 1;\n",
+                    "frontend/src/b.ts": "export const b = 1;\n",
+                },
+            )
+            base = commit_changes(
+                repo,
+                {
+                    "src/pkg/mod.py": MODULE_HEAD,
+                    "frontend/src/a.ts": "export const a = 2;\n",
+                    "frontend/src/b.ts": "export const b = 2;\n",
+                },
+            )
+            code, sel, err = self.select(repo, base, "--only", "pkg.mod.x_changed", "src/b.ts")
+            self.assertEqual(code, 0, err)
+            self.assertEqual(
+                (sel["patterns"], sel["stryker_ranges"]), (["pkg.mod.x_changed__mutmut_*"], ["src/b.ts:1-1"])
+            )
+
+    def test_only_outside_the_selection_is_a_usage_error(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo, base = self.python_repo(Path(root))
+            code, _, err = self.select(repo, base, "--only", "pkg.mod.x_changed", "pkg.mod.x_gone")
+            self.assertEqual(code, 2)
+            self.assertIn("pkg.mod.x_gone", err)
+            self.assertNotIn("x_changed", err)
+
+    def test_report_names_the_base_and_head_for_the_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo, base = self.python_repo(Path(root))
+            head = git_in(repo, "rev-parse", "HEAD").strip()
+            result = subprocess.run(
+                [sys.executable, str(SELECTOR), "--repo", str(repo), "--head", "HEAD", "--base", base],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines()[:2], [f"base: {base}", f"head: {head}"])
 
 
 class MutationSetupTests(unittest.TestCase):
