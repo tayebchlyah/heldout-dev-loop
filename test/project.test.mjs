@@ -920,6 +920,7 @@ test('upgrade from 2.0.0 adds the board hook entries once', () => {
     const fragment = readJson(join(root, 'claude/settings.fragment.json'))
     fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
     delete fragment.hooks.UserPromptSubmit
+    delete fragment.hooks.PostToolUse
     writeFileSync(join(root, 'claude/settings.fragment.json'), JSON.stringify(fragment, null, 2))
   })
   run(older, 'init', repo, home, ['--yes', '--harness=claude'])
@@ -928,9 +929,9 @@ test('upgrade from 2.0.0 adds the board hook entries once', () => {
     JSON.stringify(readJson(file).hooks).split('board.sh').length - 1
   assert.equal(board(settings), 0)
   upgrade(repo, home, [], fakePackage('99.0.0'))
-  assert.equal(board(settings), 2)
+  assert.equal(board(settings), 4)
   upgrade(repo, home, [], fakePackage('99.0.1'))
-  assert.equal(board(settings), 2)
+  assert.equal(board(settings), 4)
 })
 
 test('D3: Codex upgrade from 2.0.0 adds the board hook entries once', () => {
@@ -939,6 +940,7 @@ test('D3: Codex upgrade from 2.0.0 adds the board hook entries once', () => {
     const fragment = readJson(join(root, 'codex/hooks.fragment.json'))
     fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
     delete fragment.hooks.UserPromptSubmit
+    delete fragment.hooks.PostToolUse
     writeFileSync(join(root, 'codex/hooks.fragment.json'), JSON.stringify(fragment, null, 2))
   })
   run(older, 'init', repo, home, ['--yes', '--harness=codex'])
@@ -947,7 +949,7 @@ test('D3: Codex upgrade from 2.0.0 adds the board hook entries once', () => {
     JSON.stringify(readJson(file).hooks).split('board.sh').length - 1
   assert.equal(board(hooks), 0)
   upgrade(repo, home, [], fakePackage('99.0.0'))
-  assert.equal(board(hooks), 2)
+  assert.equal(board(hooks), 3)
   upgrade(repo, home, [], fakePackage('99.0.1'))
-  assert.equal(board(hooks), 2)
+  assert.equal(board(hooks), 3)
 })
