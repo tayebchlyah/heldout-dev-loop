@@ -485,17 +485,20 @@ def cmd_board(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
         return emit({"error": str(exc)}, 1)
-    hook_cwd = None
+    hook_cwd = hook_session = None
     if args.event:
         try:
-            cwd = json.loads(sys.stdin.read()).get("cwd")
-        except (ValueError, AttributeError):
-            cwd = None
+            hook = json.loads(sys.stdin.read())
+        except ValueError:
+            hook = None
+        hook = hook if isinstance(hook, dict) else {}
+        cwd, session = hook.get("cwd"), hook.get("session_id")
         hook_cwd = Path(cwd) if isinstance(cwd, str) and cwd else None
+        hook_session = session if isinstance(session, str) and session else None  # D12: else no session map.
 
     try:
         code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
-                                   hook_cwd=hook_cwd, claim=args.claim)
+                                   hook_cwd=hook_cwd, hook_session=hook_session, claim=args.claim)
         if code != 0:
             return emit(payload, code)
         whole = {s["reason"] for s in payload["skipped"]} & {"no-dev-loop", "notes-in-repo"}
@@ -546,7 +549,7 @@ def main() -> int:
 
     board = commands.add_parser("board")
     board.add_argument("--repo", default=".")
-    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-stop"])
+    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-stop", "post-tool"])
     board.add_argument("--claim")
     board.add_argument("--no-serve", action="store_true")
     board.add_argument("--stop-server", action="store_true")

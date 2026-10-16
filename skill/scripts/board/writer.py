@@ -11,8 +11,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Callable
 
-from . import state, store
+from . import sources, state, store
 
 TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
@@ -32,6 +33,7 @@ class Context:
     machine: dict
     project: str
     data: dict  # D1: the board state, loaded under the lock, saved once before it is released.
+    claude: Path  # D10: the Claude config folder that holds the native task lists.
 
 
 def skip(reason: str, feature: str | None = None) -> dict:
@@ -75,32 +77,44 @@ def section(text: str, heading: str) -> str:
     return found.group(1).strip() if found else ""
 
 
-def tasks(plan: Path | None, ledger: Path | None, before: dict, stage5: str | None, now: str,
-          building: bool) -> list[dict]:
-    """D14: plan headings, done from the ledger at its first sight; from Stage 5, the first task not done is `doing`.
-    `before`: the saved task times of the state entry, by `str(n)`."""
+def iso(stamp: float) -> str:
+    return time.strftime(TIME, time.gmtime(stamp))
+
+
+def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: int, doing: set[int],
+          briefs: set[int], done_time: Callable[[int, str], str | None]) -> list[dict]:
+    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`), then
+    the briefs, else at Stage 5 the first task not done. `saved`: the task times of the state entry, by `str(n)`;
+    `done_time(n, line)`: the file time of a done task, else None."""
     if plan is None:
         return []
     titles: dict[int, str] = {}
     for n, title in re.findall(r"^#{2,3} Task (\d+)\b[:.]?\s*(.*)$", plan.read_text(), re.MULTILINE):
         titles.setdefault(int(n), title.strip())
-    complete = set()
+    complete: dict[int, str] = {}
     if ledger is not None and ledger.is_file():
-        complete = {int(n) for n in re.findall(r"^Task (\d+): complete", ledger.read_text(), re.MULTILINE)}
+        for line in re.findall(r"^Task \d+: complete.*$", ledger.read_text(), re.MULTILINE):
+            complete.setdefault(int(line.split(":", 1)[0][len("Task "):]), line)
+    active = {n for n in titles if n not in complete and (n in doing or n in briefs)}
+    if not active and stage == 5:
+        active = {n for n in titles if n not in complete}
+        active = {min(active)} if active else set()
     out: list[dict] = []
-    previous_done, doing = None, False
+    previous_done = None
     for n in sorted(titles):
-        seen = before.get(str(n))
+        seen = saved.get(str(n))
         seen = seen if isinstance(seen, dict) else {}
         task: dict = {"n": n, "title": titles[n], "state": "todo"}
-        if n in complete or (building and not doing):
-            started = seen.get("started") or previous_done or stage5
+        if n in complete or n in active:
+            brief = sources.birth(ledger.parent / f"task-{n}-brief.md") if ledger is not None else None
+            started = seen.get("started") or (iso(brief) if brief is not None else None) or (
+                now if n in active else previous_done)
             if started:
                 task["started"] = started
             if n in complete:
-                task.update(state="done", done=seen.get("done") or now)
+                task.update(state="done", done=seen.get("done") or done_time(n, complete[n]) or now)
             else:
-                task["state"], doing = "doing", True
+                task["state"] = "doing"
         previous_done = task.get("done")
         out.append(task)
     return out
@@ -112,7 +126,6 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
     stage: int = found["stage"]
     times = dict(entry["stage_times"]) if isinstance(entry.get("stage_times"), dict) else {}
     seen_late = any(k.isdigit() and int(k) >= 3 for k in times)  # D18: a run already saw Stage 3 or later
-    times.setdefault(str(stage), now)
     text = spec.read_text() if spec else ""
     title = re.search(r"^# (.+)$", text, re.MULTILINE)
     goal = re.split(r"\n\s*\n", section(text, "Goal"))[0]
@@ -123,7 +136,30 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
     plan = ctx.dl.find_plan(ctx.notes, spec) if spec else None
     worktree = found["worktree"]
     ledger = Path(worktree) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and worktree else None
-    before = entry["tasks"] if isinstance(entry.get("tasks"), dict) else {}
+    saved = entry["tasks"] if isinstance(entry.get("tasks"), dict) else {}
+
+    def done_time(n: int, line: str) -> str | None:
+        """D7: the tests log time, else the commit time of the `complete` line."""
+        at = sources.mtime(ledger.parent / f"task-{n}-tests.log") if ledger is not None else None
+        if at is None and worktree:
+            at = sources.commit_time(ctx.dl, Path(worktree), line)
+        return iso(at) if at is not None else None
+
+    doing = sources.native_doing(ctx.claude, state.session_of(ctx.data, slug))
+    task_list = tasks(plan, ledger, saved, now, stage, doing, sources.briefs(ledger.parent) if ledger else set(),
+                      done_time)
+    # D6: each stage time is set once. Stage 5: the ledger birth time, none while the ledger is missing (a Track S
+    # feature has no ledger: its first run time). Stage 6: the latest task done time once all tasks are done.
+    if stage >= 5 and "5" not in times:
+        born = sources.birth(ledger) if ledger else None
+        if born is not None:
+            times["5"] = iso(born)
+        elif stage == 6 or (ledger is None and stage == 5):
+            times["5"] = now
+    if stage >= 6 and "6" not in times and task_list and all(t["state"] == "done" for t in task_list):
+        times["6"] = max(t["done"] for t in task_list)
+    if stage != 5:
+        times.setdefault(str(stage), now)
     # A1: a Track S branch with commits ahead records its last commit, so a ship is seen once the branch is gone.
     head = ctx.dl.git(Path(worktree), "rev-parse", "HEAD") if spec is None and worktree and stage in (6, 7) else None
     return {
@@ -140,7 +176,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         "acceptance": ctx.dl.frontmatter(spec).get("acceptance", "").lower() if spec else "",
         "stage": stage,
         "stage_times": times,
-        "tasks": tasks(plan, ledger, before, times.get("5"), now, stage >= 5),
+        "tasks": task_list,
         "waiting": waiting,
         "decisions": [a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else [],
         "assumptions_baseline": baseline,
@@ -151,19 +187,29 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
     }
 
 
+def remembered_tasks(entry: dict, task_list: list[dict]) -> dict:
+    """D7: the saved task times with this run's times merged in, so a heading removed then restored keeps its times."""
+    saved = entry.get("tasks")
+    merged = {n: dict(t) for n, t in saved.items() if isinstance(t, dict)} if isinstance(saved, dict) else {}
+    for t in task_list:
+        times = {k: t[k] for k in ("started", "done") if k in t}
+        if times:
+            merged[str(t["n"])] = {**merged.get(str(t["n"]), {}), **times}
+    return merged
+
+
 def remember(entry: dict, fields: dict) -> None:
     """D1: keep in the state entry the values a later run must not read back from the note."""
     entry.update(stage_times=fields["stage_times"], assumptions_baseline=fields["assumptions_baseline"],
                  waiting=fields["waiting"], backfilled=fields["backfilled"],
-                 tasks={str(t["n"]): {k: t[k] for k in ("started", "done") if k in t}
-                        for t in fields["tasks"] if "started" in t or "done" in t})
+                 tasks=remembered_tasks(entry, fields["tasks"]))
     if "head" in fields:
         entry["head"] = fields["head"]
     entry["fields_digest"] = state.digest(fields)
 
 
 def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | None, hook_cwd: Path | None,
-        claim: str | None) -> tuple[int, dict]:
+        hook_session: str | None, claim: str | None) -> tuple[int, dict]:
     payload: dict = {"notes": [], "removed": [], "board_note": None, "skipped": []}
     top = dl.git(repo, "rev-parse", "--show-toplevel")
     if top is None or not (Path(top) / "dev-loop.json").is_file():
@@ -200,7 +246,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             if claim:  # D7: a claim is never dropped silently.
                 return 1, {"error": "board lock busy, claim not saved"}
             if event and hook_cwd:  # D2: the lock holder applies it.
-                line = json.dumps({"event": event, "cwd": str(hook_cwd), "at": time.strftime(TIME, time.gmtime())})
+                line = json.dumps({"event": event, "cwd": str(hook_cwd), "session_id": hook_session,
+                                   "at": time.strftime(TIME, time.gmtime())})
                 fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
                 with os.fdopen(fd, "a") as handle:
                     handle.write(line + "\n")
@@ -233,9 +280,10 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         (folder / FEATURES).mkdir(exist_ok=True)
-        events = [*drain(queue), *([(event, hook_cwd.resolve())] if event and hook_cwd else [])]
+        events = [*drain(queue), *([(event, hook_cwd.resolve(), hook_session)] if event and hook_cwd else [])]
+        claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
-                      state.load(state_dir))
+                      state.load(state_dir), claude)
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
             events = drain(queue)  # D2: events queued during this write.
@@ -270,8 +318,9 @@ def take(lock, wait: float) -> bool:
             time.sleep(0.1)
 
 
-def drain(queue: Path) -> list[tuple[str, Path]]:
-    """The queued events in order, as (event, resolved cwd); the queue file is deleted. Bad lines are dropped."""
+def drain(queue: Path) -> list[tuple[str, Path, str | None]]:
+    """The queued events in order, as (event, resolved cwd, session_id); the queue file is deleted. Bad lines are
+    dropped."""
     taken = queue.with_name(f".{queue.name}.{os.getpid()}.drain")
     try:
         os.replace(queue, taken)  # An append after the rename lands in a new queue file.
@@ -283,8 +332,10 @@ def drain(queue: Path) -> list[tuple[str, Path]]:
     for line in text.splitlines():
         try:
             item = json.loads(line)
-            events.append((str(item["event"]), Path(str(item["cwd"])).resolve()))
-        except (ValueError, TypeError, KeyError):
+            session = item.get("session_id")
+            events.append((str(item["event"]), Path(str(item["cwd"])).resolve(),
+                           session if isinstance(session, str) and session else None))
+        except (ValueError, TypeError, KeyError, AttributeError):
             continue
     return events
 
@@ -321,23 +372,31 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
 
 
 def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], claims: list[str], detect,
-          payload: dict, events: list[tuple[str, Path]]) -> None:
+          payload: dict, events: list[tuple[str, Path, str | None]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     board, machine, project = ctx.folder, ctx.machine, ctx.project
     folder = board / FEATURES
     tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
 
-    def scope(cwd: Path) -> list[str]:
-        """D16: the feature of the deepest worktree holding the cwd; the claims for the main worktree."""
+    def scope(cwd: Path) -> tuple[str | None, list[str]]:
+        """PB-D16: the feature of the deepest worktree holding the cwd, and the features an event there scopes: that
+        feature, else the claims for the main worktree."""
         holders = [root for root in trees if inside(cwd, root)]
         if not holders:
-            return []
+            return None, []
         root = max(holders, key=lambda r: len(str(r)))
         slug = trees[root]
-        return [slug] if slug else claims if root == next(iter(trees)) else []
+        return slug, [slug] if slug else claims if root == next(iter(trees)) else []
 
-    scoped = [(event, scope(cwd)) for event, cwd in events]
+    scoped: list[tuple[str, list[str]]] = []
+    for event, cwd, session in events:
+        # D12: an event in a feature worktree maps its session to that feature (the latest such event wins, so
+        # PB-O22 holds for one session in two worktrees); a mapped event elsewhere scopes the mapped feature.
+        tree, features = scope(cwd)
+        if mapped := tree or state.feature_of(ctx.data, session):
+            state.map_session(ctx.data, session, mapped, now)
+        scoped.append((event, [mapped] if mapped else features))
 
     # D9: the write set. `kept` holds every feature whose own note must stay: written or skipped.
     kept: set[str] = set()
@@ -392,7 +451,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             for event, features in scoped:
                 if slug in features and event == "stop":
                     waiting = STOP_WAITING.get(stage, waiting)
-                elif slug in features and event in ("prompt", "session-start"):
+                elif slug in features and event in ("prompt", "session-start", "post-tool"):
                     waiting = ""
         fields = merge(ctx, entry, slug, result, specs.get(slug), now, waiting)
         before = {k: v for k, v in entry.items() if k != "updated"}
