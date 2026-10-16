@@ -12,10 +12,11 @@ import sys
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from board import server
-from test_board import (DEVLOOP, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put, read_note,
-                        snapshot)
+from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
+                        read_note, snapshot)
 
 
 class BoardRobustTests(Board):
@@ -177,6 +178,29 @@ class BoardRobustTests(Board):
         self.ok()
         self.assertEqual(self.own_notes(), {})
         self.assertEqual(json.loads(features.read_text()), [])
+
+    def test_track_s_note_after_its_branch_is_gone(self) -> None:
+        """A1, D11, D12: worktree and branch removed; its `head` on origin/main ships the note, else it is deleted."""
+        for slug, merged in (("tiny", True), ("stray", False)):
+            with self.subTest(slug=slug):
+                wt = self.worktree(slug, prefix="fix")
+                put(wt / f"{slug}.txt", "work\n")
+                git(wt, "add", f"{slug}.txt")
+                git(wt, "commit", "-q", "-m", slug)
+                self.ok(cwd=wt)
+                path = self.own_notes()[slug]
+                if merged:
+                    git(self.repo, "cherry-pick", f"fix/{slug}")
+                    git(self.repo, "push", "-q", "origin", "main")
+                    git(self.repo, "fetch", "-q", "origin")
+                git(self.repo, "worktree", "remove", "--force", str(wt))
+                git(self.repo, "branch", "-D", f"fix/{slug}")
+                out = self.ok()
+                if merged:
+                    self.assertRegex(read_note(path)["shipped_at"], ISO_Z)
+                else:
+                    self.assertFalse(path.exists())
+                    self.assertIn(str(path), [str(Path(p).resolve()) for p in out["removed"]])
 
     def test_new_note_shows_before_the_folder_walk_expires(self) -> None:
         """D8: folders are cached for 60 s, the .md files of each folder are listed on every request."""
