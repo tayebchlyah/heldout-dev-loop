@@ -190,11 +190,19 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
         proc = subprocess.Popen(cmd, start_new_session=True, cwd="/", stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=log)
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and proc.poll() is None:
-        if probe(port)[0] == "board":
-            return {"state": state, "url": url}
-        time.sleep(0.1)
-    kind, found = probe(port)  # C3: our child lost the port to a board that another run started at the same moment.
+    while time.monotonic() < deadline and proc.poll() is None and probe(port)[0] != "board":
+        time.sleep(0.02)
+    kind, found = probe(port)
+    if kind == "board" and found.get("pid") == proc.pid:
+        return {"state": state, "url": url}
+    # C5: our child is not the board. Left alive it would linger or bind later, a server nobody tracks.
+    proc.terminate()
+    try:
+        proc.wait(2)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    # C3: another run started a board at the same moment.
     if kind == "board" and all(str(r) in (found.get("roots") or []) for r in roots):
         return {"state": "running", "url": url}
     return {"state": "error", "url": url, "message": f"the board server did not start on port {port}, see {LOG}"}

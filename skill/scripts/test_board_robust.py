@@ -343,6 +343,60 @@ class BoardRobustTests(Board):
         found = health(self.port)
         assert found is not None
         self.assertEqual(self.pidfile().read_text().strip(), str(found["pid"]))
+        self.assertEqual(self.servers(), {found["pid"]})
+
+    def servers(self) -> set[int]:
+        """The pids of the board server processes started for this test port."""
+        out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, check=True).stdout
+        mark = f"server.py --port {self.port} "
+        return {int(line.split()[0]) for line in out.splitlines() if mark in line}
+
+    def test_racing_ensures_leave_one_server(self) -> None:
+        """C5: four `ensure` calls a few ms apart on a free port, five times: when a call returns, its own child is
+        either the server that answers /health with the pidfile's pid or gone; one server process is left."""
+        real_popen = subprocess.Popen
+        children: list[subprocess.Popen] = []
+
+        def spawn(*args: Any, **kwargs: Any) -> subprocess.Popen:
+            children.append(real_popen(*args, **kwargs))
+            local.child = children[-1]
+            return children[-1]
+
+        def reap() -> None:
+            self.stop_port()
+            for child in children:
+                child.kill()
+                child.wait(timeout=10)
+
+        self.addCleanup(reap)
+        local = threading.local()
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}), mock.patch.object(subprocess, "Popen", spawn):
+            for round in range(5):
+                gate = threading.Barrier(4)
+                leaked: list[int] = []
+                states: list[str] = []
+
+                def run(delay: float) -> None:
+                    gate.wait()
+                    time.sleep(delay)
+                    local.child = None
+                    states.append(server.ensure(self.port, VERSION, [self.vault], "x", "y")["state"])
+                    found = health(self.port) or {}
+                    if local.child is not None and local.child.poll() is None and local.child.pid != found.get("pid"):
+                        leaked.append(local.child.pid)
+
+                runs = [threading.Thread(target=run, args=(i * 0.03,)) for i in range(4)]
+                for thread in runs:
+                    thread.start()
+                for thread in runs:
+                    thread.join()
+                self.assertLessEqual(set(states), {"started", "running"}, f"round {round}")
+                self.assertEqual(leaked, [], f"round {round}: {states}")
+                found = health(self.port)
+                assert found is not None
+                self.assertEqual(self.pidfile().read_text().strip(), str(found["pid"]))
+                self.assertEqual(self.servers(), {found["pid"]}, f"round {round}")
+                self.assertEqual(server.stop(self.port)["state"], "stopped")
 
     def test_a_board_answer_with_another_pid_is_not_trusted(self) -> None:
         """C4: /health names the board with a pid that is not the pidfile's: no signal, `port-busy`."""
