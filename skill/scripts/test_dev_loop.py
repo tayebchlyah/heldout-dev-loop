@@ -15,6 +15,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -180,6 +181,28 @@ class BoardVaultCheckTests(unittest.TestCase):
 
     def test_ready_vault_has_no_lines(self) -> None:
         self.assertEqual(self.actions(dataview=True, js=True, git=True, ignore=True), [])
+
+    def test_opt_outs_in_dev_loop_local_json_skip_their_line(self) -> None:
+        """B1: board_dataview false skips the Dataview line, board_vault_git shared skips the .gitignore line."""
+        both = {"board_dataview": False, "board_vault_git": "shared"}
+        rows = [({}, 2), ({"board_dataview": False}, 1), ({"board_vault_git": "shared"}, 1), (both, 0)]
+        for opts, count in rows:
+            with self.subTest(opts=opts), tempfile.TemporaryDirectory() as tmp:
+                home, repo, _ = self.setup_vault(tmp, dataview=False, js=False, git=True, ignore=False)
+                notes = json.loads((repo / "dev-loop.local.json").read_text())
+                write(repo / "dev-loop.local.json", json.dumps({**notes, **opts}))
+                self.assertEqual(len(check_setup.check_board_vault(home, repo, {})), count)
+
+    def test_missing_git_or_a_fake_git_dir_skips_the_gitignore_line(self) -> None:
+        """B2: no git on PATH, or a .git that is not a repository (exit 128): no line, no exception."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home, repo, vault = self.setup_vault(tmp, dataview=True, js=True, git=False, ignore=False)
+            (vault / ".git").mkdir()
+            self.assertEqual(check_setup.check_board_vault(home, repo, {}), [])
+            real = subprocess.run(["git", "init", "-q", str(vault)], check=True)
+            self.assertEqual(real.returncode, 0)
+            with mock.patch.dict(os.environ, {"PATH": str(Path(tmp) / "empty")}):
+                self.assertEqual(check_setup.check_board_vault(home, repo, {}), [])
 
     def test_unresolved_notes_path_has_no_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
