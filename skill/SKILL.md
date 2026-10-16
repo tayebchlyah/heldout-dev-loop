@@ -52,6 +52,8 @@ Verification budget. The kit enforces no time cap: a hook the harness kills is a
 
 Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left.
 
+Keep the stage and task checklist in the native plan tool: `TaskCreate`/`TaskUpdate` in Claude, `update_plan` in Codex. One item per stage and plan task, updated at each transition.
+
 ## Where each stage runs
 
 Stages 0 to 2 run in the main checkout on `main`. Stages 3 to 7 run in the feature's own worktree, on the feature's own branch, one worktree for the feature's whole life.
