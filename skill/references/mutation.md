@@ -57,13 +57,20 @@ The script classes every survivor from its diff, the same way on every run.
 
 ## Fix
 
-A nightly survivor is a Track S change. The report ends with "functions that need one unit test", each with the mutants that justify it.
+A nightly survivor is a Track S change. The report starts with `base:` and `head:`, and ends with "functions that need one unit test", each with the mutants that justify it.
 
 - Write **one unit test per listed function**, not one per mutant. The test pins the function's outputs, so it kills its decision survivors together. When a mutant's name does not show the gap, read its change with `mutmut show <name>`.
-- The test goes into the home test file of the function.
-- Commit it only when a rerun of the selection shows the mutant killed. A test that leaves the mutant alive is dropped.
+- The test extends the home test file of the function's module. It calls the module's public entry, never a private helper: for a private function, the public function that reaches it.
 - Group the listed functions and write the tests in parallel, one `implementer` per group. Each changes no product code and runs only its test file.
-- Run mutmut once per night.
+- Then rerun the tools on the listed functions only, from the fix branch, with the `base:` of the report:
+
+  ```
+  python3 .agents/skills/dev-loop/scripts/select_mutants.py --base <report base> --head HEAD --run --only <unit> ...
+  ```
+
+  Each `<unit>` is one name of the report list: a mutmut function such as `pkg.core.score.x_score`, or a Stryker file such as `src/logic/score.ts`. A name outside the selection exits `2`. Delete `mutants/` in the mutmut root first, so mutmut reuses no earlier result.
+- Commit a test only when the rerun lists fewer mutants for its function: it kills one or more listed mutants. A test that kills no listed mutant is not committed.
+- Run mutmut once per night on the whole selection. The fix rerun covers the listed functions only.
 
 ## Setup
 
