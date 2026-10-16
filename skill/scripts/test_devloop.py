@@ -171,6 +171,24 @@ class StatusTests(Sandbox):
         out = self.status(cwd=wt)
         self.assertEqual((out["stage"], out["worktree"]), (3, str(wt)))
 
+    def test_acceptance_regression_or_none_skips_stage_3(self) -> None:
+        wt = self.worktree()
+        for value in ["regression", "none", "None"]:
+            with self.subTest(value=value):
+                self.spec(acceptance=value)
+                self.assertEqual(self.status(cwd=wt)["stage"], 4)
+
+    def test_acceptance_new_or_unknown_keeps_stage_3(self) -> None:
+        wt = self.worktree()
+        for value in ["", "new", "skip"]:
+            with self.subTest(value=value):
+                self.spec(acceptance=value)
+                self.assertEqual(self.status(cwd=wt)["stage"], 3)
+
+    def test_acceptance_skip_still_needs_the_worktree(self) -> None:
+        self.spec(acceptance="none")
+        self.assertEqual(self.status("--feature", "widget")["stage"], 3)
+
     def test_stage_4_no_plan_naming_the_spec(self) -> None:
         self.spec()
         wt = self.worktree()
