@@ -1,7 +1,7 @@
 // test/payload.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, lstatSync, readlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -100,7 +100,9 @@ test('no tracked file holds an absolute home path or a personal name', () => {
     .split('\n')
     .filter((line) => line.length > 0)
   for (const relative of tracked) {
-    const text = readFileSync(join(repoRoot, relative), 'utf8')
+    // A tracked symlink's content is its target text, not the file it points to.
+    const path = join(repoRoot, relative)
+    const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')
     assert.ok(!text.includes(forbiddenPathPrefix), `absolute path in ${relative}`)
     assert.ok(!text.includes(forbiddenName), `personal name in ${relative}`)
   }
