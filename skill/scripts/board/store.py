@@ -98,6 +98,15 @@ def read_note(path: Path) -> dict | None:
         return None
 
 
+def ownership(path: Path, machine_id: str) -> str:
+    """Board Robustness D3: "own" (parses, same machine_id), "foreign" (parses, other), "unparsed". The caller checks
+    the file name."""
+    fields = read_note(path)
+    if fields is None:
+        return "unparsed"
+    return "own" if fields.get("machine_id") == machine_id else "foreign"
+
+
 def note_text(fields: dict) -> str:
     return "---\n" + "".join(f"{key}: {json.dumps(value)}\n" for key, value in fields.items()) + "---\n"
 
