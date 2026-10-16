@@ -4,15 +4,18 @@
 from __future__ import annotations
 
 import fcntl
+import http.server
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from board import server
 from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
@@ -233,7 +236,8 @@ class BoardRobustTests(Board):
         """D3: a newer server without this root is restarted with the version of this kit, the code it runs."""
         other = self.root / "other-vault"
         other.mkdir()
-        self.assertEqual(server.start(self.port, "99.0.0", [other], "x", "y", "started")["state"], "started")
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):  # C4: its pidfile goes to the sandboxed HOME.
+            self.assertEqual(server.start(self.port, "99.0.0", [other], "x", "y", "started")["state"], "started")
         self.addCleanup(self.stop_port)
         self.worktree("tiny", prefix="fix")
         code, out = self.board(serve=True, timeout=90)
@@ -246,6 +250,112 @@ class BoardRobustTests(Board):
         found = health(self.port, timeout=1)
         if found and isinstance(found.get("pid"), int):
             os.kill(found["pid"], signal.SIGKILL)
+
+    def test_fifo_note_does_not_block_the_reader(self) -> None:
+        """C1, D21: a note swapped for a FIFO after the listing is skipped within 2 s; the other notes are read."""
+        note = {"type": "dev-loop-status", "schema": 1, "feature": "alpha"}
+        put(self.board_dir / "a.md", note_text(note))
+        fifo = self.board_dir / "x.md"
+        put(fifo, note_text({**note, "feature": "piped"}))
+
+        class Swapped(server.Index):
+            def notes(self, folders: list[str]) -> list[Path]:
+                found = super().notes(folders)
+                fifo.unlink()
+                os.mkfifo(fifo)
+                return found
+
+        got: list[list[str]] = []
+        reader = threading.Thread(target=lambda: got.append([f["feature"] for f in Swapped([self.vault]).status()[0]]),
+                                  daemon=True)
+        reader.start()
+        reader.join(2)
+        if reader.is_alive():  # Release a reader stuck in open() so the test ends.
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+            reader.join(2)
+            self.fail("the reader blocked on a FIFO")
+        self.assertEqual(got, [["alpha"]])
+
+    def pidfile(self) -> Path:
+        return self.home / ".config" / "dev-loop" / f"board-server.{self.port}.pid"
+
+    def harmless_child(self) -> subprocess.Popen:
+        child = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        return child
+
+    def test_stop_returns_once_the_port_refuses(self) -> None:
+        """C2: a board that stops answering as the board but still listens for 1.5 s: stop waits for the refusal."""
+        script = ("import http.server, json, os, signal, sys, threading\n"
+                  "dying = []\n"
+                  "class H(http.server.BaseHTTPRequestHandler):\n"
+                  "    def do_GET(self):\n"
+                  "        body = json.dumps({'name': 'dev-loop board', 'version': '2.1.0', 'roots': [], 'pid': os.getpid()})\n"
+                  "        self.send_response(404 if dying else 200)\n"
+                  "        self.end_headers()\n"
+                  "        self.wfile.write(body.encode())\n"
+                  "    def log_message(self, *args): pass\n"
+                  "def term(*args):\n"
+                  "    dying.append(1)\n"
+                  "    threading.Timer(1.5, os._exit, (0,)).start()\n"
+                  "signal.signal(signal.SIGTERM, term)\n"
+                  "http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()\n")
+        fake = subprocess.Popen([sys.executable, "-c", script, str(self.port)])
+        self.addCleanup(fake.wait)
+        self.addCleanup(fake.kill)
+        put(self.pidfile(), f"{fake.pid}\n")
+        deadline = time.monotonic() + 5
+        while health(self.port, timeout=1) is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        code, out = self.board("--stop-server", timeout=30)
+        self.assertEqual((code, out["server"]["state"]), (0, "stopped"), out)
+        with self.assertRaises(ConnectionRefusedError):
+            socket.create_connection(("127.0.0.1", self.port), timeout=2).close()
+
+    def test_two_runs_racing_on_a_free_port_both_succeed(self) -> None:
+        """C3: two `board` runs started at the same moment: both exit 0, neither reports `error`, one server runs."""
+        self.addCleanup(self.stop_port)
+        self.worktree("tiny", prefix="fix")
+        results: list[tuple[int, dict]] = []
+        runs = [threading.Thread(target=lambda: results.append(self.board(serve=True, timeout=90))) for _ in range(2)]
+        for run in runs:
+            run.start()
+        for run in runs:
+            run.join()
+        for code, out in results:
+            self.assertEqual(code, 0, out)
+            self.assertIn(out["server"]["state"], {"started", "running"}, out)
+        found = health(self.port)
+        assert found is not None
+        self.assertEqual(self.pidfile().read_text().strip(), str(found["pid"]))
+
+    def test_a_board_answer_with_another_pid_is_not_trusted(self) -> None:
+        """C4: /health names the board with a pid that is not the pidfile's: no signal, `port-busy`."""
+        named, recorded = self.harmless_child(), self.harmless_child()
+        put(self.pidfile(), f"{recorded.pid}\n")
+        answer = json.dumps({"name": "dev-loop board", "version": "99.0.0", "roots": [str(self.notes)],
+                             "pid": named.pid}).encode()
+
+        class Fake(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(answer)
+
+            def log_message(self, format: str, *args: object) -> None:
+                pass
+
+        fake = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), Fake)
+        threading.Thread(target=fake.serve_forever, daemon=True).start()
+        self.addCleanup(fake.server_close)
+        self.addCleanup(fake.shutdown)
+        self.worktree("tiny", prefix="fix")
+        for args in (("--stop-server",), ()):
+            with self.subTest(args=args):
+                code, out = self.board(*args, serve=True, timeout=90)
+                self.assertEqual((code, out["server"]["state"]), (0, "port-busy"), out)
+                self.assertEqual((named.poll(), recorded.poll()), (None, None))
 
 
 class VersionKeyTests(unittest.TestCase):
