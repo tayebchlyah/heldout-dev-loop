@@ -1,6 +1,7 @@
 #!/bin/bash
 # dev-loop gate for this repo: the installer suite (node) and the skill suite (python), side by side.
-# GATE_SCOPE=changed (the Stop hook): only the suites the uncommitted changes reach. Else both.
+# GATE_SCOPE=changed (the Stop hook): any change reaches the node suite (it scans every tracked file),
+# the skill suite only for skill/claude/codex/bin/lib, AGENTS.md, package.json. No change: neither. Else both.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
 set -u
 cd "$(dirname "$0")/.."
@@ -12,10 +13,7 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
     case "$path" in
       skill/*|claude/*|codex/*|bin/*|lib/*|AGENTS.md|package.json) py=1 ;;
     esac
-    case "$path" in
-      skill/scripts/*.py|skill/scripts/*/*.py) ;;
-      *) node=1 ;;
-    esac
+    node=1
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)
 fi
 
