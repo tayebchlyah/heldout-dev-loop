@@ -295,10 +295,17 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                       state.load(state_dir), claude)
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
+            if any((notes / "specs").glob(".*.icloud")):
+                # D5: a spec evicted during this write would drop claims and notes in a catch-up pass. The queue
+                # waits for a run that sees every spec.
+                payload["skipped"].append(skip("placeholder"))
+                break
             events = drain(queue)  # D2: events queued during this write.
             if not events:
                 break
             specs, trees, claims = refresh(False)
+        # A catch-up pass sees the per-feature skips of the passes before it: each one once, in order.
+        payload["skipped"] = [dict(k) for k in dict.fromkeys(tuple(s.items()) for s in payload["skipped"])]
         ctx.data["last_run"] = {"at": now, "skipped": payload["skipped"]}
         state.save(state_dir, ctx.data)
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
@@ -430,10 +437,12 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         if not path.exists() and (folder / f".{name}.icloud").exists():
             payload["skipped"].append(skip("placeholder", slug))
             continue
-        legacy = board / name  # D3, D4: a note in `dev-loop-board/` moves into `features/`.
+        # D3, D4: an own note in `dev-loop-board/` moves into `features/`; an own name that does not parse (a 2.1.0
+        # YAML block note) is own too. A parsed foreign one stays.
+        legacy = board / name
         if legacy.is_file() and not legacy.is_symlink():
             mine = store.read_note(legacy)
-            if mine and mine.get("machine_id") == machine["id"] and not mine.get("shipped_at"):
+            if mine is None or mine.get("machine_id") == machine["id"] and not mine.get("shipped_at"):
                 if path.exists():
                     legacy.unlink()
                 else:
