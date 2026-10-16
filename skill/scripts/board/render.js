@@ -39,7 +39,7 @@ function renderBoard(features, nowMs, opts) {
       owner: str(f.owner) || "Unknown", machine: str(f.machine) || "unknown machine",
       track: str(f.track), acceptance: str(f.acceptance), stage: Math.min(Math.max(Math.floor(Number(f.stage)) || 1, 1), 7), times,
       tasks: Array.isArray(f.tasks) ? f.tasks.filter((t) => t && typeof t === "object") : [],
-      waiting: str(f.waiting),
+      waiting: str(f.waiting), backfilled: f.backfilled === true,
       decisions: Array.isArray(f.decisions) ? f.decisions.filter((d) => typeof d === "string" && d) : [],
       shipped: str(f.shipped_at), updated: str(f.updated),
     };
@@ -120,11 +120,11 @@ function renderBoard(features, nowMs, opts) {
     const parts = m.f.tasks.map((t) => {
       const st = stateOf(t);
       const d = st === "done" ? ms(t.done) - ms(t.started) : st === "doing" ? nowMs - ms(t.started) : isFinite(m.mean) ? m.mean : 15 * 60000;
-      return { st, title: str(t.title), d: isFinite(d) && d > 0 ? d : 60000 };
+      return { st, n: t.n, title: str(t.title), d: isFinite(d) && d > 0 ? d : 60000 };
     });
     const inner = (x) =>
       x.split
-        ? parts.map((p, i) => `<b data-task-segment="${i + 1}" class="${p.st}" style="flex:${p.d.toFixed(0)} 1 0" title="${esc(`${p.title}: ${p.st === "todo" ? `about ${dur(p.d)}, estimated` : dur(p.d)}`)}"></b>`).join("")
+        ? parts.map((p, i) => `<b data-task-segment="${i + 1}" class="${p.st}" style="flex:${p.d.toFixed(0)} 1 0" title="${esc(`${num(p.n)}${p.title}: ${p.st === "todo" ? `about ${dur(p.d)}, estimated` : dur(p.d)}`)}"></b>`).join("")
         : "";
     const width = (x) => `width:${x.pct.toFixed(3)}%`;
     return `<span class="tb" role="img" aria-label="${esc(segs.map((x) => `${label(x.n)} ${x.time}`).join(", "))}">
@@ -132,12 +132,13 @@ function renderBoard(features, nowMs, opts) {
 <span class="lbls">${segs.map((x) => `<span class="${x.wc}${x.now ? " cur" : ""}" style="${width(x)}">${x.fut ? `<span class="nm">${label(x.n)}</span>` : `<span class="full"><strong>${label(x.n)}</strong><br>${x.time}</span><span class="short">${x.n}.</span>`}</span>`).join("")}</span></span>`;
   };
 
+  const num = (n) => (typeof n === "number" && isFinite(n) ? `${n}. ` : "");
   const taskList = (m) =>
     m.f.tasks.length
       ? `<ol class="tasks">${m.f.tasks.map((t) => {
           const st = stateOf(t);
           const time = st === "done" ? dur(ms(t.done) - ms(t.started)) : st === "doing" ? `running ${dur(nowMs - ms(t.started))}` : "";
-          return `<li class="${st}">${icon(st)}<span class="tt">${esc(t.title)}</span><span class="td">${time}</span></li>`;
+          return `<li class="${st}">${icon(st)}${typeof t.n === "number" && isFinite(t.n) ? `<span class="tn">${t.n}.</span> ` : ""}<span class="tt">${esc(t.title)}</span><span class="td">${time}</span></li>`;
         }).join("")}</ol>`
       : `<p class="na">No plan yet. Tasks appear at Stage 4.</p>`;
 
@@ -156,7 +157,7 @@ function renderBoard(features, nowMs, opts) {
  <span class="c-eta">${eta}</span>
  <span class="c-up${m.idle ? " stale" : ""}">${m.idle ? "Idle, " : ""}${ago(f.updated)}</span>
 </summary>
-<div class="more"><div><h3>Tasks</h3>${taskList(m)}</div><div><h3>Time per stage</h3><ol class="times">${times}</ol>${decs}</div></div>
+<div class="more"><div><h3>Tasks</h3>${taskList(m)}</div><div><h3>Time per stage</h3>${f.backfilled === true ? `<p class="na">Times are estimated</p>` : ""}<ol class="times">${times}</ol>${decs}</div></div>
 </details>`;
   };
 
