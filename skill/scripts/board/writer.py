@@ -342,6 +342,9 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
                 elif slug in features and event in ("prompt", "session-start"):
                     waiting = ""
         fields = merge(ctx, old, slug, result, specs.get(slug), now, waiting)
+        if {k: v for k, v in fields.items() if k != "updated"} == {k: v for k, v in old.items() if k != "updated"}:
+            payload["notes"].append(str(path))  # A2: write only on a change, so `updated` is the last change.
+            continue
         try:
             store.write_file(folder, name, store.note_text(fields))
         except store.LinkError:
