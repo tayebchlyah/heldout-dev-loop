@@ -917,12 +917,10 @@ test('upgrade with no hook change leaves the hook files byte-identical', () => {
 test('upgrade from 2.0.0 adds the board hook entries once', () => {
   const { home, repo } = setup()
   const older = fakePackage('98.0.0', (root) => {
-    for (const path of ['claude/settings.fragment.json']) {
-      const fragment = readJson(join(root, path))
-      fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
-      delete fragment.hooks.UserPromptSubmit
-      writeFileSync(join(root, path), JSON.stringify(fragment, null, 2))
-    }
+    const fragment = readJson(join(root, 'claude/settings.fragment.json'))
+    fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
+    delete fragment.hooks.UserPromptSubmit
+    writeFileSync(join(root, 'claude/settings.fragment.json'), JSON.stringify(fragment, null, 2))
   })
   run(older, 'init', repo, home, ['--yes', '--harness=claude'])
   const settings = join(repo, '.claude/settings.json')
@@ -933,4 +931,23 @@ test('upgrade from 2.0.0 adds the board hook entries once', () => {
   assert.equal(board(settings), 2)
   upgrade(repo, home, [], fakePackage('99.0.1'))
   assert.equal(board(settings), 2)
+})
+
+test('D3: Codex upgrade from 2.0.0 adds the board hook entries once', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => {
+    const fragment = readJson(join(root, 'codex/hooks.fragment.json'))
+    fragment.hooks.SessionStart = [fragment.hooks.SessionStart[0]]
+    delete fragment.hooks.UserPromptSubmit
+    writeFileSync(join(root, 'codex/hooks.fragment.json'), JSON.stringify(fragment, null, 2))
+  })
+  run(older, 'init', repo, home, ['--yes', '--harness=codex'])
+  const hooks = join(repo, '.codex/hooks.json')
+  const board = (file) =>
+    JSON.stringify(readJson(file).hooks).split('board.sh').length - 1
+  assert.equal(board(hooks), 0)
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(board(hooks), 2)
+  upgrade(repo, home, [], fakePackage('99.0.1'))
+  assert.equal(board(hooks), 2)
 })
