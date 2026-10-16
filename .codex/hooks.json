@@ -1,0 +1,85 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/session-start.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking repository workflow"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" session-start",
+            "timeout": 5,
+            "statusMessage": "Updating dev-loop board"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/git-guard.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking command safety"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh\"",
+            "timeout": 600,
+            "statusMessage": "Running repository gate"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh\"",
+            "timeout": 600,
+            "statusMessage": "Running repository gate"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" prompt",
+            "timeout": 5,
+            "statusMessage": "Updating dev-loop board"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" post-tool",
+            "timeout": 5,
+            "statusMessage": "Updating dev-loop board"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+prefix_rule(
+    pattern=[["git", "/usr/bin/git", "/opt/homebrew/bin/git"], "push"],
+    decision="prompt",
+    justification="Global rule: git push needs explicit permission each time.",
+    match=["git push origin main", "/usr/bin/git push origin main", "/opt/homebrew/bin/git push"],
+    not_match=["git status", "git pull"],
+)
+prefix_rule(
+    pattern=["git", "-C"],
+    decision="prompt",
+    justification="Git with a directory override needs review because later arguments can hide a push or destructive write.",
+    match=["git -C /tmp/repo push origin main", "git -C /tmp/repo reset --hard HEAD"],
+    not_match=["git status"],
+)
+prefix_rule(
+    pattern=[["git", "/usr/bin/git", "/opt/homebrew/bin/git"], "reset", "--hard"],
+    decision="forbidden",
+    justification="Hard reset can destroy uncommitted work.",
+    match=["git reset --hard HEAD", "/usr/bin/git reset --hard HEAD", "/opt/homebrew/bin/git reset --hard"],
+    not_match=["git reset --soft HEAD", "git status"],
+)
+prefix_rule(
+    pattern=["rm", "-rf", "/"],
+    decision="forbidden",
+    justification="Recursive deletion of filesystem root is never allowed.",
+    match=["rm -rf /"],
+    not_match=["rm -rf /tmp/example"],
+)
