@@ -9,6 +9,7 @@ from pathlib import Path
 from . import store
 
 NAME = "board-state.json"
+SESSIONS = 50  # D12: the most sessions the map keeps.
 # The note fields the entry holds itself; `digest` covers the others.
 HELD = ("stage_times", "tasks", "assumptions_baseline", "shipped_at", "head", "backfilled", "waiting", "updated")
 
@@ -35,6 +36,8 @@ def load(folder: Path) -> dict:
     data.update(saved)
     if not isinstance(data["features"], dict):
         data["features"] = {}
+    if not isinstance(data["sessions"], dict):
+        data["sessions"] = {}
     return data
 
 
@@ -48,6 +51,31 @@ def save_last_run(folder: Path, at: str, skipped: list[dict]) -> None:
     data = load(folder)
     data["last_run"] = {"at": at, "skipped": skipped}
     save(folder, data)
+
+
+def map_session(data: dict, session: object, slug: str, now: str) -> None:
+    """D12: map `session` to `slug`, seen at `now`. A non-string or empty session is ignored. The 50 sessions with the
+    highest `last_seen` stay."""
+    if not isinstance(session, str) or not session:
+        return
+    sessions = data["sessions"]
+    sessions[session] = {"feature": slug, "last_seen": now}
+    while len(sessions) > SESSIONS:
+        del sessions[min(sessions, key=lambda s: str(sessions[s].get("last_seen")) if isinstance(sessions[s], dict) else "")]
+
+
+def feature_of(data: dict, session: object) -> str | None:
+    """D12: the feature `session` is mapped to, else None."""
+    item = data["sessions"].get(session) if isinstance(session, str) else None
+    feature = item.get("feature") if isinstance(item, dict) else None
+    return feature if isinstance(feature, str) and feature else None
+
+
+def session_of(data: dict, slug: str) -> str | None:
+    """D9 (a): the session mapped to `slug` with the highest `last_seen`, else None."""
+    mapped = [(str(v.get("last_seen")), s) for s, v in data["sessions"].items()
+              if isinstance(v, dict) and v.get("feature") == slug]
+    return max(mapped)[1] if mapped else None
 
 
 def entry(data: dict, slug: str) -> dict:
