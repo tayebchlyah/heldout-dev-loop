@@ -621,7 +621,8 @@ class BoardWriterTests(Board):
     @slow
     def test_o18_second_run_keeps_stage_times(self) -> None:
         """O18, D13: a second run keeps every stage_times value of the first."""
-        wt, _ = self.stage5("gadget", "Gadget Export")
+        wt, plan = self.stage5("gadget", "Gadget Export")
+        self.ledger(wt, plan)  # Board Robustness D6: Stage 5 has a time only once the ledger exists.
         self.ok(cwd=wt)
         first = self.note("gadget")["stage_times"]
         self.assertIn("5", first)
