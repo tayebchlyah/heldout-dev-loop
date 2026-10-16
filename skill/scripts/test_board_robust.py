@@ -131,14 +131,15 @@ class BoardRobustTests(Board):
         self.assertEqual(self.note("gadget")["waiting"], "")
 
     def test_claim_waits_for_the_lock(self) -> None:
-        """D7: --claim waits up to 10 s for the lock: saved after a release, else exit 1 and not saved."""
+        """D7: --claim waits up to 10 s for the lock: saved after a release, else exit 1 and not saved.
+        The busy case runs with DEVLOOP_TEST_CLAIM_WAIT=1, so it does not wait the full 10 s."""
         self.spec("gadget", "Gadget Export", review="draft")
-        for hold, code in ((1, 0), (12, 1)):
+        for hold, code, env in ((1, 0, self.env), (4, 1, {**self.env, "DEVLOOP_TEST_CLAIM_WAIT": "1"})):
             with self.subTest(hold=hold):
                 timer = threading.Timer(hold, self.hold_lock().close)
                 timer.start()
                 try:
-                    got, out = self.board("--claim", "gadget", timeout=30)
+                    got, out = self.board("--claim", "gadget", env=env, timeout=30)
                 finally:
                     timer.join()
                 self.assertEqual(got, code, out)
