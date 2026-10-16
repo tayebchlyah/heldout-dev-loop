@@ -87,6 +87,28 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/board.sh post-tool",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "TaskCreate|TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/board.sh post-tool",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "permissions": {
