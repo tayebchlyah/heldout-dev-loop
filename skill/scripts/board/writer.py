@@ -159,6 +159,7 @@ def remember(entry: dict, fields: dict) -> None:
                         for t in fields["tasks"] if "started" in t or "done" in t})
     if "head" in fields:
         entry["head"] = fields["head"]
+    entry["fields_digest"] = state.digest(fields)
 
 
 def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | None, hook_cwd: Path | None,
@@ -369,6 +370,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         old = store.read_note(path) if owner == "own" else None
         new_entry = slug not in ctx.data["features"]
         entry = state.entry(ctx.data, slug)
+        seeded = new_entry and old is not None
         if new_entry and old is not None:
             state.seed(entry, old)  # D2: the first run of the new kit copies the old note's values.
         elif new_entry:
@@ -389,17 +391,15 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         fields = merge(ctx, entry, slug, result, specs.get(slug), now, waiting)
         before = {k: v for k, v in entry.items() if k != "updated"}
         remember(entry, fields)
-        # D1, A2: write when the note differs from the computed fields (or does not parse); `updated` moves only on a
-        # real change, so a format repair keeps it (O33).
-        if old is not None:
-            changed = {k: v for k, v in fields.items() if k != "updated"} != {k: v for k, v in old.items()
-                                                                               if k != "updated"}
-        else:
-            changed = new_entry or before != {k: v for k, v in entry.items() if k != "updated"}
+        # D1: `updated` moves only when a board value changes (the entry, with the digest of the other note fields),
+        # never on a repair of the file (O33, a hand edit).
+        changed = (new_entry and not seeded) or before != {k: v for k, v in entry.items() if k != "updated"}
         if changed or not entry.get("updated"):
             entry["updated"] = now
         fields["updated"] = entry["updated"]
-        if old is not None and not changed:
+        # A2: write when the file does not parse or differs from the computed fields other than `updated`.
+        if old is not None and {k: v for k, v in fields.items() if k != "updated"} == {
+                k: v for k, v in old.items() if k != "updated"}:
             payload["notes"].append(str(path))
             continue
         try:
