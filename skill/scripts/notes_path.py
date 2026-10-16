@@ -17,7 +17,10 @@ class NotesPathError(Exception):
 
 
 def git_path(repo: Path, *args: str) -> Path | None:
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    except OSError:
+        return None
     out = result.stdout.strip()
     return Path(out) if result.returncode == 0 and out else None
 
@@ -43,10 +46,15 @@ def read_notes(file: Path, strict: bool = True) -> str | None:
     return value
 
 
-def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
+def worktrees(repo: Path) -> tuple[Path, Path]:
+    """The worktree of repo and the main worktree."""
     worktree = git_path(repo, "rev-parse", "--show-toplevel") or repo
     common = git_path(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    main = common.parent if common else worktree
+    return worktree, common.parent if common else worktree
+
+
+def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
+    worktree, main = worktrees(repo)
     found: tuple[str, Path, str] | None = None
     if env.get("DEV_LOOP_NOTES"):
         found = (env["DEV_LOOP_NOTES"], worktree, "DEV_LOOP_NOTES")
