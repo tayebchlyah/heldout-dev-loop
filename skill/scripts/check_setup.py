@@ -174,9 +174,14 @@ def check_claude_repo(repo: Path) -> list[str]:
             if agent not in repo_denies:
                 failures.append(f"missing Claude repo deny: {agent}")
         repo_env = repo_settings.get("env", {})
-        for variable in ["ENABLE_STOP_REVIEW", "ENABLE_COMMIT_REVIEW", "SG_PUSH_SWEEP"]:
-            if repo_env.get(variable) != "0":
-                failures.append(f"missing Claude repo env: {variable}=0")
+        for variable, setting in [
+            ("ENABLE_STOP_REVIEW", "0"),
+            ("ENABLE_COMMIT_REVIEW", "0"),
+            ("SG_PUSH_SWEEP", "0"),
+            ("CLAUDE_CODE_ENABLE_TODO_TOOLS", "1"),
+        ]:
+            if repo_env.get(variable) != setting:
+                failures.append(f"missing Claude repo env: {variable}={setting}")
     return failures
 
 
