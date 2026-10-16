@@ -202,6 +202,22 @@ class BoardRobustTests(Board):
                     self.assertFalse(path.exists())
                     self.assertIn(str(path), [str(Path(p).resolve()) for p in out["removed"]])
 
+    def test_note_is_written_only_on_a_change(self) -> None:
+        """A2: a run with no change leaves the note bytes and mtime and still lists it; a ledger change writes it."""
+        wt, plan = self.stage5("alpha", "Alpha Report")
+        self.ok(cwd=wt)
+        path = self.own_notes()["alpha"]
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
+        time.sleep(1.1)
+        out = self.ok(cwd=wt)
+        self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
+        self.assertIn(str(path), [str(Path(p).resolve()) for p in out["notes"]])
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        note = read_note(path)
+        self.assertEqual(note["tasks"][0]["state"], "done")
+        self.assertEqual(note["updated"], note["tasks"][0]["done"])
+
     def test_new_note_shows_before_the_folder_walk_expires(self) -> None:
         """D8: folders are cached for 60 s, the .md files of each folder are listed on every request."""
         note = {"type": "dev-loop-status", "schema": 1, "feature": "alpha"}
