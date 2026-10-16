@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
@@ -17,6 +18,18 @@ TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
                 5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
 TEMPLATE = Path(__file__).with_name("board-note.md")
+
+
+@dataclass(frozen=True)
+class Context:
+    """The values every note of one run shares."""
+    dl: ModuleType
+    repo: Path
+    notes: Path
+    folder: Path
+    state: Path
+    machine: dict
+    project: str
 
 
 def skip(reason: str, feature: str | None = None) -> dict:
@@ -90,8 +103,7 @@ def tasks(plan: Path | None, ledger: Path | None, before: list, stage5: str | No
     return out
 
 
-def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, notes: Path,
-          machine: dict, project: str, now: str, waiting: str) -> dict:
+def merge(ctx: Context, old: dict, slug: str, found: dict, spec: Path | None, now: str, waiting: str) -> dict:
     """The new status note of one feature from its detect result, its spec, plan and ledger, and its old note."""
     stage: int = found["stage"]
     times = dict(old["stage_times"]) if isinstance(old.get("stage_times"), dict) else {}
@@ -104,22 +116,22 @@ def merge(dl: ModuleType, old: dict, slug: str, found: dict, spec: Path | None, 
     baseline = old["assumptions_baseline"] if isinstance(old.get("assumptions_baseline"), list) else []
     if stage >= 3 and not seen_late:
         baseline = assumptions
-    plan = dl.find_plan(notes, spec) if spec else None
+    plan = ctx.dl.find_plan(ctx.notes, spec) if spec else None
     worktree = found["worktree"]
     ledger = Path(worktree) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and worktree else None
     before = old["tasks"] if isinstance(old.get("tasks"), list) else []
     # A1: a Track S branch with commits ahead records its last commit, so a ship is seen once the branch is gone.
-    head = dl.git(Path(worktree), "rev-parse", "HEAD") if spec is None and worktree and stage in (6, 7) else None
+    head = ctx.dl.git(Path(worktree), "rev-parse", "HEAD") if spec is None and worktree and stage in (6, 7) else None
     return {
         "type": "dev-loop-status",
         "schema": 1,
-        "project": project,
+        "project": ctx.project,
         "feature": slug,
         "title": title.group(1).strip() if title else slug,
         "description": " ".join(line.strip() for line in goal.splitlines()),
-        "machine_id": machine["id"],
-        "owner": machine["owner"],
-        "machine": machine["machine"],
+        "machine_id": ctx.machine["id"],
+        "owner": ctx.machine["owner"],
+        "machine": ctx.machine["machine"],
         "track": found["track"] or "",
         "stage": stage,
         "stage_times": times,
@@ -194,8 +206,9 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             return 0, payload
         folder.mkdir(exist_ok=True)
         events = [*drain(queue), *([(event, hook_cwd.resolve())] if event and hook_cwd else [])]
+        ctx = Context(dl, repo, notes, folder, state, store.load_machine(home), store.project_name(repo))
         while True:
-            write(dl, repo, notes, home, folder, state, specs, trees, claims, detect, payload, events)
+            write(ctx, specs, trees, claims, detect, payload, events)
             events = drain(queue)  # D2: events queued during this write.
             if not events:
                 break
@@ -204,12 +217,12 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     return 0, payload
 
 
-def merged_head(dl: ModuleType, repo: Path, fields: dict, found: dict) -> bool:
+def merged_head(ctx: Context, fields: dict, found: dict) -> bool:
     """A1: a Track S note whose branch is gone (Stage 1) and whose `head` has no + line in `git cherry origin/main`."""
     head = fields.get("head")
     if found["stage"] != 1 or not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head):
         return False
-    lines = dl.cherry(repo, head)
+    lines = ctx.dl.cherry(ctx.repo, head)
     return lines is not None and not any(line.startswith("+") for line in lines)
 
 
@@ -276,18 +289,15 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
     payload["board_note"] = str(path)
 
 
-def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, state: Path, specs: dict[str, Path],
-          trees: dict[Path, str | None], claims: list[str], detect, payload: dict,
-          events: list[tuple[str, Path]]) -> None:
+def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], claims: list[str], detect,
+          payload: dict, events: list[tuple[str, Path]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
-    machine = store.load_machine(home)
-    project = store.project_name(repo)
+    folder, machine, project = ctx.folder, ctx.machine, ctx.project
     tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
 
     def scope(cwd: Path) -> list[str]:
-        """D16: the feature of the worktree that holds the cwd (the deepest one), or the claims in the main
-        worktree on the default branch."""
+        """D16: the feature of the deepest worktree holding the cwd; the claims for the main worktree."""
         holders = [root for root in trees if inside(cwd, root)]
         if not holders:
             return []
@@ -331,7 +341,7 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
                     waiting = STOP_WAITING.get(stage, waiting)
                 elif slug in features and event in ("prompt", "session-start"):
                     waiting = ""
-        fields = merge(dl, old, slug, result, specs.get(slug), notes, machine, project, now, waiting)
+        fields = merge(ctx, old, slug, result, specs.get(slug), now, waiting)
         try:
             store.write_file(folder, name, store.note_text(fields))
         except store.LinkError:
@@ -339,9 +349,8 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
             continue
         payload["notes"].append(str(path))
 
-    # D11: delete an own note (by frontmatter, under its own name) of a feature that left the write set of this
-    # repo. The features file records that set, so a run never deletes the note of another clone of the project.
-    features_file = state / "board-features.json"
+    # D11: the features file scopes deletion to this repo, so a run never deletes the note of another clone.
+    features_file = ctx.state / "board-features.json"
     old_features = read_slugs(features_file)
     features = [f for f in old_features if f not in kept] + sorted(kept)
     own_names: set[str] = set()
@@ -359,7 +368,7 @@ def write(dl: ModuleType, repo: Path, notes: Path, home: Path, folder: Path, sta
         own_names.add(path.name)
         if not fields.get("shipped_at") and feature not in kept and (
                 detect(feature)["stage"] == "shipped"
-                or feature in old_features and merged_head(dl, repo, fields, detect(feature))):
+                or feature in old_features and merged_head(ctx, fields, detect(feature))):
             # D12: the first run that sees the ship sets shipped_at, once.
             fields.update(shipped_at=now, updated=now)
             try:
