@@ -18,7 +18,7 @@ from typing import Mapping
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
-from notes_path import NotesPathError, resolve  # noqa: E402
+from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
 
 
 CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"]
@@ -94,16 +94,25 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         return []
     root = store.root_of(Path(notes))
     actions = []
-    if (root / ".obsidian").is_dir() and not dataview_ready(root):
+    try:
+        local = json.loads((worktrees(repo)[1] / "dev-loop.local.json").read_text())
+    except (OSError, ValueError):
+        local = {}
+    if not isinstance(local, dict):
+        local = {}
+    if local.get("board_dataview") is not False and (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
-    if (root / ".git").exists():
-        ignored = subprocess.run(
-            ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/dev-loop-board/"],
-            cwd=root,
-            capture_output=True,
-            check=False,
-        )
-        if ignored.returncode != 0:
+    if local.get("board_vault_git") != "shared" and (root / ".git").exists():
+        try:
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/dev-loop-board/"],
+                cwd=root,
+                capture_output=True,
+                check=False,
+            ).returncode
+        except OSError:
+            ignored = 0
+        if ignored == 1:
             actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
     # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
     note = Path(notes) / "dev-loop-board" / store.BOARD_NOTE

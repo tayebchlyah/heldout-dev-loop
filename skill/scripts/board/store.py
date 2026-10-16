@@ -69,10 +69,8 @@ def root_of(notes: Path) -> Path:
 
 
 def version_key(text: object) -> tuple[int, ...]:
-    try:
-        return tuple(int(part) for part in str(text).split("."))
-    except ValueError:
-        return ()
+    found = re.match(r"\d+(\.\d+)*", str(text))
+    return tuple(int(part) for part in found.group().split(".")) if found else ()
 
 
 def parse(data: bytes) -> dict | None:
