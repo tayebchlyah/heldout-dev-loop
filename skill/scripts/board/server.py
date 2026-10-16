@@ -56,19 +56,20 @@ class Index:
 
     def notes(self, folders: list[str]) -> list[Path]:
         found: list[Path] = []
-        for folder in folders:
-            if os.path.islink(folder):  # B2: a cached folder swapped for a link is not listed.
-                continue
-            try:
-                names = sorted(os.listdir(folder))
-            except OSError:
-                continue
-            for name in names:
-                path = Path(folder) / name
-                if name.endswith(".md") and not name.startswith(".") and path.is_file() and not path.is_symlink():
-                    found.append(path)
-                    if len(found) >= MAX_NOTES:
-                        return found
+        for board in folders:
+            for folder in (board, os.path.join(board, "features")):
+                if os.path.islink(folder):  # B2: a cached folder swapped for a link is not listed.
+                    continue
+                try:
+                    names = sorted(os.listdir(folder))
+                except OSError:
+                    continue
+                for name in names:
+                    path = Path(folder) / name
+                    if name.endswith(".md") and not name.startswith(".") and path.is_file() and not path.is_symlink():
+                        found.append(path)
+                        if len(found) >= MAX_NOTES:
+                            return found
         return found
 
     def status(self) -> tuple[list[dict], int]:

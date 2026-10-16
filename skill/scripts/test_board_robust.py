@@ -35,13 +35,13 @@ class BoardRobustTests(Board):
         git(self.repo, "branch", "-D", "fix/ghost")
         ghost = own["ghost"]
         ghost.write_text(ghost.read_text().replace("stage: 5\n", "stage: [5\n"))
-        put(self.board_dir / "plain.md", "Just some words.\n")
+        put(self.board_dir / "features" / "plain.md", "Just some words.\n")
         copy = f"{own['tiny'].stem} 2.md"
-        put(self.board_dir / copy, own["tiny"].read_text())
+        put(self.board_dir / "features" / copy, own["tiny"].read_text())
         names = [ghost.name, "plain.md", copy]
-        before = snapshot(self.board_dir)
+        before = snapshot(self.board_dir / "features")
         self.ok()
-        after = snapshot(self.board_dir)
+        after = snapshot(self.board_dir / "features")
         for name in names:
             self.assertEqual(after.get(name), before[name], name)
 
@@ -53,7 +53,7 @@ class BoardRobustTests(Board):
         self.acceptance(wt, "bare")
         put(self.notes / "plans" / "20261002 Bare Thing Plan.md", f"---\nspec: {spec.name}\n---\n\n# Plan\n\nNo tasks.\n")
         self.ok(cwd=wt)
-        note = read_note(self.board_dir / note_name(MACHINE["id"], PROJECT, "bare"))
+        note = read_note(self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, "bare"))
         self.assertEqual((note["stage"], note["title"]), (5, "Bare Thing"))
         self.assertEqual((note["description"], note["decisions"], note["tasks"]), ("", [], []))
 
@@ -120,6 +120,16 @@ class BoardRobustTests(Board):
         self.assertTrue(self.skipped(out, "placeholder", None), out)
         self.assertEqual(snapshot(self.notes), before)
         self.assertEqual(self.claims.read_text(), claims)
+
+    def test_placeholder_in_features_is_skipped(self) -> None:
+        """Review Focus 3: an iCloud placeholder of an own note in features/: skip `placeholder`, no note written."""
+        self.worktree("tiny", prefix="fix")
+        name = note_name(MACHINE["id"], PROJECT, "tiny")
+        put(self.board_dir / "features" / f".{name}.icloud", "")
+        out = self.ok()
+        self.assertTrue(self.skipped(out, "placeholder", "tiny"), out)
+        self.assertEqual(sorted(self.board_dir.glob("features/*.md")), [])
+        self.assertFalse((self.board_dir / name).exists())
 
     def test_start_session_b_clears_once_the_worktree_exists(self) -> None:
         """D6: "start Session B" goes when the claimed feature has a worktree, with no event."""
