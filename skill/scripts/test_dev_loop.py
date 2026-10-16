@@ -15,6 +15,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
@@ -2439,6 +2440,25 @@ class NotesPathTests(unittest.TestCase):
         self.assertTrue(result.stderr.startswith(f"no notes path for {self.repo}."))
 
 
+class JUnitReportTests(unittest.TestCase):
+    def test_write_junit_names_each_case_with_its_time_and_failure(self) -> None:
+        """The parallel run's JUnit report: one testcase per id, its time, a failure element with the last line."""
+        with tempfile.TemporaryDirectory() as tmp:
+            outcomes, xml = Path(tmp, "outcomes"), Path(tmp, "skill.xml")
+            outcomes.mkdir()
+            (outcomes / "a.json").write_text(json.dumps({
+                "test_board.T.test_ok": {"seconds": 1.5, "outcome": "pass", "text": ""},
+                "test_board.T.test_bad (x=1)": {"seconds": 0.25, "outcome": "failure",
+                                                "text": "Traceback\nAssertionError: 1 != 2\n"}}))
+            write_junit(xml, outcomes)
+            cases = {c.get("name"): c for c in ET.parse(xml).getroot().iter("testcase")}
+        self.assertEqual(set(cases), {"test_ok", "test_bad (x=1)"})
+        self.assertEqual({c.get("classname") for c in cases.values()}, {"test_board.T"})
+        self.assertEqual(cases["test_ok"].get("time"), "1.500")
+        self.assertIsNone(cases["test_ok"].find("failure"))
+        self.assertEqual(cases["test_bad (x=1)"].find("failure").get("message"), "AssertionError: 1 != 2")
+
+
 def flat(suite: unittest.TestSuite):
     for test in suite:
         yield from flat(test) if isinstance(test, unittest.TestSuite) else [test]
@@ -2457,13 +2477,19 @@ def run_parallel(jobs: int) -> int:
     ids = list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1) for test in flat(suite)))
     chunks = [ids[i:i + 5] for i in range(0, len(ids), 5)]
 
+    outcomes = tempfile.mkdtemp()
+
     def run(chunk: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, "-m", "unittest", *chunk], cwd=Path(__file__).parent,
+        report = os.path.join(outcomes, f"{chunk[0]}.json")
+        return subprocess.run([sys.executable, __file__, "--chunk", report, *chunk], cwd=Path(__file__).parent,
                               capture_output=True, text=True)
 
     start = time.monotonic()
     with ThreadPoolExecutor(jobs) as pool:
         results = list(pool.map(run, chunks))
+    if os.environ.get("DEVLOOP_REPORT_DIR"):
+        write_junit(Path(os.environ["DEVLOOP_REPORT_DIR"]) / "skill.xml", Path(outcomes))
+    shutil.rmtree(outcomes, ignore_errors=True)
     ran = sum(int(m.group(1)) for r in results if (m := re.search(r"^Ran (\d+) tests?", r.stderr, re.MULTILINE)))
     failed = [r for r in results if r.returncode != 0]
     for result in failed:
@@ -2473,7 +2499,51 @@ def run_parallel(jobs: int) -> int:
     return 0 if ok else 1
 
 
+class TimedResult(unittest.TextTestResult):
+    """Keeps each test's time by test id, for the JUnit report."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.seconds: dict[str, float] = {}
+
+    def addDuration(self, test, elapsed) -> None:
+        super().addDuration(test, elapsed)
+        self.seconds[test.id()] = elapsed
+
+
+def run_chunk(report: str, ids: list[str]) -> int:
+    """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
+    result = unittest.TextTestRunner(resultclass=TimedResult).run(unittest.TestLoader().loadTestsFromNames(ids))
+    cases = {test_id: {"seconds": seconds, "outcome": "pass", "text": ""} for test_id, seconds in result.seconds.items()}
+    for kind, found in (("skipped", result.skipped), ("failure", result.failures), ("error", result.errors)):
+        for test, text in found:
+            cases.setdefault(test.id(), {"seconds": 0.0})
+            cases[test.id()].update(outcome=kind, text=text)
+    Path(report).write_text(json.dumps(cases))
+    return 0 if result.wasSuccessful() else 1
+
+
+def write_junit(path: Path, outcomes: Path) -> None:
+    """JUnit XML of every chunk's outcomes, for `devloop.py gate --summary`."""
+    cases = {}
+    for report in outcomes.glob("*.json"):
+        cases.update(json.loads(report.read_text()))
+    suite = ET.Element("testsuite", name="skill", tests=str(len(cases)))
+    for test_id, case in sorted(cases.items()):
+        classname = test_id.partition(" ")[0].rpartition(".")[0]
+        element = ET.SubElement(suite, "testcase", classname=classname, name=test_id[len(classname) + 1:],
+                                time=f"{case['seconds']:.3f}")
+        if case["outcome"] != "pass":
+            lines = case["text"].strip().splitlines() or [""]
+            ET.SubElement(element, case["outcome"], message=lines[-1]).text = case["text"]
+    root = ET.Element("testsuites")
+    root.append(suite)
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--chunk"]:
+        sys.exit(run_chunk(sys.argv[2], sys.argv[3:]))
     # Arguments (test names, -k, -v): plain unittest. DEVLOOP_TEST_JOBS=1: serial run.
     jobs = int(os.environ.get("DEVLOOP_TEST_JOBS") or os.cpu_count() or 1)
     if len(sys.argv) > 1 or jobs <= 1:
