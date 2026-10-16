@@ -245,15 +245,14 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         if not take(lock, float(os.environ.get("DEVLOOP_TEST_CLAIM_WAIT") or 10) if claim else 0):
             if claim:  # D7: a claim is never dropped silently.
                 return 1, {"error": "board lock busy, claim not saved"}
-            if event and hook_cwd:  # D2: the lock holder applies it.
-                line = json.dumps({"event": event, "cwd": str(hook_cwd), "session_id": hook_session,
-                                   "at": time.strftime(TIME, time.gmtime())})
-                fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-                with os.fdopen(fd, "a") as handle:
-                    handle.write(line + "\n")
+            # D2, D13: the lock holder applies it; a run without an event queues `null`, a refresh.
+            line = json.dumps({"event": event, "cwd": str(hook_cwd or repo), "session_id": hook_session,
+                               "at": time.strftime(TIME, time.gmtime())})
+            fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            with os.fdopen(fd, "a") as handle:
+                handle.write(line + "\n")
             payload["skipped"].append(skip("busy"))
             return 0, payload
-        dl.cache_git()  # Under the lock: the git state this run reads no longer changes under it.
         found: dict[str, dict] = {}
 
         def detect(slug: str) -> dict:
@@ -285,6 +284,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
                       state.load(state_dir), claude)
         while True:
+            dl.cache_git()  # D13: each pass reads git again, and detects each feature again.
+            found.clear()
             write(ctx, specs, trees, claims, detect, payload, events)
             events = drain(queue)  # D2: events queued during this write.
             if not events:
@@ -318,7 +319,7 @@ def take(lock, wait: float) -> bool:
             time.sleep(0.1)
 
 
-def drain(queue: Path) -> list[tuple[str, Path, str | None]]:
+def drain(queue: Path) -> list[tuple[str | None, Path, str | None]]:
     """The queued events in order, as (event, resolved cwd, session_id); the queue file is deleted. Bad lines are
     dropped."""
     taken = queue.with_name(f".{queue.name}.{os.getpid()}.drain")
@@ -333,7 +334,7 @@ def drain(queue: Path) -> list[tuple[str, Path, str | None]]:
         try:
             item = json.loads(line)
             session = item.get("session_id")
-            events.append((str(item["event"]), Path(str(item["cwd"])).resolve(),
+            events.append((None if item["event"] is None else str(item["event"]), Path(str(item["cwd"])).resolve(),
                            session if isinstance(session, str) and session else None))
         except (ValueError, TypeError, KeyError, AttributeError):
             continue
@@ -372,7 +373,7 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
 
 
 def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], claims: list[str], detect,
-          payload: dict, events: list[tuple[str, Path, str | None]]) -> None:
+          payload: dict, events: list[tuple[str | None, Path, str | None]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     board, machine, project = ctx.folder, ctx.machine, ctx.project
@@ -391,6 +392,8 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
 
     scoped: list[tuple[str, list[str]]] = []
     for event, cwd, session in events:
+        if event is None:  # D13: a refresh, no scope and no session mapping.
+            continue
         # D12: an event in a feature worktree maps its session to that feature (the latest such event wins, so
         # PB-O22 holds for one session in two worktrees); a mapped event elsewhere scopes the mapped feature.
         tree, features = scope(cwd)
