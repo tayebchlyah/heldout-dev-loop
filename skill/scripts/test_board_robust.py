@@ -248,5 +248,15 @@ class BoardRobustTests(Board):
             os.kill(found["pid"], signal.SIGKILL)
 
 
+class VersionKeyTests(unittest.TestCase):
+    def test_a_prerelease_compares_by_its_leading_integers(self) -> None:
+        """B3: 2.1.0-rc.1 is (2, 1, 0); only a version with no leading integer is ()."""
+        from board import store
+
+        self.assertGreater(store.version_key("2.1.0-rc.1"), store.version_key("2.0.9"))
+        self.assertEqual(store.version_key("2.1.0-rc.1"), store.version_key("2.1.0"))
+        self.assertEqual(store.version_key("abc"), ())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
