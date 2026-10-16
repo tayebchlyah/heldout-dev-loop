@@ -2,7 +2,8 @@
 # SessionStart, UserPromptSubmit, PostToolUse, Stop, SubagentStop: refresh the progress board in the background.
 # Usage: board.sh session-start|prompt|post-tool|stop|subagent-stop. Hook input JSON on stdin. Always silent, exit 0.
 # post-tool runs only after a command that moves the loop (task-start, task-done, sdd-workspace, git commit,
-# git worktree add, gh pr create, gh pr merge). The CLI comes from the main worktree of the hook cwd.
+# git worktree add (also with -C <path>), gh pr create, gh pr merge). The CLI comes from the main worktree of the
+# hook cwd.
 # The background group holds none of the hook's pipes, so the hook returns at once.
 input=$(cat)
 if [ "$1" = post-tool ]; then
@@ -13,6 +14,7 @@ if [ "$1" = post-tool ]; then
       command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
       case "$command" in
         *task-start*|*task-done*|*sdd-workspace*|*"git commit"*|*"git worktree add"*|*"gh pr create"*|*"gh pr merge"*) ;;
+        *"git -C "*" commit"*|*"git -C "*" worktree add"*) ;;
         *) exit 0 ;;
       esac ;;
   esac

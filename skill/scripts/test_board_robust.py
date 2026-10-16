@@ -21,7 +21,9 @@ from unittest import mock
 
 from board import server
 from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
-                        read_note, snapshot)
+                        read_note, slow, snapshot)
+import test_board_robustness as oracle
+from test_board_robustness import yaml_block
 
 
 class BoardRobustTests(Board):
@@ -114,10 +116,21 @@ class BoardRobustTests(Board):
         """D13: a worktree made once the holder has listed them: the queued busy event makes a second pass that
         reads the worktrees again and writes the new feature's note. The holder's git calls are slow (a wrapper)."""
         wt, _ = self.stage5("alpha", "Alpha Report")
+        holder = self.slow_holder(wt)
+        self.spec("beta", "Beta Report")
+        self.worktree("beta")
+        out = self.ok("--event", "stop", stdin={"session_id": "s", "cwd": str(self.repo), "hook_event_name": "Stop"})
+        self.assertTrue(self.skipped(out, "busy", None), f"the holder had ended: {out}")
+        result, err = holder.communicate(timeout=90)
+        self.assertEqual(holder.returncode, 0, result + err)
+        self.assertEqual(self.note("beta")["stage"], 3)
+
+    def slow_holder(self, cwd: Path, *args: str) -> subprocess.Popen:
+        """A board run whose git calls are slow (a wrapper), returned once it holds the lock."""
         slow_bin = self.root / "slow-bin"
         put(slow_bin / "git", f'#!/bin/sh\nsleep 0.3\nexec "{shutil.which("git")}" "$@"\n')
         (slow_bin / "git").chmod(0o755)
-        holder = subprocess.Popen([sys.executable, str(DEVLOOP), "board", "--no-serve"], cwd=wt,
+        holder = subprocess.Popen([sys.executable, str(DEVLOOP), "board", "--no-serve", *args], cwd=cwd,
                                   env={**self.env, "PATH": f"{slow_bin}{os.pathsep}{self.env['PATH']}"},
                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(lambda: holder.poll() is None and holder.kill())
@@ -131,16 +144,93 @@ class BoardRobustTests(Board):
                     try:
                         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     except OSError:
-                        break
+                        return holder
                     fcntl.flock(handle, fcntl.LOCK_UN)
             time.sleep(0.02)
-        self.spec("beta", "Beta Report")
-        self.worktree("beta")
+
+    def queue_stop(self) -> None:
         out = self.ok("--event", "stop", stdin={"session_id": "s", "cwd": str(self.repo), "hook_event_name": "Stop"})
         self.assertTrue(self.skipped(out, "busy", None), f"the holder had ended: {out}")
+
+    def finish(self, holder: subprocess.Popen) -> dict:
         result, err = holder.communicate(timeout=90)
         self.assertEqual(holder.returncode, 0, result + err)
-        self.assertEqual(self.note("beta")["stage"], 3)
+        return json.loads(result)
+
+    def test_catch_up_pass_with_a_spec_placeholder_keeps_the_claim(self) -> None:
+        """D5, D13: a spec evicted during the first write: no catch-up pass, the claim, its note and the queued event
+        stay, skip `placeholder`. In process, so the eviction and the queued event land right after the first write."""
+        from board import writer
+        from test_devloop import load_devloop
+
+        spec = self.spec("gadget", "Gadget Export", review="draft")
+        self.ok("--claim", "gadget")
+        claims = self.claims.read_text()
+        queue = self.repo / ".git" / "dev-loop" / "board-events.jsonl"
+        real = writer.write
+        passes: list[int] = []
+
+        def write(*args: Any) -> None:
+            real(*args)
+            passes.append(1)
+            if len(passes) == 1:
+                spec.rename(spec.with_name(f".{spec.name}.icloud"))
+                put(queue, json.dumps({"event": "stop", "cwd": str(self.repo), "session_id": "s", "at": "x"}) + "\n")
+
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(writer, "write", write):
+            code, payload = writer.run(load_devloop(), self.repo, self.notes, self.home, event=None, hook_cwd=None,
+                                       hook_session=None, claim=None)
+        self.assertEqual((code, len(passes)), (0, 1), payload)
+        self.assertTrue(self.skipped(payload, "placeholder", None), payload)
+        self.assertTrue(queue.is_file())
+        self.assertEqual(self.claims.read_text(), claims)
+        self.assertEqual(self.note("gadget")["stage"], 2)
+
+    def test_catch_up_pass_reports_a_skip_once(self) -> None:
+        """A per-feature skip seen by two passes is listed once in the payload and in last_run."""
+        self.worktree("tiny", prefix="fix")
+        put(self.board_dir / "features" / f".{note_name(MACHINE['id'], PROJECT, 'tiny')}.icloud", "")
+        holder = self.slow_holder(self.repo)
+        self.queue_stop()
+        out = self.finish(holder)
+        want = [{"feature": "tiny", "reason": "placeholder"}]
+        self.assertEqual(out["skipped"], want)
+        state = json.loads((self.repo / ".git" / "dev-loop" / "board-state.json").read_text())
+        self.assertEqual(state["last_run"]["skipped"], want)
+
+    def test_own_legacy_note_that_does_not_parse_moves_into_features(self) -> None:
+        """D3, D4: an own note in YAML block form in dev-loop-board/ (2.1.0) is gone after one run; features/ holds
+        the note with the times of the state. With a features/ copy already there, the legacy file is deleted."""
+        wt, plan = self.stage5("gadget", "Gadget Export")
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        path = self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, "gadget")
+        legacy = self.board_dir / path.name
+        before = read_note(path)
+        for keep in (False, True):
+            with self.subTest(features_copy=keep):
+                if not keep:
+                    path.unlink()
+                legacy.write_text(yaml_block(before))
+                self.ok(cwd=wt)
+                self.assertFalse(legacy.exists())
+                after = read_note(path)
+                self.assertEqual(after["stage_times"], before["stage_times"])
+                self.assertEqual(after["tasks"], before["tasks"])
+
+    def test_crashed_run_is_reported_by_status(self) -> None:
+        """A board run that raises: exit 1, last_run saved with reason `error`, `status` reports it."""
+        self.worktree("tiny", prefix="fix")
+        put(self.board_dir / "features", "not a folder\n")
+        code, payload = self.board()
+        self.assertEqual(code, 1, payload)
+        result = subprocess.run([sys.executable, str(DEVLOOP), "status"], cwd=self.repo, env=self.env,
+                                capture_output=True, text=True, timeout=60)
+        board = json.loads(result.stdout).get("board")
+        self.assertIsInstance(board, dict, result.stdout)
+        [entry] = board["skipped"]
+        self.assertEqual((entry["feature"], entry["reason"]), (None, "error"))
+        self.assertRegex(entry["message"], r"^\w+Error: ")
 
     def test_spec_placeholder_skips_the_whole_run(self) -> None:
         """D5: an iCloud placeholder in specs/: skip `placeholder`, exit 0, claims and notes unchanged."""
@@ -563,6 +653,25 @@ class BoardRobustTests(Board):
         self.ok("--event", "stop", cwd=wt, stdin={"cwd": str(wt), "session_id": "sess-north"})
         state = json.loads((self.repo / ".git" / "dev-loop" / "board-state.json").read_text())
         self.assertEqual(state["sessions"]["sess-north"]["feature"], "gadget")  # The control: a string id maps.
+
+
+class HookFilterTests(unittest.TestCase):
+    """D11: `board.sh post-tool` filter, in the oracle hook sandbox (a fake devloop.py logs each call)."""
+    setUp = oracle.RobustnessHookTests.setUp
+    fake = oracle.RobustnessHookTests.fake
+    board_sh = oracle.RobustnessHookTests.board_sh
+    calls = oracle.RobustnessHookTests.calls
+
+    @slow
+    def test_git_dash_c_commit_and_worktree_add_start_board(self) -> None:
+        """`git -C <path> commit` and `git -C <path> worktree add` start one `board --event post-tool` run."""
+        for harness in ("claude", "codex"):
+            for command in ("git -C ../w commit -m 'Task 2'", "git -C /tmp/r worktree add ../r-x -b feat/x"):
+                with self.subTest(harness=harness, command=command):
+                    self.log.unlink(missing_ok=True)
+                    result = self.board_sh(harness, "post-tool", self.repo, command=command)
+                    self.assertEqual((result.returncode, result.stdout), (0, ""))
+                    self.assertEqual(len([c for c in self.calls(wait=6) if "board" in c["argv"]]), 1)
 
 
 class VersionKeyTests(unittest.TestCase):
