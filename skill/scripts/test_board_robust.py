@@ -233,6 +233,31 @@ class BoardRobustTests(Board):
         self.assertEqual(note["tasks"][0]["state"], "done")
         self.assertEqual(note["updated"], note["tasks"][0]["done"])
 
+    def test_corrupt_state_file_is_rebuilt(self) -> None:
+        """Board Robustness D1, D2: a state file that does not parse: exit 0, the note keeps its stage_times
+        (copied from the note again), and the state file parses after the run."""
+        wt, plan = self.stage5("alpha", "Alpha Report")
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        path = self.own_notes()["alpha"]
+        before = read_note(path)["stage_times"]
+        state = self.repo / ".git" / "dev-loop" / "board-state.json"
+        state.write_text('{"features": [')
+        self.ok(cwd=wt)
+        self.assertEqual(read_note(path)["stage_times"], before)
+        self.assertEqual(json.loads(state.read_text())["features"]["alpha"]["stage_times"], before)
+
+    def test_state_drops_features_with_no_note(self) -> None:
+        """Board Robustness D1: a state entry for a slug with no spec, no worktree and no note is gone after a run."""
+        self.worktree("tiny", prefix="fix")
+        self.ok()
+        state = self.repo / ".git" / "dev-loop" / "board-state.json"
+        data = json.loads(state.read_text())
+        data["features"]["ghost"] = {"stage_times": {"2": "2026-10-01T08:00:00Z"}, "tasks": {}}
+        state.write_text(json.dumps(data))
+        self.ok()
+        self.assertEqual(sorted(json.loads(state.read_text())["features"]), ["tiny"])
+
     def test_new_note_shows_before_the_folder_walk_expires(self) -> None:
         """D8: folders are cached for 60 s, the .md files of each folder are listed on every request."""
         note = {"type": "dev-loop-status", "schema": 1, "feature": "alpha"}
