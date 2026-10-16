@@ -284,7 +284,27 @@ def cmd_status(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
         return emit(result(0, "no notes path", str(exc)), 0)
-    return emit(detect(repo, args.feature, notes), 0)
+    out = detect(repo, args.feature, notes)
+    # Lazy, as in cmd_board: the old tests load this file with importlib and must not need the board package.
+    sys.path.insert(0, str(Path(__file__).parent))
+    from board import state, store, writer
+
+    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    last = state.load(Path(common) / "dev-loop")["last_run"] if common else None
+    last = last if isinstance(last, dict) else {}
+    skipped = last.get("skipped")
+    if isinstance(skipped, list) and any(
+            isinstance(s, dict) and s.get("reason") not in ("busy", "rebase", "no-dev-loop", "stage-0")
+            for s in skipped):
+        out["board"] = {"at": last.get("at"), "skipped": skipped}
+    top = git(repo, "rev-parse", "--show-toplevel")
+    first = next((line[len("worktree "):] for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines()
+                  if line.startswith("worktree ")), None)
+    if top and first:
+        have, main = writer.kit_version(Path(top)), writer.kit_version(Path(first))
+        if store.version_key(have) > store.version_key(main):
+            out["kit_drift"] = {"worktree": have, "main": main}
+    return emit(out, 0)
 
 
 # logged and gate

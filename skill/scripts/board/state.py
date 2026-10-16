@@ -42,6 +42,14 @@ def save(folder: Path, data: dict) -> None:
     store.write_file(folder, NAME, json.dumps(data, indent=1) + "\n")
 
 
+def save_last_run(folder: Path, at: str, skipped: list[dict]) -> None:
+    """D5: save `last_run` only, every other key kept. The caller holds the lock or needs none."""
+    folder.mkdir(parents=True, exist_ok=True)
+    data = load(folder)
+    data["last_run"] = {"at": at, "skipped": skipped}
+    save(folder, data)
+
+
 def entry(data: dict, slug: str) -> dict:
     """The state entry of `slug`, created empty."""
     if not isinstance(data["features"].get(slug), dict):
