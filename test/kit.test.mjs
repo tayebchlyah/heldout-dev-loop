@@ -61,6 +61,14 @@ test('the kit holds no Python cache and uses forward slashes', () => {
   }
 })
 
+test('the kit holds no test file of the skill suite', () => {
+  const kit = buildKit({ packageRoot, harnesses: ['claude', 'codex'] })
+  const paths = kit.files.map((file) => file.path)
+  assert.deepEqual(paths.filter((path) => /(^|\/)test_[^/]*\.py$/.test(path)), [])
+  assert.ok(paths.includes('.agents/skills/dev-loop/scripts/devloop.py'))
+  assert.ok(paths.includes('.agents/skills/dev-loop/references/tests.md'))
+})
+
 test('the Claude agents run the project hooks', () => {
   const kit = buildKit({ packageRoot, harnesses: ['claude'] })
   for (const name of ['implementer.md', 'spec-tester.md']) {

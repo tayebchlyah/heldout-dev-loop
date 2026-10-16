@@ -44,7 +44,7 @@ Both must pass before any commit. `.github/workflows/ci.yml` runs both on every 
 | `dev-loop.local.json` | `notes` path, gitignored (`init` adds the `.gitignore` line); optional `"board_dataview": false` (`check_setup.py` skips the Dataview check), `"board_vault_git": "shared"` (skips the vault `.gitignore` check) | write, only with a notes path |
 | `.dev-loop/MANIFEST.json` | version, sha256 of each kit file | write |
 | `.dev-loop/hooks/claude/`, `.dev-loop/hooks/codex/` | shell walls, and `board.sh` (SessionStart, UserPromptSubmit, PostToolUse: background `devloop.py board`, CLI taken from the main worktree; PostToolUse `Bash` runs it only after `task-start`, `task-done`, `sdd-workspace`, `git commit`, `git worktree add`, `gh pr create`, `gh pr merge`, Claude also on `TaskCreate|TaskUpdate`; `gate.sh` runs it on Stop and SubagentStop) | kit |
-| `.agents/skills/dev-loop/` | skill, harness refs, scripts | kit |
+| `.agents/skills/dev-loop/` | skill, harness refs, scripts; no `test_*.py` (the skill suite runs in this repo only) | kit |
 | `.claude/skills/dev-loop` | link to `../../.agents/skills/dev-loop` | link |
 | `.claude/agents/`, `.codex/agents/` | subagents | kit |
 | `.codex/rules/dev-loop.rules` | Codex command rules | kit |
