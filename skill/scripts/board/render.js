@@ -112,7 +112,7 @@ function renderBoard(features, nowMs, opts) {
       const pct = total ? (s.w ? (s.w / total) * share : minw) : past / sp.length;
       const now = s.n === cur;
       const time = `${dur(s.d)}${now ? " so far" : ""}${now && isFinite(m.left) ? `, about ${dur(m.left)} left` : ""}`;
-      return { n: s.n, pct, now, time, wc: wc(pct), split: s.n === 5 && m.f.tasks.length > 0 };
+      return { n: s.n, pct, now, time, wc: wc(pct), split: s.n === 5 && cur === 5 && m.f.tasks.length > 0 };
     });
     next.forEach((n) => segs.push({ n, pct: slot, fut: true, time: "not started", wc: "fut" }));
     const parts = m.f.tasks.map((t) => {
@@ -181,7 +181,11 @@ function renderBoard(features, nowMs, opts) {
     const hereRow = here ? rows.find((m) => m.f.machine_id === here) : null;
     const me = hereRow ? hereRow.f.owner : here ? str(opts.me) : "";
     const groups = new Map();
-    for (const m of rows) groups.set(m.f.machine_id, [...(groups.get(m.f.machine_id) || []), m]);
+    // D25: one group per owner and machine.
+    for (const m of rows) {
+      const k = JSON.stringify([m.f.machine_id, m.f.owner, m.f.machine]);
+      groups.set(k, [...(groups.get(k) || []), m]);
+    }
     const rank = (g) => (here && g[0].f.machine_id === here ? 0 : me && g[0].f.owner === me ? 1 : 2);
     const byName = (a, b) => rank(a) - rank(b) || a[0].f.owner.localeCompare(b[0].f.owner) || a[0].f.machine.localeCompare(b[0].f.machine);
     const cols = `<div class="cols"><span>Feature</span><span>Stage</span><span>Tasks</span><span>Time left</span><span>Last update</span></div>`;
