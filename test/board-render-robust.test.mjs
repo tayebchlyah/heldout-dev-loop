@@ -74,3 +74,10 @@ test('D2: task segments show only while Stage 5 runs', () => {
   const shipped = baseNote({ tasks, stage: 7, shipped_at: stamp(2), stage_times: { 1: stamp(300), 5: stamp(60), 6: stamp(10), 7: stamp(3) } })
   assert.ok(!seg(shipped))
 })
+
+test('a spec acceptance of regression or none drops Stage 3 from the bar', () => {
+  const stages = (acceptance) => [...loadRender()([baseNote({ acceptance })], T0, { open: { has: () => true } })
+    .matchAll(/data-stage-segment="(\d)"/g)].map((m) => Number(m[1]))
+  for (const value of ['regression', 'none']) assert.deepEqual(stages(value), [1, 2, 4, 5, 6, 7], value)
+  for (const value of ['', 'new', 3]) assert.deepEqual(stages(value), [1, 2, 3, 4, 5, 6, 7], String(value))
+})

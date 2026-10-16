@@ -37,7 +37,7 @@ function renderBoard(features, nowMs, opts) {
       project: str(f.project), feature: str(f.feature), machine_id: str(f.machine_id),
       title: str(f.title) || str(f.feature) || "Untitled feature",
       owner: str(f.owner) || "Unknown", machine: str(f.machine) || "unknown machine",
-      track: str(f.track), stage: Math.min(Math.max(Math.floor(Number(f.stage)) || 1, 1), 7), times,
+      track: str(f.track), acceptance: str(f.acceptance), stage: Math.min(Math.max(Math.floor(Number(f.stage)) || 1, 1), 7), times,
       tasks: Array.isArray(f.tasks) ? f.tasks.filter((t) => t && typeof t === "object") : [],
       waiting: str(f.waiting),
       decisions: Array.isArray(f.decisions) ? f.decisions.filter((d) => typeof d === "string" && d) : [],
@@ -77,7 +77,9 @@ function renderBoard(features, nowMs, opts) {
     const running = doing && isFinite(ms(doing.started)) ? nowMs - ms(doing.started) : 0;
     // D28: Stage 5 only, from the done tasks.
     const left = f.stage === 5 && durs.length ? Math.max((f.tasks.length - done.length) * mean - running, 0) : NaN;
-    const list = f.track.toUpperCase() === "S" ? [1, 5, 6, 7] : [1, 2, 3, 4, 5, 6, 7];
+    // Spec `acceptance:` regression or none: no Stage 3.
+    const list = f.track.toUpperCase() === "S" ? [1, 5, 6, 7]
+      : ["regression", "none"].includes(f.acceptance) ? [1, 2, 4, 5, 6, 7] : [1, 2, 3, 4, 5, 6, 7];
     return { f, done, doing, mean, left, list, key: `${f.project}/${f.feature}`, idle: nowMs - ms(f.updated) > 15 * 60000 };
   };
 

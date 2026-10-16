@@ -604,6 +604,17 @@ class BoardWriterTests(Board):
         self.assertEqual(note["description"], "Gadget Export for the widget shop.")
         self.assertRegex(note["updated"], ISO_Z)
 
+    def test_note_carries_the_spec_acceptance_value(self) -> None:
+        """A spec `acceptance:` value goes into the note in lower case, empty when the spec has none."""
+        spec = self.spec("gadget", "Gadget Export")
+        wt = self.worktree("gadget")
+        self.ok(cwd=wt)
+        self.assertEqual(self.note("gadget")["acceptance"], "")
+        put(spec, spec.read_text().replace("track: M\n", "track: M\nacceptance: None\n", 1))
+        self.ok(cwd=wt)
+        note = self.note("gadget")
+        self.assertEqual((note["acceptance"], note["stage"]), ("none", 4))
+
     @slow
     def test_o18_second_run_keeps_stage_times(self) -> None:
         """O18, D13: a second run keeps every stage_times value of the first."""
