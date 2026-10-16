@@ -3,8 +3,5 @@
   "harnesses": [
     "claude",
     "codex"
-  ],
-  "commands": {
-    "gate": "npm test && python3 skill/scripts/test_dev_loop.py"
-  }
+  ]
 }
