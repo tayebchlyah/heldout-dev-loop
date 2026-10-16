@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 from . import store
 
 NAME = "board-state.json"
+# The note fields the entry holds itself; `digest` covers the others.
+HELD = ("stage_times", "tasks", "assumptions_baseline", "shipped_at", "head", "backfilled", "waiting", "updated")
+
+
+def digest(fields: dict) -> str:
+    """D1: sha256 hex of the JSON (sorted keys) of the note fields the entry does not hold."""
+    rest = {k: v for k, v in fields.items() if k not in HELD}
+    tasks = fields.get("tasks")
+    if isinstance(tasks, list):  # The entry holds the task times; the titles and states go into the digest.
+        rest["tasks"] = [{k: v for k, v in t.items() if k not in ("started", "done")} if isinstance(t, dict) else t
+                         for t in tasks]
+    return hashlib.sha256(json.dumps(rest, sort_keys=True).encode()).hexdigest()
 
 
 def load(folder: Path) -> dict:
@@ -44,11 +57,13 @@ def seed(entry: dict, note: dict) -> None:
     tasks = note.get("tasks")
     if isinstance(tasks, list):
         entry["tasks"] = {str(t["n"]): {k: t[k] for k in ("started", "done") if t.get(k)}
-                          for t in tasks if isinstance(t, dict) and isinstance(t.get("n"), int)}
+                          for t in tasks if isinstance(t, dict) and isinstance(t.get("n"), int)
+                          and (t.get("started") or t.get("done"))}
     if isinstance(note.get("assumptions_baseline"), list):
         entry["assumptions_baseline"] = list(note["assumptions_baseline"])
     for key in ("shipped_at", "head", "waiting", "updated"):
         if isinstance(note.get(key), str):
             entry[key] = note[key]
+    entry["fields_digest"] = digest(note)
     stages = [int(k) for k in entry.get("stage_times", {}) if str(k).isdigit()]
     entry["backfilled"] = bool(stages) and min(stages) >= 5
