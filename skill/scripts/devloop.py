@@ -44,9 +44,24 @@ def emit(payload: dict, code: int) -> int:
     return code
 
 
+GIT_CACHE: dict[tuple[str, ...], str | None] | None = None
+
+
+def cache_git() -> None:
+    """From now on in this process, a repeated `git` call returns its first answer. For `board`, which makes no git write."""
+    global GIT_CACHE
+    GIT_CACHE = {}
+
+
 def git(repo: Path, *args: str) -> str | None:
+    key = (str(repo), *args)
+    if GIT_CACHE is not None and key in GIT_CACHE:
+        return GIT_CACHE[key]
     result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
-    return result.stdout.strip() if result.returncode == 0 else None
+    out = result.stdout.strip() if result.returncode == 0 else None
+    if GIT_CACHE is not None:
+        GIT_CACHE[key] = out
+    return out
 
 
 # status
@@ -438,9 +453,10 @@ def cmd_board(args: argparse.Namespace) -> int:
                 "message": f"DEVLOOP_BOARD_PORT is not a port: {raw}"}
     # Lazy: the old tests load this file with importlib and must not need the board package.
     sys.path.insert(0, str(Path(__file__).parent))
-    from board import server, store, writer
+    from board import store, writer  # board.server only when a server is stopped or ensured: its imports are slow.
 
     if args.stop_server:
+        from board import server
         stopped = server.stop(port) if port is not None else bad_port
         return emit({"notes": [], "removed": [], "board_note": None, "skipped": [], "server": stopped}, 0)
     repo = Path(args.repo).resolve()
@@ -467,6 +483,7 @@ def cmd_board(args: argparse.Namespace) -> int:
         elif port is None:
             payload["server"] = bad_port
         else:
+            from board import server
             machine = store.load_machine(Path.home())
             top = Path(git(repo, "rev-parse", "--show-toplevel") or repo)
             payload["server"] = server.ensure(port, writer.kit_version(top), [store.root_of(notes)], machine["id"],

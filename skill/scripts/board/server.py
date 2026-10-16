@@ -238,7 +238,7 @@ def stop(port: int) -> dict:
         while probe(port)[0] != "none":
             if time.monotonic() > deadline:
                 return {"state": "error", "url": url, "message": f"the board server (pid {pid}) did not stop"}
-            time.sleep(0.1)
+            time.sleep(0.02)
         return {"state": "stopped", "url": url}
     except Exception as exc:
         return {"state": "error", "url": url, "message": f"{type(exc).__name__}: {exc}"}
