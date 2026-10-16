@@ -260,14 +260,24 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                 found[slug] = dl.detect_feature(repo, slug, notes)
             return found[slug]
 
-        # D10: claims. A claim goes when its feature has a worktree here, ships, or has no spec.
-        tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
         claims_file = state_dir / "board-claims.json"
-        old_claims = read_slugs(claims_file)
-        claims = [c for c in dict.fromkeys([*old_claims, claim] if claim else old_claims)
-                  if c not in tree_slugs and c in specs and detect(c)["stage"] != "shipped"]
-        if claims != old_claims:
-            claims_file.write_text(json.dumps(claims) + "\n")
+
+        def refresh(first: bool) -> tuple[dict, dict, list[str]]:
+            """D13: each pass reads git, the specs and the worktrees again. D10: claims. A claim goes when its
+            feature has a worktree here, ships, or has no spec."""
+            dl.cache_git()
+            found.clear()
+            pass_specs = dict(dl.specs(notes)) if not first else specs
+            pass_trees = worktrees(dl, repo) if not first else trees
+            tree_slugs = [s for s in dict.fromkeys(pass_trees.values()) if s]
+            old_claims = read_slugs(claims_file)
+            pass_claims = [c for c in dict.fromkeys([*old_claims, claim] if first and claim else old_claims)
+                           if c not in tree_slugs and c in pass_specs and detect(c)["stage"] != "shipped"]
+            if pass_claims != old_claims:
+                claims_file.write_text(json.dumps(pass_claims) + "\n")
+            return pass_specs, pass_trees, pass_claims
+
+        specs, trees, claims = refresh(True)
         folder = notes_real / "dev-loop-board"
         if folder.is_symlink():
             payload["skipped"].append(skip("link"))
@@ -284,12 +294,11 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
                       state.load(state_dir), claude)
         while True:
-            dl.cache_git()  # D13: each pass reads git again, and detects each feature again.
-            found.clear()
             write(ctx, specs, trees, claims, detect, payload, events)
             events = drain(queue)  # D2: events queued during this write.
             if not events:
                 break
+            specs, trees, claims = refresh(False)
         ctx.data["last_run"] = {"at": now, "skipped": payload["skipped"]}
         state.save(state_dir, ctx.data)
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
