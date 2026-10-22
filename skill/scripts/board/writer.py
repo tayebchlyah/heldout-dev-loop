@@ -83,9 +83,9 @@ def iso(stamp: float) -> str:
 
 def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: int, doing: set[int],
           briefs: set[int], done_time: Callable[[int, str], str | None]) -> list[dict]:
-    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`), else
-    the first task with a brief (SDD may write every brief up front), else at Stage 5 the first task not done.
-    `saved`: the task times of the state entry, by `str(n)`; `done_time(n, line)`: the file time of a done task,
+    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`) plus
+    each briefed task before one of them (in review), else the first task with a brief (SDD may write every brief
+    up front), else at Stage 5 the first task not done. `saved`: the task times of the state entry, by `str(n)`; `done_time(n, line)`: the file time of a done task,
     else None. A doing task never starts before the previous task is done: that done time is its start then."""
     if plan is None:
         return []
@@ -97,7 +97,9 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
         for line in re.findall(r"^Task \d+: complete.*$", ledger.read_text(), re.MULTILINE):
             complete.setdefault(int(line.split(":", 1)[0][len("Task "):]), line)
     active = {n for n in titles if n not in complete and n in doing}
-    if not active:
+    if active:  # A briefed task before a doing one is still open (in review): doing too.
+        active |= {n for n in titles if n not in complete and n in briefs and n < max(active)}
+    else:
         pool = {n for n in titles if n not in complete and n in briefs}
         if not pool and stage == 5:
             pool = {n for n in titles if n not in complete}
@@ -214,7 +216,7 @@ def remember(entry: dict, fields: dict) -> None:
 
 
 def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | None, hook_cwd: Path | None,
-        hook_session: str | None, claim: str | None) -> tuple[int, dict]:
+        hook_session: str | None, claim: str | None, hook_agent: str | None = None) -> tuple[int, dict]:
     payload: dict = {"notes": [], "removed": [], "board_note": None, "skipped": []}
     top = dl.git(repo, "rev-parse", "--show-toplevel")
     if top is None or not (Path(top) / "dev-loop.json").is_file():
@@ -252,7 +254,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                 return 1, {"error": "board lock busy, claim not saved"}
             # D2, D13: the lock holder applies it; a run without an event queues `null`, a refresh.
             line = json.dumps({"event": event, "cwd": str(hook_cwd or repo), "session_id": hook_session,
-                               "at": time.strftime(TIME, time.gmtime())})
+                               "agent_id": hook_agent, "at": time.strftime(TIME, time.gmtime())})
             fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
             with os.fdopen(fd, "a") as handle:
                 handle.write(line + "\n")
@@ -294,7 +296,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         (folder / FEATURES).mkdir(exist_ok=True)
-        events = [*drain(queue), *([(event, hook_cwd.resolve(), hook_session)] if event and hook_cwd else [])]
+        events = [*drain(queue),
+                  *([(event, hook_cwd.resolve(), hook_session, hook_agent)] if event and hook_cwd else [])]
         claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
                       state.load(state_dir), claude)
@@ -340,9 +343,9 @@ def take(lock, wait: float) -> bool:
             time.sleep(0.1)
 
 
-def drain(queue: Path) -> list[tuple[str | None, Path, str | None]]:
-    """The queued events in order, as (event, resolved cwd, session_id); the queue file is deleted. Bad lines are
-    dropped."""
+def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None]]:
+    """The queued events in order, as (event, resolved cwd, session_id, agent_id); the queue file is deleted. Bad
+    lines are dropped."""
     taken = queue.with_name(f".{queue.name}.{os.getpid()}.drain")
     try:
         os.replace(queue, taken)  # An append after the rename lands in a new queue file.
@@ -354,9 +357,10 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None]]:
     for line in text.splitlines():
         try:
             item = json.loads(line)
-            session = item.get("session_id")
+            session, agent = item.get("session_id"), item.get("agent_id")
             events.append((None if item["event"] is None else str(item["event"]), Path(str(item["cwd"])).resolve(),
-                           session if isinstance(session, str) and session else None))
+                           session if isinstance(session, str) and session else None,
+                           agent if isinstance(agent, str) and agent else None))
         except (ValueError, TypeError, KeyError, AttributeError):
             continue
     return events
@@ -394,7 +398,7 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
 
 
 def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], claims: list[str], detect,
-          payload: dict, events: list[tuple[str | None, Path, str | None]]) -> None:
+          payload: dict, events: list[tuple[str | None, Path, str | None, str | None]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     board, machine, project = ctx.folder, ctx.machine, ctx.project
@@ -412,9 +416,20 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         return slug, [slug] if slug else claims if root == next(iter(trees)) else []
 
     scoped: list[tuple[str, list[str]]] = []
-    for event, cwd, session in events:
+    since = time.strftime(TIME, time.gmtime(stamp - state.AGENT_HOURS * 3600))
+    for event, cwd, session, agent in events:
         if event is None:  # D13: a refresh, no scope and no session mapping.
             continue
+        # A Stop while a subagent of the session runs (SubagentStart seen, no SubagentStop): the session waits for
+        # it, not for the user. session-start drops the session's subagents.
+        if event == "subagent-start":
+            state.agent_started(ctx.data, session, agent, now)
+        elif event == "subagent-stop":
+            state.agent_stopped(ctx.data, session, agent)
+        elif event == "session-start":
+            state.agent_stopped(ctx.data, session, None)
+        elif event == "stop" and state.running_agents(ctx.data, session, since):
+            event = "stop-busy"
         # D12: an event in a feature worktree maps its session to that feature (the latest such event wins, so
         # PB-O22 holds for one session in two worktrees); a mapped event elsewhere scopes the mapped feature.
         tree, features = scope(cwd)
@@ -477,7 +492,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             for event, features in scoped:
                 if slug in features and event == "stop":
                     waiting = STOP_WAITING.get(stage, waiting)
-                elif slug in features and event in ("prompt", "session-start", "post-tool"):
+                elif slug in features and event in ("prompt", "session-start", "post-tool", "stop-busy"):
                     waiting = ""
         fields = merge(ctx, entry, slug, result, specs.get(slug), now, waiting)
         before = {k: v for k, v in entry.items() if k != "updated"}
