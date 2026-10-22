@@ -97,7 +97,7 @@ Set `review_status: approved` in spec frontmatter. Under each superseded line in
 Start in the feature worktree (see Where each stage runs), then `git fetch origin`, `git rebase origin/main`.
 Spec `acceptance: regression` or `none`: stop here, no `spec-tester`, no commit. `devloop status` reports Stage 4.
 Dispatch the selected route's `spec-tester` or `spec_tester` subagent with spec path and glossary path, plus the feature slug (`feature` from `devloop status`).
-It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. No human review. One commit for both.
+It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Playwright E2E per feature. It also updates the earlier tests that assert a superseded line, to the replacement, and no other earlier test. No human review. One commit for both, its subject names the feature slug.
 Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after a spec oracle change: a Supersedes line or an escaped bug. Controller never writes a test there.
 
 ## 4 Plan

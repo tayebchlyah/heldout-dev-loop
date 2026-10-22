@@ -141,13 +141,19 @@ def holds_slug(path: str, slug: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){token}(?![a-z0-9])", path.lower().replace("_", "-")) is not None
 
 
-def has_acceptance(worktree: Path, slug: str) -> bool:
-    """A file named after the slug, or a branch commit not on origin/main that touches the acceptance folder (Stage 3
-    may only extend earlier features' files)."""
+def acceptance_commit(repo: Path, slug: str, revs: str) -> bool | None:
+    """A commit in `revs` that touches the acceptance folder and names the slug in its subject (Stage 3 may only
+    extend earlier features' files). None when git fails (`revs` names a missing ref)."""
+    subjects = git(repo, "log", "--format=%s", revs, "--", "tests/acceptance")
+    return None if subjects is None else any(holds_slug(s, slug) for s in subjects.splitlines())
+
+
+def has_acceptance(worktree: Path, slug: str) -> bool | None:
+    """A file named after the slug, else an acceptance commit not on origin/main; None when origin/main is missing."""
     root = worktree / "tests" / "acceptance"
     if any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*")):
         return True
-    return bool(git(worktree, "log", "-1", "--format=%H", "origin/main..HEAD", "--", "tests/acceptance"))
+    return acceptance_commit(worktree, slug, "origin/main..HEAD")
 
 
 def remote_branch(repo: Path, slug: str) -> str | None:
@@ -157,10 +163,13 @@ def remote_branch(repo: Path, slug: str) -> str | None:
 
 
 def shipped_without_branch(repo: Path, slug: str) -> bool:
-    """An acceptance file for the slug on the default branch. For a feature with no branch, local or remote."""
+    """An acceptance file or acceptance commit for the slug on the default branch. For a feature with no branch,
+    local or remote."""
     prefix = "tests/acceptance/"
     files = git(repo, "ls-tree", "-r", "--name-only", DEFAULT_BRANCH, prefix) or ""
-    return any(holds_slug(f[len(prefix):], slug) for f in files.splitlines() if f.startswith(prefix))
+    if any(holds_slug(f[len(prefix):], slug) for f in files.splitlines() if f.startswith(prefix)):
+        return True
+    return bool(acceptance_commit(repo, slug, DEFAULT_BRANCH))
 
 
 def result(stage: int | str, check: str, next_: str, feature: str | None = None,
@@ -223,8 +232,13 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
         return at("shipped", f"git cherry origin/main {known} lists no + commit", "none")
     if worktree is None or branch is None:  # A worktree always comes with its branch.
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
-    if fields.get("acceptance", "").lower() not in SKIP_ACCEPTANCE and not has_acceptance(worktree, slug):
-        return at(3, f"no acceptance file for {slug} and no branch commit under tests/acceptance", "Stage 3 Acceptance: dispatch spec-tester")
+    if fields.get("acceptance", "").lower() not in SKIP_ACCEPTANCE:
+        found = has_acceptance(worktree, slug)
+        if found is None:
+            return at(3, f"no acceptance file for {slug} and no origin/main to read branch commits", FETCH)
+        if not found:
+            return at(3, f"no acceptance file for {slug} and no branch commit under tests/acceptance naming it",
+                      f"Stage 3 Acceptance: dispatch spec-tester; the commit subject names {slug}")
     plan = find_plan(notes, spec)
     if plan is None:
         return at(4, f"no plan with spec: {spec.name}", "Stage 4 Plan")
@@ -489,7 +503,7 @@ def cmd_board(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
         return emit({"error": str(exc)}, 1)
-    hook_cwd = hook_session = None
+    hook_cwd = hook_session = hook_agent = None
     if args.event:
         try:
             hook = json.loads(sys.stdin.read())
@@ -499,10 +513,13 @@ def cmd_board(args: argparse.Namespace) -> int:
         cwd, session = hook.get("cwd"), hook.get("session_id")
         hook_cwd = Path(cwd) if isinstance(cwd, str) and cwd else None
         hook_session = session if isinstance(session, str) and session else None  # D12: else no session map.
+        agent = hook.get("agent_id")
+        hook_agent = agent if isinstance(agent, str) and agent else None
 
     try:
         code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
-                                   hook_cwd=hook_cwd, hook_session=hook_session, claim=args.claim)
+                                   hook_cwd=hook_cwd, hook_session=hook_session, hook_agent=hook_agent,
+                                   claim=args.claim)
         if code != 0:
             return emit(payload, code)
         whole = {s["reason"] for s in payload["skipped"]} & {"no-dev-loop", "notes-in-repo"}
@@ -562,7 +579,7 @@ def main() -> int:
 
     board = commands.add_parser("board")
     board.add_argument("--repo", default=".")
-    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-stop", "post-tool"])
+    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-start", "subagent-stop", "post-tool"])
     board.add_argument("--claim")
     board.add_argument("--no-serve", action="store_true")
     board.add_argument("--stop-server", action="store_true")

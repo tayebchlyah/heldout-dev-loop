@@ -10,6 +10,7 @@ from . import store
 
 NAME = "board-state.json"
 SESSIONS = 50  # D12: the most sessions the map keeps.
+AGENT_HOURS = 6  # A running subagent older than this no longer counts: a lost SubagentStop hides no wait for long.
 # The note fields the entry holds itself; `digest` covers the others.
 HELD = ("stage_times", "tasks", "assumptions_baseline", "shipped_at", "head", "backfilled", "waiting", "updated")
 
@@ -59,9 +60,48 @@ def map_session(data: dict, session: object, slug: str, now: str) -> None:
     if not isinstance(session, str) or not session:
         return
     sessions = data["sessions"]
-    sessions[session] = {"feature": slug, "last_seen": now}
+    old = sessions.get(session)
+    agents = old.get("agents") if isinstance(old, dict) else None
+    sessions[session] = {"feature": slug, "last_seen": now, **({"agents": agents} if agents else {})}
+    trim(sessions)
+
+
+def trim(sessions: dict) -> None:
     while len(sessions) > SESSIONS:
         del sessions[min(sessions, key=lambda s: str(sessions[s].get("last_seen")) if isinstance(sessions[s], dict) else "")]
+
+
+def agent_started(data: dict, session: object, agent: object, now: str) -> None:
+    """Record subagent `agent` of `session` as running since `now`. A non-string or empty id is ignored."""
+    if not isinstance(session, str) or not session or not isinstance(agent, str) or not agent:
+        return
+    item = data["sessions"].get(session)
+    item = item if isinstance(item, dict) else {}
+    agents = item.get("agents") if isinstance(item.get("agents"), dict) else {}
+    data["sessions"][session] = {**item, "last_seen": now, "agents": {**agents, agent: now}}
+    trim(data["sessions"])
+
+
+def agent_stopped(data: dict, session: object, agent: object) -> None:
+    """Drop subagent `agent` of `session`; `agent` None drops them all."""
+    item = data["sessions"].get(session) if isinstance(session, str) else None
+    if not isinstance(item, dict) or not isinstance(item.get("agents"), dict):
+        return
+    if agent is None:
+        item["agents"] = {}
+    else:
+        item["agents"].pop(agent, None)
+    if not item["agents"]:
+        del item["agents"]
+
+
+def running_agents(data: dict, session: object, since: str) -> list[str]:
+    """The subagents of `session` started at `since` or later (the caller's now minus AGENT_HOURS)."""
+    item = data["sessions"].get(session) if isinstance(session, str) else None
+    agents = item.get("agents") if isinstance(item, dict) else None
+    if not isinstance(agents, dict):
+        return []
+    return [a for a, at in agents.items() if isinstance(at, str) and at >= since]
 
 
 def feature_of(data: dict, session: object) -> str | None:
