@@ -91,10 +91,10 @@ class Sandbox(unittest.TestCase):
         self.assertEqual(code, 0, payload)
         return payload
 
-    def commit(self, cwd: Path, path: str, text: str) -> None:
+    def commit(self, cwd: Path, path: str, text: str, message: str | None = None) -> None:
         put(cwd / path, text)
         git(cwd, "add", "-A")
-        git(cwd, "commit", "-q", "-m", path)
+        git(cwd, "commit", "-q", "-m", message or path)
 
 
 class StatusTests(Sandbox):
@@ -171,35 +171,55 @@ class StatusTests(Sandbox):
         out = self.status(cwd=wt)
         self.assertEqual((out["stage"], out["worktree"]), (3, str(wt)))
 
+    GADGET = "tests/acceptance/api/test_gadget.py"
+
     def test_acceptance_commit_on_the_branch_ends_stage_3(self) -> None:
-        """Stage 3 extends earlier acceptance files only, no file named after the slug: the branch commit counts."""
+        """Stage 3 extends earlier acceptance files only, no file named after the slug: the trailer line counts."""
         self.spec()
-        self.commit(self.repo, "tests/acceptance/api/test_gadget.py", "def test_gadget():\n    pass\n")
+        self.commit(self.repo, self.GADGET, "def test_gadget():\n    pass\n")
         git(self.repo, "push", "-q", "origin", "main")
         git(self.repo, "fetch", "-q", "origin")
         wt = self.worktree()
         self.assertEqual(self.status(cwd=wt)["stage"], 3)
-        put(wt / "tests" / "acceptance" / "api" / "test_gadget.py", "def test_gadget():\n    assert True\n")
-        git(wt, "commit", "-qam", "Acceptance: widget extends the gadget flow")
+        self.commit(wt, self.GADGET, "def test_gadget():\n    assert True\n",
+                    "Extend the gadget flow\n\nAcceptance: widget")
         self.assertEqual(self.status(cwd=wt)["stage"], 4)
 
-    def test_acceptance_commit_not_naming_the_slug_keeps_stage_3(self) -> None:
-        """A branch stacked on another feature: its acceptance commit names that feature, not this slug."""
+    def test_acceptance_commit_with_only_the_slug_in_the_subject_keeps_stage_3(self) -> None:
         self.spec()
         wt = self.worktree()
-        self.commit(wt, "tests/acceptance/api/test_gadget.py", "def test_gadget():\n    pass\n")
+        self.commit(wt, self.GADGET, "def test_gadget():\n    pass\n", "\u2705(widget) Acceptance for the widget")
         out = self.status(cwd=wt)
         self.assertEqual(out["stage"], 3)
-        self.assertIn("names widget", out["next"])
+        self.assertIn("Acceptance: widget", out["next"])
 
-    def test_stage_3_without_origin_main_says_fetch(self) -> None:
-        """No slug file and no origin/main: the acceptance commit cannot be read, so fetch first."""
+    def test_acceptance_line_of_a_longer_slug_does_not_count(self) -> None:
         self.spec()
         wt = self.worktree()
+        self.commit(wt, self.GADGET, "def test_gadget():\n    pass\n", "Gadget\n\nAcceptance: widget-export")
+        self.assertEqual(self.status(cwd=wt)["stage"], 3)
+
+    def test_acceptance_line_without_a_touch_of_tests_acceptance_does_not_count(self) -> None:
+        self.spec()
+        wt = self.worktree()
+        self.commit(wt, "a.txt", "a\n", "Elsewhere\n\nAcceptance: widget")
+        self.assertEqual(self.status(cwd=wt)["stage"], 3)
+
+    def test_acceptance_commit_without_origin_main_ends_stage_3(self) -> None:
+        self.spec()
+        wt = self.worktree()
+        self.commit(wt, self.GADGET, "def test_gadget():\n    pass\n", "Gadget\n\nAcceptance: widget")
         git(self.repo, "update-ref", "-d", "refs/remotes/origin/main")
-        out = self.status(cwd=wt)
-        self.assertEqual(out["stage"], 3)
-        self.assertIn("git fetch origin", out["next"])
+        self.assertEqual(self.status(cwd=wt)["stage"], 4)
+
+    def test_acceptance_commit_still_counts_once_origin_main_holds_it(self) -> None:
+        """Branch rebased and pushed, origin/main fast-forwarded to it: origin/main..HEAD is empty."""
+        self.spec()
+        wt = self.worktree()
+        self.commit(wt, self.GADGET, "def test_gadget():\n    pass\n", "Gadget\n\nAcceptance: widget")
+        git(wt, "push", "-q", "origin", "HEAD:main")
+        git(self.repo, "fetch", "-q", "origin")
+        self.assertNotEqual(self.status(cwd=wt)["stage"], 3)
 
     def test_acceptance_regression_or_none_skips_stage_3(self) -> None:
         wt = self.worktree()
@@ -281,12 +301,20 @@ class StatusTests(Sandbox):
     def test_approved_spec_with_no_branch_and_its_acceptance_commit_on_main_is_shipped(self) -> None:
         """A feature that only extended earlier acceptance files, merged, branch gone, `shipped:` not written yet."""
         self.spec()
-        put(self.repo / "tests" / "acceptance" / "api" / "test_gadget.py", "def test_gadget():\n    pass\n")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-qm", "Acceptance: gadget flow")
+        self.commit(self.repo, self.GADGET, "def test_gadget():\n    pass\n", "\u2705(widget) Acceptance for the widget")
         self.assertEqual(self.status("--feature", "widget")["stage"], 3)
-        put(self.repo / "tests" / "acceptance" / "api" / "test_gadget.py", "def test_gadget():\n    assert 1\n")
-        git(self.repo, "commit", "-qam", "Acceptance: widget extends the gadget flow")
+        self.commit(self.repo, self.GADGET, "def test_gadget():\n    assert 1\n", "Extend gadget\n\nAcceptance: widget")
+        out = self.status("--feature", "widget")
+        self.assertEqual(out["stage"], "shipped")
+        self.assertIn("Acceptance: widget", out["check"])
+
+    def test_acceptance_commit_only_on_origin_main_is_shipped(self) -> None:
+        """Local main is behind origin/main."""
+        self.spec()
+        self.commit(self.repo, self.GADGET, "def test_gadget():\n    assert 1\n", "Extend gadget\n\nAcceptance: widget")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+        git(self.repo, "reset", "-q", "--hard", "HEAD~1")
         self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
 
     def test_shipped_field_wins_over_an_open_branch(self) -> None:

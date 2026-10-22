@@ -12,7 +12,7 @@ hooks:
 Write acceptance tests to `tests/acceptance/`.
 Name each acceptance file or folder after the feature slug, `-` replaced by `_`:
 `tests/acceptance/api/test_<slug>.py`, `tests/acceptance/e2e/<slug>.spec.ts`.
-`devloop status` finds the feature's tests by that name, or by a branch commit under `tests/acceptance/` whose subject names the slug, when the spec only extends earlier files.
+`devloop status` finds the feature's tests by that name, or, when the spec only extends earlier files, by the line `Acceptance: <slug>` in the Stage 3 commit message. Put that line in the commit message.
 
 Work from the spec and the glossary (GLOSSARY.md, else CONTEXT.md) only. You cannot read the implementation.
 Never dispatch a subagent: the held-out suite is yours alone.
