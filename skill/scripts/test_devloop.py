@@ -179,8 +179,27 @@ class StatusTests(Sandbox):
         git(self.repo, "fetch", "-q", "origin")
         wt = self.worktree()
         self.assertEqual(self.status(cwd=wt)["stage"], 3)
-        self.commit(wt, "tests/acceptance/api/test_gadget.py", "def test_gadget():\n    assert True\n")
+        put(wt / "tests" / "acceptance" / "api" / "test_gadget.py", "def test_gadget():\n    assert True\n")
+        git(wt, "commit", "-qam", "Acceptance: widget extends the gadget flow")
         self.assertEqual(self.status(cwd=wt)["stage"], 4)
+
+    def test_acceptance_commit_not_naming_the_slug_keeps_stage_3(self) -> None:
+        """A branch stacked on another feature: its acceptance commit names that feature, not this slug."""
+        self.spec()
+        wt = self.worktree()
+        self.commit(wt, "tests/acceptance/api/test_gadget.py", "def test_gadget():\n    pass\n")
+        out = self.status(cwd=wt)
+        self.assertEqual(out["stage"], 3)
+        self.assertIn("names widget", out["next"])
+
+    def test_stage_3_without_origin_main_says_fetch(self) -> None:
+        """No slug file and no origin/main: the acceptance commit cannot be read, so fetch first."""
+        self.spec()
+        wt = self.worktree()
+        git(self.repo, "update-ref", "-d", "refs/remotes/origin/main")
+        out = self.status(cwd=wt)
+        self.assertEqual(out["stage"], 3)
+        self.assertIn("git fetch origin", out["next"])
 
     def test_acceptance_regression_or_none_skips_stage_3(self) -> None:
         wt = self.worktree()
@@ -258,6 +277,17 @@ class StatusTests(Sandbox):
         self.commit(self.repo, "tests/acceptance/api/test_widget_flow.py", "def test_flow():\n    pass\n")
         self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
         self.assertEqual(self.status()["features"], [])
+
+    def test_approved_spec_with_no_branch_and_its_acceptance_commit_on_main_is_shipped(self) -> None:
+        """A feature that only extended earlier acceptance files, merged, branch gone, `shipped:` not written yet."""
+        self.spec()
+        put(self.repo / "tests" / "acceptance" / "api" / "test_gadget.py", "def test_gadget():\n    pass\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "Acceptance: gadget flow")
+        self.assertEqual(self.status("--feature", "widget")["stage"], 3)
+        put(self.repo / "tests" / "acceptance" / "api" / "test_gadget.py", "def test_gadget():\n    assert 1\n")
+        git(self.repo, "commit", "-qam", "Acceptance: widget extends the gadget flow")
+        self.assertEqual(self.status("--feature", "widget")["stage"], "shipped")
 
     def test_shipped_field_wins_over_an_open_branch(self) -> None:
         self.spec(shipped="2026-10-01", pr="https://example.invalid/pr/1")

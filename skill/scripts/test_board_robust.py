@@ -20,6 +20,7 @@ from typing import Any
 from unittest import mock
 
 from board import server
+import test_board
 from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
                         read_note, slow, snapshot)
 import test_board_robustness as oracle
@@ -748,6 +749,82 @@ class VersionKeyTests(unittest.TestCase):
         self.assertGreater(store.version_key("2.1.0-rc.1"), store.version_key("2.0.9"))
         self.assertEqual(store.version_key("2.1.0-rc.1"), store.version_key("2.1.0"))
         self.assertEqual(store.version_key("abc"), ())
+
+
+class BoardSubagentTests(oracle.RobustBoard):
+    """A Stop while a subagent of the session runs (SubagentStart seen, no SubagentStop yet) waits for nobody."""
+
+    def agent(self, name: str, cwd: Path, agent_id: str, session: str = "session-1") -> dict:
+        hook = {"subagent-start": "SubagentStart", "subagent-stop": "SubagentStop"}[name]
+        stdin = {"session_id": session, "cwd": str(cwd), "hook_event_name": hook, "agent_id": agent_id}
+        return self.ok("--event", name, cwd=cwd, stdin=stdin)
+
+    def test_stop_with_a_running_subagent_is_not_waiting(self) -> None:
+        """Start a1, stop: no waiting. Stop a1, stop: reply in the session. A resumed a1 (start again) counts."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        self.agent("subagent-start", self.repo, "a1")
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "")
+        self.agent("subagent-stop", self.repo, "a1")
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
+        self.event("prompt", wt)
+        self.agent("subagent-start", self.repo, "a1")
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "")
+
+    def test_another_session_subagent_does_not_count(self) -> None:
+        """A subagent of another session leaves this session's Stop waiting."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        self.agent("subagent-start", wt, "b1", session="session-2")
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
+
+    def test_session_start_forgets_running_subagents(self) -> None:
+        """A new session start drops the subagents its session had: a lost SubagentStop hides no wait."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        self.agent("subagent-start", wt, "a1")
+        self.event("session-start", wt)
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
+
+    def test_old_running_subagent_expires(self) -> None:
+        """A subagent started more than the expiry time ago no longer counts."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        self.agent("subagent-start", wt, "a1")
+        path = self.repo / ".git" / "dev-loop" / "board-state.json"
+        data = json.loads(path.read_text())
+        data["sessions"]["session-1"]["agents"]["a1"] = "2000-01-01T00:00:00Z"
+        path.write_text(json.dumps(data))
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
+
+    def test_briefed_task_before_a_doing_task_stays_doing(self) -> None:
+        """Task 1 has a brief and no `complete` line (in review) while the native list marks Task 2 in_progress."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=3)
+        self.ledger(wt, plan)
+        for n in (1, 2, 3):
+            put(self.sdd(wt, plan) / f"task-{n}-brief.md", f"# Task {n}\n")
+        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"),
+                    ("Task 3: Step 3", "pending"))
+        self.hook_event("prompt", wt, "sess-north")
+        self.ok(cwd=wt)
+        self.assertEqual(self.states("gadget"), ["doing", "doing", "todo"])
+
+
+class SnapshotBoardHookTests(unittest.TestCase):
+    """gate-snapshot.sh (Claude SubagentStart) runs `board --event subagent-start`. Fixture of the board hook tests."""
+
+    setUp = test_board.BoardHookTests.setUp
+    hook = test_board.BoardHookTests.hook
+    calls = test_board.BoardHookTests.calls
+    assert_board_event = test_board.BoardHookTests.assert_board_event
+
+    @slow
+    def test_subagent_start_runs_board(self) -> None:
+        result = self.hook("claude", "gate-snapshot.sh", "SubagentStart")
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+        self.assert_board_event(self.calls(wait=6), "subagent-start")
 
 
 if __name__ == "__main__":
