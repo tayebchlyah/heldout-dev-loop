@@ -12,6 +12,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from board import server
+from board import server, state as board_state
 import test_board
 from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
                         read_note, slow, snapshot)
@@ -688,25 +689,34 @@ class BoardTaskStateTests(oracle.RobustBoard):
         tasks = self.own_note("gadget")["tasks"]
         self.assert_time(tasks[1].get("started"), (folder / "task-1-tests.log").stat().st_mtime, "Task 2 started")
 
-    def test_doing_task_saved_start_before_previous_done_starts_at_that_done(self) -> None:
-        """A saved start older than the previous task's done time (saved while the native list ran ahead of the
-        ledger) is corrected: the doing task starts at that done time."""
+    def test_native_doing_task_starts_at_the_run_not_at_an_old_brief(self) -> None:
+        """The native list runs ahead of the ledger, the up-front brief of Task 2 is old: Task 2 starts when the
+        board first sees it doing, not at the brief time."""
         wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
         folder = self.sdd(wt, plan)
-        now = int(time.time())
         self.ledger(wt, plan)
         put(folder / "task-2-brief.md", "task-2-brief.md\n")
-        oracle.set_time(folder / "task-2-brief.md", now - 3 * 3600)
+        oracle.set_time(folder / "task-2-brief.md", time.time() - 3 * 3600)
         self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"))
         self.hook_event("prompt", wt, "sess-north")
         self.ok(cwd=wt)
         self.assertEqual(self.states("gadget"), ["todo", "doing"])
+        self.assert_time(self.own_note("gadget")["tasks"][1].get("started"), time.time(), "Task 2 started")
+
+    def test_saved_start_stays_when_the_previous_task_finishes_later(self) -> None:
+        """Task 2 started (saved) before Task 1 is done: Task 1 done later does not move Task 2's start."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
+        folder = self.sdd(wt, plan)
+        self.ledger(wt, plan)
+        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"))
+        self.hook_event("prompt", wt, "sess-north")
+        self.ok(cwd=wt)
+        first = self.own_note("gadget")["tasks"][1]["started"]
         put(folder / "task-1-tests.log", "tests\n")
-        oracle.set_time(folder / "task-1-tests.log", now - 3600)
+        oracle.set_time(folder / "task-1-tests.log", time.time() + 600)
         self.ledger(wt, plan, "Task 1: complete")
         self.ok(cwd=wt)
-        tasks = self.own_note("gadget")["tasks"]
-        self.assert_time(tasks[1].get("started"), (folder / "task-1-tests.log").stat().st_mtime, "Task 2 started")
+        self.assertEqual(self.own_note("gadget")["tasks"][1]["started"], first)
 
     def test_task_todo_for_one_run_keeps_its_saved_times(self) -> None:
         """A task that is todo in one run (native list ahead or behind the ledger) keeps its saved start."""
@@ -720,6 +730,19 @@ class BoardTaskStateTests(oracle.RobustBoard):
         self.ok(cwd=wt)
         self.assertEqual(self.states("gadget"), ["doing", "todo"])
         self.assertEqual(self.state()["features"]["gadget"]["tasks"]["2"]["started"], first)
+
+    def test_briefed_task_before_a_doing_task_stays_doing(self) -> None:
+        """Task 1 has a brief and no `complete` line (in review) while the native list marks Task 2 in_progress."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=3)
+        self.ledger(wt, plan)
+        for n in (1, 2, 3):
+            put(self.sdd(wt, plan) / f"task-{n}-brief.md", f"# Task {n}\n")
+        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"),
+                    ("Task 3: Step 3", "pending"))
+        self.hook_event("prompt", wt, "sess-north")
+        self.ok(cwd=wt)
+        self.assertEqual(self.states("gadget"), ["doing", "doing", "todo"])
+
 
 
 class HookFilterTests(unittest.TestCase):
@@ -754,9 +777,11 @@ class VersionKeyTests(unittest.TestCase):
 class BoardSubagentTests(oracle.RobustBoard):
     """A Stop while a subagent of the session runs (SubagentStart seen, no SubagentStop yet) waits for nobody."""
 
-    def agent(self, name: str, cwd: Path, agent_id: str, session: str = "session-1") -> dict:
+    def agent(self, name: str, cwd: Path, agent_id: str | None, session: str = "session-1", **extra: str) -> dict:
         hook = {"subagent-start": "SubagentStart", "subagent-stop": "SubagentStop"}[name]
-        stdin = {"session_id": session, "cwd": str(cwd), "hook_event_name": hook, "agent_id": agent_id}
+        stdin = {"session_id": session, "cwd": str(cwd), "hook_event_name": hook, **extra}
+        if agent_id:
+            stdin["agent_id"] = agent_id
         return self.ok("--event", name, cwd=cwd, stdin=stdin)
 
     def test_stop_with_a_running_subagent_is_not_waiting(self) -> None:
@@ -780,36 +805,44 @@ class BoardSubagentTests(oracle.RobustBoard):
         self.event("stop", wt)
         self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
 
-    def test_session_start_forgets_running_subagents(self) -> None:
-        """A new session start drops the subagents its session had: a lost SubagentStop hides no wait."""
+    def test_session_start_keeps_running_subagents(self) -> None:
+        """session-start also fires on compact and resume with the same session id while background subagents run."""
         wt, _ = self.stage5("alpha", "Alpha Report")
         self.agent("subagent-start", wt, "a1")
         self.event("session-start", wt)
         self.event("stop", wt)
-        self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
+        self.assertEqual(self.note("alpha")["waiting"], "")
 
-    def test_old_running_subagent_expires(self) -> None:
-        """A subagent started more than the expiry time ago no longer counts."""
+    def test_subagent_stop_without_an_id_changes_nothing(self) -> None:
+        """A SubagentStop with no agent_id (Codex, an old queued line) drops no running subagent."""
         wt, _ = self.stage5("alpha", "Alpha Report")
         self.agent("subagent-start", wt, "a1")
-        path = self.repo / ".git" / "dev-loop" / "board-state.json"
-        data = json.loads(path.read_text())
-        data["sessions"]["session-1"]["agents"]["a1"] = "2000-01-01T00:00:00Z"
-        path.write_text(json.dumps(data))
+        self.agent("subagent-stop", wt, None)
         self.event("stop", wt)
-        self.assertEqual(self.note("alpha")["waiting"], "reply in the session")
+        self.assertEqual(self.note("alpha")["waiting"], "")
 
-    def test_briefed_task_before_a_doing_task_stays_doing(self) -> None:
-        """Task 1 has a brief and no `complete` line (in review) while the native list marks Task 2 in_progress."""
-        wt, plan = self.stage5("gadget", "Gadget Export", tasks=3)
-        self.ledger(wt, plan)
-        for n in (1, 2, 3):
-            put(self.sdd(wt, plan) / f"task-{n}-brief.md", f"# Task {n}\n")
-        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"),
-                    ("Task 3: Step 3", "pending"))
-        self.hook_event("prompt", wt, "sess-north")
-        self.ok(cwd=wt)
-        self.assertEqual(self.states("gadget"), ["doing", "doing", "todo"])
+    def test_running_subagent_follows_its_transcript(self) -> None:
+        """A subagent runs while its start or its transcript (<session dir>/subagents/agent-<id>.jsonl, beside the
+        session transcript) moved in the last AGENT_IDLE_MINUTES; a killed agent goes quiet and expires."""
+        idle = board_state.AGENT_IDLE_MINUTES * 60
+        with tempfile.TemporaryDirectory() as tmp:
+            session_log = Path(tmp) / "s1.jsonl"
+            log = Path(tmp) / "s1" / "subagents" / "agent-a1.jsonl"
+            put(log, "{}\n")
+            oracle.set_time(log, 5000)
+            data: dict = {"sessions": {}}
+            board_state.agent_started(data, "s1", "a1", "2026-01-01T00:00:00Z", 1000.0, str(session_log))
+            board_state.agent_started(data, "s1", "a2", "2026-01-01T00:00:00Z", 1000.0, None)
+            self.assertEqual(board_state.running_agents(data, "s1", 1000 + idle - 1), ["a1", "a2"])
+            self.assertEqual(board_state.running_agents(data, "s1", 5000 + idle - 1), ["a1"])
+            self.assertEqual(board_state.running_agents(data, "s1", 5000 + idle + 1), [])
+
+    def test_subagent_start_with_a_transcript_path_counts_as_running(self) -> None:
+        """The hook JSON transcript_path goes through the board run: a fresh subagent keeps the Stop from waiting."""
+        wt, _ = self.stage5("alpha", "Alpha Report")
+        self.agent("subagent-start", wt, "a1", transcript_path=str(self.repo / "s.jsonl"))
+        self.event("stop", wt)
+        self.assertEqual(self.note("alpha")["waiting"], "")
 
 
 class SnapshotBoardHookTests(unittest.TestCase):
