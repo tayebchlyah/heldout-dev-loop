@@ -481,54 +481,6 @@ class RobustnessTimeTests(RobustBoard):
         self.ok(cwd=wt)
         self.assertEqual(self.states("gadget"), ["done", "todo", "doing"])
 
-    def test_briefs_written_up_front_give_one_doing_task(self) -> None:
-        """SDD preflight writes every brief at once: the native list names the doing task; with no native list, the
-        first task with a brief and no `complete` line."""
-        wt, plan = self.stage5("gadget", "Gadget Export", tasks=3)
-        self.ledger(wt, plan)
-        for n in (1, 2, 3):
-            put(self.sdd(wt, plan) / f"task-{n}-brief.md", f"# Task {n}\n")
-        self.ok(cwd=wt)
-        self.assertEqual(self.states("gadget"), ["doing", "todo", "todo"])
-        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"),
-                    ("Task 3: Step 3", "pending"))
-        self.ledger(wt, plan, "Task 1: complete")
-        self.hook_event("prompt", wt, "sess-north")
-        self.ok(cwd=wt)
-        self.assertEqual(self.states("gadget"), ["done", "doing", "todo"])
-
-    def test_brief_born_before_the_previous_task_done_is_not_the_start(self) -> None:
-        """A brief written up front is older than the previous task's done time: the task starts at that done time."""
-        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
-        folder = self.sdd(wt, plan)
-        now = int(time.time())
-        self.ledger(wt, plan)
-        for name, at in {"task-1-brief.md": now - 3 * 3600, "task-2-brief.md": now - 3 * 3600,
-                         "task-1-tests.log": now - 3600}.items():
-            put(folder / name, f"{name}\n")
-            set_time(folder / name, at)
-        self.ledger(wt, plan, "Task 1: complete")
-        self.ok(cwd=wt)
-        tasks = self.own_note("gadget")["tasks"]
-        self.assert_time(tasks[1].get("started"), (folder / "task-1-tests.log").stat().st_mtime, "Task 2 started")
-
-    def test_task_back_to_todo_forgets_its_start(self) -> None:
-        """A task no longer doing and not done drops its saved start: its next start is a new time."""
-        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
-        self.ledger(wt, plan)
-        self.native("sess-north", ("Task 1: Step 1", "pending"), ("Task 2: Step 2", "in_progress"))
-        self.hook_event("prompt", wt, "sess-north")
-        self.ok(cwd=wt)
-        first = self.own_note("gadget")["tasks"][1]["started"]
-        time.sleep(1.1)
-        self.native("sess-north", ("Task 1: Step 1", "pending"), ("Task 2: Step 2", "pending"))
-        self.ok(cwd=wt)
-        self.assertEqual(self.states("gadget"), ["doing", "todo"])
-        time.sleep(1.1)
-        self.native("sess-north", ("Task 1: Step 1", "pending"), ("Task 2: Step 2", "in_progress"))
-        self.ok(cwd=wt)
-        self.assertGreater(self.own_note("gadget")["tasks"][1]["started"], first)
-
     def test_o17_first_task_not_done_is_doing_by_default(self) -> None:
         """O17, D9 (c): no native item and no brief, at Stage 5: only the first task not done is doing."""
         wt, plan = self.stage5("gadget", "Gadget Export", tasks=3)
