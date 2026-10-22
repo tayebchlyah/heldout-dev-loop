@@ -83,9 +83,10 @@ def iso(stamp: float) -> str:
 
 def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: int, doing: set[int],
           briefs: set[int], done_time: Callable[[int, str], str | None]) -> list[dict]:
-    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`), then
-    the briefs, else at Stage 5 the first task not done. `saved`: the task times of the state entry, by `str(n)`;
-    `done_time(n, line)`: the file time of a done task, else None."""
+    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`), else
+    the first task with a brief (SDD may write every brief up front), else at Stage 5 the first task not done.
+    `saved`: the task times of the state entry, by `str(n)`; `done_time(n, line)`: the file time of a done task,
+    else None. A brief born before the previous task's done time does not date the start: that done time does."""
     if plan is None:
         return []
     titles: dict[int, str] = {}
@@ -95,7 +96,10 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
     if ledger is not None and ledger.is_file():
         for line in re.findall(r"^Task \d+: complete.*$", ledger.read_text(), re.MULTILINE):
             complete.setdefault(int(line.split(":", 1)[0][len("Task "):]), line)
-    active = {n for n in titles if n not in complete and (n in doing or n in briefs)}
+    active = {n for n in titles if n not in complete and n in doing}
+    if not active:
+        active = {n for n in titles if n not in complete and n in briefs}
+        active = {min(active)} if active else set()
     if not active and stage == 5:
         active = {n for n in titles if n not in complete}
         active = {min(active)} if active else set()
@@ -107,8 +111,10 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
         task: dict = {"n": n, "title": titles[n], "state": "todo"}
         if n in complete or n in active:
             brief = sources.birth(ledger.parent / f"task-{n}-brief.md") if ledger is not None else None
-            started = seen.get("started") or (iso(brief) if brief is not None else None) or (
-                now if n in active else previous_done)
+            briefed = iso(brief) if brief is not None else None
+            if briefed and previous_done and briefed < previous_done:
+                briefed = previous_done
+            started = seen.get("started") or briefed or (now if n in active else previous_done)
             if started:
                 task["started"] = started
             if n in complete:
@@ -188,10 +194,13 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
 
 
 def remembered_tasks(entry: dict, task_list: list[dict]) -> dict:
-    """D7: the saved task times with this run's times merged in, so a heading removed then restored keeps its times."""
+    """D7: the saved task times with this run's times merged in, so a heading removed then restored keeps its times.
+    A task todo in this run forgets its times: its next start is a new one."""
     saved = entry.get("tasks")
     merged = {n: dict(t) for n, t in saved.items() if isinstance(t, dict)} if isinstance(saved, dict) else {}
     for t in task_list:
+        if t["state"] == "todo":
+            merged.pop(str(t["n"]), None)
         times = {k: t[k] for k in ("started", "done") if k in t}
         if times:
             merged[str(t["n"])] = {**merged.get(str(t["n"]), {}), **times}
