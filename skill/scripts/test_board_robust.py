@@ -655,6 +655,72 @@ class BoardRobustTests(Board):
         self.assertEqual(state["sessions"]["sess-north"]["feature"], "gadget")  # The control: a string id maps.
 
 
+class BoardTaskStateTests(oracle.RobustBoard):
+    def test_briefs_written_up_front_give_one_doing_task(self) -> None:
+        """SDD preflight writes every brief at once: the native list names the doing task; with no native list, the
+        first task with a brief and no `complete` line."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=3)
+        self.ledger(wt, plan)
+        for n in (1, 2, 3):
+            put(self.sdd(wt, plan) / f"task-{n}-brief.md", f"# Task {n}\n")
+        self.ok(cwd=wt)
+        self.assertEqual(self.states("gadget"), ["doing", "todo", "todo"])
+        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"),
+                    ("Task 3: Step 3", "pending"))
+        self.ledger(wt, plan, "Task 1: complete")
+        self.hook_event("prompt", wt, "sess-north")
+        self.ok(cwd=wt)
+        self.assertEqual(self.states("gadget"), ["done", "doing", "todo"])
+
+    def test_brief_born_before_the_previous_task_done_is_not_the_start(self) -> None:
+        """A brief written up front is older than the previous task's done time: the task starts at that done time."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
+        folder = self.sdd(wt, plan)
+        now = int(time.time())
+        self.ledger(wt, plan)
+        for name, at in {"task-1-brief.md": now - 3 * 3600, "task-2-brief.md": now - 3 * 3600,
+                         "task-1-tests.log": now - 3600}.items():
+            put(folder / name, f"{name}\n")
+            oracle.set_time(folder / name, at)
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        tasks = self.own_note("gadget")["tasks"]
+        self.assert_time(tasks[1].get("started"), (folder / "task-1-tests.log").stat().st_mtime, "Task 2 started")
+
+    def test_doing_task_saved_start_before_previous_done_starts_at_that_done(self) -> None:
+        """A saved start older than the previous task's done time (saved while the native list ran ahead of the
+        ledger) is corrected: the doing task starts at that done time."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
+        folder = self.sdd(wt, plan)
+        now = int(time.time())
+        self.ledger(wt, plan)
+        put(folder / "task-2-brief.md", "task-2-brief.md\n")
+        oracle.set_time(folder / "task-2-brief.md", now - 3 * 3600)
+        self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"))
+        self.hook_event("prompt", wt, "sess-north")
+        self.ok(cwd=wt)
+        self.assertEqual(self.states("gadget"), ["todo", "doing"])
+        put(folder / "task-1-tests.log", "tests\n")
+        oracle.set_time(folder / "task-1-tests.log", now - 3600)
+        self.ledger(wt, plan, "Task 1: complete")
+        self.ok(cwd=wt)
+        tasks = self.own_note("gadget")["tasks"]
+        self.assert_time(tasks[1].get("started"), (folder / "task-1-tests.log").stat().st_mtime, "Task 2 started")
+
+    def test_task_todo_for_one_run_keeps_its_saved_times(self) -> None:
+        """A task that is todo in one run (native list ahead or behind the ledger) keeps its saved start."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
+        self.ledger(wt, plan)
+        self.native("sess-north", ("Task 1: Step 1", "pending"), ("Task 2: Step 2", "in_progress"))
+        self.hook_event("prompt", wt, "sess-north")
+        self.ok(cwd=wt)
+        first = self.own_note("gadget")["tasks"][1]["started"]
+        self.native("sess-north", ("Task 1: Step 1", "in_progress"), ("Task 2: Step 2", "pending"))
+        self.ok(cwd=wt)
+        self.assertEqual(self.states("gadget"), ["doing", "todo"])
+        self.assertEqual(self.state()["features"]["gadget"]["tasks"]["2"]["started"], first)
+
+
 class HookFilterTests(unittest.TestCase):
     """D11: `board.sh post-tool` filter, in the oracle hook sandbox (a fake devloop.py logs each call)."""
     setUp = oracle.RobustnessHookTests.setUp

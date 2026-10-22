@@ -97,6 +97,7 @@ if _board_robust_spec is None or _board_robust_spec.loader is None:
 test_board_robust = importlib.util.module_from_spec(_board_robust_spec)
 _board_robust_spec.loader.exec_module(test_board_robust)
 BoardRobustTests = test_board_robust.BoardRobustTests
+BoardTaskStateTests = test_board_robust.BoardTaskStateTests
 
 # The board robustness oracle tests (spec-tester, held out) live in test_board_robustness.py.
 _board_robustness_spec = importlib.util.spec_from_file_location("test_board_robustness",
