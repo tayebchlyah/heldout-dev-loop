@@ -171,6 +171,17 @@ class StatusTests(Sandbox):
         out = self.status(cwd=wt)
         self.assertEqual((out["stage"], out["worktree"]), (3, str(wt)))
 
+    def test_acceptance_commit_on_the_branch_ends_stage_3(self) -> None:
+        """Stage 3 extends earlier acceptance files only, no file named after the slug: the branch commit counts."""
+        self.spec()
+        self.commit(self.repo, "tests/acceptance/api/test_gadget.py", "def test_gadget():\n    pass\n")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+        wt = self.worktree()
+        self.assertEqual(self.status(cwd=wt)["stage"], 3)
+        self.commit(wt, "tests/acceptance/api/test_gadget.py", "def test_gadget():\n    assert True\n")
+        self.assertEqual(self.status(cwd=wt)["stage"], 4)
+
     def test_acceptance_regression_or_none_skips_stage_3(self) -> None:
         wt = self.worktree()
         for value in ["regression", "none", "None"]:
