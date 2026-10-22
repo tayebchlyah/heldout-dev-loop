@@ -142,8 +142,12 @@ def holds_slug(path: str, slug: str) -> bool:
 
 
 def has_acceptance(worktree: Path, slug: str) -> bool:
+    """A file named after the slug, or a branch commit not on origin/main that touches the acceptance folder (Stage 3
+    may only extend earlier features' files)."""
     root = worktree / "tests" / "acceptance"
-    return any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*"))
+    if any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*")):
+        return True
+    return bool(git(worktree, "log", "-1", "--format=%H", "origin/main..HEAD", "--", "tests/acceptance"))
 
 
 def remote_branch(repo: Path, slug: str) -> str | None:
@@ -220,7 +224,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
     if worktree is None or branch is None:  # A worktree always comes with its branch.
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
     if fields.get("acceptance", "").lower() not in SKIP_ACCEPTANCE and not has_acceptance(worktree, slug):
-        return at(3, f"no acceptance file for {slug}", "Stage 3 Acceptance: dispatch spec-tester")
+        return at(3, f"no acceptance file for {slug} and no branch commit under tests/acceptance", "Stage 3 Acceptance: dispatch spec-tester")
     plan = find_plan(notes, spec)
     if plan is None:
         return at(4, f"no plan with spec: {spec.name}", "Stage 4 Plan")
