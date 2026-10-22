@@ -141,19 +141,20 @@ def holds_slug(path: str, slug: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){token}(?![a-z0-9])", path.lower().replace("_", "-")) is not None
 
 
-def acceptance_commit(repo: Path, slug: str, revs: str) -> bool | None:
-    """A commit in `revs` that touches the acceptance folder and names the slug in its subject (Stage 3 may only
-    extend earlier features' files). None when git fails (`revs` names a missing ref)."""
-    subjects = git(repo, "log", "--format=%s", revs, "--", "tests/acceptance")
-    return None if subjects is None else any(holds_slug(s, slug) for s in subjects.splitlines())
+def acceptance_commit(repo: Path, slug: str, revs: list[str]) -> bool:
+    """A commit in `revs` that touches the acceptance folder and carries the line `Acceptance: <slug>` in its
+    message (Stage 3 may only extend earlier features' files). The slug matches whole."""
+    out = git(repo, "log", "-1", "--format=%H", "-i", "-E", "--grep", f"^Acceptance: {re.escape(slug)}$",
+              *revs, "--", "tests/acceptance")
+    return bool(out)
 
 
-def has_acceptance(worktree: Path, slug: str) -> bool | None:
-    """A file named after the slug, else an acceptance commit not on origin/main; None when origin/main is missing."""
+def has_acceptance(worktree: Path, slug: str) -> bool:
+    """A file named after the slug, else an acceptance commit anywhere in the history of HEAD."""
     root = worktree / "tests" / "acceptance"
     if any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*")):
         return True
-    return acceptance_commit(worktree, slug, "origin/main..HEAD")
+    return acceptance_commit(worktree, slug, ["HEAD"])
 
 
 def remote_branch(repo: Path, slug: str) -> str | None:
@@ -163,13 +164,15 @@ def remote_branch(repo: Path, slug: str) -> str | None:
 
 
 def shipped_without_branch(repo: Path, slug: str) -> bool:
-    """An acceptance file or acceptance commit for the slug on the default branch. For a feature with no branch,
-    local or remote."""
+    """An acceptance file on the default branch, or an acceptance commit on it or on origin's. For a feature with
+    no branch, local or remote."""
     prefix = "tests/acceptance/"
     files = git(repo, "ls-tree", "-r", "--name-only", DEFAULT_BRANCH, prefix) or ""
     if any(holds_slug(f[len(prefix):], slug) for f in files.splitlines() if f.startswith(prefix)):
         return True
-    return bool(acceptance_commit(repo, slug, DEFAULT_BRANCH))
+    refs = [ref for ref in (DEFAULT_BRANCH, f"origin/{DEFAULT_BRANCH}")
+            if git(repo, "rev-parse", "--verify", "-q", ref)]
+    return bool(refs) and acceptance_commit(repo, slug, refs)
 
 
 def result(stage: int | str, check: str, next_: str, feature: str | None = None,
@@ -226,19 +229,17 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
         return at(2, f"spec {spec.name} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
     known = branch or remote_branch(repo, slug)
     if known is None and shipped_without_branch(repo, slug):
-        return at("shipped", f"no branch for {slug}, its acceptance file is on {DEFAULT_BRANCH}", "none")
+        return at("shipped", f"no branch for {slug}, its acceptance file or `Acceptance: {slug}` commit is on {DEFAULT_BRANCH}", "none")
     lines = cherry(repo, known) if known else None
     if lines and not any(line.startswith("+") for line in lines):
         return at("shipped", f"git cherry origin/main {known} lists no + commit", "none")
     if worktree is None or branch is None:  # A worktree always comes with its branch.
         return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
     if fields.get("acceptance", "").lower() not in SKIP_ACCEPTANCE:
-        found = has_acceptance(worktree, slug)
-        if found is None:
-            return at(3, f"no acceptance file for {slug} and no origin/main to read branch commits", FETCH)
-        if not found:
-            return at(3, f"no acceptance file for {slug} and no branch commit under tests/acceptance naming it",
-                      f"Stage 3 Acceptance: dispatch spec-tester; the commit subject names {slug}")
+        if not has_acceptance(worktree, slug):
+            return at(3, f"no acceptance file for {slug} and no commit under tests/acceptance with the line "
+                      f"`Acceptance: {slug}`",
+                      f"Stage 3 Acceptance: dispatch spec-tester; the commit has the line `Acceptance: {slug}`")
     plan = find_plan(notes, spec)
     if plan is None:
         return at(4, f"no plan with spec: {spec.name}", "Stage 4 Plan")
