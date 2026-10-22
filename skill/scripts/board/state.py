@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from . import store
 
 NAME = "board-state.json"
 SESSIONS = 50  # D12: the most sessions the map keeps.
-AGENT_HOURS = 6  # A running subagent older than this no longer counts: a lost SubagentStop hides no wait for long.
+AGENT_IDLE_MINUTES = 30  # A subagent with no transcript activity for this long no longer runs: a killed one fires no SubagentStop.
 # The note fields the entry holds itself; `digest` covers the others.
 HELD = ("stage_times", "tasks", "assumptions_baseline", "shipped_at", "head", "backfilled", "waiting", "updated")
 
@@ -71,37 +72,52 @@ def trim(sessions: dict) -> None:
         del sessions[min(sessions, key=lambda s: str(sessions[s].get("last_seen")) if isinstance(sessions[s], dict) else "")]
 
 
-def agent_started(data: dict, session: object, agent: object, now: str) -> None:
-    """Record subagent `agent` of `session` as running since `now`. A non-string or empty id is ignored."""
+def agent_started(data: dict, session: object, agent: object, now: str, stamp: float,
+                  transcript_path: object = None) -> None:
+    """Record subagent `agent` of `session` as running since `stamp` (epoch), with its transcript, which Claude writes
+    at `<dirname(transcript_path)>/<session>/subagents/agent-<agent>.jsonl`. A non-string or empty id is ignored."""
     if not isinstance(session, str) or not session or not isinstance(agent, str) or not agent:
         return
     item = data["sessions"].get(session)
     item = item if isinstance(item, dict) else {}
     agents = item.get("agents") if isinstance(item.get("agents"), dict) else {}
-    data["sessions"][session] = {**item, "last_seen": now, "agents": {**agents, agent: now}}
+    log = None
+    if isinstance(transcript_path, str) and transcript_path:
+        log = str(Path(transcript_path).parent / session / "subagents" / f"agent-{agent}.jsonl")
+    data["sessions"][session] = {**item, "last_seen": now, "agents": {**agents, agent: {"at": stamp, "transcript": log}}}
     trim(data["sessions"])
 
 
 def agent_stopped(data: dict, session: object, agent: object) -> None:
-    """Drop subagent `agent` of `session`; `agent` None drops them all."""
+    """Drop subagent `agent` of `session`. A None `agent` changes nothing."""
     item = data["sessions"].get(session) if isinstance(session, str) else None
-    if not isinstance(item, dict) or not isinstance(item.get("agents"), dict):
+    if not isinstance(item, dict) or not isinstance(item.get("agents"), dict) or not isinstance(agent, str):
         return
-    if agent is None:
-        item["agents"] = {}
-    else:
-        item["agents"].pop(agent, None)
+    item["agents"].pop(agent, None)
     if not item["agents"]:
         del item["agents"]
 
 
-def running_agents(data: dict, session: object, since: str) -> list[str]:
-    """The subagents of `session` started at `since` or later (the caller's now minus AGENT_HOURS)."""
+def running_agents(data: dict, session: object, now: float) -> list[str]:
+    """The subagents of `session` whose last activity (the later of the start and the transcript mtime, epoch) is
+    less than AGENT_IDLE_MINUTES before `now`."""
     item = data["sessions"].get(session) if isinstance(session, str) else None
     agents = item.get("agents") if isinstance(item, dict) else None
     if not isinstance(agents, dict):
         return []
-    return [a for a, at in agents.items() if isinstance(at, str) and at >= since]
+    running = []
+    for agent, info in agents.items():
+        if not isinstance(info, dict) or not isinstance(info.get("at"), (int, float)):
+            continue
+        last = info["at"]
+        try:
+            if isinstance(info.get("transcript"), str):
+                last = max(last, os.stat(info["transcript"]).st_mtime)
+        except OSError:
+            pass
+        if now - last < AGENT_IDLE_MINUTES * 60:
+            running.append(agent)
+    return running
 
 
 def feature_of(data: dict, session: object) -> str | None:
