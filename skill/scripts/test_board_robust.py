@@ -698,10 +698,13 @@ class BoardTaskStateTests(oracle.RobustBoard):
         put(folder / "task-2-brief.md", "task-2-brief.md\n")
         oracle.set_time(folder / "task-2-brief.md", time.time() - 3 * 3600)
         self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"))
+        before = int(time.time())  # Note times have whole seconds.
         self.hook_event("prompt", wt, "sess-north")
         self.ok(cwd=wt)
+        after = time.time()
         self.assertEqual(self.states("gadget"), ["todo", "doing"])
-        self.assert_time(self.own_note("gadget")["tasks"][1].get("started"), time.time(), "Task 2 started")
+        started = oracle.epoch(self.own_note("gadget")["tasks"][1]["started"])
+        self.assertTrue(before <= started <= after, f"Task 2 started {started} not in the runs [{before}, {after}]")
 
     def test_saved_start_stays_when_the_previous_task_finishes_later(self) -> None:
         """Task 2 started (saved) before Task 1 is done: Task 1 done later does not move Task 2's start."""
