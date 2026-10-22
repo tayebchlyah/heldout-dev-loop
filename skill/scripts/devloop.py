@@ -504,7 +504,7 @@ def cmd_board(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
         return emit({"error": str(exc)}, 1)
-    hook_cwd = hook_session = hook_agent = None
+    hook_cwd = hook_session = hook_agent = hook_transcript = None
     if args.event:
         try:
             hook = json.loads(sys.stdin.read())
@@ -516,10 +516,13 @@ def cmd_board(args: argparse.Namespace) -> int:
         hook_session = session if isinstance(session, str) and session else None  # D12: else no session map.
         agent = hook.get("agent_id")
         hook_agent = agent if isinstance(agent, str) and agent else None
+        log = hook.get("transcript_path")
+        hook_transcript = log if isinstance(log, str) and log else None
 
     try:
         code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
                                    hook_cwd=hook_cwd, hook_session=hook_session, hook_agent=hook_agent,
+                                   hook_transcript=hook_transcript,
                                    claim=args.claim)
         if code != 0:
             return emit(payload, code)
