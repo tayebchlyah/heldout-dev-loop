@@ -39,8 +39,10 @@ if not any(
     })
 
 SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
-# The board tests import `board` and the board oracle modules, which live in skill/scripts.
+# The board tests import `board` from skill/scripts, and helpers of the board oracle modules,
+# which live in tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+sys.path.insert(1, str(SKILL_ROOT.parent / "tests" / "acceptance"))
 SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
@@ -94,18 +96,6 @@ ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
 TracksContractTests = test_devloop.TracksContractTests
 SpecGapContractTests = test_devloop.SpecGapContractTests
 
-# The board oracle tests (spec-tester, held out) live in test_board.py.
-_board_tests_spec = importlib.util.spec_from_file_location("test_board", SKILL_ROOT / "scripts" / "test_board.py")
-if _board_tests_spec is None or _board_tests_spec.loader is None:
-    raise ImportError("cannot load test_board module")
-test_board = importlib.util.module_from_spec(_board_tests_spec)
-_board_tests_spec.loader.exec_module(test_board)
-BoardWriterTests = test_board.BoardWriterTests
-BoardEventTests = test_board.BoardEventTests
-BoardShipTests = test_board.BoardShipTests
-BoardServerTests = test_board.BoardServerTests
-BoardHookTests = test_board.BoardHookTests
-
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
@@ -115,21 +105,6 @@ BoardRobustTests = test_board_robust.BoardRobustTests
 BoardTaskStateTests = test_board_robust.BoardTaskStateTests
 BoardSubagentTests = test_board_robust.BoardSubagentTests
 SnapshotBoardHookTests = test_board_robust.SnapshotBoardHookTests
-
-# The board robustness oracle tests (spec-tester, held out) live in test_board_robustness.py.
-_board_robustness_spec = importlib.util.spec_from_file_location("test_board_robustness",
-                                                                SKILL_ROOT / "scripts" / "test_board_robustness.py")
-if _board_robustness_spec is None or _board_robustness_spec.loader is None:
-    raise ImportError("cannot load test_board_robustness module")
-test_board_robustness = importlib.util.module_from_spec(_board_robustness_spec)
-_board_robustness_spec.loader.exec_module(test_board_robustness)
-RobustnessStateTests = test_board_robustness.RobustnessStateTests
-RobustnessTimeTests = test_board_robustness.RobustnessTimeTests
-RobustnessEventTests = test_board_robustness.RobustnessEventTests
-RobustnessKitTests = test_board_robustness.RobustnessKitTests
-RobustnessHookTests = test_board_robustness.RobustnessHookTests
-RobustnessServerTests = test_board_robustness.RobustnessServerTests
-RobustnessFlowTests = test_board_robustness.RobustnessFlowTests
 
 
 def all_instructions() -> str:

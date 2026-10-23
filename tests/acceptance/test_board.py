@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, TypeVar
 
-SCRIPTS = Path(__file__).resolve().parent
+SCRIPTS = Path(__file__).resolve().parents[2] / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
 REPO_ROOT = SCRIPTS.parents[1]
 CLAUDE_HOOKS = REPO_ROOT / "claude" / "hooks"
