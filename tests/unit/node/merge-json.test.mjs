@@ -177,3 +177,47 @@ test('a known old dev-loop SessionStart entry is replaced, any other dev-loop.js
   assert.deepEqual(value.SessionStart[0].hooks.map((hook) => hook.command), ['new dev-loop.json', mine])
   assert.deepEqual(removed, [`SessionStart: ${old}`])
 })
+
+const ownCommand = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny.sh"'
+const ownFragment = (matcher, extra = {}) => ({
+  PreToolUse: [{ matcher, hooks: [{ type: 'command', command: ownCommand, timeout: 5, ...extra }] }],
+})
+
+test('a dev-loop hook entry that differs from the fragment is replaced in place, a user hook is kept', () => {
+  const mine = { type: 'command', command: 'mine.sh' }
+  const current = {
+    PreToolUse: [
+      { matcher: 'Read|Bash', hooks: [{ type: 'command', command: ownCommand, timeout: 5 }, mine] },
+      { matcher: 'Other', hooks: [mine] },
+    ],
+  }
+  const { value, added, changed } = mergeHooks(current, ownFragment('Read|NotebookEdit|Bash', { onFailure: 'block' }))
+  assert.deepEqual(value.PreToolUse, [
+    { matcher: 'Read|Bash', hooks: [mine] },
+    { matcher: 'Other', hooks: [mine] },
+    { matcher: 'Read|NotebookEdit|Bash', hooks: [{ type: 'command', command: ownCommand, timeout: 5, onFailure: 'block' }] },
+  ])
+  assert.deepEqual(added, [])
+  assert.deepEqual(changed, [`PreToolUse: ${ownCommand}`])
+  assert.deepEqual(mergeHooks(value, ownFragment('Read|NotebookEdit|Bash', { onFailure: 'block' })).changed, [])
+})
+
+test('two dev-loop commands that differ only by arguments are two hooks', () => {
+  const stop = ownCommand + ' stop'
+  const turn = ownCommand + ' turn'
+  const fragment = { Stop: [{ hooks: [{ type: 'command', command: stop }, { type: 'command', command: turn, timeout: 9 }] }] }
+  const current = { Stop: [{ hooks: [{ type: 'command', command: stop }, { type: 'command', command: turn }] }] }
+  const { value, changed } = mergeHooks(current, fragment)
+  assert.deepEqual(changed, [`Stop: ${turn}`])
+  assert.equal(value.Stop.length, 1)
+  assert.deepEqual(value.Stop[0].hooks, [{ type: 'command', command: stop }, { type: 'command', command: turn, timeout: 9 }])
+})
+
+test('a Codex hooks file gets the same in-place replacement', () => {
+  const command = '"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh"'
+  const old = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command, timeout: 1 }] }] } })
+  const next = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command, timeout: 600 }] }] } })
+  const result = mergeHooksFile(old, next)
+  assert.deepEqual(JSON.parse(result.text).hooks.Stop, [{ hooks: [{ type: 'command', command, timeout: 600 }] }])
+  assert.deepEqual(result.updated, [`Stop: ${command}`])
+})
