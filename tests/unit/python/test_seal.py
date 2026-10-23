@@ -371,6 +371,35 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(taint_state(self.repo)["open"], [])
 
+    def test_no_head_file_starts_at_base(self) -> None:
+        """D2: no `<agent_id>.head`: start is `<base>`, the transcript's commit is listed, the record is open."""
+        sha = self.commit("src/total.py", "def compute_total(xs):\n    return sum(xs)\n", "add total")
+        code, out = self.audit(self.transcript([claude_line(f"[feat/x {sha[:7]}] add total\n{L1}\n{L2}\n")]))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["taint"]["start"], git(self.repo, "merge-base", "HEAD", "main").strip())
+        self.assertEqual(([c["sha"] for c in out["taint"]["commits"]], out["taint"]["attribution"]), ([sha], "transcript"))
+        self.assertEqual(len(taint_state(self.repo)["open"]), 1)
+
+    def test_re_stop_replaces_the_agent_entry(self) -> None:
+        """D8: a second audit of the same agent replaces its record, and its skip, instead of appending."""
+        self.mark_start("a1")
+        tainted = self.transcript([claude_line(f"{L1}\n{L2}\n")])
+        missing = self.tmp / "missing.jsonl"
+        for transcript in (tainted, tainted, missing, missing):
+            self.assertEqual(self.audit(transcript)[0], 0)
+        self.audit(tainted, agent_id="a2")
+        data = json.loads(audit_module.taint_file(self.repo).read_text())
+        self.assertEqual([r["agent_id"] for r in data["records"]], ["a1", "a2"])
+        self.assertEqual([s["agent_id"] for s in data["skipped"]], ["a1"])
+
+    def test_hook_input_not_json_writes_the_skip(self) -> None:
+        """A skip for input that is no JSON object is written too, to the repo of the process cwd."""
+        result = subprocess.run([sys.executable, str(DEVLOOP), "audit"], cwd=self.repo, env=self.env,
+                                input="{not json", capture_output=True, text=True, timeout=60)
+        out = json.loads(result.stdout)
+        self.assertEqual((result.returncode, out["taint"], out["skipped"][0]["reason"]), (0, None, "error"))
+        self.assertEqual(taint_state(self.repo)["skipped"], out["skipped"])
+
     def test_other_agents_commit_not_listed(self) -> None:
         self.mark_start("a1")
         self.mark_start("a2")
