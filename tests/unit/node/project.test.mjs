@@ -988,3 +988,25 @@ test('D3: Codex upgrade from 2.0.0 adds the board hook entries once', () => {
   upgrade(repo, home, [], fakePackage('99.0.1'))
   assert.equal(board(hooks), 3)
 })
+
+test('upgrade of a 2.1.1 Claude project replaces the old deny-acceptance entry with one new entry', () => {
+  const { home, repo } = setup()
+  run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=claude'])
+  const settings = join(repo, '.claude/settings.json')
+  const custom = readJson(settings)
+  const group = custom.hooks.PreToolUse.find((entry) => entry.hooks.some((hook) => hook.command.includes('deny-acceptance-to-subagents.sh')))
+  group.matcher = 'Read|Edit|Write|Grep|Glob|Bash'
+  for (const hook of group.hooks) delete hook.onFailure
+  custom.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] })
+  writeFileSync(settings, JSON.stringify(custom, null, 2))
+
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.match(output, /updated PreToolUse: .*deny-acceptance-to-subagents\.sh/)
+  const groups = readJson(settings).hooks.PreToolUse
+  const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('deny-acceptance-to-subagents.sh'))
+  assert.equal(own.length, 1)
+  assert.equal(own[0].matcher, 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash')
+  assert.equal(own[0].hook.onFailure, 'block')
+  assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
+  assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
+})
