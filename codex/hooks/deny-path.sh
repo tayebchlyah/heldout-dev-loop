@@ -12,6 +12,11 @@
 # way, and candidates are normalized so a trailing slash, a doubled slash, a
 # dot segment or a capital letter does not walk past the wall.
 input=$(cat)
+# Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
+fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
+command -v jq >/dev/null 2>&1 || fail "jq is missing"
+[ -n "$input" ] || fail "empty hook input"
+printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
 candidates=$(printf '%s' "$input" | jq -r '
   # A heredoc body and an exclusion (:!x, :(exclude)x, --exclude-dir=x, grep -v x)
   # name a path without reaching it.
@@ -28,7 +33,7 @@ candidates=$(printf '%s' "$input" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  (fields + joins) | join("\n")' 2>/dev/null) || exit 2
+  (fields + joins) | join("\n")') || fail "path extraction failed"
 candidates=$(printf '%s' "$candidates" \
   | tr 'A-Z' 'a-z' \
   | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta')

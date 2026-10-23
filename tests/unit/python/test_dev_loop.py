@@ -113,6 +113,7 @@ if _seal_hooks_spec is None or _seal_hooks_spec.loader is None:
 test_seal_hooks = importlib.util.module_from_spec(_seal_hooks_spec)
 _seal_hooks_spec.loader.exec_module(test_seal_hooks)
 SealHookTests = test_seal_hooks.SealHookTests
+GuardTests = test_seal_hooks.GuardTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
@@ -1478,12 +1479,12 @@ class CodexGitGuardPushTests(ClaudeGitGuardPushTests):
 
 
 class GitGuardParityTests(unittest.TestCase):
-    """The two guards differ only in how they deny and ask, so the push rule cannot drift."""
+    """The two guards differ only in how they deny and ask and in the spec tester's name, so no rule can drift."""
 
     @staticmethod
     def body(path: Path) -> list[str]:
         return [line for line in path.read_text().splitlines()
-                if not line.startswith(("#", "deny() ", "ask() "))]
+                if not line.startswith(("#", "deny() ", "ask() ", "TESTER="))]
 
     def test_codex_guard_matches_claude_guard(self) -> None:
         self.assertEqual(self.body(CODEX_ASSETS / "hooks" / "git-guard.sh"), self.body(CLAUDE_HOOKS / "git-guard.sh"))

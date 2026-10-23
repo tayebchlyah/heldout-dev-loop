@@ -8,6 +8,7 @@ hooks:
       hooks:
         - type: command
           command: "~/.claude/hooks/deny-path.sh src/ app/ backend/ frontend/"
+          onFailure: block
 ---
 Write acceptance tests to `tests/acceptance/`.
 Name each acceptance file or folder after the feature slug, `-` replaced by `_`:

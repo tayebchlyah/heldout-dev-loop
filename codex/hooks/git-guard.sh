@@ -4,13 +4,32 @@
 # parses permissionDecision "ask" but does not support it (the call would run), so every
 # ask becomes a deny that names the rule.
 IN=$(cat)
-CMD=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty')
-CWD=$(printf '%s' "$IN" | jq -r '.cwd // empty')
+# Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
+fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
+command -v jq >/dev/null 2>&1 || fail "jq is missing"
+[ -n "$IN" ] || fail "empty hook input"
+printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
+CMD=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty') || fail "command extraction failed"
+CWD=$(printf '%s' "$IN" | jq -r '.cwd // empty') || fail "cwd extraction failed"
 [ -z "$CMD" ] && exit 0
 
 # Any global options may sit before the subcommand: -C or -c take a value that may
 # be quoted and may hold spaces, the rest (--no-pager, --git-dir=x) are one token.
 G='git( +-[Cc] +("[^"]+"|'"'"'[^'"'"']+'"'"'|[^ ]+)| +-[^ ]+)* +'
+
+deny() { jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'; exit 0; }
+has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
+block() { echo "$1" >&2; exit 2; }
+
+# 0. Only spec-tester seals (D5). Read on the raw text, heredoc body included, so a
+# trailer typed into a commit message is seen. seal-check stays open to every caller.
+TESTER=spec_tester
+if [ "$(printf '%s' "$IN" | jq -r '.agent_type // empty')" = "$TESTER" ]; then
+  has "${G}commit([^[:alnum:]_-]|\$)" && block "Blocked: spec-tester commits only through devloop.py seal: python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>."
+else
+  has 'devloop\.py[[:space:]]+seal([^[:alnum:]_-]|$)' && block "Blocked: only spec-tester may run devloop.py seal."
+  has 'Dev-Loop-Seal' && block "Blocked: only devloop.py seal, run by spec-tester, writes the Dev-Loop-Seal trailer."
+fi
 
 # A heredoc body is text, not commands: every check below reads the line without it.
 # A body whose line names a shell (bash, sh, zsh, ssh, eval) stays. If this step
@@ -47,9 +66,6 @@ def strip_heredocs(cmd):
 print(strip_heredocs(os.environ["CMD"]), end="")
 PY
 ) && CMD=$BODYLESS || RAW=1 ;; esac
-
-deny() { jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'; exit 0; }
-has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
 
 # 1. rm -rf on root only.
 has 'rm +-[rf]+ +/( |$)|rm +-[rf]+ +/\*' && deny "Blocked: rm -rf / is never allowed."

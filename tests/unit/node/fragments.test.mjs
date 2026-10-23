@@ -46,15 +46,18 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
   assert.deepEqual(fragment.hooks.PreToolUse, [
     {
       matcher: 'Bash',
-      hooks: [{ type: 'command', command: '~/.claude/hooks/git-guard.sh', timeout: 5 }],
+      hooks: [
+        { type: 'command', command: '~/.claude/hooks/git-guard.sh', timeout: 5, onFailure: 'block' },
+      ],
     },
     {
-      matcher: 'Read|Edit|Write|Grep|Glob|Bash',
+      matcher: 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash',
       hooks: [
         {
           type: 'command',
           command: '~/.claude/hooks/deny-acceptance-to-subagents.sh',
           timeout: 5,
+          onFailure: 'block',
         },
       ],
     },
@@ -73,11 +76,21 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
 
   assert.deepEqual(fragment.hooks.Stop, [
     { hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh', timeout: 600 }] },
+    { hooks: [{ type: 'command', command: '~/.claude/hooks/seal.sh turn', timeout: 120 }] },
   ])
 
   assert.deepEqual(fragment.hooks.SubagentStop, [
     { hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh', timeout: 600 }] },
+    { hooks: [{ type: 'command', command: '~/.claude/hooks/seal.sh stop', timeout: 120 }] },
   ])
+})
+
+test('the deny-path hooks of both Claude agent frontmatters block when they fail', () => {
+  for (const agent of ['implementer', 'spec-tester']) {
+    const text = readFileSync(join(repoRoot, 'claude', 'agents', `${agent}.md`), 'utf8')
+    const frontmatter = text.split('---\n')[1]
+    assert.match(frontmatter, /command: "~\/\.claude\/hooks\/deny-path\.sh [^"\n]+"\n\s+onFailure: block\n/, agent)
+  }
 })
 
 test('test_project_fragment_denies_the_replaced_skills', () => {
