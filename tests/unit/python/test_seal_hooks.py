@@ -346,6 +346,14 @@ class CanaryScriptTests(unittest.TestCase):
                         ("test_canary_" if kind == "acc" else "canary_") + route.replace("-", "_") + ".py")
             self.assertIn(token, path.read_text())
 
+    def test_scratch_repo_init_succeeds(self):
+        work = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work, True)
+        result = subprocess.run(["/bin/bash", str(self.script), "--self-test-init", f"{work}/repo"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(Path(work, "repo", "dev-loop.json").is_file())
+
     def test_unknown_flag_is_a_usage_error(self):
         result = subprocess.run(["bash", str(self.script), "--nope"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)

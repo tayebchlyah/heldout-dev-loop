@@ -13,11 +13,12 @@ usage() {
   echo "  --keep  keep the scratch repo, and with it the harness output, which may hold transcript text."
   echo "  Needs node, python3, and claude and/or codex logged in."
 }
-want=() keep=0 selftest=
+want=() keep=0 selftest= selftest_init=
 while [ $# -gt 0 ]; do
   a=$1; shift
   case "$a" in
     --self-test-tokens) selftest=${1:?usage: --self-test-tokens <dir>}; shift ;;
+    --self-test-init) selftest_init=${1:?usage: --self-test-init <dir>}; shift ;;
     --help|-h) usage; exit 0 ;;
     --claude) want+=(claude) ;;
     --codex) want+=(codex) ;;
@@ -111,12 +112,25 @@ if [ -n "$selftest" ]; then # no harness: the token files only, one `<kind> <rou
   exit 0
 fi
 
+# init_repo <harness> <dir>: a git repo with the kit installed from this working tree. The notes folder sits
+# next to the repo, in the scratch dir, because init requires it to exist.
+init_repo() {
+  local h=$1 dir=$2 err
+  mkdir -p "$dir" "$dir.notes" && cd "$dir" || return 1
+  git init -q -b main && git -c user.name=canary -c user.email=canary@example.com commit -q --allow-empty -m init || return 1
+  err=$(node "$root/bin/install.mjs" init --yes --harness="$h" --notes="$dir.notes" 2>&1) \
+    || { echo "init failed for $h: $(echo "$err" | tail -n 1)" >&2; return 1; }
+}
+
+if [ -n "$selftest_init" ]; then # no harness: the scratch repo and `init` only
+  init_repo claude "$selftest_init"
+  exit $?
+fi
+
 run_harness() {
   local h=$1 tok dir="$scratch/$1" impl tester main_edit rc where start r
   local routes
-  mkdir -p "$dir" && cd "$dir" || return
-  git init -q -b main && git commit -q --allow-empty -m init
-  node "$root/bin/install.mjs" init --yes --harness="$h" --notes="$dir/notes" >/dev/null 2>&1 || { echo "init failed for $h" >&2; failed=1; return; }
+  init_repo "$h" "$dir" || { failed=1; return; }
   if [ "$h" = claude ]; then
     impl=implementer tester=spec-tester main_edit=Edit routes=(Read Grep Glob cat cd-cat git-show python)
   else
