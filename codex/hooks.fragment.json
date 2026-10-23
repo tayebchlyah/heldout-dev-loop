@@ -36,6 +36,17 @@
             "statusMessage": "Checking command safety"
           }
         ]
+      },
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/acceptance-wall.sh",
+            "timeout": 5,
+            "statusMessage": "Checking the held-out suite wall"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -48,6 +59,16 @@
             "statusMessage": "Running repository gate"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/seal.sh turn",
+            "timeout": 120,
+            "statusMessage": "Checking the acceptance seal"
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -58,6 +79,16 @@
             "command": "{{HOME}}/.codex/hooks/gate.sh",
             "timeout": 600,
             "statusMessage": "Running repository gate"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/seal.sh stop",
+            "timeout": 120,
+            "statusMessage": "Checking the acceptance seal"
           }
         ]
       }
@@ -83,6 +114,18 @@
             "command": "{{HOME}}/.codex/hooks/board.sh post-tool",
             "timeout": 5,
             "statusMessage": "Updating dev-loop board"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.codex/hooks/seal.sh start",
+            "timeout": 5,
+            "statusMessage": "Recording subagent start"
           }
         ]
       }

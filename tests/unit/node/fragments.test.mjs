@@ -178,6 +178,30 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
         },
       ],
     },
+    {
+      matcher: 'Bash|apply_patch',
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/acceptance-wall.sh',
+          timeout: 5,
+          statusMessage: 'Checking the held-out suite wall',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.SubagentStart, [
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/seal.sh start',
+          timeout: 5,
+          statusMessage: 'Recording subagent start',
+        },
+      ],
+    },
   ])
 
   assert.deepEqual(fragment.hooks.PostToolUse, [
@@ -205,6 +229,16 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
         },
       ],
     },
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/seal.sh turn',
+          timeout: 120,
+          statusMessage: 'Checking the acceptance seal',
+        },
+      ],
+    },
   ])
 
   assert.deepEqual(fragment.hooks.SubagentStop, [
@@ -215,6 +249,16 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
           command: '{{HOME}}/.codex/hooks/gate.sh',
           timeout: 600,
           statusMessage: 'Running repository gate',
+        },
+      ],
+    },
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/seal.sh stop',
+          timeout: 120,
+          statusMessage: 'Checking the acceptance seal',
         },
       ],
     },
