@@ -15,7 +15,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(HERE))
-from test_devloop import git, put  # noqa: E402  (also sets the core.fsmonitor override)
+from test_devloop import git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 from test_seal import L1, L2, L3, PROTECTED, SUITE, claude_line, codex_line  # noqa: E402
 
 SHELL = {"claude": "bash", "codex": "sh"}
@@ -46,10 +46,11 @@ class SealHookTests(unittest.TestCase):
             shutil.copytree(ROOT / harness / "hooks", target)
             put(target / "board.sh", "#!/bin/sh\ncat >/dev/null\nexit 0\n")
 
-    def hook(self, harness: str, script: str, payload: dict | str, *args: str) -> subprocess.CompletedProcess[str]:
+    def hook(self, harness: str, script: str, payload: dict | str, *args: str,
+             project: Path | None = None) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "DEV_LOOP_NOTES")}
         if harness == "claude":
-            env["CLAUDE_PROJECT_DIR"] = str(self.repo)
+            env["CLAUDE_PROJECT_DIR"] = str(project or self.repo)
         text = payload if isinstance(payload, str) else json.dumps({"cwd": str(self.repo), **payload})
         return subprocess.run([SHELL[harness], str(self.repo / ".dev-loop/hooks" / harness / script), *args],
                               input=text, capture_output=True, text=True, env=env, cwd=self.tmp, timeout=60)
@@ -60,26 +61,52 @@ class SealHookTests(unittest.TestCase):
         git(self.repo, "commit", "-q", "-m", "change")
         return git(self.repo, "rev-parse", "HEAD").strip()
 
-    def head_file(self, agent_id: str) -> Path:
-        return Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop-subagents" / f"{agent_id}.head"
+    def head_file(self, agent_id: str, repo: Path | None = None) -> Path:
+        git_dir = git(repo or self.repo, "rev-parse", "--absolute-git-dir").strip()
+        return Path(git_dir) / "dev-loop-subagents" / f"{agent_id}.head"
 
-    def test_o14_turn_blocks_on_an_unsealed_commit(self) -> None:
+    def reason(self, harness: str, mode: str = "turn", **payload) -> str:
+        result = self.hook(harness, "seal.sh", {"hook_event_name": "Stop", "stop_hook_active": False, **payload}, mode)
+        out = json.loads(result.stdout)
+        self.assertEqual(out["decision"], "block")
+        return out["reason"]
+
+    def test_o14_turn_and_stop_block_on_an_unsealed_commit(self) -> None:
         sha = self.commit(SUITE, "def test_flow():\n    pass\n")
         for harness in SHELL:
-            for name, payload, blocks in [
-                ("stop", {"hook_event_name": "Stop", "stop_hook_active": False}, True),
-                ("stop_hook_active", {"hook_event_name": "Stop", "stop_hook_active": True}, False),
-                ("not json", "{not json", False),
+            for name, mode, payload, blocks in [
+                ("turn", "turn", {"hook_event_name": "Stop", "stop_hook_active": False}, True),
+                ("stop", "stop", {"hook_event_name": "SubagentStop", "stop_hook_active": False,
+                                  "agent_id": "v", "agent_type": "implementer"}, True),
+                ("stop_hook_active", "turn", {"hook_event_name": "Stop", "stop_hook_active": True}, False),
+                ("not json", "turn", "{not json", False),
             ]:
                 with self.subTest(harness=harness, case=name):
-                    result = self.hook(harness, "seal.sh", payload, "turn")
+                    result = self.hook(harness, "seal.sh", payload, mode)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     if blocks:
                         out = json.loads(result.stdout)
                         self.assertEqual(out["decision"], "block")
-                        self.assertIn(f"unsealed {sha[:7]} {SUITE}", out["reason"])
+                        self.assertIn(f"unsealed {sha} {SUITE}", out["reason"])
                     else:
                         self.assertEqual(result.stdout, "")
+        (self.repo / "dev-loop.json").unlink()
+        for harness in SHELL:
+            with self.subTest(harness=harness, case="no dev-loop.json"):
+                result = self.hook(harness, "seal.sh", {"hook_event_name": "Stop", "stop_hook_active": False}, "turn")
+                self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+    def test_changed_after_seal_names_the_change_not_the_seal(self) -> None:
+        put(self.repo / SUITE, "def test_flow():\n    pass\n")
+        git(self.repo, "add", "--", SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        later = self.commit(SUITE, "def test_flow():\n    assert True\n")
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn(f"changed-after-seal {later} {SUITE}", reason)
+                self.assertNotIn(out["commit"], reason)
 
     def test_stop_records_taint_and_only_turn_blocks_on_it(self) -> None:
         for harness in SHELL:
@@ -97,9 +124,8 @@ class SealHookTests(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
                 taint = json.loads((self.head_file(agent).parent.parent / "dev-loop" / "taint.json").read_text())
                 self.assertIn(agent, [r["agent_id"] for r in taint["records"]])
-                result = self.hook(harness, "seal.sh", {"hook_event_name": "Stop", "stop_hook_active": False}, "turn")
-                reason = json.loads(result.stdout)["reason"]
-                self.assertIn(f"implementer {sha[:7]}", reason)
+                reason = self.reason(harness)
+                self.assertIn(f"implementer {sha}", reason)
                 self.assertIn("git revert", reason)
                 git(self.repo, "revert", "--no-edit", sha)
 
@@ -112,6 +138,22 @@ class SealHookTests(unittest.TestCase):
                                                      "agent_type": "implementer"}, *args)
                 self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
                 self.assertEqual(self.head_file(agent).read_text().strip(), head)
+
+    def test_claude_hooks_use_the_input_cwd_not_the_project_dir(self) -> None:
+        other = self.tmp / "other"
+        other.mkdir()
+        git(other, "init", "-q", "-b", "main")
+        git(other, "commit", "-q", "--allow-empty", "-m", "other")
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        start = {"hook_event_name": "SubagentStart", "agent_id": "w", "agent_type": "implementer"}
+        result = self.hook("claude", "gate-snapshot.sh", start, project=other)
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+        self.assertEqual(self.head_file("w").read_text().strip(), head)
+        self.assertFalse(self.head_file("w", other).exists())
+        sha = self.commit(SUITE, "def test_flow():\n    pass\n")
+        result = self.hook("claude", "seal.sh", {"hook_event_name": "Stop", "stop_hook_active": False}, "turn",
+                           project=other)
+        self.assertIn(f"unsealed {sha} {SUITE}", json.loads(result.stdout)["reason"])
 
 
 if __name__ == "__main__":
