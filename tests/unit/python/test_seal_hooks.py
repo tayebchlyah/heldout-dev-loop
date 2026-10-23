@@ -346,6 +346,49 @@ class CodexWallTests(unittest.TestCase):
                 self.assertEqual(result.returncode, code, result.stderr)
 
 
+class AbsolutePathWallTests(unittest.TestCase):
+    """Walled paths match relative to the repo: a repo under a folder named src is not walled whole."""
+
+    def test_absolute_paths_in_a_repo_under_a_source_folder_name(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name) / "src" / "repo"
+        put(repo / "README.md")
+        git(repo, "init", "-q")
+        tops = {str(repo), str(repo.resolve())}  # /var/... and /private/var/... on macOS
+        claude = ROOT / "claude/hooks/deny-acceptance-to-subagents.sh"
+        codex = ROOT / "codex/hooks/acceptance-wall.sh"
+
+        def patch(header: str) -> str:
+            return "\n".join(["*** Begin Patch", header, "+x", "*** End Patch"])
+
+        rows = []
+        for top in sorted(tops):
+            rows += [
+                (claude, "spec-tester", "Read", {"file_path": f"{top}/tests/acceptance/x.py"}, 0),
+                (claude, "spec-tester", "Read", {"file_path": f"{top}/src/y.py"}, 2),
+                (claude, "spec-tester", "Bash", {"command": f"cat {top}/README.md"}, 0),
+                (claude, "spec-tester", "Bash", {"command": f"git -C {top} log"}, 0),
+                (claude, "implementer", "Read", {"file_path": f"{top}/tests/acceptance/x.py"}, 2),
+                (codex, "spec_tester", "Bash", {"command": f"cat {top}/tests/acceptance/x.py"}, 0),
+                (codex, "spec_tester", "Bash", {"command": f"cat {top}/src/y.py"}, 2),
+                (codex, "spec_tester", "Bash", {"command": f"cat {top}/README.md"}, 0),
+                (codex, "spec_tester", "apply_patch", {"command": patch(f"*** Add File: {top}/tests/acceptance/x.py")}, 0),
+                (codex, "spec_tester", "apply_patch", {"command": patch(f"*** Update File: {top}/src/y.py")}, 2),
+                (codex, "implementer", "Bash", {"command": f"cat {top}/tests/acceptance/x.py"}, 2),
+                (codex, "implementer", "apply_patch",
+                 {"command": patch(f"*** Update File: {top}/tests/acceptance/x.py")}, 2),
+                (codex, "implementer", "apply_patch", {"command": patch(f"*** Update File: {top}/README.md")}, 0),
+            ]
+        for script, agent, tool, tool_input, code in rows:
+            with self.subTest(script=script.name, agent=agent, tool=tool, tool_input=tool_input):
+                payload = {"agent_id": "b", "agent_type": agent, "cwd": str(repo), "tool_name": tool,
+                           "tool_input": tool_input}
+                result = subprocess.run([SHELL[script.parent.parent.name], str(script)], input=json.dumps(payload),
+                                        capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, code, result.stderr)
+
+
 class CanaryScriptTests(unittest.TestCase):
     """Static only: the live run needs both harnesses and a login, so the controller runs it by hand."""
     script = ROOT / "scripts" / "canary.sh"

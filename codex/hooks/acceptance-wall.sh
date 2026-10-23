@@ -22,19 +22,30 @@ else
 fi
 # Relative paths resolve against the cwd as a repo path, so a repo that sits under a folder named src
 # or app is not walled whole. Outside a git repo: the cwd itself. Never empty: deny-path.sh splits
-# the command into tokens only with a cwd.
-base=
+# the command into tokens only with a cwd. An absolute path inside the repo is matched as its
+# repo-relative path, for the same reason.
+base= top=
 [ -z "$cwd" ] || base=$(git -C "$cwd" rev-parse --show-prefix 2>/dev/null) || base=$cwd
+[ -z "$cwd" ] || top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || top=
 base=${base:-.}
 
 if [ "$tool" = Bash ]; then
   [ -n "$agent_id" ] || exit 0
-  call=$(printf '%s' "$input" | jq --arg b "$base" '.cwd = $b' 2>/dev/null) || fail "cannot rewrite cwd"
+  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" '
+  ($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
+    | sort_by(-length)) as $tops
+  # An absolute path in the repo becomes repo-relative; the bare repo top becomes ".".
+  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("") | split($x) | join("."));
+  .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)' 2>/dev/null) || fail "cannot rewrite cwd"
 else
-  call=$(printf '%s' "$input" | jq --arg b "$base" '
+  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" '
+  ($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
+    | sort_by(-length)) as $tops
+  # An absolute path in the repo becomes repo-relative; the bare repo top becomes ".".
+  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("") | split($x) | join("."));
     {tool_input: {paths: [ (.tool_input.command // .tool_input.patch // "") | strings | splits("\n")
       | capture("^\\*\\*\\* (Add File|Update File|Delete File|Move to): (?<p>.+)$").p
-      | if startswith("/") then . else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
+      | if startswith("/") then rel else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
 fi
 verdict=$(printf '%s' "$call" | sh "$(dirname "$0")/deny-path.sh" "$@") || exit 2
 [ -z "$verdict" ] && exit 0
