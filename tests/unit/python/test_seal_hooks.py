@@ -159,10 +159,11 @@ class SealHookTests(unittest.TestCase):
 class GuardTests(unittest.TestCase):
     """The PreToolUse guards of the kit source, fed hook JSON on stdin."""
 
-    def guard(self, harness: str, script: str, payload: dict | str, *args: str) -> subprocess.CompletedProcess[str]:
+    def guard(self, harness: str, script: str, payload: dict | str, *args: str,
+              env: dict | None = None) -> subprocess.CompletedProcess[str]:
         text = payload if isinstance(payload, str) else json.dumps(payload)
-        return subprocess.run([SHELL[harness], str(ROOT / harness / "hooks" / script), *args],
-                              input=text, capture_output=True, text=True, timeout=60)
+        return subprocess.run([shutil.which(SHELL[harness]), str(ROOT / harness / "hooks" / script), *args],
+                              input=text, capture_output=True, text=True, timeout=60, env=env)
 
     def denied(self, result: subprocess.CompletedProcess[str]) -> bool:
         if result.returncode == 2:
@@ -195,10 +196,15 @@ class GuardTests(unittest.TestCase):
     def test_o5_each_guard_fails_closed_on_bad_input(self) -> None:
         guards = [("claude", "deny-acceptance-to-subagents.sh", ()), ("claude", "deny-path.sh", ("src/",)),
                   ("codex", "deny-path.sh", ("src/",)), ("claude", "git-guard.sh", ()), ("codex", "git-guard.sh", ())]
+        no_jq = tempfile.TemporaryDirectory()
+        self.addCleanup(no_jq.cleanup)
+        os.symlink(shutil.which("cat"), Path(no_jq.name) / "cat")
+        valid = json.dumps({"cwd": "/repo", "tool_input": {"command": "ls"}})
         for harness, script, args in guards:
-            for name, text in [("not json", "not json"), ("empty", "")]:
+            for name, text, env in [("not json", "not json", None), ("empty", "", None),
+                                    ("no jq", valid, {"PATH": no_jq.name})]:
                 with self.subTest(harness=harness, script=script, input=name):
-                    result = self.guard(harness, script, text, *args)
+                    result = self.guard(harness, script, text, *args, env=env)
                     self.assertEqual(result.returncode, 2)
                     self.assertRegex(result.stderr, r"^Blocked: guard error: \S.*\n$")
             with self.subTest(harness=harness, script=script, input="another tool"):
@@ -206,8 +212,8 @@ class GuardTests(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
 
     def test_o13_only_the_spec_tester_seals(self) -> None:
-        seal = "python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature x --message acceptance"
-        trailer = "git commit -F - <<'EOF'\nacceptance\n\nDev-Loop-Seal: abc\nEOF"
+        seal = "python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature x --message y"
+        trailer = f'git commit -m "x\n\nDev-Loop-Seal: {"ab" * 32}"'
         for harness, tester in [("claude", "spec-tester"), ("codex", "spec_tester")]:
             main = {"cwd": "/repo"}
             implementer = {"cwd": "/repo", "agent_id": "a", "agent_type": "implementer"}
@@ -215,12 +221,20 @@ class GuardTests(unittest.TestCase):
             for caller, command, deny in [
                 (main, seal, True),
                 (implementer, seal, True),
+                (main, "devloop.py 'seal' --feature x --message y", True),
+                (main, "cd /repo && devloop.py \"seal\" --feature x", True),
                 (main, trailer, True),
+                (main, 'grep -rn "devloop.py seal" skill/', False),
+                (main, 'git commit -m "Document devloop.py seal"', False),
+                (main, 'git commit -m "Name the Dev-Loop-Seal trailer"', False),
                 (main, "python3 devloop.py seal-check", False),
                 (implementer, "devloop.py seal-check --uncommitted", False),
-                (spec_tester, "git commit -m x", True),
-                (spec_tester, "git -C /repo --no-pager commit -m x", True),
                 (spec_tester, seal, False),
+                (spec_tester, "git commit -m x", True),
+                (spec_tester, "git -C /r --no-pager commit", True),
+                (spec_tester, "git add tests && git commit -m x", True),
+                (spec_tester, "cat <<'EOF'\ngit commit\nEOF", False),
+                (spec_tester, "git status && git log", False),
                 (spec_tester, "git revert --no-commit abc", False),
             ]:
                 with self.subTest(harness=harness, caller=caller.get("agent_type", "main"), command=command):
@@ -229,7 +243,6 @@ class GuardTests(unittest.TestCase):
                     if caller is spec_tester and deny:
                         self.assertEqual(result.returncode, 2)
                         self.assertIn("devloop.py seal", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
