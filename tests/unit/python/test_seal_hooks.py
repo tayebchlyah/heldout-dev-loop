@@ -288,7 +288,7 @@ class CodexWallTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
                 self.assertEqual(result.stderr.count("\n"), 1 if deny else 0, result.stderr)
 
-    def test_a_repo_under_a_source_folder_name_does_not_wall_the_spec_tester(self) -> None:
+    def test_a_real_repo_root_and_a_repo_under_a_source_folder_name(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         repo = Path(tmp.name) / "src" / "repo"
@@ -296,10 +296,17 @@ class CodexWallTests(unittest.TestCase):
         git(repo, "init", "-q")
         tester = {"agent_id": "b", "agent_type": "spec_tester", "tool_name": "Bash"}
         implementer = {"agent_id": "a", "agent_type": "implementer", "tool_name": "Bash"}
-        for caller, cwd, command, code in [(tester, repo, "cat README.md", 0), (tester, repo / "tests", "ls", 0),
-                                           (implementer, repo / "tests", "cat acceptance/x.py", 2)]:
+        for caller, cwd, command, code in [
+            (tester, repo, "cat README.md", 0), (tester, repo / "tests", "ls", 0),
+            (implementer, repo / "tests", "cat acceptance/x.py", 2),
+            (implementer, repo, "ls tests/acceptance | head", 2), (implementer, repo, "rg foo tests/acceptance -n", 2),
+            (implementer, repo, "pytest tests/acceptance -q", 2), (implementer, repo, "ls tests/acceptance*", 2),
+            (implementer, None, "grep -r foo tests/acceptance --include=x", 2),
+            (tester, repo, "find src -name x", 2), (tester, repo, "ls src*", 2),
+        ]:
             with self.subTest(caller=caller["agent_type"], cwd=cwd, command=command):
-                result = self.wall({**caller, "cwd": str(cwd), "tool_input": {"command": command}})
+                where = {} if cwd is None else {"cwd": str(cwd)}
+                result = self.wall({**caller, **where, "tool_input": {"command": command}})
                 self.assertEqual(result.returncode, code, result.stderr)
 
 
