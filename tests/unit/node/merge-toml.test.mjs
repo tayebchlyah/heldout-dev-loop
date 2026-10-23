@@ -183,7 +183,7 @@ test('a later run still adds what a partial target is missing', () => {
   const { text, changed, skipped } = mergeCodexConfig(current, realFragment)
   assert.equal(changed, true)
   assert.ok(skipped.includes('[permissions.dev-workspace]'))
-  assert.ok(text.includes('[permissions.dev-spec-tester]'))
+  assert.ok(text.includes('[features]'))
   assert.ok(text.includes('description = "mine"'))
   assertValidToml(text)
 })
@@ -196,4 +196,48 @@ test('a settled target reports the tables the user changed on every run, and cha
   assert.equal(again.changed, false)
   assert.equal(again.text, edited)
   assert.deepEqual(again.skipped, ['[features]'])
+})
+
+const LEGACY_IMPLEMENTER = [
+  '[permissions.dev-implementer]',
+  'description = "Implementation access without held-out acceptance tests."',
+  'extends = "dev-workspace"',
+  '',
+  '[permissions.dev-implementer.filesystem.":workspace_roots"]',
+  '"tests/acceptance" = "deny"',
+  '"tests/acceptance/**" = "deny"',
+  '',
+].join('\n')
+
+test('a table whose body equals the 2.1.1 profile is removed and reported, with its filesystem table', () => {
+  const current = `model = "gpt"\n\n[features]\nhooks = true\n\n${LEGACY_IMPLEMENTER}`
+  const { text, removed, changed } = mergeCodexConfig(current, realFragment)
+  assert.equal(changed, true)
+  assert.deepEqual(removed, [
+    '[permissions.dev-implementer]',
+    '[permissions.dev-implementer.filesystem.":workspace_roots"]',
+  ])
+  assert.ok(!text.includes('dev-implementer'))
+  assert.ok(text.includes('[permissions.dev-workspace]'))
+  assertValidToml(text)
+})
+
+test('a legacy table with comments and blank lines still counts as equal', () => {
+  const current = LEGACY_IMPLEMENTER.replace('extends', '# mine\n\nextends')
+  const { removed } = mergeCodexConfig(current, realFragment)
+  assert.ok(removed.includes('[permissions.dev-implementer]'))
+})
+
+test('a legacy table whose body the user changed stays', () => {
+  const current = LEGACY_IMPLEMENTER.replace('"tests/acceptance/**" = "deny"', '"tests/acceptance/**" = "allow"')
+  const { text, removed } = mergeCodexConfig(current, realFragment)
+  assert.deepEqual(removed, ['[permissions.dev-implementer]'])
+  assert.ok(text.includes('[permissions.dev-implementer.filesystem.":workspace_roots"]'))
+  assert.ok(text.includes('"tests/acceptance/**" = "allow"'))
+  assertValidToml(text)
+})
+
+test('a merge into no config, or into one with no legacy table, removes nothing', () => {
+  assert.deepEqual(mergeCodexConfig(null, realFragment).removed, [])
+  assert.deepEqual(mergeCodexConfig('model = "gpt"\n', realFragment).removed, [])
 })
