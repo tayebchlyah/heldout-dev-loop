@@ -195,7 +195,8 @@ class GuardTests(unittest.TestCase):
 
     def test_o5_each_guard_fails_closed_on_bad_input(self) -> None:
         guards = [("claude", "deny-acceptance-to-subagents.sh", ()), ("claude", "deny-path.sh", ("src/",)),
-                  ("codex", "deny-path.sh", ("src/",)), ("claude", "git-guard.sh", ()), ("codex", "git-guard.sh", ())]
+                  ("codex", "deny-path.sh", ("src/",)), ("claude", "git-guard.sh", ()), ("codex", "git-guard.sh", ()),
+                  ("codex", "acceptance-wall.sh", ())]
         no_jq = tempfile.TemporaryDirectory()
         self.addCleanup(no_jq.cleanup)
         os.symlink(shutil.which("cat"), Path(no_jq.name) / "cat")
@@ -243,6 +244,64 @@ class GuardTests(unittest.TestCase):
                     if caller is spec_tester and deny:
                         self.assertEqual(result.returncode, 2)
                         self.assertIn("devloop.py seal", result.stderr)
+
+
+class CodexWallTests(unittest.TestCase):
+    """Codex acceptance-wall.sh, fed hook JSON on stdin."""
+
+    def wall(self, payload: dict) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["sh", str(ROOT / "codex/hooks/acceptance-wall.sh")], input=json.dumps(payload),
+                              capture_output=True, text=True, timeout=60)
+
+    def test_o3_o4_walls_by_agent_type(self) -> None:
+        def patch(*headers: str, body: str = "+x") -> str:
+            return "\n".join(["*** Begin Patch", *headers, body, "*** End Patch"])
+
+        main: dict = {}
+        implementer = {"agent_id": "a", "agent_type": "implementer"}
+        tester = {"agent_id": "b", "agent_type": "spec_tester"}
+        for caller, cwd, tool, tool_input, deny in [
+            (main, "/repo", "apply_patch", {"command": patch("*** Update File: tests/acceptance/x.py")}, True),
+            (main, "/repo", "apply_patch",
+             {"command": patch("*** Add File: src/y.py", body="+# see tests/acceptance/x.py")}, False),
+            (main, "/repo", "apply_patch", {"patch": patch("*** Delete File: /repo/tests/acceptance/x.py")}, True),
+            (main, "/repo", "apply_patch",
+             {"command": patch("*** Update File: src/y.py", "*** Move to: tests/acceptance/y.py")}, True),
+            (main, "/repo/tests", "apply_patch", {"command": patch("*** Add File: acceptance/x.py")}, True),
+            (main, "/repo", "Edit", {"command": patch("*** Update File: tests/acceptance/x.py")}, True),
+            (main, "/repo", "apply_patch", {"command": patch("*** Add File: tests/acceptance_notes/x.md")}, False),
+            (main, "/repo", "Bash", {"command": f"cat {SUITE}"}, False),
+            (implementer, "/repo", "Bash", {"command": f"cat {SUITE}"}, True),
+            (implementer, "/repo/tests", "Bash", {"command": "cat acceptance/x.py"}, True),
+            (implementer, "/repo", "Bash", {"command": "cat src/y.py"}, False),
+            (implementer, "/repo", "apply_patch", {"command": patch("*** Update File: tests/acceptance/x.py")}, True),
+            (implementer, "/repo", "apply_patch",
+             {"command": patch("*** Add File: docs/y.md", body="+never read tests/acceptance")}, False),
+            (tester, "/repo", "Bash", {"command": "cat src/y.py"}, True),
+            (tester, "/repo/src", "Bash", {"command": "cat y.py"}, True),
+            (tester, "/repo", "Bash", {"command": f"cat {SUITE} tests/test_mapping.py"}, False),
+            (tester, "/repo", "apply_patch", {"command": patch("*** Add File: tests/acceptance/x.py")}, False),
+            (tester, "/repo", "apply_patch", {"command": patch("*** Update File: app/main.py")}, True),
+        ]:
+            with self.subTest(caller=caller.get("agent_type", "main"), cwd=cwd, tool=tool, tool_input=tool_input):
+                result = self.wall({**caller, "cwd": cwd, "tool_name": tool, "tool_input": tool_input})
+                self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
+                self.assertEqual(result.stderr.count("\n"), 1 if deny else 0, result.stderr)
+
+    def test_a_repo_under_a_source_folder_name_does_not_wall_the_spec_tester(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name) / "src" / "repo"
+        put(repo / "tests" / "README.md")
+        git(repo, "init", "-q")
+        tester = {"agent_id": "b", "agent_type": "spec_tester", "tool_name": "Bash"}
+        implementer = {"agent_id": "a", "agent_type": "implementer", "tool_name": "Bash"}
+        for caller, cwd, command, code in [(tester, repo, "cat README.md", 0), (tester, repo / "tests", "ls", 0),
+                                           (implementer, repo / "tests", "cat acceptance/x.py", 2)]:
+            with self.subTest(caller=caller["agent_type"], cwd=cwd, command=command):
+                result = self.wall({**caller, "cwd": str(cwd), "tool_input": {"command": command}})
+                self.assertEqual(result.returncode, code, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
