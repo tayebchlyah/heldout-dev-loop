@@ -11,6 +11,7 @@
                                                       commit the staged acceptance tests with the seal trailer
   devloop.py seal --rebase-continue                   write the new seal into the rebase commit, continue it
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
+  devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -428,7 +429,13 @@ def cmd_gate(args: argparse.Namespace) -> int:
     payload["slowest"] = slowest(reports)
     if not any(reports.glob("*.xml")):
         payload["hint"] = JUNIT_HINT
-    return emit(payload, 0 if payload["exit"] == 0 else 1)
+    sys.path.insert(0, str(Path(__file__).parent))
+    from seal.check import check
+    from seal.weakened import weakened
+
+    payload["seal"] = check(top, True)
+    payload["weakened"] = weakened(top)
+    return emit(payload, 0 if payload["exit"] == 0 and payload["seal"]["ok"] else 1)
 
 
 # ci wait
@@ -585,6 +592,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return emit(audit.audit(hook), 0)
 
 
+def cmd_seal_check(args: argparse.Namespace) -> int:
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 2)
+    sys.path.insert(0, str(Path(__file__).parent))
+    from seal.check import check
+
+    out = check(Path(top), args.uncommitted)
+    return emit(out, 0 if out["ok"] else 1)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -632,6 +650,10 @@ def main() -> int:
 
     audit = commands.add_parser("audit")
     audit.set_defaults(run=cmd_audit)
+
+    seal_check = commands.add_parser("seal-check")
+    seal_check.add_argument("--uncommitted", action="store_true")
+    seal_check.set_defaults(run=cmd_seal_check)
 
     args = parser.parse_args()
     return args.run(args)
