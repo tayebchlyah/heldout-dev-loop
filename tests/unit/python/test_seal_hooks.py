@@ -331,6 +331,21 @@ class CanaryScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("usage:", result.stdout)
 
+    def test_each_route_has_its_own_token_under_system_bash(self):
+        # /bin/bash is 3.2 on macOS: no associative arrays, or every route would share one token.
+        work = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work, True)
+        result = subprocess.run(["/bin/bash", str(self.script), "--self-test-tokens", f"{work}/repo"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = [line.split() for line in result.stdout.splitlines()]
+        self.assertEqual(len({tok for _, _, tok in lines}), len(lines))
+        self.assertGreaterEqual(len(lines), 14)
+        for kind, route, token in lines:
+            path = Path(work, "repo", "tests/acceptance" if kind == "acc" else "src",
+                        ("test_canary_" if kind == "acc" else "canary_") + route.replace("-", "_") + ".py")
+            self.assertIn(token, path.read_text())
+
     def test_unknown_flag_is_a_usage_error(self):
         result = subprocess.run(["bash", str(self.script), "--nope"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
