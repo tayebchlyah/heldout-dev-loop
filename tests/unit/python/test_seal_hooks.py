@@ -108,6 +108,22 @@ class SealHookTests(unittest.TestCase):
                 self.assertIn(f"changed-after-seal {later} {SUITE}", reason)
                 self.assertNotIn(out["commit"], reason)
 
+    def test_d6_a_revert_seal_is_not_named_as_an_offender(self) -> None:
+        put(self.repo / SUITE, "def test_flow():\n    pass\n")
+        git(self.repo, "add", "--", SUITE)
+        code, sealed = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 0, sealed)
+        git(self.repo, "revert", "--no-commit", sealed["commit"])
+        code, revert = run_cli("seal", "--feature", "x", "--message", "revert", "--reverts", sealed["commit"],
+                               cwd=self.repo)
+        self.assertEqual(code, 0, revert)
+        later = self.commit(SUITE, "def test_flow():\n    assert True\n")
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn(f"changed-after-seal {later} {SUITE}", reason)
+                self.assertNotIn(revert["commit"], reason)
+
     def test_stop_records_taint_and_only_turn_blocks_on_it(self) -> None:
         for harness in SHELL:
             with self.subTest(harness=harness):
