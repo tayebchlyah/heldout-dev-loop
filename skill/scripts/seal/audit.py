@@ -98,24 +98,19 @@ def feature_docs(repo: Path) -> list[str]:
 
 
 def matched_lines(repo: Path, protected: tuple[str, ...], outputs: list[str]) -> list[str]:
-    listed = run_git(repo, "ls-files", "-co", "--exclude-standard", "-z").stdout.split("\0")
-    texts = {path: text for path in dict.fromkeys(p for p in listed if p) if (text := read_text(repo / path)) is not None}
-    own = {path: text for path, text in texts.items() if path.startswith(protected)}
-    candidates = {line for text in own.values() for raw in text.splitlines() if len(line := raw.strip()) >= MIN_LINE}
-    if not candidates:
-        return []
-    shared = "\n".join(feature_docs(repo) + [text for path, text in texts.items() if path not in own])
-    # Distinctive: in one protected file only, and in no other file, spec or plan.
-    distinctive = [line for line in candidates if line not in shared and sum(line in text for text in own.values()) == 1]
+    listed = [path for path in dict.fromkeys(run_git(repo, "ls-files", "-co", "--exclude-standard", "-z").stdout.split("\0"))
+              if path]
+    own = {path: text for path in listed if path.startswith(protected) and (text := read_text(repo / path)) is not None}
     output = "\n".join(outputs)
-    found = []
-    # shortcut: a substring scan per line, O(lines x output size); upgrade to Aho-Corasick if a hook times out.
-    for line in distinctive:
-        if line in output:
-            found.append(line)
-            if len(found) == MAX_LINES:
-                break
-    return found
+    # Output lines first, in file then line order: the costly checks below see only this small set.
+    # shortcut: `line in output` per protected line, O(lines x output size); Aho-Corasick if a hook times out.
+    seen = [line for line in dict.fromkeys(raw.strip() for text in own.values() for raw in text.splitlines())
+            if len(line) >= MIN_LINE and line in output and sum(line in text for text in own.values()) == 1]
+    if len(seen) < MIN_MATCHES:
+        return []  # The other files are never read: no taint is possible.
+    others = feature_docs(repo) + [text for path in listed if path not in own and (text := read_text(repo / path))]
+    # Distinctive: in one protected file only, and in no other file, spec or plan.
+    return [line for line in seen if not any(line in text for text in others)][:MAX_LINES]
 
 
 def patch_ids(repo: Path, *diff: str) -> list[tuple[str, str]]:
@@ -211,8 +206,8 @@ def taint_state(repo: Path) -> dict:
     """Each record open or closed against the patch ids of `<base>..HEAD`, and the audit skips."""
     data = load(taint_file(repo))
     base = merge_base(repo)
-    counts = Counter(pid for pid, _ in patch_ids(repo, "log", "-p", "--format=commit %H", f"{base}..HEAD")) \
-        if base else Counter()
+    # No base: the full HEAD history, so a tainted commit stays open.
+    counts = Counter(pid for pid, _ in patch_ids(repo, "log", "-p", "--format=commit %H", f"{base}..HEAD" if base else "HEAD"))
     state: dict[str, list] = {"open": [], "closed": [], "skipped": data["skipped"]}
     for record in data["records"]:
         is_open = any(c["patch_id"] and counts[c["patch_id"]] > counts[c["inverse_patch_id"]] for c in record["commits"])
