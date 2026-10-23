@@ -28,138 +28,11 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from test_board import (CLAUDE_HOOKS, CODEX_HOOKS, DEVLOOP, GIT, ISO_Z, MACHINE, OTHER, PROJECT, REPO_ROOT, SCRIPTS,
-                        VERSION, Board, git, health, note_name, note_text, put, read_note, request, slow, snapshot,
-                        status_note)
-
-HOOK_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit", "stop": "Stop",
-              "subagent-stop": "SubagentStop", "post-tool": "PostToolUse"}
-
-
-def epoch(value: str) -> float:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-
-
-def birth(path: Path) -> float:
-    st = path.stat()
-    return getattr(st, "st_birthtime", st.st_mtime)
-
-
-def set_time(path: Path, when: float) -> None:
-    os.utime(path, (when, when))
-
-
-def yaml_block(fields: dict) -> str:
-    """The Obsidian properties form (Fact 5): plain scalars, nested block maps and block lists."""
-
-    def scalar(value: object) -> str:
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, (int, float)):
-            return str(value)
-        if value == "":
-            return '""'
-        return str(value)
-
-    lines = ["---"]
-    for key, value in fields.items():
-        if isinstance(value, dict) and value:
-            lines.append(f"{key}:")
-            lines += [f'  "{k}": {scalar(v)}' for k, v in value.items()]
-        elif isinstance(value, list) and value:
-            lines.append(f"{key}:")
-            for item in value:
-                if isinstance(item, dict):
-                    for i, (k, v) in enumerate(item.items()):
-                        lines.append(f"  {'- ' if i == 0 else '  '}{k}: {scalar(v)}")
-                else:
-                    lines.append(f"  - {scalar(item)}")
-        elif isinstance(value, (dict, list)):
-            lines.append(f"{key}: {'{}' if isinstance(value, dict) else '[]'}")
-        else:
-            lines.append(f"{key}: {scalar(value)}")
-    return "\n".join([*lines, "---"]) + "\n"
-
-
-class RobustBoard(Board):
-    """The test_board sandbox, plus a temporary CLAUDE_CONFIG_DIR for fake native task lists."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.claude_dir = self.root / "claude-config"
-        self.claude_dir.mkdir()
-        self.env["CLAUDE_CONFIG_DIR"] = str(self.claude_dir)
-
-    @property
-    def features_dir(self) -> Path:
-        return self.board_dir / "features"
-
-    @property
-    def state_file(self) -> Path:
-        return self.repo / ".git" / "dev-loop" / "board-state.json"
-
-    def own_name(self, slug: str) -> str:
-        return note_name(MACHINE["id"], PROJECT, slug)
-
-    def own_path(self, slug: str) -> Path:
-        return self.features_dir / self.own_name(slug)
-
-    def own_note(self, slug: str) -> dict:
-        path = self.own_path(slug)
-        listing = sorted(str(p.relative_to(self.board_dir)) for p in self.board_dir.rglob("*")) if self.board_dir.exists() else []
-        self.assertTrue(path.is_file(), f"no note at features/{path.name}: {listing}")
-        return read_note(path)
-
-    def state(self) -> dict:
-        self.assertTrue(self.state_file.is_file(), f"no {self.state_file.name}")
-        return json.loads(self.state_file.read_text())
-
-    def old_note(self, slug: str, **over) -> dict:
-        """An own note in the 2.1 form: own name, own machine_id, in `dev-loop-board/`."""
-        fields = status_note(feature=slug, machine_id=MACHINE["id"], owner=MACHINE["owner"], machine=MACHINE["machine"],
-                             **over)
-        put(self.board_dir / self.own_name(slug), note_text(fields))
-        return fields
-
-    def sdd(self, wt: Path, plan: Path) -> Path:
-        return wt / ".superpowers" / "sdd" / plan.stem
-
-    def native(self, session: str, *items: tuple[str, str]) -> None:
-        folder = self.claude_dir / "tasks" / session
-        for n, (subject, status) in enumerate(items, 1):
-            put(folder / f"{n}.json", json.dumps({"id": str(n), "subject": subject, "status": status}) + "\n")
-
-    def hook_event(self, name: str, cwd: Path, session: str, command: str | None = None) -> dict:
-        stdin: dict = {"session_id": session, "cwd": str(cwd), "hook_event_name": HOOK_NAMES[name]}
-        if name == "post-tool":
-            stdin.update(tool_name="Bash", tool_input={"command": command or "task-done 1"})
-        return self.ok("--event", name, cwd=cwd, stdin=stdin)
-
-    def status(self, cwd: Path | None = None, env: dict | None = None) -> dict:
-        result = subprocess.run([sys.executable, str(DEVLOOP), "status"], cwd=cwd or self.repo, env=env or self.env,
-                                capture_output=True, text=True, timeout=60)
-        try:
-            payload = json.loads(result.stdout)
-        except ValueError:
-            raise AssertionError(f"status stdout is not one JSON object: {result.stdout!r} {result.stderr!r}")
-        self.assertEqual(result.returncode, 0, payload)
-        return payload
-
-    def assert_time(self, value: object, expected: float, what: str) -> None:
-        self.assertIsInstance(value, str, what)
-        assert isinstance(value, str)
-        self.assertRegex(value, ISO_Z, what)
-        self.assertLess(abs(epoch(value) - expected), 1.0, f"{what}: {value} is not {datetime.fromtimestamp(expected, timezone.utc)}")
-
-    def states(self, slug: str) -> list[str]:
-        return [t["state"] for t in self.own_note(slug)["tasks"]]
-
-    def hold_lock(self):
-        lock = self.repo / ".git" / "dev-loop" / "board.lock"
-        lock.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(lock, "a+")
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return handle
+# Shared board fixtures live in tests/unit/python; the unit suite never imports this held-out file.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
+from board_fixtures import (CLAUDE_HOOKS, CODEX_HOOKS, DEVLOOP, GIT, ISO_Z, MACHINE, OTHER, PROJECT, REPO_ROOT, SCRIPTS,
+                            VERSION, RobustBoard, RobustnessHookFixture, birth, epoch, git, health, note_name,
+                            note_text, put, read_note, request, set_time, slow, snapshot, status_note, yaml_block)
 
 
 class RobustnessStateTests(RobustBoard):
@@ -607,63 +480,9 @@ class RobustnessKitTests(RobustBoard):
         self.assertNotIn("kit_drift", self.drift("2.0.0"))
 
 
-FAKE_CLI = (
-    "#!/usr/bin/env python3\nimport json, os, sys\ndata = sys.stdin.read()\n"
-    "with open(os.environ['BOARD_TEST_LOG'], 'a') as log:\n"
-    "    log.write(json.dumps({'label': %r, 'argv': sys.argv[1:], 'cwd': os.getcwd(), 'stdin': data}) + '\\n')\n"
-)
-
-
-class RobustnessHookTests(unittest.TestCase):
+class RobustnessHookTests(RobustnessHookFixture, unittest.TestCase):
     """Hooks: oracles 19, 20, 25 and 39. `board.sh` runs from a kit layout copy in a temp repo; a fake
     devloop.py at `.agents/skills/dev-loop/scripts/devloop.py` logs each call with its label."""
-
-    def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
-        self.repo = self.root / PROJECT
-        self.repo.mkdir()
-        git(self.repo, "init", "-q")
-        put(self.repo / "dev-loop.json", json.dumps({"version": VERSION, "harnesses": ["claude", "codex"]}) + "\n")
-        for harness, source in (("claude", CLAUDE_HOOKS), ("codex", CODEX_HOOKS)):
-            target = self.repo / ".dev-loop" / "hooks" / harness
-            target.mkdir(parents=True)
-            for script in source.iterdir():
-                shutil.copy2(script, target / script.name)
-        self.fake(self.repo, "MAIN")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "kit")
-        self.log = self.root / "board-calls.jsonl"
-        self.home = self.root / "home"
-        self.home.mkdir()
-
-    def fake(self, checkout: Path, label: str) -> None:
-        path = checkout / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
-        put(path, FAKE_CLI % label)
-        path.chmod(0o755)
-
-    def board_sh(self, harness: str, arg: str, cwd: Path, command: str | None = None,
-                 checkout: Path | None = None) -> subprocess.CompletedProcess[str]:
-        payload: dict = {"session_id": "sess-hook", "cwd": str(cwd), "hook_event_name": "PostToolUse"}
-        if command is not None:
-            payload.update(tool_name="Bash", tool_input={"command": command})
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
-        env.update(BOARD_TEST_LOG=str(self.log), HOME=str(self.home))
-        if harness == "claude":
-            env["CLAUDE_PROJECT_DIR"] = str(self.repo)
-        script = (checkout or self.repo) / ".dev-loop" / "hooks" / harness / "board.sh"
-        return subprocess.run(["bash" if harness == "claude" else "sh", str(script), arg], cwd=cwd,
-                              input=json.dumps(payload), text=True, capture_output=True, env=env, timeout=60)
-
-    def calls(self, wait: float) -> list[dict]:
-        deadline = time.monotonic() + wait
-        while not self.log.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
-        time.sleep(0.3)
-        if not self.log.exists():
-            return []
-        return [json.loads(line) for line in self.log.read_text().splitlines() if line.strip()]
 
     @slow
     def test_o19_post_tool_with_an_unrelated_command_starts_no_board(self) -> None:

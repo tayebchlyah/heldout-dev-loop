@@ -39,10 +39,10 @@ if not any(
     })
 
 SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
-# The board tests import `board` from skill/scripts, and helpers of the board oracle modules,
-# which live in tests/acceptance (held out, run by the acceptance runner, not by this suite).
+# The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
+# never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
-sys.path.insert(1, str(SKILL_ROOT.parent / "tests" / "acceptance"))
+sys.path.insert(1, str(Path(__file__).resolve().parent))
 SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
