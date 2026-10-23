@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { mergeCodexConfig, splitToml } from '../lib/merge-toml.mjs'
+import { mergeCodexConfig, splitToml } from '../../../lib/merge-toml.mjs'
 import { assertValidToml } from './helpers.mjs'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const realFragment = readFileSync(`${repoRoot}/codex/config.permissions.toml`, 'utf8')
 
 const fragment = [

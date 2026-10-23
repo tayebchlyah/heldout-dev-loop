@@ -38,14 +38,16 @@ if not any(
         "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
     })
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
+# The board tests import `board` and the board oracle modules, which live in skill/scripts.
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 CLAUDE_HOOKS = SKILL_ROOT.parent / "claude" / "hooks"
 SELECTOR = SKILL_ROOT / "scripts" / "select_mutants.py"
 NOTES_PATH = SKILL_ROOT / "scripts" / "notes_path.py"
-GUARD_ASKS = SKILL_ROOT.parent / "test" / "fixtures" / "git-guard-asks.json"
+GUARD_ASKS = Path(__file__).resolve().parent / "fixtures" / "git-guard-asks.json"
 
 _spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
 if _spec is None or _spec.loader is None:
@@ -76,8 +78,8 @@ sys.modules["notes_path"] = notes_path
 _notes_spec.loader.exec_module(notes_path)
 
 # The devloop CLI tests live in test_devloop.py; importing the classes here
-# keeps `python3 skill/scripts/test_dev_loop.py` the one command for the suite.
-_devloop_tests_spec = importlib.util.spec_from_file_location("test_devloop", SKILL_ROOT / "scripts" / "test_devloop.py")
+# keeps `python3 tests/unit/python/test_dev_loop.py` the one command for the suite.
+_devloop_tests_spec = importlib.util.spec_from_file_location("test_devloop", Path(__file__).resolve().parent / "test_devloop.py")
 if _devloop_tests_spec is None or _devloop_tests_spec.loader is None:
     raise ImportError("cannot load test_devloop module")
 test_devloop = importlib.util.module_from_spec(_devloop_tests_spec)
@@ -104,7 +106,7 @@ BoardShipTests = test_board.BoardShipTests
 BoardServerTests = test_board.BoardServerTests
 BoardHookTests = test_board.BoardHookTests
 
-_board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", SKILL_ROOT / "scripts" / "test_board_robust.py")
+_board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
 test_board_robust = importlib.util.module_from_spec(_board_robust_spec)

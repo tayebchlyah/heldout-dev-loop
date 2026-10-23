@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 function fails(args, check) {
   const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))

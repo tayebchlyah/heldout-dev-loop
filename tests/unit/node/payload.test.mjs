@@ -1,4 +1,4 @@
-// test/payload.test.mjs
+// tests/unit/node/payload.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync, lstatSync, readlinkSync } from 'node:fs'
@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 const REQUIRED = [
   'skill/SKILL.md',
@@ -17,7 +17,7 @@ const REQUIRED = [
   'skill/scripts/select_mutants.py',
   'skill/scripts/notes_path.py',
   'skill/scripts/devloop.py',
-  'skill/scripts/test_dev_loop.py',
+  'tests/unit/python/test_dev_loop.py',
   'claude/agents/implementer.md',
   'claude/agents/spec-tester.md',
   'claude/hooks/gate.sh',

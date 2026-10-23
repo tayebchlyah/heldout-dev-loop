@@ -102,7 +102,7 @@ To try a change in a project, run `node ~/Projects/tchlyah/dev-loop/bin/install.
 
 ```bash
 npm test                                # installer suite
-python3 skill/scripts/test_dev_loop.py  # skill suite
+python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
 ## Verify
