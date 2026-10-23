@@ -39,7 +39,7 @@ if [ -z "$(echo "$IN" | jq -r '.agent_id // empty')" ]; then
   # The path as given, and joined to cwd when relative.
   TARGETS=$(echo "$IN" | jq -r '(.cwd // "") as $c
     | (.tool_input.file_path // .tool_input.notebook_path // "") | select(. != "")
-    | ., (select(startswith("/") | not) | select($c != "") | $c + "/" + .)') || fail "path extraction failed"
+    | ., (select(startswith("/") | not) | select($c != "") | $c + "/" + .)' 2>/dev/null) || fail "path extraction failed"
   if printf '%s\n' "$TARGETS" | normalize | grep -Eq '(^|/)tests/acceptance(/|$)'; then
     echo "Blocked: held-out suite. Only spec-tester writes tests/acceptance. The main session may read it." >&2
     exit 2
@@ -69,7 +69,7 @@ CANDIDATES=$(echo "$IN" | jq -r '
     | if $c == "" then [] else
         [$c] + [ $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $c + "/" + . ]
       end;
-  (fields + joins) as $all | ($all + relative($all)) | join("\n")') || fail "path extraction failed"
+  (fields + joins) as $all | ($all + relative($all)) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 CANDIDATES=$(printf '%s' "$CANDIDATES" | normalize)
 
 if echo "$CANDIDATES" | grep -q 'tests/acceptance'; then
