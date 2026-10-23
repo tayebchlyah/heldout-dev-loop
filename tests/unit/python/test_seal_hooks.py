@@ -195,7 +195,8 @@ class GuardTests(unittest.TestCase):
 
     def test_o5_each_guard_fails_closed_on_bad_input(self) -> None:
         guards = [("claude", "deny-acceptance-to-subagents.sh", ()), ("claude", "deny-path.sh", ("src/",)),
-                  ("codex", "deny-path.sh", ("src/",)), ("claude", "git-guard.sh", ()), ("codex", "git-guard.sh", ())]
+                  ("codex", "deny-path.sh", ("src/",)), ("claude", "git-guard.sh", ()), ("codex", "git-guard.sh", ()),
+                  ("codex", "acceptance-wall.sh", ())]
         no_jq = tempfile.TemporaryDirectory()
         self.addCleanup(no_jq.cleanup)
         os.symlink(shutil.which("cat"), Path(no_jq.name) / "cat")
@@ -243,6 +244,42 @@ class GuardTests(unittest.TestCase):
                     if caller is spec_tester and deny:
                         self.assertEqual(result.returncode, 2)
                         self.assertIn("devloop.py seal", result.stderr)
+
+
+class CodexWallTests(unittest.TestCase):
+    """codex/hooks/acceptance-wall.sh (D9), fed Codex PreToolUse JSON on stdin."""
+
+    def test_o3_o4_walls_by_agent_type(self) -> None:
+        def patch(header: str, body: str = "+x") -> str:
+            return f"*** Begin Patch\n*** {header}\n{body}\n*** End Patch\n"
+
+        main = {"cwd": "/repo"}
+        implementer = {"cwd": "/repo", "agent_id": "a", "agent_type": "implementer"}
+        tester = {"cwd": "/repo", "agent_id": "b", "agent_type": "spec_tester"}
+        for caller, tool, tool_input, code in [
+            (main, "apply_patch", {"command": patch(f"Update File: {SUITE}")}, 2),
+            (main, "apply_patch", {"command": patch("Add File: /repo/tests/./Acceptance/x.py")}, 2),
+            (main, "apply_patch", {"command": patch("Update File: src/y.py\n*** Move to: tests/acceptance/y.py")}, 2),
+            (main, "apply_patch", {"patch": patch(f"Delete File: {SUITE}")}, 2),
+            (main, "apply_patch", {"command": patch("Update File: src/y.py", "+# see tests/acceptance/x")}, 0),
+            (main, "apply_patch", {"command": patch("Add File: tests/acceptance_notes/x.md")}, 0),
+            (main, "Bash", {"command": f"cat {SUITE}"}, 0),
+            (implementer, "Bash", {"command": f"cat {SUITE}"}, 2),
+            (implementer, "apply_patch", {"command": patch(f"Update File: {SUITE}")}, 2),
+            (implementer, "apply_patch", {"command": patch("Update File: src/y.py", "+# see tests/acceptance/x")}, 0),
+            (tester, "Bash", {"command": "cat src/y.py"}, 2),
+            (tester, "Bash", {"command": f"cat {SUITE}"}, 0),
+            (tester, "apply_patch", {"command": patch(f"Update File: {SUITE}")}, 0),
+            (tester, "apply_patch", {"command": patch("Add File: /repo/app/y.py")}, 2),
+            (tester, "apply_patch", {"command": patch(f"Add File: {SUITE}", "+from src.y import total")}, 0),
+        ]:
+            with self.subTest(caller=caller.get("agent_type", "main"), tool=tool, tool_input=tool_input):
+                result = subprocess.run(["sh", str(ROOT / "codex/hooks/acceptance-wall.sh")], capture_output=True,
+                                        text=True, timeout=60,
+                                        input=json.dumps({**caller, "tool_name": tool, "tool_input": tool_input}))
+                self.assertEqual((result.returncode, result.stdout), (code, ""), result.stderr)
+                if code:
+                    self.assertRegex(result.stderr, r"^Blocked: \S[^\n]*\n$")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
