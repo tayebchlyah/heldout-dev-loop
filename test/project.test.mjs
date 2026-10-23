@@ -12,11 +12,16 @@ import { compareManifest, sha256 } from '../lib/manifest.mjs'
 import { readVersion, releaseNotes, writeKit } from '../lib/project.mjs'
 
 // core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
-// The override wins over every config file and appends to the caller's own GIT_CONFIG_* entries.
+// The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
 const gitConfigCount = Number(process.env.GIT_CONFIG_COUNT || 0)
-process.env[`GIT_CONFIG_KEY_${gitConfigCount}`] = 'core.fsmonitor'
-process.env[`GIT_CONFIG_VALUE_${gitConfigCount}`] = 'false'
-process.env.GIT_CONFIG_COUNT = String(gitConfigCount + 1)
+const fsmonitorOff = Array.from({ length: gitConfigCount }, (_, i) => i).some(
+  (i) => process.env[`GIT_CONFIG_KEY_${i}`] === 'core.fsmonitor' && process.env[`GIT_CONFIG_VALUE_${i}`] === 'false',
+)
+if (!fsmonitorOff) {
+  process.env[`GIT_CONFIG_KEY_${gitConfigCount}`] = 'core.fsmonitor'
+  process.env[`GIT_CONFIG_VALUE_${gitConfigCount}`] = 'false'
+  process.env.GIT_CONFIG_COUNT = String(gitConfigCount + 1)
+}
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
