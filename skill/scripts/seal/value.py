@@ -98,14 +98,24 @@ def seal(repo: Path, slug: str, message: str, reverts: list[str]) -> dict:
         if result.returncode != 0:
             return {"error": f"--reverts is not a commit: {sha}"}
         full.append(result.stdout.strip())
-    value = seal_value(entries)
     body = "".join(f"This reverts commit {sha}.\n" for sha in full)
-    text = f"{message}\n\n{body}Acceptance: {slug}\n{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {staged_patch_value(repo)}\n"
-    result = run_git(repo, "commit", "-q", "--cleanup=verbatim", "-F", "-", stdin=text)
+
+    def text(value: str, patch: str) -> str:
+        return f"{message}\n\n{body}Acceptance: {slug}\n{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {patch}\n"
+
+    expected = text(seal_value(entries), staged_patch_value(repo))
+    result = run_git(repo, "commit", "-q", "--cleanup=verbatim", "-F", "-", stdin=expected)
     if result.returncode != 0:
         return {"error": f"git commit failed: {(result.stderr or result.stdout).strip()}"}
+    # D3: a pre-commit hook can rewrite the staged blobs, a commit-msg hook can add a paragraph after the trailers.
+    entries, _ = commit_entries(repo, "HEAD")
+    final = text(seal_value(entries), commit_patch_value(repo, "HEAD"))
+    if run_git(repo, "log", "-1", "--format=%B", "HEAD").stdout.rstrip("\n") != final.rstrip("\n"):
+        result = run_git(repo, "commit", "-q", "--amend", "--no-verify", "--cleanup=verbatim", "-F", "-", stdin=final)
+        if result.returncode != 0:
+            return {"error": f"git commit --amend failed: {(result.stderr or result.stdout).strip()}"}
     commit = run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    return {"commit": commit, "seal": value, "files": sorted(path for path, _ in entries)}
+    return {"commit": commit, "seal": seal_value(entries), "files": sorted(path for path, _ in entries)}
 
 
 def rebase_continue(repo: Path) -> dict:
