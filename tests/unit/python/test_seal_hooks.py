@@ -229,7 +229,8 @@ class GuardTests(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
 
     def test_o13_only_the_spec_tester_seals(self) -> None:
-        seal = "python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature x --message y"
+        cli = ".agents/skills/dev-loop/scripts/devloop.py"
+        seal = f"python3 {cli} seal --feature x --message y"
         trailer = f'git commit -m "x\n\nDev-Loop-Seal: {"ab" * 32}"'
         for harness, tester in [("claude", "spec-tester"), ("codex", "spec_tester")]:
             main = {"cwd": "/repo"}
@@ -243,6 +244,22 @@ class GuardTests(unittest.TestCase):
                 (main, trailer, True),
                 (main, "git commit -m 'Add tests' -m 'Dev-Loop-Seal: 0123456789abcdef'", True),
                 (implementer, "git commit -m x -m 'Dev-Loop-Seal:abc'", True),
+                # D10: a trailer typed with = or --trailer, the patch trailer, git interpret-trailers.
+                (main, 'git commit -m x --trailer "Dev-Loop-Seal=abc"', True),
+                (main, "git commit -m x --trailer 'Dev-Loop-Seal-Patch: abc'", True),
+                (implementer, "git commit -m x --trailer Dev-Loop-Seal-Patch=abc", True),
+                (main, "git commit -m x -m 'Dev-Loop-Seal = abc'", True),
+                (main, 'git commit -m x --trailer "Dev-Loop-Seal"', True),
+                (main, "git -c trailer.s.key=Dev-Loop-Seal interpret-trailers --trailer s=abc msg.txt", True),
+                (main, 'git commit -m "Explain the Dev-Loop-Seal-Patch trailer"', False),
+                # D11: a quoted path, interpreter flags, env, python3.N, uv run, a variable.
+                (main, f"python3 '{cli}' seal --feature x --message y", True),
+                (main, f"python3 -I {cli} seal --feature x --message y", True),
+                (main, f"env python3 {cli} seal --feature x --message y", True),
+                (implementer, f"env FOO=1 python3 {cli} seal --feature x --message y", True),
+                (main, f"python3.12 {cli} seal --feature x --message y", True),
+                (main, f"uv run python {cli} seal --feature x --message y", True),
+                (main, "D=devloop.py; python3 .agents/skills/dev-loop/scripts/$D seal --feature x", True),
                 (main, 'grep -rn "Dev-Loop-Seal" skill/', False),
                 (main, 'grep -rn "devloop.py seal" skill/', False),
                 (main, 'git commit -m "Document devloop.py seal"', False),

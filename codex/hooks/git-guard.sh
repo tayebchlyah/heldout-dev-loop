@@ -19,16 +19,20 @@ AGENT=$(printf '%s' "$IN" | jq -r '.agent_type // empty' 2>/dev/null) || fail "a
 G='git( +-[Cc] +("[^"]+"|'"'"'[^'"'"']+'"'"'|[^ ]+)| +-[^ ]+)* +'
 
 deny() { jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'; exit 0; }
-has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
+has()  { printf '%s' "$CMD" | grep -Eq -e "$1"; }
 # Claude's deny() does the same; block() is in both guards so the seal rules stay
 # identical (parity), and Codex too denies them with exit 2 and a stderr line.
 block() { echo "$1" >&2; exit 2; }
 
-# 0a. Only spec-tester seals (D5). A typed seal trailer is denied on the raw text, a
-# heredoc message included. Prose that names the trailer passes: only a colon and a value count.
+# 0a. Only spec-tester seals (D5, D10). A typed seal or patch trailer is denied on the raw text,
+# a heredoc message included: the key, : or = and a value; a --trailer with that key (any
+# separator); git interpret-trailers naming it. Prose that names the trailer passes.
 TESTER=spec_tester
-[ "$AGENT" != "$TESTER" ] && has 'Dev-Loop-Seal:[[:space:]]*[^[:space:]]' \
-  && block "Blocked: only devloop.py seal, run by spec-tester, writes the Dev-Loop-Seal trailer."
+KEY='Dev-Loop-Seal(-Patch)?'
+if [ "$AGENT" != "$TESTER" ] && { has "$KEY[[:space:]]*[:=][[:space:]]*[^[:space:]]" \
+    || has "--trailer[=[:space:]]+['\"]?$KEY([^[:alnum:]_-]|\$)" || { has interpret-trailers && has "$KEY"; }; }; then
+  block "Blocked: only devloop.py seal, run by spec-tester, writes the Dev-Loop-Seal trailer."
+fi
 
 # A heredoc body is text, not commands: every check below reads the line without it.
 # A body whose line names a shell (bash, sh, zsh, ssh, eval) stays. If this step
@@ -66,15 +70,20 @@ print(strip_heredocs(os.environ["CMD"]), end="")
 PY
 ) && CMD=$BODYLESS || RAW=1 ;; esac
 
-# 0b. Who runs the seal (D5), on the text without heredoc bodies, in command position
-# only: the line start or after ; & | (, so a quoted or grepped mention passes.
-# seal-check stays open to every caller.
+# 0b. Who runs the seal (D5, D11), on the text without heredoc bodies. The spec-tester's commit
+# counts in command position only: the line start or after ; & | (. Any other caller: a
+# command that names devloop and has a shell word seal (quotes removed, as the shell does),
+# whatever wraps the run (env, python3 -I, uv run, a variable for the path). A mention inside
+# a longer quoted string ("devloop.py seal") is one word and passes; so does seal-check.
 RUN='(^|[;&|(])[[:space:]]*'
 if [ "$AGENT" = "$TESTER" ]; then
   has "${RUN}${G}commit([^[:alnum:]_-]|\$)" && block "Blocked: spec-tester commits only through devloop.py seal: python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>."
 else
-  has "${RUN}(python3?[[:space:]]+)?([^[:space:];&|()]*/)?devloop\\.py[[:space:]]+['\"]?seal['\"]?([^[:alnum:]_-]|\$)" \
-    && block "Blocked: only spec-tester may run devloop.py seal."
+  # Exit 1 (also a crash or unbalanced quotes) means a seal word: fail closed.
+  case "$CMD" in *devloop*seal*|*seal*devloop*) printf '%s' "$CMD" | python3 -c 'import shlex, sys
+lex = shlex.shlex(sys.stdin.read(), posix=True, punctuation_chars=";&|()<>" + chr(96))
+lex.whitespace_split, lex.commenters = True, ""
+sys.exit("seal" in lex)' 2>/dev/null || block "Blocked: only spec-tester may run devloop.py seal." ;; esac
 fi
 
 # 1. rm -rf on root only.
