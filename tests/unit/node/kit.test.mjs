@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, cpSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs'
@@ -64,10 +65,15 @@ test('the kit holds no Python cache and uses forward slashes', () => {
   }
 })
 
-test('the kit holds no test file of the skill suite', () => {
-  const kit = buildKit({ packageRoot, harnesses: ['claude', 'codex'] })
+test('the kit has no test_*.py filter: a skill/scripts/test_x.py is included', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kit-'))
+  cpSync(join(packageRoot, 'skill'), join(root, 'skill'), { recursive: true })
+  cpSync(join(packageRoot, 'claude'), join(root, 'claude'), { recursive: true })
+  cpSync(join(packageRoot, 'codex'), join(root, 'codex'), { recursive: true })
+  writeFileSync(join(root, 'skill', 'scripts', 'test_x.py'), 'x = 1\n')
+  const kit = buildKit({ packageRoot: root, harnesses: ['claude', 'codex'] })
   const paths = kit.files.map((file) => file.path)
-  assert.deepEqual(paths.filter((path) => /(^|\/)test_[^/]*\.py$/.test(path)), [])
+  assert.ok(paths.includes('.agents/skills/dev-loop/scripts/test_x.py'))
   assert.ok(paths.includes('.agents/skills/dev-loop/scripts/devloop.py'))
   assert.ok(paths.includes('.agents/skills/dev-loop/references/tests.md'))
 })
