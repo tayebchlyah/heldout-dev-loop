@@ -15,35 +15,3 @@ extends = ":workspace"
 
 [permissions.dev-workspace.network]
 enabled = true
-
-[permissions.dev-read-only]
-description = "Read-only review with environment files unreadable."
-extends = ":read-only"
-
-[permissions.dev-read-only.filesystem.":workspace_roots"]
-".env" = "deny"
-".env.*" = "deny"
-"**/.env" = "deny"
-"**/.env.*" = "deny"
-
-[permissions.dev-implementer]
-description = "Implementation access without held-out acceptance tests."
-extends = "dev-workspace"
-
-[permissions.dev-implementer.filesystem.":workspace_roots"]
-"tests/acceptance" = "deny"
-"tests/acceptance/**" = "deny"
-
-[permissions.dev-spec-tester]
-description = "Acceptance-test access without implementation sources."
-extends = "dev-workspace"
-
-[permissions.dev-spec-tester.filesystem.":workspace_roots"]
-"src" = "deny"
-"src/**" = "deny"
-"app" = "deny"
-"app/**" = "deny"
-"backend" = "deny"
-"backend/**" = "deny"
-"frontend" = "deny"
-"frontend/**" = "deny"

@@ -245,39 +245,13 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
         if event not in hooks:
             failures.append(f"missing Codex hook event: {event}")
 
-    agents = {
-        "implementer.toml": "dev-implementer",
-        "spec-tester.toml": "dev-spec-tester",
-        "task-reviewer.toml": "dev-read-only",
-        "final-reviewer.toml": "dev-read-only",
-        "security-reviewer.toml": "dev-read-only",
-    }
-    for filename, permission_profile in agents.items():
+    for filename in ["implementer.toml", "spec-tester.toml", "task-reviewer.toml", "final-reviewer.toml", "security-reviewer.toml"]:
         path = root / "agents" / filename
         require_file(path, failures)
         if path.is_file():
-            agent_config, raw = load_toml(path, failures)
+            _, raw = load_toml(path, failures)
             for field in ["name", "description", "developer_instructions"]:
                 require_text(raw, field, f"{filename} field", failures)
-            if agent_config.get("default_permissions") != permission_profile:
-                failures.append(f"wrong {filename} permission profile: expected {permission_profile}")
-
-    required_profiles = {
-        "dev-read-only": (":read-only", ["**/.env", "**/.env.*"]),
-        "dev-implementer": ("dev-workspace", ["tests/acceptance", "tests/acceptance/**"]),
-        "dev-spec-tester": (
-            "dev-workspace",
-            ["src", "src/**", "app", "app/**", "backend", "backend/**", "frontend", "frontend/**"],
-        ),
-    }
-    for name, (parent, denied_paths) in required_profiles.items():
-        role_profile = profiles.get(name, {})
-        if role_profile.get("extends") != parent:
-            failures.append(f"wrong Codex profile parent: {name} must extend {parent}")
-        role_rules = role_profile.get("filesystem", {}).get(":workspace_roots", {})
-        for path in denied_paths:
-            if role_rules.get(path) != "deny":
-                failures.append(f"missing Codex role deny in {name}: {path}")
 
     require_file(rules_path, failures)
     if rules_path.is_file():

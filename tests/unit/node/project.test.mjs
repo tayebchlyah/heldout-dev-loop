@@ -522,6 +522,29 @@ test('upgrade of a project with the 1.5.0 simplifier agent deletes it', () => {
 // The SessionStart command a 1.5.0 project holds in its .claude/settings.json.
 const SESSION_START_1_5 = 'd="${CLAUDE_PROJECT_DIR:-.}"; { [ -f "$d/dev-loop.json" ] || grep -qs \'^vault_notes:\' "$d/AGENTS.md"; } && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0'
 
+test('upgrade of a 2.1.1 Codex project removes the dead profile tables and prints one removed line each', () => {
+  const { home, repo } = setup()
+  run(packageRoot, 'init', repo, home, ['--yes', '--harness=codex'])
+  const config = join(repo, '.codex/config.toml')
+  const legacy = [
+    '[permissions.dev-implementer]',
+    'description = "Implementation access without held-out acceptance tests."',
+    'extends = "dev-workspace"',
+    '',
+    '[permissions.dev-implementer.filesystem.":workspace_roots"]',
+    '"tests/acceptance" = "deny"',
+    '"tests/acceptance/**" = "deny"',
+    '',
+  ].join('\n')
+  writeFileSync(config, `${readFileSync(config, 'utf8')}\n${legacy}`)
+
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  const lines = output.split('\n').filter((line) => line.includes('removed') && line.includes('dev-implementer'))
+  assert.equal(lines.length, 2, output)
+  assert.ok(lines[0].includes('removed [permissions.dev-implementer] from .codex/config.toml'), output)
+  assert.ok(!readFileSync(config, 'utf8').includes('dev-implementer'))
+})
+
 test('upgrade from 1.5 leaves one SessionStart entry', () => {
   const { home, repo } = setup()
   const older = fakePackage('98.0.0', (root) => {
