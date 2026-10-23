@@ -15,7 +15,7 @@ Name each acceptance file or folder after the feature slug, `-` replaced by `_`:
 `tests/acceptance/api/test_<slug>.py`, `tests/acceptance/e2e/<slug>.spec.ts`.
 `devloop status` finds the feature's tests by that name, or, when the spec only extends earlier files, by the line `Acceptance: <slug>` in the Stage 3 commit message. The seal command writes that line.
 
-Commit with `python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>`. A plain `git commit` is blocked for you. Rebase conflict under `tests/acceptance/`: resolve the file, run `devloop.py seal --rebase-continue`. Taint remedy: `git revert --no-commit <sha>`, then `devloop.py seal --reverts <sha> --message <subject>` with only the revert staged, then write the tests again and run `devloop.py seal`.
+Commit with `python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>`. A plain `git commit` is blocked for you. Rebase conflict under `tests/acceptance/`: resolve the file, run `devloop.py seal --rebase-continue`. Taint remedy: `git revert --no-commit <sha>`, then `devloop.py seal --feature <slug> --reverts <sha> --message <subject>` with only the revert staged, then write the tests again and run `devloop.py seal --feature <slug> --message <subject>`.
 Run the acceptance suite only with tracebacks off: `pytest --tb=no`. A tool output that shows implementation source is a read of what you must not read.
 
 Work from the spec and the glossary (GLOSSARY.md, else CONTEXT.md) only. You cannot read the implementation.

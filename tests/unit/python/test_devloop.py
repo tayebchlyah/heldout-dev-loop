@@ -1035,6 +1035,16 @@ class SealInstructionContractTests(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertIn(value, text)
 
+    def test_taint_remedy_commands_are_complete(self) -> None:
+        import re
+        paths = SPEC_TESTERS + [SKILL_ROOT / "SKILL.md"]
+        for path in paths:
+            text = path.read_text()
+            with self.subTest(path=path.name):
+                self.assertIn("seal --feature <slug> --reverts <sha> --message <subject>", text)
+                self.assertIsNone(re.search(r"devloop\.py seal(?=[.`,;]|\s*$)", text, re.M))
+                self.assertIsNone(re.search(r"devloop\.py seal (?!--)", text))
+
     def test_implementers_stop_on_a_block_or_a_taint(self) -> None:
         for path in IMPLEMENTERS:
             with self.subTest(path=path.name):
@@ -1047,7 +1057,7 @@ class SealInstructionContractTests(unittest.TestCase):
             1: ["never change `tests/acceptance/`", "`Supersedes` line"],
             3: ["devloop.py seal --feature <slug> --message <subject>", "seal --rebase-continue"],
             5: ["`taint`", "git revert", "fresh implementer", "git revert --no-commit <sha>",
-                "seal --reverts <sha>", "fresh spec-tester"],
+                "seal --feature <slug> --reverts <sha>", "fresh spec-tester"],
             6: ["`seal`", "`weakened`", "quoted reason"],
         }
         for number, values in checks.items():
