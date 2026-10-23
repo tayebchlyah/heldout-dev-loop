@@ -140,6 +140,21 @@ def write(path: Path, text: str = "") -> None:
     path.write_text(text)
 
 
+def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex: str | None = "codex-cli 0.162.1",
+                **extra: str) -> dict[str, str]:
+    """An env whose PATH holds git and fake claude and codex binaries printing the given version text."""
+    bins.mkdir(parents=True, exist_ok=True)
+    if not (bins / "git").exists():
+        (bins / "git").symlink_to(shutil.which("git") or "git")
+    for name, text in (("claude", claude), ("codex", codex)):
+        script = bins / name
+        script.unlink(missing_ok=True)
+        if text is not None:
+            script.write_text(f"#!/bin/sh\n[ \"$1\" = --version ] || exit 2\necho '{text}'\n" if text != "FAIL" else "#!/bin/sh\nexit 1\n")
+            script.chmod(0o755)
+    return {**os.environ, "PATH": str(bins), **extra}
+
+
 class NotesCheckTests(unittest.TestCase):
     def test_repo_without_a_notes_path_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,7 +280,7 @@ class BoardVaultCheckTests(unittest.TestCase):
             home, repo, _ = self.setup_vault(tmp, dataview=False, js=False, git=True, ignore=False)
             result = subprocess.run(
                 [sys.executable, str(CHECKER), "--harness", "claude", "--home", str(home), "--repo", str(repo)],
-                capture_output=True, text=True, check=False)
+                capture_output=True, text=True, check=False, env=checker_env(Path(tmp) / "bin"))
             head, _, actions = result.stdout.partition("User actions required")
             self.assertIn("Dataview", actions)
             self.assertIn(self.GITIGNORE_LINE, actions)
@@ -400,6 +415,7 @@ class ProjectConfigTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
+                env=checker_env(Path(tmp) / "bin"),
             )
             self.assertIn("- merge in dev-loop.json must be auto or human", result.stdout)
 
@@ -1517,6 +1533,8 @@ INSTALLER = PACKAGE_ROOT / "bin" / "install.mjs"
 
 @unittest.skipUnless(shutil.which("node"), "node is required to run the installer")
 class ProjectSetupCheckerTests(unittest.TestCase):
+    versions: dict[str, str | None] = {}
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.home = Path(self._tmp.name) / "home"
@@ -1547,6 +1565,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            env=checker_env(Path(self._tmp.name) / "bin", **self.versions),
         )
 
     def main_checkout(self) -> str:
@@ -1589,7 +1608,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             scripts = Path(root) / "scripts"
             shutil.copytree(CHECKER.parent, scripts, ignore=shutil.ignore_patterns("__pycache__", "test_*"))
             subprocess.run([sys.executable, str(scripts / "check_setup.py"), "--harness", "claude", "--repo", root],
-                           capture_output=True, text=True, check=False, env={**os.environ, "HOME": root})
+                           capture_output=True, text=True, check=False, env=checker_env(Path(root) / "bin", HOME=root))
             self.assertFalse((scripts / "__pycache__").exists())
 
     def test_codex_project_lists_only_user_actions(self) -> None:
@@ -1772,6 +1791,75 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 1)
         self.assertIn("- missing Claude deny: Read(./.env.*)\n", result.stdout)
+
+    def test_claude_older_than_the_minimum_fails(self) -> None:
+        self.init("claude")
+        for found, ok in [("2.1.294", False), ("2.1.295", True), ("2.2.0", True), ("2.1.309", True), ("1.9.999", False)]:
+            with self.subTest(found=found):
+                self.versions = {"claude": f"{found} (Claude Code)"}
+                result = self.run_checker("claude")
+                line = f"- Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code.\n"
+                self.assertEqual(line in result.stdout, not ok, result.stdout)
+
+    def test_codex_older_than_the_minimum_fails(self) -> None:
+        self.init("codex")
+        for found, ok in [("0.161.0", False), ("0.162.0", False), ("0.162.1", True), ("0.200.0", True), ("0.99.9", False)]:
+            with self.subTest(found=found):
+                self.versions = {"codex": f"codex-cli {found}"}
+                result = self.run_checker("codex")
+                line = f"- codex-cli {found} is older than 0.162.1 (hooks need agent_type). Update Codex.\n"
+                self.assertEqual(line in result.stdout, not ok, result.stdout)
+
+    def test_only_the_checked_harness_version_is_read(self) -> None:
+        self.init("claude")
+        self.versions = {"codex": None}
+        self.assertEqual(self.run_checker("claude").returncode, 0)
+
+    def test_an_unreadable_version_is_one_failure_line(self) -> None:
+        self.init("claude")
+        for text, reason in [(None, "No such file"), ("FAIL", "non-zero exit"), ("no digits here", "no version")]:
+            with self.subTest(text=text):
+                self.versions = {"claude": text}
+                result = self.run_checker("claude")
+                lines = [l for l in result.stdout.splitlines() if "cannot read the claude version" in l]
+                self.assertEqual(len(lines), 1, result.stdout)
+                self.assertTrue(lines[0].startswith("- cannot read the claude version: "))
+                self.assertIn(lines[0], result.stdout.partition("User actions required")[0])
+
+    def test_a_guard_without_on_failure_block_fails(self) -> None:
+        self.init("claude")
+        path = self.repo / ".claude" / "settings.json"
+        settings = json.loads(path.read_text())
+        commands = []
+        for entry in settings["hooks"]["PreToolUse"]:
+            for hook in entry["hooks"]:
+                commands.append(hook["command"])
+                del hook["onFailure"]
+        write(path, json.dumps(settings))
+        self.assertEqual(len(commands), 2)
+        result = self.run_checker("claude")
+        for command in commands:
+            self.assertIn(f'- missing onFailure: "block" on {command}\n', result.stdout)
+
+    def test_an_agent_deny_path_hook_without_on_failure_block_fails(self) -> None:
+        self.init("claude")
+        self.assertNotIn("onFailure", self.run_checker("claude").stdout)
+        for name in ("implementer", "spec-tester"):
+            path = self.repo / ".claude" / "agents" / f"{name}.md"
+            text = path.read_text()
+            self.assertIn("          onFailure: block\n", text)
+            write(path, text.replace("          onFailure: block\n", ""))
+        result = self.run_checker("claude")
+        self.assertEqual(result.stdout.count('missing onFailure: "block" on '), 2, result.stdout)
+        self.assertIn("deny-path.sh\" tests/acceptance", result.stdout)
+
+    def test_codex_needs_the_subagent_start_hook_event(self) -> None:
+        self.init("codex")
+        path = self.repo / ".codex" / "hooks.json"
+        hooks = json.loads(path.read_text())
+        del hooks["hooks"]["SubagentStart"]
+        write(path, json.dumps(hooks))
+        self.assert_codex_failure("missing Codex hook event: SubagentStart")
 
 class ManifestCheckTests(unittest.TestCase):
     CHANGED = ". Move the change to dev-loop, then run upgrade"
