@@ -72,18 +72,30 @@ PY
 
 # 0b. Who runs the seal (D5, D11), on the text without heredoc bodies. The spec-tester's commit
 # counts in command position only: the line start or after ; & | (. Any other caller: a
-# command that names devloop and has a shell word seal (quotes removed, as the shell does),
-# whatever wraps the run (env, python3 -I, uv run, a variable for the path). A mention inside
-# a longer quoted string ("devloop.py seal") is one word and passes; so does seal-check.
+# command segment with a shell word seal (quotes removed, as the shell does) after a word
+# that names devloop, whatever wraps the run (env, python3 -I, uv run). A segment that starts
+# with a read-only tool (grep, cat, git log) passes, as do "devloop.py seal" and seal-check.
 RUN='(^|[;&|(])[[:space:]]*'
 if [ "$AGENT" = "$TESTER" ]; then
   has "${RUN}${G}commit([^[:alnum:]_-]|\$)" && block "Blocked: spec-tester commits only through devloop.py seal: python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>."
 else
-  # Exit 1 (also a crash or unbalanced quotes) means a seal word: fail closed.
-  case "$CMD" in *devloop*seal*|*seal*devloop*) printf '%s' "$CMD" | python3 -c 'import shlex, sys
-lex = shlex.shlex(sys.stdin.read(), posix=True, punctuation_chars=";&|()<>" + chr(96))
+  # Exit 1 (also a crash or unbalanced quotes) means a seal run: fail closed.
+  case "$CMD" in *devloop*seal*) printf '%s' "$CMD" | python3 -c 'import shlex, sys
+PUNCT = ";&|()<>" + chr(96)
+READ = {"grep", "rg", "cat", "less", "head", "tail", "ls", "find", "echo", "printf"}
+lex = shlex.shlex(sys.stdin.read().replace("\n", ";"), posix=True, punctuation_chars=PUNCT)
 lex.whitespace_split, lex.commenters = True, ""
-sys.exit("seal" in lex)' 2>/dev/null || block "Blocked: only spec-tester may run devloop.py seal." ;; esac
+seg = []
+for tok in [*lex, ";"]:
+    if not all(c in PUNCT for c in tok):
+        seg.append(tok)
+        continue
+    run = next((i for i, w in enumerate(seg) if "devloop" in w), None)
+    read = seg[:1] and (seg[0] in READ or seg[:2] == ["sed", "-n"]
+                        or seg[0] == "git" and seg[1:2] in (["grep"], ["log"], ["show"], ["diff"]))
+    if run is not None and not read and "seal" in seg[run + 1:]:
+        sys.exit(1)
+    seg = []' 2>/dev/null || block "Blocked: only spec-tester may run devloop.py seal." ;; esac
 fi
 
 # 1. rm -rf on root only.

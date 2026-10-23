@@ -259,7 +259,11 @@ class GuardTests(unittest.TestCase):
                 (implementer, f"env FOO=1 python3 {cli} seal --feature x --message y", True),
                 (main, f"python3.12 {cli} seal --feature x --message y", True),
                 (main, f"uv run python {cli} seal --feature x --message y", True),
-                (main, "D=devloop.py; python3 .agents/skills/dev-loop/scripts/$D seal --feature x", True),
+                (implementer, f"python3 -I {cli} seal --feature x --message y", True),
+                # D11: only a run counts, within one segment: a read-only tool that names both passes.
+                (main, "grep -n seal skill/scripts/devloop.py", False),
+                (main, 'rg "devloop.py seal" skill/', False),
+                (main, "sed -n 1,20p skill/scripts/devloop.py | grep seal", False),
                 (main, 'grep -rn "Dev-Loop-Seal" skill/', False),
                 (main, 'grep -rn "devloop.py seal" skill/', False),
                 (main, 'git commit -m "Document devloop.py seal"', False),
