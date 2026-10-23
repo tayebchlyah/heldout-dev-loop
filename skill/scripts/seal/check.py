@@ -26,7 +26,8 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     # The body, not `%(trailers)`: git sees no trailer block once `This reverts commit` lines share its paragraph.
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
-        values = TRAILER.findall(body)
+        # The last paragraph only: `seal` writes the trailers there; a quote earlier in the body is no seal.
+        values = TRAILER.findall(re.split(r"\n[ \t]*\n", body.strip())[-1])
         if not values:
             continue
         entries, outside = commit_entries(repo, sha)
@@ -60,7 +61,8 @@ def check(repo: Path, uncommitted: bool) -> dict:
         violations += uncommitted_violations(repo)
     try:
         state = taint_state(repo)
-        recent = set(run_git(repo, "rev-list", f"{base}..HEAD" if base else "HEAD").stdout.split())
+        # `<base>` itself counts: a tainted subagent with no commit on a fresh branch ends there.
+        recent = set(run_git(repo, "rev-list", f"{base}..HEAD" if base else "HEAD").stdout.split()) | {base}
         warnings = [item for item in state["closed"] + state["skipped"] if item.get("end") in recent]
         taint = state["open"]
     except (ValueError, AttributeError, TypeError, KeyError):  # taint.json does not parse or has the wrong shape
