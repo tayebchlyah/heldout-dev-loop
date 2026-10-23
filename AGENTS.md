@@ -10,11 +10,13 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 
 - `bin/install.mjs`: installer entry point. Commands: `init`, `upgrade`, `uninstall-global`. No command: usage, exit 1. Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`).
 - `lib/`: installer internals: `args.mjs` (flag parsing), `fsops.mjs` (backup names), `merge-json.mjs`, `merge-toml.mjs` (per-format merge), `plan.mjs` (runs the merges), `kit.mjs` (project kit file list, path rewrite), `manifest.mjs` (`.dev-loop/MANIFEST.json` write and compare), `project.mjs` (`init` and `upgrade`), `uninstall.mjs` (`uninstall-global`, frozen 1.4 file and hook lists).
-- `skill/SKILL.md`: the dev-loop skill payload. `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `tests.md`, `spec.md`, `mutation.md`. `skill/scripts/devloop.py`: the `devloop` CLI. `skill/scripts/check_setup.py`: post-install verifier. `skill/scripts/notes_path.py`: notes path resolver. `skill/scripts/test_dev_loop.py`: skill suite (imports `test_devloop.py`). `skill/scripts/board/`: progress board: `store.py`, `writer.py`, `server.py`, `render.js`, `page.html`, `board-note.md`. Tests: `skill/scripts/test_board.py`, `skill/scripts/test_board_robust.py`, `test/board-render.test.mjs`, `test/board-render-robust.test.mjs`.
+- `skill/SKILL.md`: the dev-loop skill payload. `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `tests.md`, `spec.md`, `mutation.md`. `skill/scripts/devloop.py`: the `devloop` CLI. `skill/scripts/check_setup.py`: post-install verifier. `skill/scripts/notes_path.py`: notes path resolver. `skill/scripts/board/`: progress board: `store.py`, `writer.py`, `server.py`, `render.js`, `page.html`, `board-note.md`.
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json` (merged into the project `.claude/settings.json`).
 - `codex/`: Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (kit file `.codex/rules/dev-loop.rules`).
-- `test/*.test.mjs`: installer suite (Node's built-in test runner).
-- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. Exports `core.fsmonitor=false` through `GIT_CONFIG_*` before its first git call, as `check_setup.py` demands of a project `scripts/gate.sh` when `commands.gate` is unmapped. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
+- `tests/unit/python/`: skill suite, `test_dev_loop.py` (imports `test_devloop.py`, `test_board_robust.py`, and the board oracle modules from `skill/scripts/`). `fixtures/`: test data.
+- `tests/unit/node/*.test.mjs`: installer suite and board render unit tests (Node's built-in test runner), `helpers.mjs`.
+- Board oracle tests (`spec-tester`, held out): `skill/scripts/test_board.py`, `skill/scripts/test_board_robustness.py`, `test/board-render.test.mjs`, `test/board-render-robustness.test.mjs`. Feature `held-out-seal` moves them to `tests/acceptance/`.
+- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. Exports `core.fsmonitor=false` through `GIT_CONFIG_*` before its first git call, as `check_setup.py` demands of a project `scripts/gate.sh` when `commands.gate` is unmapped. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `tests/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `dev-loop.json`: this repo's own project marker, kit version.
 
@@ -31,8 +33,8 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 ## Build and test
 
 ```bash
-npm test                                # installer suite: node --test test/*.test.mjs
-python3 skill/scripts/test_dev_loop.py  # skill suite
+npm test                                # installer suite: node --test tests/unit/node/*.test.mjs test/*.test.mjs
+python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
 Skill suite runs test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` processes at a time (default one per CPU, `1`: one at a time). `DEVLOOP_REPORT_DIR` set: writes JUnit `skill.xml` there; a chunk process that dies counts each of its ids as an error. Arguments (a test name): plain unittest, no report.

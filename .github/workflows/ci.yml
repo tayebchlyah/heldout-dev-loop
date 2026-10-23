@@ -27,4 +27,4 @@ jobs:
         run: npm test
 
       - name: Skill suite
-        run: python3 skill/scripts/test_dev_loop.py
+        run: python3 tests/unit/python/test_dev_loop.py

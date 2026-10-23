@@ -29,7 +29,7 @@ if not any(
         "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
     })
 
-DEVLOOP = Path(__file__).resolve().parent / "devloop.py"
+DEVLOOP = Path(__file__).resolve().parents[3] / "skill" / "scripts" / "devloop.py"
 
 
 
@@ -643,7 +643,7 @@ class CiWaitTests(unittest.TestCase):
         self.assertIn("Bad credentials", out["message"])
 
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
 REPO_ROOT = SKILL_ROOT.parent
 TEN_RULES = [
     "one home file per module",

@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const bin = join(packageRoot, 'bin', 'install.mjs')
 
 function run(home, args) {

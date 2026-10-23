@@ -7,9 +7,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { assertValidToml } from './helpers.mjs'
-import { buildKit } from '../lib/kit.mjs'
-import { compareManifest, sha256 } from '../lib/manifest.mjs'
-import { readVersion, releaseNotes, writeKit } from '../lib/project.mjs'
+import { buildKit } from '../../../lib/kit.mjs'
+import { compareManifest, sha256 } from '../../../lib/manifest.mjs'
+import { readVersion, releaseNotes, writeKit } from '../../../lib/project.mjs'
 
 // core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
 // The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
@@ -23,7 +23,7 @@ if (!fsmonitorOff) {
   process.env.GIT_CONFIG_COUNT = String(gitConfigCount + 1)
 }
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
 
 function setup() {
