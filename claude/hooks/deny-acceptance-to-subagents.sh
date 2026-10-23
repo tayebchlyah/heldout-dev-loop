@@ -4,7 +4,9 @@
 # Main session: no Edit, Write or NotebookEdit under tests/acceptance/. Its reads stay
 # open: Stage 6 reads a failing test to classify it. A Bash write is left to seal-check.
 # Subagents: the net below, for those that do not use the implementer definition.
-# spec-tester is exempt: it authors tests/acceptance. Its own frontmatter hook blocks src/.
+# spec-tester is exempt: it authors tests/acceptance. It gets the source wall instead: no path
+# names src/, app/, backend/ or frontend/ (the segment match of deny-path.sh, in this folder).
+# Its frontmatter hook holds the same rule, but did not fire in Claude Code 2.1.309 (canary).
 #
 # WHAT THIS IS. A workflow guard against a cooperative agent wandering into the
 # held-out suite, not a security boundary. A subagent that wants past it can
@@ -46,7 +48,17 @@ if [ -z "$(echo "$IN" | jq -r '.agent_id // empty')" ]; then
   fi
   exit 0
 fi
-[ "$(echo "$IN" | jq -r '.agent_type // empty')" = "spec-tester" ] && exit 0
+TESTER=
+if [ "$(echo "$IN" | jq -r '.agent_type // empty')" = "spec-tester" ]; then
+  TESTER=1
+  # Relative paths resolve against the cwd as a repo path, so a repo that sits under a folder named
+  # src or app is not walled whole. Outside a git repo: the cwd itself. Never empty: the command is
+  # split into tokens only with a cwd.
+  CWD=$(echo "$IN" | jq -r '.cwd // empty')
+  BASE=
+  [ -z "$CWD" ] || BASE=$(git -C "$CWD" rev-parse --show-prefix 2>/dev/null) || BASE=$CWD
+  IN=$(echo "$IN" | jq --arg b "${BASE:-.}" '.cwd = $b' 2>/dev/null) || fail "cannot rewrite cwd"
+fi
 
 CANDIDATES=$(echo "$IN" | jq -r '
   # A heredoc body and an exclusion (:!x, :(exclude)x, --exclude-dir=x, grep -v x)
@@ -71,6 +83,12 @@ CANDIDATES=$(echo "$IN" | jq -r '
       end;
   (fields + joins) as $all | ($all + relative($all)) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 CANDIDATES=$(printf '%s' "$CANDIDATES" | normalize)
+
+if [ -n "$TESTER" ]; then
+  CALL=$(printf '%s' "$CANDIDATES" | jq -Rn '{tool_input: {paths: [inputs]}}' 2>/dev/null) || fail "cannot pass the paths on"
+  printf '%s' "$CALL" | bash "$(dirname "$0")/deny-path.sh" src/ app/ backend/ frontend/ || exit 2
+  exit 0
+fi
 
 if echo "$CANDIDATES" | grep -q 'tests/acceptance'; then
   echo "Blocked: held-out suite. Subagents cannot read it." >&2

@@ -40,10 +40,10 @@ CANDIDATES=$(printf '%s' "$CANDIDATES" \
 
 for FRAG in "$@"; do
   NEEDLE=$(printf '%s' "$FRAG" | tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/$||' -e 's/[][\.*^$+?(){}|]/\\&/g')
-  # Whole path segment only: app/ blocks "app/x", "/x/app", "app;" and "'app'",
+  # Whole path segment only: app/ blocks "app/x", "/x/app", "app;", "'app'" and "app*",
   # never "application" or "App Services". A space does not end a segment, so
   # prose that starts with the name stays allowed.
-  if echo "$CANDIDATES" | grep -qE -- "(^|[^a-z0-9_.-])${NEEDLE}(/|[\"'\`;|&)<>]|\$)"; then
+  if echo "$CANDIDATES" | grep -qE -- "(^|[^a-z0-9_.-])${NEEDLE}(/|[\"'\`;|&)<>*]|\$)"; then
     echo "Blocked: $FRAG is outside this agent's territory." >&2
     exit 2
   fi
