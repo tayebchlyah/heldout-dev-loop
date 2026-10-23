@@ -28,6 +28,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, TypeVar
 
+# core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
+# The override wins over every config file and appends to the caller's own GIT_CONFIG_* entries.
+_N = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+os.environ.update({f"GIT_CONFIG_KEY_{_N}": "core.fsmonitor", f"GIT_CONFIG_VALUE_{_N}": "false", "GIT_CONFIG_COUNT": str(_N + 1)})
+
 SCRIPTS = Path(__file__).resolve().parent
 DEVLOOP = SCRIPTS / "devloop.py"
 REPO_ROOT = SCRIPTS.parents[1]
