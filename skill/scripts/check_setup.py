@@ -143,6 +143,25 @@ def check_project_config(repo: Path) -> list[str]:
     return failures
 
 
+def check_gate_guard(repo: Path) -> list[str]:
+    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_*, unless commands.gate is mapped."""
+    gate = repo / "scripts" / "gate.sh"
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        config = {}
+    commands = config.get("commands") if isinstance(config, dict) else None
+    if (isinstance(commands, dict) and commands.get("gate")) or not gate.is_file():
+        return []
+    text = gate.read_text(errors="replace")
+    if "core.fsmonitor" in text and "GIT_CONFIG_COUNT" in text:
+        return []
+    return [
+        "scripts/gate.sh lacks the core.fsmonitor guard: export core.fsmonitor=false through "
+        "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n>, before its first git call"
+    ]
+
+
 def check_claude_settings(path: Path, failures: list[str]) -> None:
     settings = load_json(path, failures)
     hooks = settings.get("hooks", {})
@@ -364,7 +383,7 @@ def project_trust_groups(home: Path, repo: Path) -> list[tuple[str, list[str]]]:
 
 def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
     """D10: the kit against its manifest, the project merged files, and no user-level skill."""
-    failures = check_manifest(repo) + check_user_skill(home)
+    failures = check_manifest(repo) + check_user_skill(home) + check_gate_guard(repo)
     if harness == "claude":
         check_claude_settings(repo / ".claude" / "settings.json", failures)
         return failures + check_claude_repo(repo), []

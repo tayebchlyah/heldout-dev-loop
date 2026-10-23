@@ -25,6 +25,11 @@ from unittest import mock
 from pathlib import Path
 
 
+# core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
+# The override wins over every config file and appends to the caller's own GIT_CONFIG_* entries.
+_N = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+os.environ.update({f"GIT_CONFIG_KEY_{_N}": "core.fsmonitor", f"GIT_CONFIG_VALUE_{_N}": "false", "GIT_CONFIG_COUNT": str(_N + 1)})
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
@@ -279,6 +284,45 @@ class UsesDevLoopTests(unittest.TestCase):
     def test_neither_does_not_count(self) -> None:
         self.assertFalse(self.uses({"AGENTS.md": "# Plain\n"}))
         self.assertFalse(self.uses({}))
+
+
+class GateGuardTests(unittest.TestCase):
+    GUARD = 'export "GIT_CONFIG_KEY_$N=core.fsmonitor" GIT_CONFIG_COUNT=$((N + 1))\n'
+    MESSAGE = (
+        "scripts/gate.sh lacks the core.fsmonitor guard: export core.fsmonitor=false through "
+        "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n>, before its first git call"
+    )
+
+    def check(self, gate: str | None, config: dict | None = None) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            write(repo / "dev-loop.json", json.dumps(config or {}))
+            if gate is not None:
+                write(repo / "scripts" / "gate.sh", gate)
+            return check_setup.check_gate_guard(repo)
+
+    def test_guard_present_passes(self) -> None:
+        self.assertEqual(self.check("#!/bin/sh\n" + self.GUARD), [])
+
+    def test_guard_missing_fails(self) -> None:
+        self.assertEqual(self.check("#!/bin/sh\ngit status\n"), [self.MESSAGE])
+
+    def test_count_without_fsmonitor_fails(self) -> None:
+        self.assertEqual(self.check("export GIT_CONFIG_COUNT=1\n"), [self.MESSAGE])
+
+    def test_mapped_gate_command_skips(self) -> None:
+        self.assertEqual(self.check("git status\n", {"commands": {"gate": "make gate"}}), [])
+
+    def test_no_gate_script_skips(self) -> None:
+        self.assertEqual(self.check(None), [])
+
+    def test_check_project_runs_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            write(repo / "dev-loop.json", "{}")
+            write(repo / "scripts" / "gate.sh", "git status\n")
+            failures, _ = check_setup.check_project(repo / "home", repo, "claude")
+            self.assertIn(self.MESSAGE, failures)
 
 
 class ProjectConfigTests(unittest.TestCase):
