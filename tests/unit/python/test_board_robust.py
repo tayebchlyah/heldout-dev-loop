@@ -21,6 +21,8 @@ from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
+# The board oracle modules (held out) live in tests/acceptance; this file imports their helpers.
+sys.path.insert(1, str(Path(__file__).resolve().parents[3] / "tests" / "acceptance"))
 from board import server, state as board_state
 import test_board
 from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
