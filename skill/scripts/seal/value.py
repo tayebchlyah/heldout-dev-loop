@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import subprocess
 from pathlib import Path
 
-from seal import ACCEPTANCE_DIR, SEAL_TRAILER, git_dir, run_git
+from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
@@ -16,6 +17,31 @@ TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
 def seal_value(entries: list[tuple[str, str]]) -> str:
     text = "".join(f"{path} {blob}\n" for path, blob in sorted(entries))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def patch_value(repo: Path, *against: str) -> str:
+    """sha256 of the `git patch-id --stable` of the `-U0` diff under ACCEPTANCE_DIR: survives a clean rebase (D1)."""
+    # Plumbing (`diff-index`, `diff-tree`): the `git diff -U0 --no-color --no-renames` text with no user diff
+    # config (noprefix, textconv, external diff); `--full-index`: a binary change hashes full blob ids.
+    git = ["git", "-C", str(repo), "-c", "core.quotepath=off"]
+    patch = subprocess.run([*git, *against, "-p", "-U0", "--no-renames", "--full-index", "--",
+                            f":(top){ACCEPTANCE_DIR}/"], capture_output=True).stdout
+    out = subprocess.run([*git, "patch-id", "--stable"], input=patch, capture_output=True).stdout.decode()
+    return hashlib.sha256(out.split(" ", 1)[0].strip().encode()).hexdigest()
+
+
+def empty_tree(repo: Path) -> str:
+    return run_git(repo, "hash-object", "-t", "tree", "--stdin", stdin="").stdout.strip()
+
+
+def staged_patch_value(repo: Path) -> str:
+    head = run_git(repo, "rev-parse", "--verify", "-q", "HEAD").stdout.strip()
+    return patch_value(repo, "diff-index", "--cached", head or empty_tree(repo))
+
+
+def commit_patch_value(repo: Path, sha: str) -> str:
+    parent = run_git(repo, "rev-parse", "--verify", "-q", f"{sha}^1").stdout.strip()
+    return patch_value(repo, "diff-tree", "-r", "--no-commit-id", parent or empty_tree(repo), sha)
 
 
 def split_raw(raw: str) -> tuple[list[tuple[str, str]], list[str]]:
@@ -65,7 +91,7 @@ def seal(repo: Path, slug: str, message: str, reverts: list[str]) -> dict:
         full.append(result.stdout.strip())
     value = seal_value(entries)
     body = "".join(f"This reverts commit {sha}.\n" for sha in full)
-    text = f"{message}\n\n{body}Acceptance: {slug}\n{SEAL_TRAILER}: {value}\n"
+    text = f"{message}\n\n{body}Acceptance: {slug}\n{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {staged_patch_value(repo)}\n"
     result = run_git(repo, "commit", "-q", "--cleanup=verbatim", "-F", "-", stdin=text)
     if result.returncode != 0:
         return {"error": f"git commit failed: {(result.stderr or result.stdout).strip()}"}
