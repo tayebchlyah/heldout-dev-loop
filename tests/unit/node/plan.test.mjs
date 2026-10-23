@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runPlan } from '../lib/plan.mjs'
+import { runPlan } from '../../../lib/plan.mjs'
 
 test('a merge applies its rewrite to the fragment', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dev-loop-rewrite-'))

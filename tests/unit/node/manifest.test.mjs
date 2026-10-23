@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { sha256, buildManifest, readManifest, compareManifest } from '../lib/manifest.mjs'
+import { sha256, buildManifest, readManifest, compareManifest } from '../../../lib/manifest.mjs'
 
 const kit = {
   files: [

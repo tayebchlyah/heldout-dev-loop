@@ -1,4 +1,4 @@
-// test/fragments.test.mjs
+// tests/unit/node/fragments.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const readJson = (relative) => JSON.parse(readFileSync(join(repoRoot, relative), 'utf8'))
 
 test('the Claude fragment covers the four hook events', () => {

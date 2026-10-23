@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { projectCommand, buildKit, projectFragments } from '../lib/kit.mjs'
+import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs'
 
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
 const CODEX = '"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/'
 
