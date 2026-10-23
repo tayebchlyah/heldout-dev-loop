@@ -479,10 +479,11 @@ class SealCheckTests(SealRepo):
         self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
 
     def test_open_taint_makes_ok_false(self) -> None:
-        old = git(self.repo, "rev-parse", "HEAD").strip()
+        start = git(self.repo, "rev-parse", "HEAD").strip()
+        old = git(self.repo, "commit-tree", "HEAD^{tree}", "-m", "outside the branch history").strip()
         sha = self.commit("src/total.py", "def total(xs):\n    return sum(xs)\n")
         record = {"agent_id": "a1", "agent_type": "implementer", "at": "t", "set": "acceptance", "lines": [],
-                  "start": old, "end": sha, "attribution": "transcript"}
+                  "start": start, "end": sha, "attribution": "transcript"}
         taint = {"records": [{**record, "commits": [audit_module.commit_record(self.repo, sha)]},
                              {**record, "agent_id": "closed", "commits": []},
                              {**record, "agent_id": "old", "end": old, "commits": []}],
@@ -500,6 +501,21 @@ class SealCheckTests(SealRepo):
                 code, out = self.check()
                 self.assertEqual((code, out["ok"]), (1, False), out)
                 self.assertEqual(self.violations(), [("taint-unreadable", None, str(path))])
+
+    def test_closed_record_at_base_is_a_warning(self) -> None:
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        record = {"agent_id": "a1", "agent_type": "implementer", "at": "t", "set": "acceptance", "lines": [],
+                  "start": head, "end": head, "commits": [], "attribution": "transcript"}
+        path = audit_module.taint_file(self.repo)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"records": [record], "skipped": []}))
+        self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": [record]}))
+
+    def test_quoted_trailer_in_an_earlier_paragraph_is_no_seal(self) -> None:
+        put(self.repo / "docs.md", "docs\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "docs\n\nDev-Loop-Seal: abc\n\nCo-Authored-By: t <t@example.invalid>")
+        self.assertEqual(self.check()[0], 0)
 
     def test_unicode_path(self) -> None:
         path = f"{ACCEPTANCE_DIR}/x/café flow.py"
@@ -537,6 +553,13 @@ class GateSealTests(GateSealRepo):
 
 
 class WeakenedTests(GateSealRepo):
+    def write(self, path: str, text: str | bytes) -> None:
+        if isinstance(text, bytes):
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).write_bytes(text)
+        else:
+            put(self.repo / path, text)
+
     def test_weakened_reasons(self) -> None:
         unit = "tests/unit/test_a.py"
         cases = [
@@ -549,19 +572,25 @@ class WeakenedTests(GateSealRepo):
              [{"path": "tests/unit/test_café.py", "reason": "assertions-removed"}]),
             ("not a test file", "src/a.py", "pass\n", []),
             ("assertion added", unit, "def test_a():\n    assert f() == 1\n    assert g() == 2\n    assert h()\n", []),
+            ("latin-1 file", "tests/unit/test_lat.py", b"# caf\xe9\nassert x\n@pytest.mark.skip\n",
+             [{"path": "tests/unit/test_lat.py", "reason": "skip-added"}]),
+            ("binary file", "web/logo.test.png", b"\x89PNG\x00\xfe\xff", []),
         ]
         originals = {unit: "def test_a():\n    assert f() == 1\n    assert g() == 2\n",
                      "web/a.test.js": "it('a', () => {\n  expect(f()).toBe(1)\n})\n",
-                     "tests/unit/test_café.py": "def test_a():\n    assert f()\n", "src/a.py": "assert x\n"}
+                     "tests/unit/test_café.py": "def test_a():\n    assert f()\n", "src/a.py": "assert x\n",
+                     "tests/unit/test_lat.py": b"# caf\xe9\nassert x\n", "web/logo.test.png": b"\x89PNG\x00\xff"}
         git(self.repo, "checkout", "-q", "main")
         for path, text in originals.items():
-            put(self.repo / path, text)
+            self.write(path, text)
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "tests")
         for name, path, text, expected in cases:
             with self.subTest(name):
                 git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
-                self.commit(path, text)
+                self.write(path, text)
+                git(self.repo, "add", "-A")
+                git(self.repo, "commit", "-q", "-m", name)
                 code, out = self.gate()
                 self.assertEqual((code, out["weakened"]), (0, expected), out)
 
