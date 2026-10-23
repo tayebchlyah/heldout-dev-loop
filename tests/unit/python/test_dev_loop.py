@@ -107,6 +107,13 @@ SealCheckTests = test_seal.SealCheckTests
 GateSealTests = test_seal.GateSealTests
 WeakenedTests = test_seal.WeakenedTests
 
+_seal_hooks_spec = importlib.util.spec_from_file_location("test_seal_hooks", Path(__file__).resolve().parent / "test_seal_hooks.py")
+if _seal_hooks_spec is None or _seal_hooks_spec.loader is None:
+    raise ImportError("cannot load test_seal_hooks module")
+test_seal_hooks = importlib.util.module_from_spec(_seal_hooks_spec)
+_seal_hooks_spec.loader.exec_module(test_seal_hooks)
+SealHookTests = test_seal_hooks.SealHookTests
+
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
