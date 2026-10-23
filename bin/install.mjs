@@ -63,7 +63,10 @@ function printReports(allReports, flags, short) {
     console.log(`  ${entry.action.padEnd(7)} ${short(entry.target)}`)
     if (entry.backup) console.log(`          backup ${short(entry.backup)}`)
     for (const added of entry.added) console.log(`          + ${added}`)
-    for (const removed of entry.removed ?? []) console.log(`          - ${removed}`)
+    // A Codex config table is not a hook command: name the table and why.
+    for (const removed of entry.removed ?? []) {
+      console.log(entry.target.endsWith('.toml') ? `          removed ${removed} from ${short(entry.target)} (Codex never applied it)` : `          - ${removed}`)
+    }
   }
   for (const entry of kept) console.log(`  kept ${entry.item ? `${entry.item} ` : ''}${short(entry.target)}`)
 

@@ -1,6 +1,5 @@
 name = "task_reviewer"
 description = "Read-only reviewer for one completed plan task. Checks specification compliance and concrete regressions."
-default_permissions = "dev-read-only"
 developer_instructions = """
 Review one completed task against its brief and repository evidence. Do not edit files. Prioritize correctness, behavior regressions, and missing tests. Report findings with exact paths and reproduction evidence. Ignore style-only issues unless they conceal a defect.
 """

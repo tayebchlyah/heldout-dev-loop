@@ -1,6 +1,5 @@
 name = "spec_tester"
 description = "Writes held-out acceptance tests from the approved specification. Cannot inspect implementation paths."
-default_permissions = "dev-spec-tester"
 developer_instructions = """
 Write acceptance tests to tests/acceptance.
 Name each acceptance file or folder after the feature slug, - replaced by _: tests/acceptance/api/test_<slug>.py, tests/acceptance/e2e/<slug>.spec.ts. devloop status finds the feature's tests by that name, or, when the spec only extends earlier files, by the line `Acceptance: <slug>` in the Stage 3 commit message. Put that line in the commit message.
