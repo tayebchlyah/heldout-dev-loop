@@ -29,17 +29,19 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/git-guard.sh",
-            "timeout": 5
+            "timeout": 5,
+            "onFailure": "block"
           }
         ]
       },
       {
-        "matcher": "Read|Edit|Write|Grep|Glob|Bash",
+        "matcher": "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash",
         "hooks": [
           {
             "type": "command",
             "command": "~/.claude/hooks/deny-acceptance-to-subagents.sh",
-            "timeout": 5
+            "timeout": 5,
+            "onFailure": "block"
           }
         ]
       }
@@ -53,6 +55,15 @@
             "timeout": 600
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/seal.sh turn",
+            "timeout": 120
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -62,6 +73,15 @@
             "type": "command",
             "command": "~/.claude/hooks/gate.sh",
             "timeout": 600
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/seal.sh stop",
+            "timeout": 120
           }
         ]
       }
