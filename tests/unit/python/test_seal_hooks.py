@@ -313,5 +313,24 @@ class CodexWallTests(unittest.TestCase):
                 self.assertEqual(result.returncode, code, result.stderr)
 
 
+class CanaryScriptTests(unittest.TestCase):
+    """Static only: the live run needs both harnesses and a login, so the controller runs it by hand."""
+    script = ROOT / "scripts" / "canary.sh"
+
+    def test_script_is_executable_and_parses(self):
+        self.assertTrue(os.access(self.script, os.X_OK))
+        self.assertEqual(subprocess.run(["bash", "-n", str(self.script)]).returncode, 0)
+
+    def test_help_prints_usage_without_a_harness(self):
+        bare = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, bare, True)
+        for name in ("dirname", "cat"):  # the script may need these, never claude or codex
+            os.symlink(shutil.which(name), os.path.join(bare, name))
+        result = subprocess.run([shutil.which("bash"), str(self.script), "--help"], capture_output=True, text=True,
+                                env={"PATH": bare})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage:", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

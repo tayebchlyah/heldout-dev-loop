@@ -115,6 +115,7 @@ _seal_hooks_spec.loader.exec_module(test_seal_hooks)
 SealHookTests = test_seal_hooks.SealHookTests
 GuardTests = test_seal_hooks.GuardTests
 CodexWallTests = test_seal_hooks.CodexWallTests
+CanaryScriptTests = test_seal_hooks.CanaryScriptTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
