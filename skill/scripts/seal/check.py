@@ -5,11 +5,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from seal import ACCEPTANCE_DIR, SEAL_TRAILER, merge_base, run_git
+from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, merge_base, run_git
 from seal.audit import taint_file, taint_state
-from seal.value import commit_entries, seal_value
+from seal.value import commit_entries, commit_patch_value, seal_value
 
 TRAILER = re.compile(rf"^{SEAL_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
+PATCH = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 
 
 def violation(reason: str, commit: str | None = None, path: str | None = None) -> dict:
@@ -27,12 +28,15 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
         # The last paragraph only: `seal` writes the trailers there; a quote earlier in the body is no seal.
-        values = TRAILER.findall(re.split(r"\n[ \t]*\n", body.strip())[-1])
+        last = re.split(r"\n[ \t]*\n", body.strip())[-1]
+        values = TRAILER.findall(last)
         if not values:
             continue
         entries, outside = commit_entries(repo, sha)
         # Two trailers fail too: a seal commit carries exactly the one value of its own diff.
-        if outside or not entries or values != [seal_value(entries)]:
+        # The patch value (D1): a clean rebase that merged an upstream change into a sealed file keeps the seal.
+        if outside or not entries or (values != [seal_value(entries)]
+                                       and PATCH.findall(last) != [commit_patch_value(repo, sha)]):
             found.append(violation("bad-seal", commit=sha))
             continue
         sealed.update(entries)

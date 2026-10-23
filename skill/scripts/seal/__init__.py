@@ -7,6 +7,7 @@ from pathlib import Path
 
 ACCEPTANCE_DIR = "tests/acceptance"
 SEAL_TRAILER = "Dev-Loop-Seal"
+PATCH_TRAILER = "Dev-Loop-Seal-Patch"
 
 
 def run_git(repo: Path, *args: str, stdin: str | None = None,
