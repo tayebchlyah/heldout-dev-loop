@@ -117,9 +117,9 @@ test('the Claude fragment references no hook that dev-loop does not own', () => 
   }
 })
 
-test('the Codex fragment covers the four hook events and omits style.sh', () => {
+test('the Codex fragment covers the five hook events and omits style.sh', () => {
   const fragment = readJson('codex/hooks.fragment.json')
-  for (const event of ['SessionStart', 'PreToolUse', 'Stop', 'SubagentStop']) {
+  for (const event of ['SessionStart', 'PreToolUse', 'Stop', 'SubagentStart', 'SubagentStop']) {
     assert.ok(Array.isArray(fragment.hooks[event]), `missing event ${event}`)
   }
   assert.ok(!JSON.stringify(fragment).includes('style.sh'))
@@ -178,6 +178,17 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
         },
       ],
     },
+    {
+      matcher: 'Bash|apply_patch',
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/acceptance-wall.sh',
+          timeout: 5,
+          statusMessage: 'Checking held-out suite access',
+        },
+      ],
+    },
   ])
 
   assert.deepEqual(fragment.hooks.PostToolUse, [
@@ -205,6 +216,16 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
         },
       ],
     },
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/seal.sh turn',
+          timeout: 120,
+          statusMessage: 'Checking held-out seal',
+        },
+      ],
+    },
   ])
 
   assert.deepEqual(fragment.hooks.SubagentStop, [
@@ -215,6 +236,29 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
           command: '{{HOME}}/.codex/hooks/gate.sh',
           timeout: 600,
           statusMessage: 'Running repository gate',
+        },
+      ],
+    },
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/seal.sh stop',
+          timeout: 120,
+          statusMessage: 'Checking held-out seal',
+        },
+      ],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.SubagentStart, [
+    {
+      hooks: [
+        {
+          type: 'command',
+          command: '{{HOME}}/.codex/hooks/seal.sh start',
+          timeout: 5,
+          statusMessage: 'Recording subagent start',
         },
       ],
     },
