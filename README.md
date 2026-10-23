@@ -103,6 +103,7 @@ To try a change in a project, run `node ~/Projects/tchlyah/dev-loop/bin/install.
 ```bash
 npm test                                    # node suite: installer and board render tests
 python3 tests/unit/python/test_dev_loop.py  # skill suite
+python3 -m unittest discover -s tests/acceptance -p 'test_*.py' && node --test tests/acceptance/*.test.mjs  # held-out acceptance suite (CI job `acceptance`)
 ```
 
 ## Verify

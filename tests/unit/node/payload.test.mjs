@@ -106,3 +106,17 @@ test('no tracked file holds an absolute home path or a personal name', () => {
     assert.ok(!text.includes(forbiddenName), `personal name in ${relative}`)
   }
 })
+
+test('dev-loop.json maps commands.acceptance to both runners', () => {
+  const marker = JSON.parse(readFileSync(join(repoRoot, 'dev-loop.json'), 'utf8'))
+  assert.equal(typeof marker.commands.acceptance, 'string')
+  assert.ok(marker.commands.acceptance.includes('unittest discover'))
+  assert.ok(marker.commands.acceptance.includes('node --test'))
+})
+
+test('ci.yml has a job named acceptance that runs commands.acceptance', () => {
+  const ci = readFileSync(join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
+  const marker = JSON.parse(readFileSync(join(repoRoot, 'dev-loop.json'), 'utf8'))
+  assert.match(ci, /^ {2}acceptance:$/m)
+  assert.ok(ci.includes(`run: ${marker.commands.acceptance}`))
+})
