@@ -7,6 +7,9 @@
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
   devloop.py board [--repo PATH] [--event E] [--claim SLUG] [--no-serve] [--stop-server]
                                                       write the status notes of this machine
+  devloop.py seal --feature SLUG --message SUBJECT [--reverts SHA ...]
+                                                      commit the staged acceptance tests with the seal trailer
+  devloop.py seal --rebase-continue                   write the new seal into the rebase commit, continue it
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -551,6 +554,23 @@ def cmd_board(args: argparse.Namespace) -> int:
     return emit(payload, 0)
 
 
+# seal
+
+
+def cmd_seal(args: argparse.Namespace) -> int:
+    if args.rebase_continue == bool(args.feature or args.message or args.reverts) or (
+            not args.rebase_continue and not (args.feature and args.message)):
+        return emit({"error": "seal needs --feature and --message, or --rebase-continue alone"}, 2)
+    # Lazy, as `board`: the old tests load this file with importlib.
+    sys.path.insert(0, str(Path(__file__).parent))
+    from seal import value
+
+    repo = Path.cwd()
+    out = value.rebase_continue(repo) if args.rebase_continue else value.seal(
+        repo, args.feature, args.message, args.reverts or [])
+    return emit(out, 1 if "error" in out else 0)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -588,6 +608,13 @@ def main() -> int:
     board.add_argument("--no-serve", action="store_true")
     board.add_argument("--stop-server", action="store_true")
     board.set_defaults(run=cmd_board)
+
+    seal = commands.add_parser("seal")
+    seal.add_argument("--feature")
+    seal.add_argument("--message")
+    seal.add_argument("--reverts", action="extend", nargs="+")
+    seal.add_argument("--rebase-continue", action="store_true")
+    seal.set_defaults(run=cmd_seal)
 
     args = parser.parse_args()
     return args.run(args)
