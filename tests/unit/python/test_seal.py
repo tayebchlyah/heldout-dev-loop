@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -17,6 +18,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 from test_devloop import DEVLOOP, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 from seal import ACCEPTANCE_DIR  # noqa: E402
+from seal import audit as audit_module  # noqa: E402
 from seal.audit import taint_state  # noqa: E402
 from seal.value import commit_entries, seal_value  # noqa: E402
 
@@ -218,7 +220,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(record["agent_id"], "a1")
         self.assertEqual(record["agent_type"], "implementer")
         self.assertEqual(record["set"], "acceptance")
-        self.assertEqual(sorted(record["lines"]), sorted([L1, L2]))
+        self.assertEqual(record["lines"], [L1, L2])
         self.assertEqual(record["end"], sha)
         self.assertEqual(record["start"], git(self.repo, "rev-parse", "HEAD~1").strip())
         self.assertEqual(record["attribution"], "transcript")
@@ -366,6 +368,25 @@ class AuditTests(unittest.TestCase):
         code, out = self.audit(self.transcript([claude_line(f"{L1}\n{L2}\n")]))
         self.assertEqual(code, 0, out)
         self.assertIsNone(out["taint"], out)
+
+    def test_no_base_counts_full_history(self) -> None:
+        git(self.repo, "branch", "-m", "main", "master")  # no main, no origin/main: no base
+        self.mark_start("a1")
+        sha = self.commit("src/total.py", "def compute_total(xs):\n    return sum(xs)\n", "add total")
+        code, out = self.audit(self.transcript([claude_line(f"[feat/x {sha[:7]}] add total\n{L1}\n{L2}\n")]))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(taint_state(self.repo)["open"]), 1)
+
+    def test_other_files_read_only_with_two_output_lines(self) -> None:
+        put(self.repo / "notes.txt", "unrelated\n")
+        for output, reads_other in ((f"{L1}\n", False), (f"{L1}\n{L2}\n", True)):
+            with self.subTest(reads_other=reads_other):
+                hook = {"cwd": str(self.repo), "agent_id": "a1", "agent_type": "implementer",
+                        "agent_transcript_path": str(self.transcript([claude_line(output)]))}
+                with mock.patch.object(audit_module, "read_text", wraps=audit_module.read_text) as read:
+                    audit_module.audit(hook)
+                read_paths = {Path(call.args[0]).name for call in read.call_args_list}
+                self.assertEqual("notes.txt" in read_paths, reads_other, read_paths)
 
 
 if __name__ == "__main__":
