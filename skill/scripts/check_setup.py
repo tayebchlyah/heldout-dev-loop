@@ -143,23 +143,40 @@ def check_project_config(repo: Path) -> list[str]:
     return failures
 
 
+GATE_SCRIPT_CALL = re.compile(r"(?:^|\s)(?:\./)?scripts/gate\.sh(?:\s|$)")
+GIT_CALL = re.compile(r"(?:^|[;&|({]|\$\()\s*(?:(?:if|!|then|while|until|exec|command|sudo|env)\s+)*git\b")
+GUARD_PARTS = [
+    re.compile(r"\bexport\b"),
+    re.compile(r"GIT_CONFIG_KEY_[^\s=]+=[\"']?core\.fsmonitor\b"),
+    re.compile(r"GIT_CONFIG_VALUE_[^\s=]+=[\"']?false\b"),
+    re.compile(r"GIT_CONFIG_COUNT="),
+]
+GUARD_MISSING = (
+    "scripts/gate.sh lacks the core.fsmonitor guard: export core.fsmonitor=false through "
+    "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n>, before its first git call"
+)
+GUARD_AFTER_GIT = (
+    "scripts/gate.sh runs git before the core.fsmonitor guard: move the GIT_CONFIG_* export above its first git call"
+)
+
+
 def check_gate_guard(repo: Path) -> list[str]:
-    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_*, unless commands.gate is mapped."""
+    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_* before its first git call.
+
+    Skipped when commands.gate maps a command that does not run scripts/gate.sh."""
     gate = repo / "scripts" / "gate.sh"
-    try:
-        config = json.loads((repo / "dev-loop.json").read_text())
-    except (OSError, ValueError):
-        config = {}
+    config = load_json(repo / "dev-loop.json", [])
     commands = config.get("commands") if isinstance(config, dict) else None
-    if (isinstance(commands, dict) and commands.get("gate")) or not gate.is_file():
+    mapped = commands.get("gate") if isinstance(commands, dict) else None
+    if (isinstance(mapped, str) and mapped and not GATE_SCRIPT_CALL.search(mapped)) or not gate.is_file():
         return []
-    text = gate.read_text(errors="replace")
-    if "core.fsmonitor" in text and "GIT_CONFIG_COUNT" in text:
-        return []
-    return [
-        "scripts/gate.sh lacks the core.fsmonitor guard: export core.fsmonitor=false through "
-        "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n>, before its first git call"
-    ]
+    lines = [line for line in gate.read_text(errors="replace").splitlines() if not line.lstrip().startswith("#")]
+    guard = next((i for i, line in enumerate(lines) if all(part.search(line) for part in GUARD_PARTS)), None)
+    if guard is None:
+        return [GUARD_MISSING]
+    if any(GIT_CALL.search(line) for line in lines[:guard]):
+        return [GUARD_AFTER_GIT]
+    return []
 
 
 def check_claude_settings(path: Path, failures: list[str]) -> None:
