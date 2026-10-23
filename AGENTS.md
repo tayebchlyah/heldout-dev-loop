@@ -14,7 +14,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json` (merged into the project `.claude/settings.json`).
 - `codex/`: Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (kit file `.codex/rules/dev-loop.rules`).
 - `test/*.test.mjs`: installer suite (Node's built-in test runner).
-- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
+- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. Exports `core.fsmonitor=false` through `GIT_CONFIG_*` before its first git call, as `check_setup.py` demands of a project `scripts/gate.sh` when `commands.gate` is unmapped. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `dev-loop.json`: this repo's own project marker, kit version.
 

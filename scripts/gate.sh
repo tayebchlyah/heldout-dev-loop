@@ -6,6 +6,12 @@
 set -u
 cd "$(dirname "$0")/.."
 
+# core.fsmonitor in a user or repo config starts a daemon in each throwaway repo a test makes,
+# and the daemon outlives the test. This override wins over every config file. It comes before
+# the first git call and appends to the caller's own GIT_CONFIG_* entries.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
+
 node=1 py=1
 if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
