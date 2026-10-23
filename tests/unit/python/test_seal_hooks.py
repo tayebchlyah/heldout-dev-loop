@@ -386,6 +386,32 @@ class CanaryScriptTests(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(Path(work, "repo", "dev-loop.json").is_file())
+        self.assertEqual(result.stderr, "")
+
+    def test_a_read_is_detected_when_the_agent_run_is_tainted(self):
+        # An audit record keeps at most 3 lines, so one record may hold another route's token, or none.
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        transcripts, empty = work / "t", work / "empty"
+        empty.mkdir()
+        put(transcripts / "agent.jsonl", '{"out": "TOKREAD line 1"}\n{"out": "TOKOTHER line 1"}\n')
+        tainted, foreign, absent = work / "taint.json", work / "foreign.json", work / "absent.json"
+        tainted.write_text(json.dumps({"records": [{"agent_type": "spec-tester", "set": "source",
+                                                    "lines": ["TOKOTHER line 1"]}]}))
+        foreign.write_text(json.dumps({"records": [{"agent_type": "implementer", "set": "acceptance",
+                                                    "lines": ["TOKREAD line 1"]}]}))
+        for where, taint, token, verdict in [
+            (transcripts, tainted, "TOKREAD", "read-detected"),
+            (transcripts, tainted, "TOKOTHER", "read-detected"),
+            (transcripts, foreign, "TOKREAD", "LEAK"),
+            (transcripts, absent, "TOKREAD", "LEAK"),
+            (transcripts, tainted, "TOKNEVER", "blocked"),
+            (empty, tainted, "TOKREAD", "ERROR"),
+        ]:
+            with self.subTest(where=where.name, taint=taint.name, token=token):
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-verdict", str(where), str(taint),
+                                         "spec-tester", token], capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout), (0, verdict + "\n"), result.stderr)
 
     def test_unknown_flag_is_a_usage_error(self):
         result = subprocess.run(["bash", str(self.script), "--nope"], capture_output=True, text=True)
