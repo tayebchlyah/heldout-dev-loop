@@ -33,7 +33,7 @@ candidates=$(printf '%s' "$input" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  (fields + joins) | join("\n")') || fail "path extraction failed"
+  (fields + joins) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 candidates=$(printf '%s' "$candidates" \
   | tr 'A-Z' 'a-z' \
   | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta')
