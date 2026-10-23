@@ -15,8 +15,8 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `codex/`: Codex payload: agents (`.toml`), hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules` (kit file `.codex/rules/dev-loop.rules`).
 - `tests/unit/python/`: skill suite, `test_dev_loop.py` (imports `test_devloop.py`, `test_board_robust.py`, and the board oracle modules from `skill/scripts/`). `fixtures/`: test data.
 - `tests/unit/node/*.test.mjs`: installer suite and board render unit tests (Node's built-in test runner), `helpers.mjs`.
-- Board oracle tests (`spec-tester`, held out): `skill/scripts/test_board.py`, `skill/scripts/test_board_robustness.py`, `test/board-render.test.mjs`, `test/board-render-robustness.test.mjs`. Feature `held-out-seal` moves them to `tests/acceptance/`.
-- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. Exports `core.fsmonitor=false` through `GIT_CONFIG_*` before its first git call, as `check_setup.py` demands of a project `scripts/gate.sh` when `commands.gate` is unmapped. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `tests/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
+- Board oracle tests (`spec-tester`, held out): `skill/scripts/test_board.py`, `skill/scripts/test_board_robustness.py`, `test/board-render.test.mjs`, `test/board-render-robustness.test.mjs`.
+- `scripts/gate.sh`: repo gate. `dev-loop.json` maps no `commands.gate`, so the hooks and `devloop.py gate` run it: node and skill suites side by side. Exports `core.fsmonitor=false` through `GIT_CONFIG_*` before its first git call, as `check_setup.py` demands of a project `scripts/gate.sh` when `commands.gate` is unmapped. `GATE_SCOPE=changed`: any change runs the node suite, the skill suite only for `skill/`, `claude/`, `codex/`, `bin/`, `lib/`, `tests/unit/python/`, `AGENTS.md`, `package.json`, no change runs neither. `DEVLOOP_REPORT_DIR`: JUnit `node.xml`, `skill.xml`, one `FAILED <class>::<name>` line per failed test.
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `dev-loop.json`: this repo's own project marker, kit version.
 
@@ -33,7 +33,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 ## Build and test
 
 ```bash
-npm test                                # installer suite: node --test tests/unit/node/*.test.mjs test/*.test.mjs
+npm test                                    # node suite: installer and board render tests
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 

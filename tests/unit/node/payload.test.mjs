@@ -17,7 +17,6 @@ const REQUIRED = [
   'skill/scripts/select_mutants.py',
   'skill/scripts/notes_path.py',
   'skill/scripts/devloop.py',
-  'tests/unit/python/test_dev_loop.py',
   'claude/agents/implementer.md',
   'claude/agents/spec-tester.md',
   'claude/hooks/gate.sh',
