@@ -9,6 +9,7 @@ hooks:
       hooks:
         - type: command
           command: "~/.claude/hooks/deny-path.sh tests/acceptance"
+          onFailure: block
 ---
 Read `.agents/skills/dev-loop/references/building.md` and `.agents/skills/dev-loop/references/tests.md` first.
 
