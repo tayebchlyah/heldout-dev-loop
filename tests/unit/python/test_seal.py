@@ -465,6 +465,19 @@ class SealCheckTests(SealRepo):
         git(self.repo, "rebase", "-q", "main")
         self.assertEqual(self.check()[0], 0)
 
+    def test_clean_rebase_that_merges_upstream_into_the_sealed_file_is_ok(self) -> None:
+        """D1: the replayed seal commit gets a new blob, its patch value still matches."""
+        lines = [f"line {n}\n" for n in range(20)]
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, "".join(lines))
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        self.seal(SUITE, "".join(["changed by the feature\n"] + lines[1:]))
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, "".join(lines[:-1] + ["changed upstream\n"]))
+        git(self.repo, "checkout", "-q", "feat/x")
+        git(self.repo, "rebase", "-q", "main")
+        self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
+
     def test_uncommitted_only_with_the_flag(self) -> None:
         self.seal(SUITE, "a\n")
         put(self.repo / f"{ACCEPTANCE_DIR}/x/test_new.py", "n\n")
