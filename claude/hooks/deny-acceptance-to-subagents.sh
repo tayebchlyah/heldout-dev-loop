@@ -55,9 +55,16 @@ if [ "$(echo "$IN" | jq -r '.agent_type // empty')" = "spec-tester" ]; then
   # src or app is not walled whole. Outside a git repo: the cwd itself. Never empty: the command is
   # split into tokens only with a cwd.
   CWD=$(echo "$IN" | jq -r '.cwd // empty')
-  BASE=
+  # An absolute path inside the repo is matched as its repo-relative path, for the same reason.
+  BASE= TOP=
   [ -z "$CWD" ] || BASE=$(git -C "$CWD" rev-parse --show-prefix 2>/dev/null) || BASE=$CWD
-  IN=$(echo "$IN" | jq --arg b "${BASE:-.}" '.cwd = $b' 2>/dev/null) || fail "cannot rewrite cwd"
+  [ -z "$CWD" ] || TOP=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || TOP=
+  IN=$(echo "$IN" | jq --arg b "${BASE:-.}" --arg t "$TOP" '
+  ($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
+    | sort_by(-length)) as $tops
+  # An absolute path in the repo becomes repo-relative; the bare repo top becomes ".".
+  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("") | split($x) | join("."));
+  .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)' 2>/dev/null) || fail "cannot rewrite paths"
 fi
 
 CANDIDATES=$(echo "$IN" | jq -r '
