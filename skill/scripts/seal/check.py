@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
 
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, merge_base, run_git
 from seal.audit import taint_file, taint_state
 from seal.value import commit_entries, commit_patch_value, seal_value
+from seal.weakened import TEST_FILES
 
 TRAILER = re.compile(rf"^{SEAL_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 PATCH = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 
 
-def violation(reason: str, commit: str | None = None, path: str | None = None) -> dict:
-    return {"reason": reason, "commit": commit, "path": path}
+def violation(reason: str, commit: str | None = None, path: str | None = None, commits: list[str] | None = None) -> dict:
+    found = {"reason": reason, "commit": commit, "path": path}
+    return found if commits is None else {**found, "commits": commits}
 
 
 def z_paths(text: str) -> list[str]:
@@ -24,6 +27,7 @@ def z_paths(text: str) -> list[str]:
 def commit_violations(repo: Path, base: str) -> list[dict]:
     found = []
     sealed: dict[str, str] = {}  # path -> its blob (or `deleted`) in the newest valid seal commit
+    seals: set[str] = set()  # the valid seal commits
     # The body, not `%(trailers)`: git sees no trailer block once `This reverts commit` lines share its paragraph.
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
@@ -40,14 +44,22 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
             found.append(violation("bad-seal", commit=sha))
             continue
         sealed.update(entries)
+        seals.add(sha)
     pathspec = f":(top){ACCEPTANCE_DIR}/"
     changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, "HEAD", "--", pathspec).stdout)
     at_head = {}
     for line in z_paths(run_git(repo, "ls-tree", "-r", "-z", "HEAD", "--", pathspec).stdout):
         meta, path = line.split("\t", 1)
         at_head[path] = meta.split()[2]
-    found += [violation("unsealed", path=path) for path in changed if path not in sealed]
-    found += [violation("changed-after-seal", path=path) for path, blob in sorted(sealed.items())
+
+    def commits(path: str) -> list[str]:
+        """D6: the commits that touched the path, valid seal commits left out."""
+        log = run_git(repo, "log", "--reverse", "--format=%H", "--no-renames", f"{base}..HEAD", "--",
+                      f":(top,literal){path}").stdout.split()
+        return [sha for sha in log if sha not in seals]
+
+    found += [violation("unsealed", path=path, commits=commits(path)) for path in changed if path not in sealed]
+    found += [violation("changed-after-seal", path=path, commits=commits(path)) for path, blob in sorted(sealed.items())
               if at_head.get(path, "deleted") != blob]
     return found
 
@@ -55,7 +67,9 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
 def uncommitted_violations(repo: Path) -> list[dict]:
     status = run_git(repo, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all",
                      "--", f":(top){ACCEPTANCE_DIR}/").stdout
-    return [violation("uncommitted", path=entry[3:]) for entry in z_paths(status)]
+    # D4: an untracked path counts only when it is a test file (not `__pycache__/x.pyc`, a fixture, a log).
+    return [violation("uncommitted", path=entry[3:]) for entry in z_paths(status)
+            if not entry.startswith("??") or any(fnmatchcase(PurePosixPath(entry[3:]).name, g) for g in TEST_FILES)]
 
 
 def check(repo: Path, uncommitted: bool) -> dict:
