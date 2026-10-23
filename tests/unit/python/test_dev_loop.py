@@ -96,6 +96,13 @@ ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
 TracksContractTests = test_devloop.TracksContractTests
 SpecGapContractTests = test_devloop.SpecGapContractTests
 
+_seal_tests_spec = importlib.util.spec_from_file_location("test_seal", Path(__file__).resolve().parent / "test_seal.py")
+if _seal_tests_spec is None or _seal_tests_spec.loader is None:
+    raise ImportError("cannot load test_seal module")
+test_seal = importlib.util.module_from_spec(_seal_tests_spec)
+_seal_tests_spec.loader.exec_module(test_seal)
+SealCommandTests = test_seal.SealCommandTests
+
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
