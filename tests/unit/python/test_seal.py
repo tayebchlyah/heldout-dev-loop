@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for devloop.py seal and seal --rebase-continue (the seal package)."""
+"""Tests for devloop.py seal, seal --rebase-continue and audit (the seal package)."""
 
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,8 +15,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
-from test_devloop import git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
+from test_devloop import DEVLOOP, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 from seal import ACCEPTANCE_DIR  # noqa: E402
+from seal.audit import taint_state  # noqa: E402
 from seal.value import commit_entries, seal_value  # noqa: E402
 
 SUITE = f"{ACCEPTANCE_DIR}/x-y/test_flow.py"
@@ -140,6 +144,228 @@ class SealCommandTests(unittest.TestCase):
         code, out = self.seal("--rebase-continue")
         self.assertEqual(code, 1, out)
         self.assertTrue(out.get("error"), out)
+
+
+# Three distinctive lines of a protected file (30 characters or more each).
+L1 = "assert compute_total([3, 4, 5]) == 12  # held-out case one"
+L2 = "assert compute_total([10, 20]) == 30  # held-out case two"
+L3 = "assert compute_total([]) == 0  # held-out case three, empty"
+PROTECTED = f"{ACCEPTANCE_DIR}/x/test_total.py"
+
+
+def claude_line(text: str) -> dict:
+    return {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t", "content": [{"type": "text", "text": text}]}]}}
+
+
+def codex_line(text: str) -> dict:
+    return {"type": "event_msg", "payload": {"type": "item_completed", "item": {
+        "type": "CommandExecution", "command": "cat", "aggregated_output": text}}}
+
+
+class AuditTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name).resolve()
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init", "-q")
+        put(self.repo / "README.md", "readme\n")
+        put(self.repo / PROTECTED, f"def test_total():\n    {L1}\n    {L2}\n    {L3}\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "base")
+        git(self.repo, "checkout", "-q", "-b", "feat/x")
+        self.env = {k: v for k, v in os.environ.items() if k != "DEV_LOOP_NOTES"}
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def head(self) -> str:
+        return git(self.repo, "rev-parse", "HEAD").strip()
+
+    def commit(self, path: str, text: str, message: str) -> str:
+        put(self.repo / path, text)
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", message)
+        return self.head()
+
+    def mark_start(self, agent_id: str) -> None:
+        put(Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop-subagents" / f"{agent_id}.head",
+            self.head() + "\n")
+
+    def transcript(self, lines: list, name: str = "t.jsonl") -> Path:
+        path = self.tmp / name
+        path.write_text("".join((line if isinstance(line, str) else json.dumps(line)) + "\n" for line in lines))
+        return path
+
+    def audit(self, transcript: Path, agent_type: str = "implementer", agent_id: str = "a1") -> tuple[int, dict]:
+        hook = {"hook_event_name": "SubagentStop", "session_id": "s", "cwd": str(self.repo), "agent_id": agent_id,
+                "agent_type": agent_type, "agent_transcript_path": str(transcript)}
+        result = subprocess.run([sys.executable, str(DEVLOOP), "audit"], cwd=self.repo, env=self.env,
+                                input=json.dumps(hook), capture_output=True, text=True, timeout=60)
+        return result.returncode, json.loads(result.stdout)
+
+    def test_claude_two_lines_with_commit_taints(self) -> None:
+        self.mark_start("a1")
+        sha = self.commit("src/total.py", "def compute_total(xs):\n    return sum(xs)\n", "add total")
+        transcript = self.transcript([
+            claude_line(f"[feat/x {sha[:7]}] add total\n 1 file changed"),
+            claude_line(f"     1\tdef test_total():\n     2\t    {L1}\n     3\t    {L2}\n"),
+        ])
+        code, out = self.audit(transcript)
+        self.assertEqual(code, 0, out)
+        record = out["taint"]
+        self.assertEqual(record["agent_id"], "a1")
+        self.assertEqual(record["agent_type"], "implementer")
+        self.assertEqual(record["set"], "acceptance")
+        self.assertEqual(sorted(record["lines"]), sorted([L1, L2]))
+        self.assertEqual(record["end"], sha)
+        self.assertEqual(record["start"], git(self.repo, "rev-parse", "HEAD~1").strip())
+        self.assertEqual(record["attribution"], "transcript")
+        self.assertEqual([c["sha"] for c in record["commits"]], [sha])
+        self.assertTrue(record["commits"][0]["patch_id"])
+        self.assertNotEqual(record["commits"][0]["patch_id"], record["commits"][0]["inverse_patch_id"])
+        self.assertRegex(record["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertEqual(taint_state(self.repo)["open"], [record])
+
+    def test_one_line_or_shared_line_does_not_taint(self) -> None:
+        cases = [
+            ("one line", [claude_line(f"{L1}\n")], None),
+            ("two lines also in README.md", [claude_line(f"{L1}\n{L2}\n")], f"{L1}\n{L2}\n"),
+            ("two lines in the prompt only", [{"type": "user", "message": {"role": "user", "content": f"{L1}\n{L2}"}},
+                                              claude_line("ok")], None),
+        ]
+        for name, lines, readme in cases:
+            with self.subTest(name):
+                put(self.repo / "README.md", readme or "readme\n")
+                code, out = self.audit(self.transcript(lines))
+                self.assertEqual(code, 0, out)
+                self.assertIsNone(out["taint"], out)
+        state = taint_state(self.repo)
+        self.assertEqual(state["open"] + state["closed"], [])
+
+    def test_spec_plan_glossary_lines_excluded(self) -> None:
+        notes = self.tmp / "notes"
+        self.env["DEV_LOOP_NOTES"] = str(notes)
+        shared = f"Quoted: {L1}\nand {L2}\n"
+        cases = [
+            ("spec", notes / "specs" / "20261024 X.md", "---\nfeature: x\n---\n\n# X\n" + shared),
+            ("plan", notes / "plans" / "20261024 X.md", "---\nspec: 20261024 X\n---\n\n# Plan\n" + shared),
+            ("glossary", self.repo / "GLOSSARY.md", "# Glossary\n" + shared),
+        ]
+        put(notes / "specs" / "20261024 X.md", "---\nfeature: x\n---\n\n# X\n")
+        for name, path, text in cases:
+            with self.subTest(name):
+                before = path.read_text() if path.exists() else None
+                put(path, text)
+                code, out = self.audit(self.transcript([claude_line(f"{L1}\n{L2}\n")]))
+                self.assertEqual(code, 0, out)
+                self.assertIsNone(out["taint"], out)
+                if before is None:
+                    path.unlink()
+                else:
+                    put(path, before)
+
+    def test_revert_closes_and_rebase_keeps_open(self) -> None:
+        self.mark_start("a1")
+        sha = self.commit("src/total.py", "def compute_total(xs):\n    return sum(xs)\n", "add total")
+        self.audit(self.transcript([claude_line(f"[feat/x {sha[:7]}] add total\n{L1}\n{L2}\n")]))
+        self.assertEqual(len(taint_state(self.repo)["open"]), 1)
+        git(self.repo, "reset", "-q", "--soft", "HEAD~1")
+        git(self.repo, "commit", "-q", "-m", "add total again")
+        self.assertNotEqual(self.head(), sha)
+        self.assertEqual(len(taint_state(self.repo)["open"]), 1, "re-commit after reset --soft")
+        git(self.repo, "checkout", "-q", "main")
+        self.commit("other.txt", "upstream\n", "upstream")
+        git(self.repo, "checkout", "-q", "feat/x")
+        before = self.head()
+        git(self.repo, "rebase", "-q", "main")
+        self.assertNotEqual(self.head(), before)
+        self.assertEqual(len(taint_state(self.repo)["open"]), 1, "rebase")
+        git(self.repo, "revert", "--no-edit", "HEAD")
+        state = taint_state(self.repo)
+        self.assertEqual(state["open"], [])
+        self.assertEqual(len(state["closed"]), 1)
+
+    def test_codex_spec_tester_source_taint(self) -> None:
+        put(self.repo / "src/y.py", "def compute_total(xs):\n    return sum(x for x in xs if x is not None)\n"
+            "    # running total of every basket line item seen\n")
+        code, out = self.audit(self.transcript([
+            {"type": "session_meta", "payload": {"id": "r"}},
+            codex_line("    return sum(x for x in xs if x is not None)\n    # running total of every basket line item seen\n"),
+        ]), agent_type="spec_tester")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["taint"]["set"], "source")
+        self.assertEqual(out["taint"]["agent_type"], "spec_tester")
+
+    def test_rollout_without_items_is_skipped(self) -> None:
+        code, out = self.audit(self.transcript([
+            {"type": "session_meta", "payload": {"id": "r"}},
+            {"type": "response_item", "payload": {"type": "message", "content": [{"type": "output_text", "text": L1 + L2}]}},
+        ]), agent_type="implementer")
+        self.assertEqual(code, 0, out)
+        self.assertIsNone(out["taint"])
+        self.assertEqual(len(out["skipped"]), 1)
+        self.assertTrue(out["skipped"][0]["reason"])
+        self.assertEqual(taint_state(self.repo)["skipped"], out["skipped"])
+
+    def test_no_commit_record_is_closed(self) -> None:
+        self.mark_start("a1")
+        code, out = self.audit(self.transcript([claude_line(f"{L1}\n{L2}\n{L3}\n")]))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["taint"]["commits"], [])
+        self.assertEqual(len(out["taint"]["lines"]), 3)
+        state = taint_state(self.repo)
+        self.assertEqual((state["open"], state["closed"]), ([], [out["taint"]]))
+
+    def test_spec_tester_revert_then_seal_closes(self) -> None:
+        put(self.repo / "src/y.py", f"# {L1}\n# {L2}\n")
+        self.commit("src/y.py", f"# {L1}\n# {L2}\n", "source")
+        self.mark_start("s1")
+        put(self.repo / f"{ACCEPTANCE_DIR}/x/test_new.py", "def test_new():\n    assert True\n")
+        git(self.repo, "add", "-A")
+        code, sealed = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 0, sealed)
+        transcript = self.transcript([claude_line(f"# {L1}\n# {L2}\n"), claude_line(json.dumps(sealed, indent=2))])
+        code, out = self.audit(transcript, agent_type="spec-tester", agent_id="s1")
+        self.assertEqual([c["sha"] for c in out["taint"]["commits"]], [sealed["commit"]])
+        self.assertEqual(len(taint_state(self.repo)["open"]), 1)
+        git(self.repo, "revert", "--no-commit", sealed["commit"])
+        code, out = run_cli("seal", "--feature", "x", "--message", "revert", "--reverts", sealed["commit"], cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(taint_state(self.repo)["open"], [])
+
+    def test_other_agents_commit_not_listed(self) -> None:
+        self.mark_start("a1")
+        self.mark_start("a2")
+        a = self.commit("src/a.py", "a = 1\n", "A")
+        b = self.commit("src/b.py", "b = 2\n", "B")
+        code, out = self.audit(self.transcript([claude_line(f"[feat/x {a[:7]}] A\n{L1}\n{L2}\n")]), agent_id="a1")
+        self.assertEqual(([c["sha"] for c in out["taint"]["commits"]], out["taint"]["attribution"]), ([a], "transcript"))
+        code, out = self.audit(self.transcript([claude_line(f"{L1}\n{L2}\n")]), agent_id="a2")
+        self.assertEqual(([c["sha"] for c in out["taint"]["commits"]], out["taint"]["attribution"]), ([a, b], "range"))
+
+    def test_broken_transcript_line_is_skipped(self) -> None:
+        cases = [
+            ("broken line between two good ones", [claude_line(f"{L1}\n"), "{not json", claude_line(f"{L2}\n")], True),
+            ("empty file", [], False),
+            ("missing file", None, False),
+        ]
+        for name, lines, tainted in cases:
+            with self.subTest(name):
+                transcript = self.tmp / "missing.jsonl" if lines is None else self.transcript(lines)
+                code, out = self.audit(transcript)
+                self.assertEqual(code, 0, out)
+                self.assertEqual(out["taint"] is not None, tainted, out)
+                self.assertEqual(len(out["skipped"]), 0 if tainted else 1, out)
+
+    def test_binary_and_large_files_ignored(self) -> None:
+        put(self.repo / PROTECTED, "def test_total():\n    pass\n")
+        (self.repo / f"{ACCEPTANCE_DIR}/x/data.bin").write_bytes(b"\0\n" + f"{L1}\n{L2}\n".encode())
+        put(self.repo / f"{ACCEPTANCE_DIR}/x/big.txt", f"{L1}\n{L2}\n" + "#" * (1024 * 1024))
+        code, out = self.audit(self.transcript([claude_line(f"{L1}\n{L2}\n")]))
+        self.assertEqual(code, 0, out)
+        self.assertIsNone(out["taint"], out)
 
 
 if __name__ == "__main__":
