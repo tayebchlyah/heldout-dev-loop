@@ -20,3 +20,5 @@ Test cycle: skill `mattpocock-skills:tdd`. Failing unit test first. Watch it fai
 Satisfy the spec, not the tests you can see.
 
 Contradictory test exit: a failing test you were given contradicts the spec. Stop. Report `CONTRADICTORY_TEST: <test> <spec line>`. Never bend the code to that test.
+
+A guard block or a taint report means stop and report; never rephrase the call.

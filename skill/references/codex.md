@@ -6,9 +6,11 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 - Project agents: `.codex/agents/implementer.toml`, `.codex/agents/spec-tester.toml`, `.codex/agents/task-reviewer.toml`.
 - Review agents: `.codex/agents/final-reviewer.toml`, `.codex/agents/security-reviewer.toml`.
-- Project hooks: `.codex/hooks.json`, plus scripts in `.dev-loop/hooks/codex/`: `gate.sh`, `deny-path.sh`, `git-guard.sh`, `session-start.sh`, and `board.sh`. `PostToolUse` runs `board.sh post-tool` (matcher `Bash`). No `update_plan`: Codex 0.162.1 has no plan tool, the ledger is the record.
+- Project hooks: `.codex/hooks.json`, plus scripts in `.dev-loop/hooks/codex/`: `gate.sh`, `deny-path.sh`, `git-guard.sh`, `acceptance-wall.sh`, `seal.sh`, `session-start.sh`, and `board.sh`. `PostToolUse` runs `board.sh post-tool` (matcher `Bash`). No `update_plan`: Codex 0.162.1 has no plan tool, the ledger is the record.
 - `features.hooks = true`. Trust exact hook definitions through `/hooks` before relying on them.
-- The active `dev-workspace` permission profile extends `:workspace` and denies environment files. No legacy `sandbox_mode` key can remain in a loaded config layer.
+- The active `dev-workspace` permission profile extends `:workspace` and denies environment files. It walls no agent: the walls are hooks. No legacy `sandbox_mode` key can remain in a loaded config layer.
+- Walls: `acceptance-wall.sh` (PreToolUse `Bash|apply_patch`) reads `agent_type`. `spec_tester` cannot name `src/`, `app/`, `backend/` or `frontend/`. Any other subagent cannot name `tests/acceptance`. The main session cannot `apply_patch` a file under `tests/acceptance/`. For `apply_patch` the paths are the file headers, never the patch body. A hook denies with exit 2. `seal.sh start|stop|turn`: the audit and the seal check at SubagentStop and Stop, a taint check at Stop. `stop_hook_active` true skips the block. `git-guard.sh`: only `spec_tester` runs `devloop.py seal`, and it cannot run a plain `git commit`. Minimum codex-cli 0.162.1.
+- Gaps, written down, not closed: a script that copies the seal value method; a script that reads a protected file and prints only a summary; a hook timeout; a rollout in Legacy mode (no audit); acceptance failure text that the controller gives to an implementer in a Stage 6 fix round; a tainted change squashed into another commit (its patch-id changes). Found in the build: a wrapped run (`env`, `uv run`, `python3 -I`, `command git commit`, `timeout 5 git commit`) passes the command-position seal rule, the seal check still catches the commit; `git patch-id` includes context lines, so a revert made after neighbouring edits may not close a taint record, and a rebase over changed context can close one; `seal.sh` exits 0 when `jq` is missing (a Stop hook cannot fail closed), `devloop.py gate` still checks.
 - Command rules prompt for direct pushes and every `git -C` form. They forbid direct hard resets and `rm -rf /`. The trusted Git hook provides defense in depth for wrapped commands.
 - Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
 
@@ -20,7 +22,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - Acceptance author: custom agent `spec_tester`.
 - SDD implementers: custom agent `implementer`.
 - Task reviewers and re-reviewers: custom read-only agent `task_reviewer`.
-- Explicitly request each custom role. A generic worker does not provide the held-out-test wall.
+- Explicitly request each custom role. A generic worker does not provide the held-out-test wall: the wall keys on the custom agent name.
 
 ## Feature gate
 
@@ -30,7 +32,7 @@ Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
    - Invoke skill `code-review` with fixed point `main`.
    - Custom read-only agent `security_reviewer`.
-2. **Triage, controller.** SKILL.md Stage 6.
+2. **Triage, controller.** SKILL.md Stage 6. Read `seal` and `weakened` from the gate JSON.
 3. **Fix wave.** Custom agent `implementer`, one file cluster at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
 4. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
 
