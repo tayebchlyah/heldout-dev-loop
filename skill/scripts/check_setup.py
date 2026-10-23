@@ -179,6 +179,47 @@ def check_gate_guard(repo: Path) -> list[str]:
     return []
 
 
+MIN_VERSIONS = {
+    "claude": ((2, 1, 295), "Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code."),
+    "codex": ((0, 162, 1), "codex-cli {found} is older than 0.162.1 (hooks need agent_type). Update Codex."),
+}
+KIT_GUARDS = (".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/hooks/claude/deny-acceptance-to-subagents.sh")
+WALLED_AGENTS = ("implementer", "spec-tester")
+
+
+def check_version(harness: str) -> list[str]:
+    """D11: the harness binary on PATH must be new enough for the seal hooks."""
+    try:
+        out = subprocess.run([harness, "--version"], capture_output=True, text=True, check=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [f"cannot read the {harness} version: {exc}"]
+    match = re.search(r"\d+(?:\.\d+)+", out)
+    if not match:
+        return [f"cannot read the {harness} version: no version in {out.strip()!r}"]
+    found = match.group()
+    minimum, message = MIN_VERSIONS[harness]
+    return [message.format(found=found)] if tuple(map(int, found.split("."))) < minimum else []
+
+
+def check_on_failure(repo: Path) -> list[str]:
+    """D8: each kit guard hook, in the settings and in the agent frontmatter, carries onFailure: block."""
+    missing = []
+    settings = load_json(repo / ".claude" / "settings.json", [])
+    for entry in settings.get("hooks", {}).get("PreToolUse", []):
+        for hook in entry.get("hooks", []):
+            command = hook.get("command", "")
+            if any(guard in command for guard in KIT_GUARDS) and hook.get("onFailure") != "block":
+                missing.append(command)
+    for name in WALLED_AGENTS:
+        path = repo / ".claude" / "agents" / f"{name}.md"
+        text = path.read_text(errors="replace") if path.is_file() else ""
+        for block in re.split(r"(?m)^\s*- type:", text.partition("\n---\n")[0])[1:]:
+            command = re.search(r"command:\s*(.+)", block)
+            if command and "deny-path.sh" in command.group(1) and not re.search(r"onFailure:\s*[\"']?block[\"']?\s*$", block, re.M):
+                missing.append(command.group(1).strip().strip("'\""))
+    return [f'missing onFailure: "block" on {command}' for command in missing]
+
+
 def check_claude_settings(path: Path, failures: list[str]) -> None:
     settings = load_json(path, failures)
     hooks = settings.get("hooks", {})
@@ -241,7 +282,7 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
             failures.append(f"missing Codex filesystem deny: {pattern}")
 
     hooks = load_json(root / "hooks.json", failures).get("hooks", {})
-    for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStop"]:
+    for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Codex hook event: {event}")
 
@@ -377,7 +418,7 @@ def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list
     failures = check_manifest(repo) + check_user_skill(home) + check_gate_guard(repo)
     if harness == "claude":
         check_claude_settings(repo / ".claude" / "settings.json", failures)
-        return failures + check_claude_repo(repo), []
+        return failures + check_on_failure(repo) + check_claude_repo(repo), []
     root = repo / ".codex"
     failures += check_codex_root(root, root / "rules" / "dev-loop.rules")
     return failures, project_trust_groups(home, repo) + codex_skill_groups(home)
@@ -494,6 +535,7 @@ def main() -> int:
         print(f"- no dev-loop.json in {args.repo}. Run npx github:tchlyah/dev-loop#<tag> init")
         return 1
     failures, action_groups = check_project(args.home, args.repo, args.harness)
+    failures += check_version(args.harness)
     failures += check_notes(args.home, args.repo)
     failures += check_project_config(args.repo)
     failures += check_mutation(args.repo)
