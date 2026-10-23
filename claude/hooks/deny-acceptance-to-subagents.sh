@@ -13,10 +13,9 @@
 # always split a shell command (`cd tests && cat acceptance/x`) or wildcard the
 # suite's own name out of the path (`cat tests/*/x`, or a Grep glob of
 # `tests/*/**`). No substring rule closes those; only a resolve-and-compare
-# check would, and the Codex permission profiles are the real filesystem wall.
+# check would. The walls are hooks; the transcript audit backs them up.
 # Treat a block as a signal to stop and report, never as something to work
-# around: an agent that disguises its input has defeated the only protection
-# the held-out suite has.
+# around: an agent that disguises its input has defeated the hook wall.
 #
 # Match path-bearing fields only, never the whole tool input: a subagent that
 # writes a doc or a config whose BODY names the suite is not reading it, and
