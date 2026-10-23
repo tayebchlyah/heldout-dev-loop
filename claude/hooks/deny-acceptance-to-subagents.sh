@@ -62,8 +62,10 @@ if [ "$(echo "$IN" | jq -r '.agent_type // empty')" = "spec-tester" ]; then
   IN=$(echo "$IN" | jq --arg b "${BASE:-.}" --arg t "$TOP" '
   ($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
     | sort_by(-length)) as $tops
-  # An absolute path in the repo becomes repo-relative; the bare repo top becomes ".".
-  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("") | split($x) | join("."));
+  # Mirrors the rel prelude of codex/hooks/acceptance-wall.sh (separate harness payloads).
+  # "<top>/" becomes "./", never "": a path glued to a flag (-I<top>/src) keeps its segment.
+  # The bare repo top becomes ".".
+  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("./") | split($x) | join("."));
   .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)' 2>/dev/null) || fail "cannot rewrite paths"
 fi
 
