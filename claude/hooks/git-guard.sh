@@ -22,9 +22,9 @@ has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
 block() { echo "$1" >&2; exit 2; }
 
 # 0a. Only spec-tester seals (D5). A typed seal trailer is denied on the raw text, a
-# heredoc message included. Prose that names the trailer passes: only a value counts.
+# heredoc message included. Prose that names the trailer passes: only a colon and a value count.
 TESTER=spec-tester
-[ "$AGENT" != "$TESTER" ] && has 'Dev-Loop-Seal:[[:space:]]*[0-9a-fA-F]{64}' \
+[ "$AGENT" != "$TESTER" ] && has 'Dev-Loop-Seal:[[:space:]]*[^[:space:]]' \
   && block "Blocked: only devloop.py seal, run by spec-tester, writes the Dev-Loop-Seal trailer."
 
 # A heredoc body is text, not commands: every check below reads the line without it.
