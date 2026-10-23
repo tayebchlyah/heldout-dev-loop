@@ -1,6 +1,9 @@
 #!/bin/bash
-# Net for subagents that do not use the implementer definition.
+# Wall around tests/acceptance for every caller but spec-tester (D2).
 # agent_id is present only inside a subagent call.
+# Main session: no Edit, Write or NotebookEdit under tests/acceptance/. Its reads stay
+# open: Stage 6 reads a failing test to classify it. A Bash write is left to seal-check.
+# Subagents: the net below, for those that do not use the implementer definition.
 # spec-tester is exempt: it authors tests/acceptance. Its own frontmatter hook blocks src/.
 #
 # WHAT THIS IS. A workflow guard against a cooperative agent wandering into the
@@ -24,7 +27,25 @@
 # Candidates are normalized before matching, so a trailing slash, a doubled
 # slash, a dot segment or a capital letter does not walk past the wall.
 IN=$(cat)
-[ -z "$(echo "$IN" | jq -r '.agent_id // empty')" ] && exit 0
+# Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
+fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
+command -v jq >/dev/null 2>&1 || fail "jq is missing"
+[ -n "$IN" ] || fail "empty hook input"
+printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
+normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
+
+if [ -z "$(echo "$IN" | jq -r '.agent_id // empty')" ]; then
+  case "$(echo "$IN" | jq -r '.tool_name // empty')" in Edit|Write|NotebookEdit) ;; *) exit 0 ;; esac
+  # The path as given, and joined to cwd when relative.
+  TARGETS=$(echo "$IN" | jq -r '(.cwd // "") as $c
+    | (.tool_input.file_path // .tool_input.notebook_path // "") | select(. != "")
+    | ., (select(startswith("/") | not) | select($c != "") | $c + "/" + .)') || fail "path extraction failed"
+  if printf '%s\n' "$TARGETS" | normalize | grep -Eq '(^|/)tests/acceptance(/|$)'; then
+    echo "Blocked: held-out suite. Only spec-tester writes tests/acceptance. The main session may read it." >&2
+    exit 2
+  fi
+  exit 0
+fi
 [ "$(echo "$IN" | jq -r '.agent_type // empty')" = "spec-tester" ] && exit 0
 
 CANDIDATES=$(echo "$IN" | jq -r '
@@ -48,9 +69,8 @@ CANDIDATES=$(echo "$IN" | jq -r '
     | if $c == "" then [] else
         [$c] + [ $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $c + "/" + . ]
       end;
-  (fields + joins) as $all | ($all + relative($all)) | join("\n")' \
-  | tr 'A-Z' 'a-z' \
-  | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta')
+  (fields + joins) as $all | ($all + relative($all)) | join("\n")') || fail "path extraction failed"
+CANDIDATES=$(printf '%s' "$CANDIDATES" | normalize)
 
 if echo "$CANDIDATES" | grep -q 'tests/acceptance'; then
   echo "Blocked: held-out suite. Subagents cannot read it." >&2
