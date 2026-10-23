@@ -588,7 +588,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
     except ValueError:
         hook = None
     if not isinstance(hook, dict):  # An audit error is a warning: exit 0, as on every skip.
-        return emit({"taint": None, "skipped": [{"reason": "error", "message": "hook input is not a JSON object"}]}, 0)
+        return emit(audit.unparsed(Path.cwd()), 0)
     return emit(audit.audit(hook), 0)
 
 
