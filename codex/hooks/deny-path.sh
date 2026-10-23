@@ -46,8 +46,9 @@ candidates=$(printf '%s' "$candidates" \
 
 for denied in "$@"; do
   needle=$(printf '%s' "$denied" | tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/$||' -e 's/[][\.*^$+?(){}|]/\\&/g')
-  # Whole path segment only: app/ blocks "app/x", "/x/app", "app;" and "'app'", never "mapping" or "application".
-  if printf '%s' "$candidates" | grep -qE -- "(^|[^a-z0-9_.-])${needle}(/|[\"'\`;|&)<>]|\$)"; then
+  # Whole path segment only: app/ blocks "app/x", "/x/app", "app;", "'app'", "app -n" and "app*",
+  # never "mapping" or "application".
+  if printf '%s' "$candidates" | grep -qE -- "(^|[^a-z0-9_.-])${needle}(/|[\"'\`;|&)<>*[:space:]]|\$)"; then
     jq -n --arg reason "Blocked: this agent cannot access $denied" \
       '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$reason}}'
     exit 0
