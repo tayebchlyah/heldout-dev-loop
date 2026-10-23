@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 
-const RENDER = join(dirname(fileURLToPath(import.meta.url)), '..', 'skill', 'scripts', 'board', 'render.js')
+const RENDER = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'skill', 'scripts', 'board', 'render.js')
 
 function load() {
   const ctx = { console }

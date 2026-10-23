@@ -28,7 +28,7 @@ trap 'rm -rf "$out"' EXIT
 report=()
 [ -n "${DEVLOOP_REPORT_DIR:-}" ] && report=(--test-reporter=spec --test-reporter-destination=stdout
   --test-reporter=junit --test-reporter-destination="$DEVLOOP_REPORT_DIR/node.xml")
-[ $node = 1 ] && { node --test ${report[@]+"${report[@]}"} tests/unit/node/*.test.mjs test/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } &
+[ $node = 1 ] && { node --test ${report[@]+"${report[@]}"} tests/unit/node/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } &
 [ $py = 1 ] && { python3 tests/unit/python/test_dev_loop.py >"$out/py" 2>&1; echo $? >"$out/py.exit"; } &
 wait
 
