@@ -2,9 +2,9 @@
 # PreToolUse wall. Deny a tool call whose PATH FIELDS name one of the supplied paths.
 #
 # WHAT THIS IS. A workflow guard, not a security boundary. A shell command can
-# always split or wildcard a path past a substring rule; the Codex permission
-# profiles in config.toml are the real filesystem wall. A block means stop and
-# report, never rephrase the input until it passes.
+# always split or wildcard a path past a substring rule. The walls are hooks;
+# the transcript audit backs them up. A block means stop and report, never
+# rephrase the input until it passes.
 #
 # Path fields only, never the whole tool input: a write whose body mentions a
 # path is not access to it, and blocking that teaches evasion. Path is joined
