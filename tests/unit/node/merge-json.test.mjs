@@ -194,8 +194,8 @@ test('a dev-loop hook entry that differs from the fragment is replaced in place,
   const { value, added, changed } = mergeHooks(current, ownFragment('Read|NotebookEdit|Bash', { onFailure: 'block' }))
   assert.deepEqual(value.PreToolUse, [
     { matcher: 'Read|Bash', hooks: [mine] },
-    { matcher: 'Other', hooks: [mine] },
     { matcher: 'Read|NotebookEdit|Bash', hooks: [{ type: 'command', command: ownCommand, timeout: 5, onFailure: 'block' }] },
+    { matcher: 'Other', hooks: [mine] },
   ])
   assert.deepEqual(added, [])
   assert.deepEqual(changed, [`PreToolUse: ${ownCommand}`])
@@ -220,4 +220,42 @@ test('a Codex hooks file gets the same in-place replacement', () => {
   const result = mergeHooksFile(old, next)
   assert.deepEqual(JSON.parse(result.text).hooks.Stop, [{ hooks: [{ type: 'command', command, timeout: 600 }] }])
   assert.deepEqual(result.updated, [`Stop: ${command}`])
+})
+
+test('a user group that was already empty survives a merge', () => {
+  const empty = { matcher: 'X', hooks: [] }
+  const current = { PreToolUse: [empty, { matcher: 'Bash', hooks: [{ type: 'command', command: 'mine.sh' }] }] }
+  const { value } = mergeHooks(current, ownFragment('Bash', {}))
+  assert.deepEqual(value.PreToolUse[0], empty)
+})
+
+test('an emptied dev-loop group is replaced at its own index between user groups', () => {
+  const one = { matcher: 'One', hooks: [{ type: 'command', command: 'one.sh' }] }
+  const two = { matcher: 'Two', hooks: [{ type: 'command', command: 'two.sh' }] }
+  const current = { PreToolUse: [one, { matcher: 'Read|Bash', hooks: [{ type: 'command', command: ownCommand }] }, two] }
+  const { value, changed } = mergeHooks(current, ownFragment('Read|NotebookEdit|Bash', { onFailure: 'block' }))
+  assert.deepEqual(value.PreToolUse.map((group) => group.matcher), ['One', 'Read|NotebookEdit|Bash', 'Two'])
+  assert.deepEqual(changed, [`PreToolUse: ${ownCommand}`])
+  const again = mergeHooks(value, ownFragment('Read|NotebookEdit|Bash', { onFailure: 'block' }))
+  assert.deepEqual([again.added, again.changed, again.removed], [[], [], []])
+  assert.deepEqual(again.value, value)
+})
+
+test('a replaced hook with an unchanged matcher keeps its index in the group', () => {
+  const mine = { type: 'command', command: 'mine.sh' }
+  const current = { PreToolUse: [{ matcher: 'Bash', hooks: [mine, { type: 'command', command: ownCommand, timeout: 1 }, { type: 'command', command: 'later.sh' }] }] }
+  const { value } = mergeHooks(current, ownFragment('Bash', { timeout: 9 }))
+  assert.deepEqual(value.PreToolUse[0].hooks.map((hook) => hook.command), ['mine.sh', ownCommand, 'later.sh'])
+  assert.equal(value.PreToolUse[0].hooks[1].timeout, 9)
+})
+
+test('one dev-loop command under two matchers stays stable', () => {
+  const fragment = { PostToolUse: [
+    { matcher: 'Bash', hooks: [{ type: 'command', command: ownCommand }] },
+    { matcher: 'TaskCreate|TaskUpdate', hooks: [{ type: 'command', command: ownCommand }] },
+  ] }
+  const first = mergeHooks({}, fragment)
+  const second = mergeHooks(first.value, fragment)
+  assert.deepEqual([second.added, second.changed, second.removed], [[], [], []])
+  assert.deepEqual(second.value, first.value)
 })

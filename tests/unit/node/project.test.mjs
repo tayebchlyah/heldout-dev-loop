@@ -1010,3 +1010,26 @@ test('upgrade of a 2.1.1 Claude project replaces the old deny-acceptance entry w
   assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
+
+test('upgrade of a 2.1.1 Claude project keeps user groups in order and the empty one, new entry at the old index', () => {
+  const { home, repo } = setup()
+  run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=claude'])
+  const settings = join(repo, '.claude/settings.json')
+  const custom = readJson(settings)
+  const index = custom.hooks.PreToolUse.findIndex((entry) => entry.hooks.some((hook) => hook.command.includes('deny-acceptance-to-subagents.sh')))
+  const group = custom.hooks.PreToolUse[index]
+  group.hooks = group.hooks.filter((hook) => hook.command.includes('deny-acceptance-to-subagents.sh'))
+  group.matcher = 'Read|Edit|Write|Grep|Glob|Bash'
+  for (const hook of group.hooks) delete hook.onFailure
+  const before = { matcher: 'MineBefore', hooks: [{ type: 'command', command: 'echo before' }] }
+  const empty = { matcher: 'X', hooks: [] }
+  const after = { matcher: 'MineAfter', hooks: [{ type: 'command', command: 'echo after' }] }
+  custom.hooks.PreToolUse.splice(index, 1, before, group, empty, after)
+  writeFileSync(settings, JSON.stringify(custom, null, 2))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const matchers = readJson(settings).hooks.PreToolUse.map((entry) => entry.matcher)
+  const at = matchers.indexOf('Read|Edit|Write|NotebookEdit|Grep|Glob|Bash')
+  assert.deepEqual(matchers.slice(at - 1, at + 3), ['MineBefore', 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash', 'X', 'MineAfter'])
+  assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
+})
