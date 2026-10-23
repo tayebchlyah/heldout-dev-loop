@@ -21,14 +21,11 @@ from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
-# The board oracle modules (held out) live in tests/acceptance; this file imports their helpers.
-sys.path.insert(1, str(Path(__file__).resolve().parents[3] / "tests" / "acceptance"))
+sys.path.insert(1, str(Path(__file__).resolve().parent))
 from board import server, state as board_state
-import test_board
-from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,
-                        read_note, slow, snapshot)
-import test_board_robustness as oracle
-from test_board_robustness import yaml_block
+from board_fixtures import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, BoardHookFixture, RobustBoard,
+                            RobustnessHookFixture, epoch, git, health, note_name, note_text, put, read_note, set_time,
+                            slow, snapshot, yaml_block)
 
 
 class BoardRobustTests(Board):
@@ -660,7 +657,7 @@ class BoardRobustTests(Board):
         self.assertEqual(state["sessions"]["sess-north"]["feature"], "gadget")  # The control: a string id maps.
 
 
-class BoardTaskStateTests(oracle.RobustBoard):
+class BoardTaskStateTests(RobustBoard):
     def test_briefs_written_up_front_give_one_doing_task(self) -> None:
         """SDD preflight writes every brief at once: the native list names the doing task; with no native list, the
         first task with a brief and no `complete` line."""
@@ -686,7 +683,7 @@ class BoardTaskStateTests(oracle.RobustBoard):
         for name, at in {"task-1-brief.md": now - 3 * 3600, "task-2-brief.md": now - 3 * 3600,
                          "task-1-tests.log": now - 3600}.items():
             put(folder / name, f"{name}\n")
-            oracle.set_time(folder / name, at)
+            set_time(folder / name, at)
         self.ledger(wt, plan, "Task 1: complete")
         self.ok(cwd=wt)
         tasks = self.own_note("gadget")["tasks"]
@@ -699,14 +696,14 @@ class BoardTaskStateTests(oracle.RobustBoard):
         folder = self.sdd(wt, plan)
         self.ledger(wt, plan)
         put(folder / "task-2-brief.md", "task-2-brief.md\n")
-        oracle.set_time(folder / "task-2-brief.md", time.time() - 3 * 3600)
+        set_time(folder / "task-2-brief.md", time.time() - 3 * 3600)
         self.native("sess-north", ("Task 1: Step 1", "completed"), ("Task 2: Step 2", "in_progress"))
         before = int(time.time())  # Note times have whole seconds.
         self.hook_event("prompt", wt, "sess-north")
         self.ok(cwd=wt)
         after = time.time()
         self.assertEqual(self.states("gadget"), ["todo", "doing"])
-        started = oracle.epoch(self.own_note("gadget")["tasks"][1]["started"])
+        started = epoch(self.own_note("gadget")["tasks"][1]["started"])
         self.assertTrue(before <= started <= after, f"Task 2 started {started} not in the runs [{before}, {after}]")
 
     def test_saved_start_stays_when_the_previous_task_finishes_later(self) -> None:
@@ -719,7 +716,7 @@ class BoardTaskStateTests(oracle.RobustBoard):
         self.ok(cwd=wt)
         first = self.own_note("gadget")["tasks"][1]["started"]
         put(folder / "task-1-tests.log", "tests\n")
-        oracle.set_time(folder / "task-1-tests.log", time.time() + 600)
+        set_time(folder / "task-1-tests.log", time.time() + 600)
         self.ledger(wt, plan, "Task 1: complete")
         self.ok(cwd=wt)
         self.assertEqual(self.own_note("gadget")["tasks"][1]["started"], first)
@@ -751,12 +748,8 @@ class BoardTaskStateTests(oracle.RobustBoard):
 
 
 
-class HookFilterTests(unittest.TestCase):
+class HookFilterTests(RobustnessHookFixture, unittest.TestCase):
     """D11: `board.sh post-tool` filter, in the oracle hook sandbox (a fake devloop.py logs each call)."""
-    setUp = oracle.RobustnessHookTests.setUp
-    fake = oracle.RobustnessHookTests.fake
-    board_sh = oracle.RobustnessHookTests.board_sh
-    calls = oracle.RobustnessHookTests.calls
 
     @slow
     def test_git_dash_c_commit_and_worktree_add_start_board(self) -> None:
@@ -780,7 +773,7 @@ class VersionKeyTests(unittest.TestCase):
         self.assertEqual(store.version_key("abc"), ())
 
 
-class BoardSubagentTests(oracle.RobustBoard):
+class BoardSubagentTests(RobustBoard):
     """A Stop while a subagent of the session runs (SubagentStart seen, no SubagentStop yet) waits for nobody."""
 
     def agent(self, name: str, cwd: Path, agent_id: str | None, session: str = "session-1", **extra: str) -> dict:
@@ -835,7 +828,7 @@ class BoardSubagentTests(oracle.RobustBoard):
             session_log = Path(tmp) / "s1.jsonl"
             log = Path(tmp) / "s1" / "subagents" / "agent-a1.jsonl"
             put(log, "{}\n")
-            oracle.set_time(log, 5000)
+            set_time(log, 5000)
             data: dict = {"sessions": {}}
             board_state.agent_started(data, "s1", "a1", "2026-01-01T00:00:00Z", 1000.0, str(session_log))
             board_state.agent_started(data, "s1", "a2", "2026-01-01T00:00:00Z", 1000.0, None)
@@ -851,13 +844,8 @@ class BoardSubagentTests(oracle.RobustBoard):
         self.assertEqual(self.note("alpha")["waiting"], "")
 
 
-class SnapshotBoardHookTests(unittest.TestCase):
+class SnapshotBoardHookTests(BoardHookFixture, unittest.TestCase):
     """gate-snapshot.sh (Claude SubagentStart) runs `board --event subagent-start`. Fixture of the board hook tests."""
-
-    setUp = test_board.BoardHookTests.setUp
-    hook = test_board.BoardHookTests.hook
-    calls = test_board.BoardHookTests.calls
-    assert_board_event = test_board.BoardHookTests.assert_board_event
 
     @slow
     def test_subagent_start_runs_board(self) -> None:
