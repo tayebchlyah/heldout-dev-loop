@@ -12,6 +12,15 @@ from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
+TRAILERS = re.compile(rf"^({SEAL_TRAILER}|{PATCH_TRAILER}):")
+PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+
+
+def split_last(message: str) -> tuple[str, str]:
+    """The message up to and including the break before its last paragraph, and that last paragraph."""
+    text = message.rstrip()
+    breaks = list(PARAGRAPH_BREAK.finditer(text))
+    return (text[:breaks[-1].end()], text[breaks[-1].end():]) if breaks else ("", text)
 
 
 def seal_value(entries: list[tuple[str, str]]) -> str:
@@ -106,12 +115,19 @@ def rebase_continue(repo: Path) -> dict:
     entries, error = checked_index(repo)
     if error:
         return {"error": error}
-    value = seal_value(entries)
     message_file = state / "message"
     old = message_file.read_text(encoding="utf-8") if message_file.exists() else ""
-    line = f"{SEAL_TRAILER}: {value}"
-    new = TRAILER_LINE.sub(line, old, count=1) if TRAILER_LINE.search(old) else f"{old.rstrip()}\n{line}\n"
-    message_file.write_text(new, encoding="utf-8")
+    # The `# Conflicts:` paragraph git appends: comment lines, stripped at the commit anyway.
+    # shortcut: `#` only, read core.commentChar if a project sets another one.
+    head, last = split_last("".join(line for line in old.splitlines(True) if not line.startswith("#")))
+    if not TRAILER_LINE.search(last):
+        return {"error": "the stopped commit is not a seal commit"}
+    if not entries:
+        return {"error": f"no staged change under {ACCEPTANCE_DIR}/"}
+    value = seal_value(entries)
+    trailers = f"{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {staged_patch_value(repo)}"
+    kept = "\n".join(line for line in last.splitlines() if not TRAILERS.match(line))
+    message_file.write_text(f"{head}{kept}\n{trailers}\n".lstrip("\n"), encoding="utf-8")
     result = run_git(repo, "-c", "core.editor=true", "rebase", "--continue", env={**os.environ, "GIT_EDITOR": "true"})
     files = sorted(path for path, _ in entries)
     if result.returncode == 0:
