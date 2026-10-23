@@ -5,7 +5,9 @@ Read this file only in Claude Code. Preserve these names and walls.
 ## Setup contract
 
 - Project agents: `.claude/agents/implementer.md`, `.claude/agents/spec-tester.md`.
-- Project hooks: `.dev-loop/hooks/claude/gate.sh`, `gate-snapshot.sh`, `tree-hash.sh`, `deny-path.sh`, `deny-acceptance-to-subagents.sh`, `git-guard.sh`, `board.sh`. `PostToolUse` runs `board.sh post-tool` (matchers `Bash`, `TaskCreate|TaskUpdate`).
+- Project hooks: `.dev-loop/hooks/claude/gate.sh`, `gate-snapshot.sh`, `tree-hash.sh`, `deny-path.sh`, `deny-acceptance-to-subagents.sh`, `git-guard.sh`, `seal.sh`, `board.sh`. `PostToolUse` runs `board.sh post-tool` (matchers `Bash`, `TaskCreate|TaskUpdate`).
+- Walls and seal: `deny-acceptance-to-subagents.sh` denies `Edit`, `Write` and `NotebookEdit` under `tests/acceptance/` to the main session and every subagent but `spec-tester`; reads stay open. `git-guard.sh`: only `spec-tester` runs `devloop.py seal` (it cannot run a plain `git commit`). Every guard entry carries `onFailure: "block"` and exits 2 on an internal error. `seal.sh stop` (SubagentStop) runs the audit and the seal check, `seal.sh turn` (Stop) the seal check and the taint check. `stop_hook_active` true skips the block, as `gate.sh` does. `gate-snapshot.sh` (SubagentStart) writes `<git-dir>/dev-loop-subagents/<agent_id>.head`. Minimum Claude Code 2.1.295.
+- Gaps (full list in `codex.md`): a wrapped run (`env`, `uv run`) passes the command-position seal rule, the seal check still catches the commit; `git patch-id` includes context lines, so a revert after neighbouring edits may not close a taint record; `seal.sh` exits 0 when `jq` is missing (a Stop hook cannot fail closed), `devloop.py gate` still checks.
 - Repo settings: `.claude/settings.json` denies `Agent(caveman:cavecrew-reviewer)`, `Agent(caveman:cavecrew-builder)`, and `Agent(caveman:cavecrew-investigator)`. It sets `ENABLE_STOP_REVIEW=0`, `ENABLE_COMMIT_REVIEW=0`, `SG_PUSH_SWEEP=0`, and `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (the `TaskCreate`/`TaskUpdate` checklist).
 - User deny list keeps `Skill(superpowers:verification-before-completion)`, `Read(./.env)`, and `Read(./.env.*)`.
 - Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .`.
@@ -36,6 +38,6 @@ Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
 
 No `/verify` step. `/verify` is a real bundled skill but user-invoked only; the model cannot call it. Playwright E2E is the model's live check. The user may type `/verify` after the gate.
 
-Controller never edits `tests/acceptance/` in this stage. An unplanned deployment or infra gap discovered by the gate is a new slice, not a fix round. Deployment or infra work explicitly named in the approved spec or plan stays in the current slice and is implemented normally.
+Controller never edits `tests/acceptance/` in this stage. Read `seal` and `weakened` from the gate JSON in triage. An unplanned deployment or infra gap discovered by the gate is a new slice, not a fix round. Deployment or infra work explicitly named in the approved spec or plan stays in the current slice and is implemented normally.
 
 Never invoke `superpowers:verification-before-completion`. The shell gate owns verification.
