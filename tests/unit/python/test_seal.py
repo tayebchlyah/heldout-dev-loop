@@ -512,6 +512,22 @@ class SealCheckTests(SealRepo):
         git(self.repo, "rebase", "-q", "main")
         self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
 
+    def test_seal_after_hooks_that_change_the_files_and_the_message_is_ok(self) -> None:
+        """D3: pre-commit rewrites the staged blobs, commit-msg appends a paragraph after the trailers."""
+        hooks = Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "hooks"
+        put(hooks / "pre-commit", "#!/bin/sh\ngit diff --cached --name-only -z -- tests/acceptance/ |"
+            " xargs -0 -I{} sh -c 'echo hooked >> \"{}\" && git add -- \"{}\"'\n")
+        put(hooks / "commit-msg", "#!/bin/sh\nprintf '\\nAppended by a hook.\\n' >> \"$1\"\n")
+        for hook in ("pre-commit", "commit-msg"):
+            (hooks / hook).chmod(0o755)
+        put(self.repo / SUITE, "a\n")
+        git(self.repo, "add", "--", SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["commit"], git(self.repo, "rev-parse", "HEAD").strip())
+        self.assertEqual(git(self.repo, "show", f"HEAD:{SUITE}"), "a\nhooked\n")
+        self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
+
     def test_uncommitted_only_with_the_flag(self) -> None:
         self.seal(SUITE, "a\n")
         put(self.repo / f"{ACCEPTANCE_DIR}/x/test_new.py", "n\n")
