@@ -130,9 +130,12 @@ def commit_record(repo: Path, sha: str) -> dict:
             "inverse_patch_id": inverse[0][0] if inverse else None}
 
 
-def tainted_commits(repo: Path, start: str, end: str, outputs: list[str]) -> tuple[list[str], str]:
-    """D24: the commits of start..end whose sha is in the subagent's own output, else all of them."""
-    in_range = run_git(repo, "rev-list", "--reverse", f"{start}..{end}").stdout.split() if start != end else []
+def tainted_commits(repo: Path, start: str | None, end: str, outputs: list[str]) -> tuple[list[str], str]:
+    """D24: the commits of start..end whose sha is in the subagent's own output, else all of them.
+
+    No start: all of the history of end."""
+    in_range = run_git(repo, "rev-list", "--reverse", f"{start}..{end}" if start else end).stdout.split() \
+        if start != end else []
     shown = {a or b for text in outputs for a, b in COMMIT_SHA.findall(text)}
     own = [sha for sha in in_range if any(sha.startswith(short) for short in shown)]
     return (own, "transcript") if own else (in_range, "range" if in_range else "transcript")
@@ -148,13 +151,16 @@ def load(path: Path) -> dict:
 
 
 def append(repo: Path, key: str, entry: dict) -> None:
-    """Add one entry under the lock (parallel SubagentStop hooks), written through a temp file and a rename."""
+    """Add one entry under the lock (parallel SubagentStop hooks), written through a temp file and a rename.
+
+    An entry of the same agent under the same key is replaced: each re-stop audits the whole transcript again."""
     path = taint_file(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path.with_name("taint.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         data = load(path)
-        data[key].append(entry)
+        agent_id = entry.get("agent_id")
+        data[key] = [old for old in data[key] if agent_id is None or old.get("agent_id") != agent_id] + [entry]
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".taint.")
         with os.fdopen(fd, "w", encoding="utf-8") as out:
             json.dump(data, out, indent=2)
@@ -192,7 +198,8 @@ def audit(hook: dict) -> dict:
         if len(lines) < MIN_MATCHES:
             return {"taint": None, "skipped": []}
         head_file = git_dir(repo) / "dev-loop-subagents" / f"{agent_id}.head"
-        start = head_file.read_text().strip() if agent_id and head_file.is_file() else end
+        # No .head (D2): from `<base>`, else the root, never an empty range that closes the record.
+        start = head_file.read_text().strip() if agent_id and head_file.is_file() else merge_base(repo)
         shas, attribution = tainted_commits(repo, start, end, outputs)
         record = {**base, "set": "source" if source else "acceptance", "lines": lines, "start": start, "end": end,
                   "commits": [commit_record(repo, sha) for sha in shas], "attribution": attribution}
@@ -200,6 +207,21 @@ def audit(hook: dict) -> dict:
         return {"taint": record, "skipped": []}
     except Exception as exc:  # An audit error is a warning, never a block.
         return skip("error", f"{type(exc).__name__}: {exc}")
+
+
+def unparsed(cwd: Path) -> dict:
+    """The skip for hook input that is no JSON object, written (best effort) to the repo of the process cwd."""
+    entry = {"reason": "error", "message": "hook input is not a JSON object"}
+    top = run_git(cwd, "rev-parse", "--show-toplevel")
+    if top.returncode == 0:
+        repo = Path(top.stdout.strip())
+        entry = {"agent_id": None, "agent_type": None, "at": now(), **entry,
+                 "end": run_git(repo, "rev-parse", "HEAD").stdout.strip()}
+        try:
+            append(repo, "skipped", entry)
+        except Exception:
+            pass  # An unreadable taint.json: the skip still reaches the hook output.
+    return {"taint": None, "skipped": [entry]}
 
 
 def taint_state(repo: Path) -> dict:
