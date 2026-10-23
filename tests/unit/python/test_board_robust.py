@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
 from board import server, state as board_state
 import test_board
 from test_board import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,

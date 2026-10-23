@@ -278,6 +278,14 @@ class BoardVaultCheckTests(unittest.TestCase):
             self.assertNotIn(self.GITIGNORE_LINE, head)
 
 
+class BoardRobustImportTests(unittest.TestCase):
+    def test_board_robust_imports_in_a_fresh_interpreter(self) -> None:
+        path = Path(__file__).resolve().parent / "test_board_robust.py"
+        code = f"import runpy; runpy.run_path({str(path)!r}, run_name='probe')"
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class UsesDevLoopTests(unittest.TestCase):
     def uses(self, files: dict[str, str]) -> bool:
         with tempfile.TemporaryDirectory() as tmp:

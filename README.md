@@ -101,7 +101,7 @@ cd ~/Projects/tchlyah/dev-loop
 To try a change in a project, run `node ~/Projects/tchlyah/dev-loop/bin/install.mjs init` (or `upgrade`) from the project's top level.
 
 ```bash
-npm test                                # installer suite
+npm test                                    # node suite: installer and board render tests
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
