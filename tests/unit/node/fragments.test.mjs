@@ -1,7 +1,7 @@
 // tests/unit/node/fragments.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -273,36 +273,17 @@ test('the Codex TOML fragment puts its root keys before the first table', () => 
   const root = lines.slice(0, firstTable).join('\n')
   assert.ok(root.includes('default_permissions = "dev-workspace"'))
   assert.ok(text.includes('[permissions.dev-workspace]'))
-  assert.ok(text.includes('[permissions.dev-implementer]'))
-  assert.ok(text.includes('[permissions.dev-spec-tester]'))
   assert.ok(text.includes('[features]'))
 })
 
-test('the Codex TOML fragment denies the held-out suite for dev-implementer and sources for dev-spec-tester', () => {
+test('the Codex TOML fragment has none of the per-agent profiles Codex never applied', () => {
   const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
-  const lines = text.split('\n')
+  for (const name of ['dev-implementer', 'dev-spec-tester', 'dev-read-only']) assert.ok(!text.includes(name), name)
+})
 
-  const sectionBody = (header) => {
-    const start = lines.findIndex((line) => line.trim() === header)
-    assert.ok(start >= 0, `missing section ${header}`)
-    const rest = lines.slice(start + 1)
-    let end = rest.findIndex((line) => line.trimStart().startsWith('['))
-    if (end === -1) end = rest.length
-    return rest.slice(0, end).join('\n')
-  }
-
-  const implementerRoots = sectionBody(
-    '[permissions.dev-implementer.filesystem.":workspace_roots"]',
-  )
-  assert.match(implementerRoots, /"tests\/acceptance"\s*=\s*"deny"/)
-  assert.match(implementerRoots, /"tests\/acceptance\/\*\*"\s*=\s*"deny"/)
-
-  const specTesterRoots = sectionBody(
-    '[permissions.dev-spec-tester.filesystem.":workspace_roots"]',
-  )
-  for (const dir of ['src', 'app', 'backend', 'frontend']) {
-    assert.match(specTesterRoots, new RegExp(`"${dir}"\\s*=\\s*"deny"`))
-    assert.match(specTesterRoots, new RegExp(`"${dir}/\\*\\*"\\s*=\\s*"deny"`))
+test('no Codex agent file sets default_permissions', () => {
+  for (const name of readdirSync(join(repoRoot, 'codex/agents'))) {
+    assert.doesNotMatch(readFileSync(join(repoRoot, 'codex/agents', name), 'utf8'), /^\s*default_permissions\s*=/m, name)
   }
 })
 

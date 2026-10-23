@@ -522,17 +522,17 @@ class SkillContractTests(unittest.TestCase):
 
     def test_codex_agent_assets_parse_and_preserve_roles(self) -> None:
         expected = {
-            "implementer.toml": ("implementer", "dev-implementer"),
-            "spec-tester.toml": ("spec_tester", "dev-spec-tester"),
-            "task-reviewer.toml": ("task_reviewer", "dev-read-only"),
-            "final-reviewer.toml": ("final_reviewer", "dev-read-only"),
-            "security-reviewer.toml": ("security_reviewer", "dev-read-only"),
+            "implementer.toml": "implementer",
+            "spec-tester.toml": "spec_tester",
+            "task-reviewer.toml": "task_reviewer",
+            "final-reviewer.toml": "final_reviewer",
+            "security-reviewer.toml": "security_reviewer",
         }
-        for filename, (name, permissions) in expected.items():
+        for filename, name in expected.items():
             with self.subTest(filename=filename):
                 parsed = tomllib.loads((CODEX_ASSETS / "agents" / filename).read_text())
                 self.assertEqual(parsed["name"], name)
-                self.assertEqual(parsed["default_permissions"], permissions)
+                self.assertNotIn("default_permissions", parsed)
                 self.assertTrue(parsed["description"])
                 self.assertTrue(parsed["developer_instructions"])
 
@@ -1731,10 +1731,15 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.edit_codex_config('"**/.env.*" = "deny"\n', "")
         self.assert_codex_failure("missing Codex filesystem deny: **/.env.*")
 
-    def test_codex_missing_implementer_acceptance_wall_fails(self) -> None:
+    def test_codex_checker_asks_for_no_agent_profiles(self) -> None:
         self.init("codex")
-        self.edit_codex_config('"tests/acceptance/**" = "deny"\n', "")
-        self.assert_codex_failure("missing Codex role deny in dev-implementer: tests/acceptance/**")
+        config = self.repo / ".codex" / "config.toml"
+        text = config.read_text()
+        self.assertNotIn("dev-implementer", text)
+        self.assertNotIn("default_permissions", (self.repo / ".codex" / "agents" / "implementer.toml").read_text())
+        result = self.run_checker("codex")
+        for word in ("dev-implementer", "dev-spec-tester", "dev-read-only", "permission profile: expected"):
+            self.assertNotIn(word, result.stdout)
 
     def test_codex_missing_push_prompt_rule_fails(self) -> None:
         self.init("codex")

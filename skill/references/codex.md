@@ -8,8 +8,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - Review agents: `.codex/agents/final-reviewer.toml`, `.codex/agents/security-reviewer.toml`.
 - Project hooks: `.codex/hooks.json`, plus scripts in `.dev-loop/hooks/codex/`: `gate.sh`, `deny-path.sh`, `git-guard.sh`, `session-start.sh`, and `board.sh`. `PostToolUse` runs `board.sh post-tool` (matcher `Bash`). No `update_plan`: Codex 0.162.1 has no plan tool, the ledger is the record.
 - `features.hooks = true`. Trust exact hook definitions through `/hooks` before relying on them.
-- The active `dev-workspace` permission profile extends `:workspace` and denies environment files. `dev-read-only` preserves the same denies for reviewers. No legacy `sandbox_mode` key can remain in a loaded config layer.
-- `dev-implementer` denies `tests/acceptance` through filesystem policy. `dev-spec-tester` denies `src`, `app`, `backend`, and `frontend` through filesystem policy. These walls do not depend on command spelling or hook trust.
+- The active `dev-workspace` permission profile extends `:workspace` and denies environment files. No legacy `sandbox_mode` key can remain in a loaded config layer.
 - Command rules prompt for direct pushes and every `git -C` form. They forbid direct hard resets and `rm -rf /`. The trusted Git hook provides defense in depth for wrapped commands.
 - Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
 
