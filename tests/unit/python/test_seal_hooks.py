@@ -502,6 +502,21 @@ class CanaryScriptTests(unittest.TestCase):
                                          "spec-tester", token], capture_output=True, text=True)
                 self.assertEqual((result.returncode, result.stdout), (0, verdict + "\n"), result.stderr)
 
+    def test_main_session_denial_text_of_either_wall_reads_as_blocked(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        for name, text, verdict in [
+            ("claude", "Blocked: held-out suite. Only spec-tester writes tests/acceptance. The main session may read it.", "blocked"),
+            ("claude-path", "Blocked: tests/acceptance is outside this agent's territory.", "blocked"),
+            ("codex", "Blocked: this agent cannot access tests/acceptance", "blocked"),
+            ("none", "edit applied", "ERROR"),
+        ]:
+            with self.subTest(name=name):
+                put(work / name / "main.jsonl", json.dumps({"out": text}) + "\n")
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-main", str(work / name)],
+                                        capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout), (0, verdict + "\n"), result.stderr)
+
     def test_unknown_flag_is_a_usage_error(self):
         result = subprocess.run(["bash", str(self.script), "--nope"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
