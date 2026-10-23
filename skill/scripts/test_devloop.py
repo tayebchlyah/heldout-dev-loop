@@ -16,6 +16,19 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+# core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
+# The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
+_GIT_CONFIG_COUNT = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+if not any(
+    os.environ.get(f"GIT_CONFIG_KEY_{i}") == "core.fsmonitor" and os.environ.get(f"GIT_CONFIG_VALUE_{i}") == "false"
+    for i in range(_GIT_CONFIG_COUNT)
+):
+    os.environ.update({
+        f"GIT_CONFIG_KEY_{_GIT_CONFIG_COUNT}": "core.fsmonitor",
+        f"GIT_CONFIG_VALUE_{_GIT_CONFIG_COUNT}": "false",
+        "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
+    })
+
 DEVLOOP = Path(__file__).resolve().parent / "devloop.py"
 
 
