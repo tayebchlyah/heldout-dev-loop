@@ -536,6 +536,38 @@ class SealCheckTests(SealRepo):
         self.assertEqual(sorted(self.violations("--uncommitted")), [
             ("uncommitted", None, SUITE), ("uncommitted", None, f"{ACCEPTANCE_DIR}/x/test_new.py")])
 
+    def test_uncommitted_untracked_counts_test_files_only(self) -> None:
+        """D4: tracked changes count, an untracked path counts only when its name matches a test glob."""
+        data = f"{ACCEPTANCE_DIR}/x/data.json"
+        self.seal(data, "{}\n")
+        cases = [
+            ("untracked bytecode", f"{ACCEPTANCE_DIR}/x/__pycache__/x.pyc", False),
+            ("untracked fixture", f"{ACCEPTANCE_DIR}/x/fixture.json", False),
+            ("untracked test_*.py", f"{ACCEPTANCE_DIR}/x/test_new.py", True),
+            ("untracked *_test.go", f"{ACCEPTANCE_DIR}/x/flow_test.go", True),
+            ("untracked *.spec.*", f"{ACCEPTANCE_DIR}/x/flow.spec.ts", True),
+            ("tracked fixture changed", data, True),
+        ]
+        for name, path, counted in cases:
+            with self.subTest(name):
+                git(self.repo, "checkout", "-q", "--", data)
+                git(self.repo, "clean", "-qfdx")
+                put(self.repo / path, "changed\n")
+                self.assertEqual(self.violations("--uncommitted"), [("uncommitted", None, path)] if counted else [])
+
+    def test_offending_commits_listed(self) -> None:
+        """D6: unsealed and changed-after-seal list the non-seal commits that touched the path, no valid seal."""
+        sealed = self.seal(SUITE, "a\n")
+        git(self.repo, "revert", "--no-commit", sealed)
+        code, out = run_cli("seal", "--feature", "x", "--message", "revert", "--reverts", sealed, cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        after = self.commit(SUITE, "after the revert seal\n")
+        other = f"{ACCEPTANCE_DIR}/x/test_other.py"
+        unsealed = self.commit(other, "unsealed\n")
+        self.assertEqual(self.check()[1]["violations"], [
+            {"reason": "unsealed", "commit": None, "path": other, "commits": [unsealed]},
+            {"reason": "changed-after-seal", "commit": None, "path": SUITE, "commits": [after]}])
+
     def test_no_base_is_ok(self) -> None:
         git(self.repo, "branch", "-m", "main", "trunk")  # no main, no origin/main: no base
         self.commit(SUITE, "unsealed\n")
