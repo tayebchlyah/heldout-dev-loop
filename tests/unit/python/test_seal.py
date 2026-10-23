@@ -20,7 +20,7 @@ from test_devloop import DEVLOOP, git, put, run_cli  # noqa: E402  (also sets th
 from seal import ACCEPTANCE_DIR  # noqa: E402
 from seal import audit as audit_module  # noqa: E402
 from seal.audit import taint_state  # noqa: E402
-from seal.value import commit_entries, seal_value  # noqa: E402
+from seal.value import commit_entries, commit_patch_value, seal_value  # noqa: E402
 
 SUITE = f"{ACCEPTANCE_DIR}/x-y/test_flow.py"
 
@@ -119,18 +119,27 @@ class SealCommandTests(unittest.TestCase):
         self.assertEqual(out["files"], [path])
         self.assertEqual(out["seal"], lines_value([f"{path} {blob}"]))
 
-    def test_rebase_continue_rewrites_the_trailer(self) -> None:
+    def conflicting_rebase(self, message: str = "seal", sealed: bool = True) -> None:
+        """A feature commit of SUITE, `main` changes SUITE too: `git rebase main` stops on it."""
         self.stage(SUITE, "base\n")
         git(self.repo, "commit", "-q", "-m", "suite")
         git(self.repo, "checkout", "-q", "-b", "feat/x-y")
         self.stage(SUITE, "feature\n")
-        self.assertEqual(self.seal("--feature", "x-y", "--message", "seal")[0], 0)
+        if sealed:
+            self.assertEqual(self.seal("--feature", "x-y", "--message", message)[0], 0)
+        else:
+            git(self.repo, "commit", "-q", "-m", message)
         git(self.repo, "checkout", "-q", "main")
         self.stage(SUITE, "upstream\n")
         git(self.repo, "commit", "-q", "-m", "upstream")
         git(self.repo, "checkout", "-q", "feat/x-y")
         with self.assertRaises(Exception):
             git(self.repo, "rebase", "main")
+
+    def test_rebase_continue_rewrites_the_trailer(self) -> None:
+        """D7: only the trailers of the last paragraph change; D1: the patch trailer is written too."""
+        quoted = "Dev-Loop-Seal: quoted in the body"
+        self.conflicting_rebase(f"seal\n\n{quoted}")
         self.stage(SUITE, "resolved\n")
         code, out = self.seal("--rebase-continue")
         self.assertEqual(code, 0, out)
@@ -138,9 +147,34 @@ class SealCommandTests(unittest.TestCase):
         entries, outside = commit_entries(self.repo, self.head())
         self.assertEqual(outside, [])
         self.assertEqual(out["seal"], seal_value(entries))
-        self.assertIn(f"Dev-Loop-Seal: {seal_value(entries)}\n", self.body())
-        self.assertEqual(self.body().count("Dev-Loop-Seal:"), 1)
-        self.assertIn("Acceptance: x-y\n", self.body())
+        self.assertTrue(self.body().rstrip("\n").endswith(
+            f"\n\nAcceptance: x-y\nDev-Loop-Seal: {seal_value(entries)}\n"
+            f"Dev-Loop-Seal-Patch: {commit_patch_value(self.repo, self.head())}"), self.body())
+        self.assertIn(f"\n\n{quoted}\n\n", self.body())
+        self.assertEqual(self.body().count("Dev-Loop-Seal:"), 2)
+        self.assertEqual(run_cli("seal-check", cwd=self.repo)[0], 0)
+
+    def test_rebase_continue_refuses(self) -> None:
+        """D7: a stopped commit that is no seal commit, or nothing staged under the folder."""
+        cases = [
+            ("not a seal commit", False, "plain\n\nDev-Loop-Seal: quoted in the body\n\nmore", "resolved\n",
+             "the stopped commit is not a seal commit"),
+            ("nothing staged", True, "seal", "upstream\n", None),
+        ]
+        for name, sealed, message, resolved, error in cases:
+            with self.subTest(name):
+                self.conflicting_rebase(message, sealed)
+                self.stage(SUITE, resolved)
+                code, out = self.seal("--rebase-continue")
+                self.assertEqual(code, 1, out)
+                self.assertTrue(out.get("error"), out)
+                if error:
+                    self.assertEqual(out["error"], error)
+                self.assertTrue((Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "rebase-merge").is_dir())
+                git(self.repo, "rebase", "--abort")
+                git(self.repo, "checkout", "-q", "main")
+                git(self.repo, "reset", "-q", "--hard", "HEAD~2")
+                git(self.repo, "branch", "-q", "-D", "feat/x-y")
 
     def test_rebase_continue_without_rebase(self) -> None:
         code, out = self.seal("--rebase-continue")
