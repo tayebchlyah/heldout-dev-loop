@@ -26,9 +26,17 @@ from pathlib import Path
 
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
-# The override wins over every config file and appends to the caller's own GIT_CONFIG_* entries.
-_N = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
-os.environ.update({f"GIT_CONFIG_KEY_{_N}": "core.fsmonitor", f"GIT_CONFIG_VALUE_{_N}": "false", "GIT_CONFIG_COUNT": str(_N + 1)})
+# The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
+_GIT_CONFIG_COUNT = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+if not any(
+    os.environ.get(f"GIT_CONFIG_KEY_{i}") == "core.fsmonitor" and os.environ.get(f"GIT_CONFIG_VALUE_{i}") == "false"
+    for i in range(_GIT_CONFIG_COUNT)
+):
+    os.environ.update({
+        f"GIT_CONFIG_KEY_{_GIT_CONFIG_COUNT}": "core.fsmonitor",
+        f"GIT_CONFIG_VALUE_{_GIT_CONFIG_COUNT}": "false",
+        "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
+    })
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SKILL = SKILL_ROOT / "SKILL.md"
@@ -287,7 +295,14 @@ class UsesDevLoopTests(unittest.TestCase):
 
 
 class GateGuardTests(unittest.TestCase):
-    GUARD = 'export "GIT_CONFIG_KEY_$N=core.fsmonitor" GIT_CONFIG_COUNT=$((N + 1))\n'
+    GUARD = (
+        "GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}\n"
+        'export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" '
+        "GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))\n"
+    )
+    AFTER_GIT = (
+        "scripts/gate.sh runs git before the core.fsmonitor guard: move the GIT_CONFIG_* export above its first git call"
+    )
     MESSAGE = (
         "scripts/gate.sh lacks the core.fsmonitor guard: export core.fsmonitor=false through "
         "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n>, before its first git call"
@@ -309,6 +324,23 @@ class GateGuardTests(unittest.TestCase):
 
     def test_count_without_fsmonitor_fails(self) -> None:
         self.assertEqual(self.check("export GIT_CONFIG_COUNT=1\n"), [self.MESSAGE])
+
+    def test_comment_only_mention_fails(self) -> None:
+        self.assertEqual(self.check("# " + self.GUARD.replace("\n", "\n# ")), [self.MESSAGE])
+
+    def test_value_true_fails(self) -> None:
+        self.assertEqual(self.check(self.GUARD.replace("=false", "=true")), [self.MESSAGE])
+
+    def test_guard_after_git_call_fails(self) -> None:
+        self.assertEqual(self.check("git status\n" + self.GUARD), [self.AFTER_GIT])
+
+    def test_source_line_before_guard_passes(self) -> None:
+        self.assertEqual(self.check(". scripts/x.sh\n" + self.GUARD + "git status\n"), [])
+
+    def test_mapped_gate_script_is_checked(self) -> None:
+        for command in ("scripts/gate.sh", "./scripts/gate.sh", "bash scripts/gate.sh"):
+            with self.subTest(command=command):
+                self.assertEqual(self.check("git status\n", {"commands": {"gate": command}}), [self.MESSAGE])
 
     def test_mapped_gate_command_skips(self) -> None:
         self.assertEqual(self.check("git status\n", {"commands": {"gate": "make gate"}}), [])
