@@ -1018,5 +1018,68 @@ class SpecGapContractTests(unittest.TestCase):
                 self.assertIn(value, agents)
 
 
+D16_SENTENCE = ("When `## Supersedes` is not none, or a flow in `## Acceptance flows` names an earlier feature, "
+                "write at least one test that combines the new behaviour with that earlier feature.")
+
+
+class SealInstructionContractTests(unittest.TestCase):
+    def test_spec_testers_compose_with_the_earlier_feature(self) -> None:
+        for path in SPEC_TESTERS:
+            with self.subTest(path=path.name):
+                self.assertIn(D16_SENTENCE, path.read_text())
+
+    def test_spec_testers_seal_and_run_without_tracebacks(self) -> None:
+        for path in SPEC_TESTERS:
+            text = path.read_text()
+            for value in ["devloop.py seal --feature <slug> --message <subject>", "--tb=no", "seal --rebase-continue"]:
+                with self.subTest(path=path.name, value=value):
+                    self.assertIn(value, text)
+
+    def test_implementers_stop_on_a_block_or_a_taint(self) -> None:
+        for path in IMPLEMENTERS:
+            with self.subTest(path=path.name):
+                text = path.read_text()
+                self.assertIn("guard block or a taint report", text)
+                self.assertIn("never rephrase the call", text)
+
+    def test_stage_texts_hold_the_seal_rules(self) -> None:
+        checks = {
+            1: ["never change `tests/acceptance/`", "`Supersedes` line"],
+            3: ["devloop.py seal --feature <slug> --message <subject>", "seal --rebase-continue"],
+            5: ["`taint`", "git revert", "fresh implementer", "git revert --no-commit <sha>",
+                "seal --reverts <sha>", "fresh spec-tester"],
+            6: ["`seal`", "`weakened`", "quoted reason"],
+        }
+        for number, values in checks.items():
+            for value in values:
+                with self.subTest(stage=number, value=value):
+                    self.assertIn(value, stage_text(number))
+
+    def test_rebase_conflict_rule_replaced(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text()
+        self.assertNotIn("keeps the upstream side", skill)
+        self.assertNotIn("checkout --ours", skill)
+        self.assertIn("Every conflict under `tests/acceptance/` goes to `spec-tester`", skill)
+
+    def test_codex_route_lists_the_gaps_and_the_wall(self) -> None:
+        text = (REFERENCES / "codex.md").read_text()
+        for value in ["acceptance-wall.sh", "seal.sh", "copies the seal value method", "prints only a summary",
+                      "hook timeout", "Legacy mode", "acceptance failure text", "squashed", "`env`",
+                      "`uv run`", "`timeout 5 git commit`", "patch-id", "`jq` is missing",
+                      "keys on the custom agent name"]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+        for value in ["filesystem policy", "dev-implementer", "dev-spec-tester", "dev-read-only"]:
+            with self.subTest(absent=value):
+                self.assertNotIn(value, text)
+
+    def test_claude_route_lists_the_hooks_and_gaps(self) -> None:
+        text = (REFERENCES / "claude.md").read_text()
+        for value in ["seal.sh stop", "seal.sh turn", "dev-loop-subagents", "`onFailure: \"block\"`",
+                      "`stop_hook_active`", "patch-id", "`jq` is missing"]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
