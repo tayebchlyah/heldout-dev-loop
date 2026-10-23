@@ -21,9 +21,11 @@ else
   set -- tests/acceptance
 fi
 # Relative paths resolve against the cwd as a repo path, so a repo that sits under a folder named src
-# or app is not walled whole. Outside a git repo: the cwd itself.
+# or app is not walled whole. Outside a git repo: the cwd itself. Never empty: deny-path.sh splits
+# the command into tokens only with a cwd.
 base=
 [ -z "$cwd" ] || base=$(git -C "$cwd" rev-parse --show-prefix 2>/dev/null) || base=$cwd
+base=${base:-.}
 
 if [ "$tool" = Bash ]; then
   [ -n "$agent_id" ] || exit 0
@@ -32,7 +34,7 @@ else
   call=$(printf '%s' "$input" | jq --arg b "$base" '
     {tool_input: {paths: [ (.tool_input.command // .tool_input.patch // "") | strings | splits("\n")
       | capture("^\\*\\*\\* (Add File|Update File|Delete File|Move to): (?<p>.+)$").p
-      | if startswith("/") or $b == "" then . else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
+      | if startswith("/") then . else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
 fi
 verdict=$(printf '%s' "$call" | sh "$(dirname "$0")/deny-path.sh" "$@") || exit 2
 [ -z "$verdict" ] && exit 0
