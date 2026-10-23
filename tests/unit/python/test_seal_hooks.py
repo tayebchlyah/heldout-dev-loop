@@ -249,6 +249,39 @@ class GuardTests(unittest.TestCase):
                         self.assertIn("devloop.py seal", result.stderr)
 
 
+class SpecTesterSourceWallTests(unittest.TestCase):
+    """The Claude settings hook walls src/ from spec-tester too: its frontmatter hook did not fire (canary)."""
+
+    def test_spec_tester_cannot_reach_a_source_folder_by_any_route(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name) / "repo"
+        put(repo / "src" / "x.py", "X = 1\n")
+        put(repo / "tests" / "test_mapping.py", "def test_x():\n    pass\n")
+        git(repo, "init", "-q")
+        tester = {"agent_id": "b", "agent_type": "spec-tester"}
+        for cwd, tool, tool_input, code in [
+            (repo, "Read", {"file_path": f"{repo}/src/x.py"}, 2),
+            (repo, "Bash", {"command": "cat src/x.py"}, 2),
+            (repo, "Bash", {"command": "cd src && cat x.py"}, 2),
+            (repo / "src", "Bash", {"command": "cat x.py"}, 2),
+            (repo / "src", "Bash", {"command": "cd src && cat x.py"}, 2),
+            (repo, "Bash", {"command": f"git -C {repo} show HEAD:src/x.py"}, 2),
+            (repo, "Bash", {"command": "python3 -c \"open('src/x.py')\""}, 2),
+            (repo, "Bash", {"command": "ls src*"}, 2),
+            (repo, "Grep", {"pattern": "X", "path": "app"}, 2),
+            (repo, "Write", {"file_path": f"{repo}/{SUITE}", "content": "from src.x import X\n"}, 0),
+            (repo, "Bash", {"command": "cat tests/test_mapping.py"}, 0),
+            (repo, "Bash", {"command": "ls application/"}, 0),
+        ]:
+            with self.subTest(cwd=cwd, tool=tool, tool_input=tool_input):
+                payload = {**tester, "cwd": str(cwd), "tool_name": tool, "tool_input": tool_input}
+                result = subprocess.run(["bash", str(ROOT / "claude/hooks/deny-acceptance-to-subagents.sh")],
+                                        input=json.dumps(payload), capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual(result.stderr.count("\n"), 1 if code else 0, result.stderr)
+
+
 class CodexWallTests(unittest.TestCase):
     """Codex acceptance-wall.sh, fed hook JSON on stdin."""
 
