@@ -370,6 +370,15 @@ class AbsolutePathWallTests(unittest.TestCase):
                 (claude, "spec-tester", "Bash", {"command": f"cat {top}/README.md"}, 0),
                 (claude, "spec-tester", "Bash", {"command": f"git -C {top} log"}, 0),
                 (claude, "implementer", "Read", {"file_path": f"{top}/tests/acceptance/x.py"}, 2),
+                (codex, "implementer", "Bash", {"command": f"cat -n{top}/tests/acceptance/x.py"}, 2),
+                (codex, "implementer", "Bash", {"command": f"cat -n{top}/README.md"}, 0),
+            ]
+            for script, agent in [(claude, "spec-tester"), (codex, "spec_tester")]:
+                rows += [(script, agent, "Bash", {"command": command}, code) for command, code in [
+                    (f"gcc -I{top}/src x.c", 2), (f"ls -d{top}/src", 2), (f"cat {top}2/src/y.py", 2),
+                    (f"cat {top}/../repo/src/y.py", 2), (f"cat {top}/docs/../src/y.py", 2),
+                    (f"cat {top}/README.md", 0)]]
+            rows += [
                 (codex, "spec_tester", "Bash", {"command": f"cat {top}/tests/acceptance/x.py"}, 0),
                 (codex, "spec_tester", "Bash", {"command": f"cat {top}/src/y.py"}, 2),
                 (codex, "spec_tester", "Bash", {"command": f"cat {top}/README.md"}, 0),
