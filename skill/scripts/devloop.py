@@ -10,6 +10,7 @@
   devloop.py seal --feature SLUG --message SUBJECT [--reverts SHA ...]
                                                       commit the staged acceptance tests with the seal trailer
   devloop.py seal --rebase-continue                   write the new seal into the rebase commit, continue it
+  devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -571,6 +572,19 @@ def cmd_seal(args: argparse.Namespace) -> int:
     return emit(out, 1 if "error" in out else 0)
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from seal import audit
+
+    try:
+        hook = json.loads(sys.stdin.read())
+    except ValueError:
+        hook = None
+    if not isinstance(hook, dict):  # An audit error is a warning: exit 0, as on every skip.
+        return emit({"taint": None, "skipped": [{"reason": "error", "message": "hook input is not a JSON object"}]}, 0)
+    return emit(audit.audit(hook), 0)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -615,6 +629,9 @@ def main() -> int:
     seal.add_argument("--reverts", action="extend", nargs="+")
     seal.add_argument("--rebase-continue", action="store_true")
     seal.set_defaults(run=cmd_seal)
+
+    audit = commands.add_parser("audit")
+    audit.set_defaults(run=cmd_audit)
 
     args = parser.parse_args()
     return args.run(args)
