@@ -114,7 +114,6 @@ test_seal_hooks = importlib.util.module_from_spec(_seal_hooks_spec)
 _seal_hooks_spec.loader.exec_module(test_seal_hooks)
 SealHookTests = test_seal_hooks.SealHookTests
 GuardTests = test_seal_hooks.GuardTests
-CodexWallTests = test_seal_hooks.CodexWallTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
@@ -1562,8 +1561,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
     def trust_codex(self) -> None:
         main = self.main_checkout()
         lines = [f'[projects."{main}"]', 'trust_level = "trusted"']
-        for event in ["session_start", "user_prompt_submit", "pre_tool_use", "post_tool_use", "stop", "subagent_start",
-                      "subagent_stop"]:
+        for event in ["session_start", "user_prompt_submit", "pre_tool_use", "post_tool_use", "stop", "subagent_stop"]:
             lines += [f'[hooks.state."{main}/.codex/hooks.json:{event}:0:0"]', 'trusted_hash = "sha256:test"']
         write(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         for name in check_setup.CODEX_SKILLS:
