@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseArgs } from '../lib/args.mjs'
+import { parseArgs } from '../../../lib/args.mjs'
 
 test('no flag gives the default shape', () => {
   assert.deepEqual(parseArgs([]), {

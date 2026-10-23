@@ -1,5 +1,5 @@
 // renderBoard on malformed notes: a note from the synced vault can hold any JSON value in any key.
-// Loaded like test/board-render.test.mjs: render.js is a plain script, evaluated with node:vm.
+// Loaded like the board render oracle test: render.js is a plain script, evaluated with node:vm.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 
-const RENDER = join(dirname(fileURLToPath(import.meta.url)), '..', 'skill', 'scripts', 'board', 'render.js')
+const RENDER = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'skill', 'scripts', 'board', 'render.js')
 
 test('renderBoard returns HTML for notes with missing or wrongly typed values', () => {
   const ctx = {}

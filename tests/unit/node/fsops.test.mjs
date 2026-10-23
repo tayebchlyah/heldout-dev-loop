@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { backupPath, freeBackupPath } from '../lib/fsops.mjs'
+import { backupPath, freeBackupPath } from '../../../lib/fsops.mjs'
 
 test('backupPath appends a timestamp suffix', () => {
   assert.equal(backupPath('/x/y.json', new Date('2026-09-14T10:20:30Z')), '/x/y.json.bak-20260914T102030Z')
