@@ -11,9 +11,9 @@ SEAL_TRAILER = "Dev-Loop-Seal"
 
 def run_git(repo: Path, *args: str, stdin: str | None = None,
             env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """`git` with paths unquoted (spaces, non-ASCII), output as text."""
+    """`git` with paths unquoted (spaces, non-ASCII), output as text (bytes that are not UTF-8 replaced)."""
     return subprocess.run(["git", "-C", str(repo), "-c", "core.quotepath=off", *args], input=stdin,
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
 
 
 def git_dir(repo: Path) -> Path:
