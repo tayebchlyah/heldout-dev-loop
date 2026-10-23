@@ -28,21 +28,19 @@ base= top=
 [ -z "$cwd" ] || base=$(git -C "$cwd" rev-parse --show-prefix 2>/dev/null) || base=$cwd
 [ -z "$cwd" ] || top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || top=
 base=${base:-.}
+# jq prelude of both filters below: $tops (the repo top, also without or with /private, longest first)
+# and rel, which turns "<top>/" into "./" and a bare <top> into ".". Never into "": a path glued to a
+# flag (-I<top>/src) must keep the slash before its first segment.
+rel='($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
+    | sort_by(-length)) as $tops
+  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("./") | split($x) | join("."));'
 
 if [ "$tool" = Bash ]; then
   [ -n "$agent_id" ] || exit 0
-  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" '
-  ($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
-    | sort_by(-length)) as $tops
-  # An absolute path in the repo becomes repo-relative; the bare repo top becomes ".".
-  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("") | split($x) | join("."));
+  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" "$rel"'
   .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)' 2>/dev/null) || fail "cannot rewrite cwd"
 else
-  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" '
-  ($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] else "/private" + . end)] end
-    | sort_by(-length)) as $tops
-  # An absolute path in the repo becomes repo-relative; the bare repo top becomes ".".
-  | def rel: reduce $tops[] as $x (.; split($x + "/") | join("") | split($x) | join("."));
+  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" "$rel"'
     {tool_input: {paths: [ (.tool_input.command // .tool_input.patch // "") | strings | splits("\n")
       | capture("^\\*\\*\\* (Add File|Update File|Delete File|Move to): (?<p>.+)$").p
       | if startswith("/") then rel else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
