@@ -6,8 +6,9 @@ fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || fail "jq is missing"
 [ -n "$IN" ] || fail "empty hook input"
 printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
-CMD=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty') || fail "command extraction failed"
-CWD=$(printf '%s' "$IN" | jq -r '.cwd // empty') || fail "cwd extraction failed"
+CMD=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty' 2>/dev/null) || fail "command extraction failed"
+CWD=$(printf '%s' "$IN" | jq -r '.cwd // empty' 2>/dev/null) || fail "cwd extraction failed"
+AGENT=$(printf '%s' "$IN" | jq -r '.agent_type // empty' 2>/dev/null) || fail "agent_type extraction failed"
 [ -z "$CMD" ] && exit 0
 
 # Any global options may sit before the subcommand: -C or -c take a value that may
@@ -16,17 +17,15 @@ G='git( +-[Cc] +("[^"]+"|'"'"'[^'"'"']+'"'"'|[^ ]+)| +-[^ ]+)* +'
 
 deny() { echo "$1" >&2; exit 2; }
 has()  { printf '%s' "$CMD" | grep -Eq "$1"; }
+# Claude's deny() does the same; block() is in both guards so the seal rules stay
+# identical (parity), and Codex too denies them with exit 2 and a stderr line.
 block() { echo "$1" >&2; exit 2; }
 
-# 0. Only spec-tester seals (D5). Read on the raw text, heredoc body included, so a
-# trailer typed into a commit message is seen. seal-check stays open to every caller.
+# 0a. Only spec-tester seals (D5). A typed seal trailer is denied on the raw text, a
+# heredoc message included. Prose that names the trailer passes: only a value counts.
 TESTER=spec-tester
-if [ "$(printf '%s' "$IN" | jq -r '.agent_type // empty')" = "$TESTER" ]; then
-  has "${G}commit([^[:alnum:]_-]|\$)" && block "Blocked: spec-tester commits only through devloop.py seal: python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>."
-else
-  has 'devloop\.py[[:space:]]+seal([^[:alnum:]_-]|$)' && block "Blocked: only spec-tester may run devloop.py seal."
-  has 'Dev-Loop-Seal' && block "Blocked: only devloop.py seal, run by spec-tester, writes the Dev-Loop-Seal trailer."
-fi
+[ "$AGENT" != "$TESTER" ] && has 'Dev-Loop-Seal:[[:space:]]*[0-9a-fA-F]{64}' \
+  && block "Blocked: only devloop.py seal, run by spec-tester, writes the Dev-Loop-Seal trailer."
 
 # A heredoc body is text, not commands: every check below reads the line without it.
 # A body whose line names a shell (bash, sh, zsh, ssh, eval) stays. If this step
@@ -63,6 +62,17 @@ def strip_heredocs(cmd):
 print(strip_heredocs(os.environ["CMD"]), end="")
 PY
 ) && CMD=$BODYLESS || RAW=1 ;; esac
+
+# 0b. Who runs the seal (D5), on the text without heredoc bodies, in command position
+# only: the line start or after ; & | (, so a quoted or grepped mention passes.
+# seal-check stays open to every caller.
+RUN='(^|[;&|(])[[:space:]]*'
+if [ "$AGENT" = "$TESTER" ]; then
+  has "${RUN}${G}commit([^[:alnum:]_-]|\$)" && block "Blocked: spec-tester commits only through devloop.py seal: python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>."
+else
+  has "${RUN}(python3?[[:space:]]+)?([^[:space:];&|()]*/)?devloop\\.py[[:space:]]+['\"]?seal['\"]?([^[:alnum:]_-]|\$)" \
+    && block "Blocked: only spec-tester may run devloop.py seal."
+fi
 
 # 1. rm -rf on root only.
 has 'rm +-[rf]+ +/( |$)|rm +-[rf]+ +/\*' && deny "Blocked: rm -rf / is never allowed."
