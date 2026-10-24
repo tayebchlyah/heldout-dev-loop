@@ -285,6 +285,15 @@ class VerifyInitTests(unittest.TestCase):
                 self.assertIn("error", out)
                 self.assertEqual(snapshot(root), before)
 
+    def test_skills_folder_not_a_directory_refuses_and_writes_nothing(self) -> None:
+        root = make_repo(self.tmp / "app")
+        put(root / ".claude/skills", "not a folder\n")
+        before = snapshot(root)
+        code, out = devloop(root, "verify-init", "--base-url", "http://127.0.0.1:4173")
+        self.assertEqual(code, 1, out)
+        self.assertIn("error", out)
+        self.assertEqual(snapshot(root), before)
+
     def test_usage_error_exits_2(self) -> None:
         root = make_repo(self.tmp / "app")
         self.assertEqual(devloop(root, "verify-init")[0], 2)
