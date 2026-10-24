@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1074,11 +1075,19 @@ class InstructionContractTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, text)
 
-    def test_building_md_holds_pstack_principles_and_their_incidents(self) -> None:
+    def test_building_md_holds_pstack_principles(self) -> None:
         text = (SKILL_ROOT / "references" / "building.md").read_text().lower()
-        for value in [*PSTACK_PRINCIPLES, "f17a", "f14b", "f6d to f6g", "b1a1298", "lauren tan", "benchmark.md"]:
+        for value in [*PSTACK_PRINCIPLES, "b1a1298", "lauren tan", "benchmark.md"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
+
+    def test_kit_prompts_name_no_internal_project(self) -> None:
+        internal = re.compile(r"shop|Dev Process Review|\b[FS]\d+[a-z]?\b")
+        for root in [SKILL_ROOT, REPO_ROOT / "claude", REPO_ROOT / "codex"]:
+            for path in root.rglob("*"):
+                if path.suffix in {".md", ".toml"}:
+                    with self.subTest(path=str(path.relative_to(REPO_ROOT))):
+                        self.assertIsNone(internal.search(path.read_text()))
 
     def test_tests_md_holds_codebase_design_rules(self) -> None:
         text = (SKILL_ROOT / "references" / "tests.md").read_text().lower()
