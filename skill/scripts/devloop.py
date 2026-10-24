@@ -38,6 +38,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -315,6 +316,24 @@ def detect(repo: Path, feature: str | None, notes: Path) -> dict:
     return detect_feature(repo, feature, notes)
 
 
+PAUSED_NEXT = "resume from the pause note"
+
+
+def pause_state(worktree: Path, env: Mapping[str, str], delete: bool) -> dict | None:
+    """The pause note of a worktree. None when there is none, or when the current session wrote it on a limit or an
+    error (not `manual`): that session wakes its own work, so nothing is lost; `delete` then removes it."""
+    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    note = autonomy.read_note(Path(git_dir)) if git_dir else None
+    if note is None or git_dir is None:
+        return None
+    session, _ = autonomy.session_id(env)
+    if session and note.get("reason") != "manual" and note.get("session") == session:
+        if delete:
+            autonomy.note_path(Path(git_dir)).unlink(missing_ok=True)
+        return None
+    return note
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     try:
@@ -322,6 +341,15 @@ def cmd_status(args: argparse.Namespace) -> int:
     except NotesPathError as exc:
         return emit(result(0, "no notes path", str(exc)), 0)
     out = detect(repo, args.feature, notes)
+    # Only `status` deletes a note: `board`, `decide` and `pause` run in the same session and must keep it.
+    top = git(repo, "rev-parse", "--show-toplevel")
+    where = out["worktree"] or (top if args.feature is None else None)
+    note = pause_state(Path(where), os.environ, delete=True) if where else None
+    if note is not None:
+        out["paused"], out["next"] = note, PAUSED_NEXT
+    for item in out.get("features", []):
+        if item["worktree"] and pause_state(Path(item["worktree"]), os.environ, delete=True) is not None:
+            item["paused"] = True
     # Lazy, as in cmd_board: the old tests load this file with importlib and must not need the board package.
     sys.path.insert(0, str(Path(__file__).parent))
     from board import state, store, writer
@@ -334,7 +362,6 @@ def cmd_status(args: argparse.Namespace) -> int:
             isinstance(s, dict) and s.get("reason") not in ("busy", "rebase", "no-dev-loop", "stage-0")
             for s in skipped):
         out["board"] = {"at": last.get("at"), "skipped": skipped}
-    top = git(repo, "rev-parse", "--show-toplevel")
     first = next((line[len("worktree "):] for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines()
                   if line.startswith("worktree ")), None)
     if top and first:

@@ -256,5 +256,52 @@ class PauseTests(PauseSandbox):
         self.assertFalse(self.note.exists())
 
 
+class PauseStatusTests(PauseSandbox):
+    def status_in(self, cwd: Path, *args: str, **env: str) -> dict:
+        code, out = run_cli("status", *args, cwd=cwd, env={**self.env, **env})
+        self.assertEqual(code, 0, out)
+        return out
+
+    def test_event_note_by_session(self) -> None:
+        cases = [({"CLAUDE_CODE_SESSION_ID": "s-2"}, True), ({}, True), ({"CODEX_THREAD_ID": "s-2"}, True),
+                 ({"CLAUDE_CODE_SESSION_ID": "s-1"}, False)]
+        for env, paused in cases:
+            with self.subTest(env=env):
+                self.event(EVENT)
+                note = self.saved()
+                out = self.status_in(self.wt, **env)
+                self.assertEqual(out.get("paused"), note if paused else None)
+                self.assertEqual(out["next"] == "resume from the pause note", paused)
+                self.assertEqual(self.note.exists(), paused)
+
+    def test_manual_note_stays_in_same_session(self) -> None:
+        self.cli("pause", "--intent", "x", CLAUDE_CODE_SESSION_ID="s-1")
+        self.assertIn("paused", self.status_in(self.wt, CLAUDE_CODE_SESSION_ID="s-1"))
+        self.assertTrue(self.note.exists())
+
+    def test_board_and_decide_do_not_delete(self) -> None:
+        self.event(EVENT)
+        self.cli("board", "--no-serve", CLAUDE_CODE_SESSION_ID="s-1")
+        self.cli(*DECIDE, CLAUDE_CODE_SESSION_ID="s-1")
+        self.assertTrue(self.note.exists())
+
+    def test_main_marks_feature_paused(self) -> None:
+        put(self.notes / "specs" / "20261002 Other.md", frontmatter(feature="other", track="M", review_status="draft"))
+        self.event(EVENT)
+        features = {f["feature"]: f for f in self.status_in(self.repo, CLAUDE_CODE_SESSION_ID="s-2")["features"]}
+        self.assertIs(features["demo"].get("paused"), True)
+        self.assertNotIn("paused", features["other"])
+        self.assertIn("paused", self.status_in(self.repo, "--feature", "demo", CLAUDE_CODE_SESSION_ID="s-2"))
+
+    def test_session_a_pause_on_main(self) -> None:
+        self.cli("pause", "--intent", "x", cwd=self.repo)
+        self.assertEqual(self.status_in(self.repo)["paused"]["intent"], "x")
+
+    def test_unreadable_note(self) -> None:
+        put(self.note, "{")
+        out = self.status_in(self.wt)
+        self.assertEqual((out["paused"], out["next"]), ({"error": "unreadable pause note"}, "resume from the pause note"))
+
+
 if __name__ == "__main__":
     unittest.main()
