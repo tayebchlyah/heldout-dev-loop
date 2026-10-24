@@ -104,6 +104,7 @@ _seal_tests_spec.loader.exec_module(test_seal)
 SealCommandTests = test_seal.SealCommandTests
 AuditTests = test_seal.AuditTests
 SealCheckTests = test_seal.SealCheckTests
+KitChangedTests = test_seal.KitChangedTests
 GateSealTests = test_seal.GateSealTests
 WeakenedTests = test_seal.WeakenedTests
 
@@ -115,6 +116,11 @@ _seal_hooks_spec.loader.exec_module(test_seal_hooks)
 SealHookTests = test_seal_hooks.SealHookTests
 GuardTests = test_seal_hooks.GuardTests
 CodexWallTests = test_seal_hooks.CodexWallTests
+SpecTesterSourceWallTests = test_seal_hooks.SpecTesterSourceWallTests
+AbsolutePathWallTests = test_seal_hooks.AbsolutePathWallTests
+KitWallTests = test_seal_hooks.KitWallTests
+CdWallTests = test_seal_hooks.CdWallTests
+CodexTrustWarningTests = test_seal_hooks.CodexTrustWarningTests
 CanaryScriptTests = test_seal_hooks.CanaryScriptTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")

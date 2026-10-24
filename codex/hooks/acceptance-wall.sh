@@ -3,6 +3,7 @@
 # spec_tester: no path names src/, app/, backend/ or frontend/. Any other subagent: no path names
 # tests/acceptance. Main session: no apply_patch of a file under tests/acceptance/; its Bash stays open.
 # apply_patch (and its Edit, Write aliases): the paths are the patch file headers, never the body.
+# Every caller: no apply_patch of an installed kit file (kit files change only by upgrade).
 # Deny: exit 2 and one stderr line. The path match is deny-path.sh, in this folder.
 #
 # A workflow guard, not a security boundary: a block means stop and report, never rephrase the call.
@@ -44,6 +45,16 @@ else
     {tool_input: {paths: [ (.tool_input.command // .tool_input.patch // "") | strings | splits("\n")
       | capture("^\\*\\*\\* (Add File|Update File|Delete File|Move to): (?<p>.+)$").p
       | if startswith("/") then rel else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
+fi
+# Every caller: an installed kit file changes only by upgrade (the same list as the Claude wall).
+# A shell write is left to seal-check (kit-changed).
+if [ "$tool" != Bash ]; then
+  kit='(^|/)(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|(^|/)\.codex/rules/dev-loop\.rules$|(^|/)\.claude/agents/(implementer|spec-tester)\.md$|(^|/)\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+  if printf '%s' "$call" | jq -r '.tool_input.paths[]' | tr 'A-Z' 'a-z' \
+    | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta' | grep -Eq "$kit"; then
+    echo "Blocked: installed dev-loop kit file. Kit files change only by upgrade: change dev-loop, then run upgrade." >&2
+    exit 2
+  fi
 fi
 verdict=$(printf '%s' "$call" | sh "$(dirname "$0")/deny-path.sh" "$@") || exit 2
 [ -z "$verdict" ] && exit 0

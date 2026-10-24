@@ -10,9 +10,9 @@
 #
 # WHAT THIS IS. A workflow guard against a cooperative agent wandering into the
 # held-out suite, not a security boundary. A subagent that wants past it can
-# always split a shell command (`cd tests && cat acceptance/x`) or wildcard the
-# suite's own name out of the path (`cat tests/*/x`, or a Grep glob of
-# `tests/*/**`). No substring rule closes those; only a resolve-and-compare
+# always hide a folder in a variable (`d=tests; cd $d && cat acceptance/x`) or
+# wildcard the suite's own name out of the path (`cat tests/*/x`, or a Grep glob
+# of `tests/*/**`). No substring rule closes those; only a resolve-and-compare
 # check would. The walls are hooks; the transcript audit backs them up.
 # Treat a block as a signal to stop and report, never as something to work
 # around: an agent that disguises its input has defeated the hook wall.
@@ -23,8 +23,11 @@
 # Every field a tool reaches a path through is listed, and path is joined to
 # both glob and pattern, because Grep and Glob each split a location that way.
 # Each candidate token is also resolved against the subagent's working
-# directory, and the directory itself is a candidate: a shell that sits in
-# tests/ or inside the suite cannot reach it through a relative path.
+# directory and against each folder a cd or pushd of the command moves to, and
+# those folders are candidates: a shell that sits in tests/ or inside the suite,
+# or a `cd tests && cat acceptance/x`, cannot reach it through a relative path.
+# Edit, Write and NotebookEdit of an installed kit file are denied to every
+# caller: kit files change only by upgrade.
 # Candidates are normalized before matching, so a trailing slash, a doubled
 # slash, a dot segment or a capital letter does not walk past the wall.
 IN=$(cat)
@@ -35,12 +38,25 @@ command -v jq >/dev/null 2>&1 || fail "jq is missing"
 printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
 normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
 
+# Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs).
+KIT='(^|/)(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|(^|/)\.codex/rules/dev-loop\.rules$|(^|/)\.claude/agents/(implementer|spec-tester)\.md$|(^|/)\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+
+TOOL=$(echo "$IN" | jq -r '.tool_name // empty')
+case "$TOOL" in
+  Edit|Write|NotebookEdit)
+    # The path as given, and joined to cwd when relative.
+    TARGETS=$(echo "$IN" | jq -r '(.cwd // "") as $c
+      | (.tool_input.file_path // .tool_input.notebook_path // "") | select(. != "")
+      | ., (select(startswith("/") | not) | select($c != "") | $c + "/" + .)' 2>/dev/null) || fail "path extraction failed"
+    # Every caller: a kit file changes only by upgrade. A shell write is left to seal-check (kit-changed).
+    if printf '%s\n' "$TARGETS" | normalize | grep -Eq "$KIT"; then
+      echo "Blocked: installed dev-loop kit file. Kit files change only by upgrade: change dev-loop, then run upgrade." >&2
+      exit 2
+    fi ;;
+esac
+
 if [ -z "$(echo "$IN" | jq -r '.agent_id // empty')" ]; then
-  case "$(echo "$IN" | jq -r '.tool_name // empty')" in Edit|Write|NotebookEdit) ;; *) exit 0 ;; esac
-  # The path as given, and joined to cwd when relative.
-  TARGETS=$(echo "$IN" | jq -r '(.cwd // "") as $c
-    | (.tool_input.file_path // .tool_input.notebook_path // "") | select(. != "")
-    | ., (select(startswith("/") | not) | select($c != "") | $c + "/" + .)' 2>/dev/null) || fail "path extraction failed"
+  case "$TOOL" in Edit|Write|NotebookEdit) ;; *) exit 0 ;; esac
   if printf '%s\n' "$TARGETS" | normalize | grep -Eq '(^|/)tests/acceptance(/|$)'; then
     echo "Blocked: held-out suite. Only spec-tester writes tests/acceptance. The main session may read it." >&2
     exit 2
@@ -84,11 +100,19 @@ CANDIDATES=$(echo "$IN" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  def relative($all):
+  # The cwd, then each folder a cd or pushd of the command moves to, in order (a relative one from
+  # the folder before it).
+  def dirs:
     (.cwd // "") as $c
-    | if $c == "" then [] else
-        [$c] + [ $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $c + "/" + . ]
-      end;
+    | [ .tool_input.command? | strings | clean
+        | match("(?:^|[;&|(\n\u0027\"])[ \t]*(?:cd|pushd)(?:[ \t]+-[A-Za-z@]+)*[ \t]+[\u0027\"]?(?<d>[^ \t\n;|&()<>\u0027\"`]+)"; "g")
+        | .captures[] | select(.name == "d") | .string ]
+    | reduce .[] as $d ([$c]; . + [ if ($d | startswith("/")) then $d else .[-1] + "/" + $d end ]);
+  def relative($all):
+    if (.cwd // "") == "" then [] else
+      dirs as $dirs
+      | $dirs + [ $dirs[] as $w | $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $w + "/" + . ]
+    end;
   (fields + joins) as $all | ($all + relative($all)) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 CANDIDATES=$(printf '%s' "$CANDIDATES" | normalize)
 
