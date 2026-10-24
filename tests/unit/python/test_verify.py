@@ -384,6 +384,12 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(code, 1, out)
         self.assertIn("git diff failed", out["error"])
 
+    def test_missing_skill_md_refuses(self) -> None:
+        root = self.repo(verify={"skill": "verify-gone"})
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(out["error"], "missing .agents/skills/verify-gone/SKILL.md (verify.skill)")
+
     def test_since_selects_fix_only(self) -> None:
         root = self.repo()
         sha = self.commit(root, "web/a.ts")
