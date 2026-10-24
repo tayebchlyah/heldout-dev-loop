@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // dev-loop drive runner: drives the routes of one feature map entry in Chromium.
-// stdin: {"base_url", "storage_state" (absolute path or null), "routes", "evidence" (folder), "entry"}.
+// stdin: {"base_url", "storage_state" (absolute path or null), "routes", "evidence" (folder), "entry", "video" (folder)}.
+// Records no video: every route result has `video` null.
 // stdout: {"routes": [<route result>]}, exit 0. No Playwright in the repo: {"error"}, exit 1.
 // Playwright comes from the repo only (strict lookup): no Node parent walk, no NODE_PATH, no global install.
 import { execFileSync } from 'node:child_process'
@@ -52,7 +53,7 @@ async function driveRoute(context, input, route, n) {
   await page.close()
   const ok = status !== null && status < 400 && missing.length === 0 && consoleErrors.length === 0 && error === null
   return {
-    entry: input.entry, path: route.path, ok, status, missing, console_errors: consoleErrors, error, screenshot,
+    entry: input.entry, path: route.path, ok, status, missing, console_errors: consoleErrors, error, screenshot, video: null,
     seconds: Math.round((Date.now() - started) / 100) / 10,
   }
 }
