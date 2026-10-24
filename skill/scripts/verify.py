@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
@@ -15,6 +16,8 @@ SECTIONS = ("Launch", "Doctor", "Drive", "Evidence", "Cleanup")
 MISSING = ('no verify skill for the ui stack: run devloop.py verify-init --base-url <url>, '
            'or set "verify": false in dev-loop.json')
 SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+GH_MIN = (2, 99, 0)
+GH_LINE = "gh 2.99.0 or later needed for PR captures (gh pr edit --attach), found {}"
 
 
 def url_ok(url: object) -> bool:
@@ -180,3 +183,25 @@ def check(repo: Path) -> list[str]:
             link.exists() and link.resolve() == (repo / base).resolve()):
         failures.append(f".claude/skills/{skill} must link to ../../{base}")
     return failures
+
+
+def gh_version() -> str | None:
+    """The `X.Y.Z` that `gh --version` prints, or None: no gh, or no version in its output."""
+    try:
+        out = subprocess.run(["gh", "--version"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"\d+\.\d+\.\d+", out)
+    return match.group() if match else None
+
+
+def gh_too_old(found: str | None) -> bool:
+    return found is None or tuple(map(int, found.split("."))) < GH_MIN
+
+
+def gh_line(repo: Path) -> list[str]:
+    """The check_setup.py line for `capture`: only when `verify` is an object."""
+    if not isinstance(read_config(repo).get("verify"), dict):
+        return []
+    found = gh_version()
+    return [GH_LINE.format(found or "none")] if gh_too_old(found) else []
