@@ -135,6 +135,7 @@ PauseTests = test_autonomy.PauseTests
 PauseStatusTests = test_autonomy.PauseStatusTests
 AutonomyHookTests = test_autonomy.AutonomyHookTests
 KitSkillTests = test_autonomy.KitSkillTests
+AutonomyContractTests = test_autonomy.AutonomyContractTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:

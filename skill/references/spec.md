@@ -37,8 +37,11 @@ One flow per user journey. `spec-tester` writes one test per flow.
 ## Supersedes
 Every earlier `## Acceptance oracle` line this spec contradicts, quoted, each with its replacement. None: "Supersedes: none".
 
-## Assumptions
-Every decision taken without the user. Session B adds to it.
+## Decision log
+Every decision and surprise of Session B, one row each, appended by `scripts/devloop.py decide`. Never edited by hand. Session A choices go in `## Decisions`.
+
+| Time | Stage | Session | Kind | Risk | Decision | Why | Evidence | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ```
 
 `feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
@@ -99,7 +102,7 @@ If you can't name the trust boundaries for a feature, you're not ready to secure
 
 ## One-way door: doubt review
 
-Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (write it to `## Assumptions`), noise. At most 3 cycles, then ask the user.
+Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user.
 
 Source: Addy Osmani agent-skills 0.6.12, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `1be8e34`), core reviewer prompt and its rule, copied verbatim:
 

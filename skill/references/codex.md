@@ -14,6 +14,15 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - Command rules prompt for direct pushes and every `git -C` form. They forbid direct hard resets and `rm -rf /`. The trusted Git hook provides defense in depth for wrapped commands.
 - Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
 
+## Session B autonomy
+
+- Skills `$pause` and `$continue` (`.agents/skills/pause/`, `.agents/skills/continue/`). `$pause` is user-invoked only (`agents/openai.yaml` `allow_implicit_invocation: false`).
+- Decision log: the controller runs `devloop.py decide`; the log is in the spec in the notes folder. With the notes folder outside the writable roots, each `decide` asks for approval: add the notes folder as a writable root in the user config. Implementers never run it: they end their final report with a `Discoveries` list.
+- Wake (same session): `send_input` (v1) or `followup_task` (v2) to each subagent that stopped during its work; a closed one: `resume_agent` first. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
+- `$pause`: `interrupt_agent` (v2), else `close_agent` (v1), on each running subagent; background runs stay alive.
+- No ask tool outside plan mode: no ask wall needed.
+- Gaps, written down, not closed: no failure event (Codex `Stop` has no error field), so only `$pause` writes a pause note, a usage limit writes none; `CODEX_THREAD_ID` in a shell command (the `decide` Session cell, the note session) and the wake of an `errored` agent are unconfirmed until a live check.
+
 ## Skill and agent names
 
 - Matt Pocock skills from the local installation: `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr`, `prototype`.

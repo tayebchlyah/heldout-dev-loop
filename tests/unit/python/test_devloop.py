@@ -1179,7 +1179,7 @@ class SkillStackContractTests(unittest.TestCase):
     def test_spec_reference_holds_builder_check_and_notices(self) -> None:
         spec = (REFERENCES / "spec.md").read_text()
         for value in [
-            "feature:", "track:", "review_status:", "\nshipped:\npr:\n", "## Acceptance oracle", "Supersedes", "## Assumptions",
+            "feature:", "track:", "review_status:", "\nshipped:\npr:\n", "## Acceptance oracle", "Supersedes", "## Decision log",
             "the ideal number is one",
             "You've been handed a design document",
             "nothing important left",
@@ -1318,7 +1318,7 @@ class TracksContractTests(unittest.TestCase):
         self.assertNotIn("vault_notes", self.skill)
         for value in [
             "Track S", "Track M", "Track L", "Session A", "Session B", "Stages 3 to 7",
-            "## Assumptions", "three fix rounds", "one-way door", "deletes data", "reaches production",
+            "devloop.py decide", "three fix rounds", "one-way door", "deletes data", "reaches production",
             "usage limit", "Supersedes", "Monitor", "two minutes", "| T0 |", "| T4 |",
         ]:
             with self.subTest(value=value):
