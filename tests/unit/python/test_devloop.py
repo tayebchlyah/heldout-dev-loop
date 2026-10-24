@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -1150,6 +1151,13 @@ class ReviewWaveContractTests(unittest.TestCase):
             with self.subTest(route="codex", value=value):
                 self.assertIn(value, self.codex)
 
+    def test_reviewers_run_at_high_effort(self) -> None:
+        for name in ["final-reviewer.toml", "security-reviewer.toml"]:
+            with self.subTest(path=name):
+                parsed = tomllib.loads((REPO_ROOT / "codex" / "agents" / name).read_text())
+                self.assertEqual(parsed["model_reasoning_effort"], "high")
+        self.assertIn("four Agent calls, all `general-purpose` with `model: opus` and `effort: high`", self.claude)
+
     def test_no_simplify_or_mutation_in_gate(self) -> None:
         for name, text in [("SKILL.md", self.stage), ("claude.md", self.claude), ("codex.md", self.codex)]:
             for value in ["simplif", "mutation", "mutant"]:
@@ -1231,9 +1239,16 @@ class TracksContractTests(unittest.TestCase):
             "Track L", "gh pr merge --rebase", "security item in `## Deferred`",
             "Right after the merge: write `shipped: <merge date>`", "`pr: <PR url>`",
             "into the spec frontmatter in the notes folder", "Track S: no spec, skip",
+            "scripts/devloop.py merge-check", "`merge` `auto`", "merge_human_paths",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, stage)
+
+    def test_track_s_bug_fix_shows_red_then_green(self) -> None:
+        line = next(line for line in stage_text(5).splitlines() if line.startswith("Track S bug fix:"))
+        for value in ["failing test", "fail output", "pass output", "PR body", "not committed alone"]:
+            with self.subTest(value=value):
+                self.assertIn(value, line)
 
     def test_new_repo_files_and_the_deferred_cap(self) -> None:
         for value in ["`CODING_STANDARDS.md`", "nightly"]:
@@ -1258,6 +1273,67 @@ class TracksContractTests(unittest.TestCase):
         for name in REPLACED_SKILLS:
             with self.subTest(name=name):
                 self.assertIn(f"`{name}`", line)
+
+
+class ReviewYieldContractTests(unittest.TestCase):
+    """Review Wave Measurement D2 to D5, D8, D15, D16: yield log, triage filters, security verifier, fresh fixer."""
+
+    def setUp(self) -> None:
+        self.stage = stage_text(6)
+
+    def test_yield_log_columns_and_classes(self) -> None:
+        self.assertIn("`$NOTES/Review Yield.md`", self.stage)
+        columns = ["`#`", "`file:line`", "`reviewers`", "`class`", "`triage verdict`", "`fix sha`", "`user verdict`"]
+        self.assertIn(", ".join(columns), self.stage)
+        for value in ["`defect-a`", "`defect-b`", "`defect-c`", "`optional`", "`gardener`", "`dropped:<filter>`",
+                      "`rejected`", "`deferred`", "one cost line per reviewer", "never waited on"]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.stage)
+
+    def test_triage_filters_come_before_the_defect_rules(self) -> None:
+        for value in ["nitpick", "hypothetical against actual", "premature abstraction", "taste", "missing context",
+                      "no concrete failing input"]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.stage)
+        self.assertLess(self.stage.index("premature abstraction"), self.stage.index("Defect = CONFIRMED"))
+
+    def test_security_findings_go_to_a_fresh_verifier(self) -> None:
+        for value in ["candidate-verifier prompt", "NEEDS VALIDATION", "REJECTED", "hardening gap",
+                      "(c) security finding CONFIRMED by the verifier"]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.stage)
+        claude = section(REFERENCES / "claude.md", "## Feature gate")
+        codex = section(REFERENCES / "codex.md", "## Feature gate")
+        for value in ["`general-purpose`, `model: opus`, `effort: high`",
+                      "~/.claude/skills/security-audit/VALIDATION-AND-REPORTING.md"]:
+            with self.subTest(route="claude", value=value):
+                self.assertIn(value, claude)
+        for value in ["fresh `security_reviewer`", "~/.agents/skills/security-audit/VALIDATION-AND-REPORTING.md"]:
+            with self.subTest(route="codex", value=value):
+                self.assertIn(value, codex)
+
+    def test_open_needs_validation_item_blocks_a_release(self) -> None:
+        self.assertIn("NEEDS VALIDATION", stage_text(7))
+
+    def test_every_fix_round_starts_a_new_implementer(self) -> None:
+        for value in ["new `implementer`", "Never resume a finished agent"]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.stage)
+
+    def test_agents_md_documents_merge_check_and_the_data_rule(self) -> None:
+        agents = (REPO_ROOT / "AGENTS.md").read_text()
+        for value in [
+            "merge-check [--repo <path>] [--feature <slug>]", "merge_human_paths", "`config-unreadable`",
+            "`merge-human`", "`track-l`", "`human-path`", "`config-changed`", "`no-review`", "`unreviewed`",
+            "`unreviewed_minor`", "--verbatim",
+            "no smaller wave, no removal of the Track L threat model and no second review pass until 5 features "
+            "have a complete section in Review Yield.md",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, agents)
+        r10 = agents[agents.index("Ruling R10"):agents.index("These are expected manual steps")]
+        self.assertIn("3. ", r10)
+        self.assertIn("security-audit", r10)
 
 
 class SpecGapContractTests(unittest.TestCase):
