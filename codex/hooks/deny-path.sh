@@ -9,8 +9,9 @@
 # Path fields only, never the whole tool input: a write whose body mentions a
 # path is not access to it, and blocking that teaches evasion. Path is joined
 # to both glob and pattern, because a grep or a glob splits a location that
-# way. With a cwd, each candidate token is also joined to it and to each folder
-# a cd in the command moves to, and those folders are candidates. Candidates are
+# way. With a cwd, each candidate token is also joined to the folder a cd or
+# pushd earlier in the command has moved to (else the cwd), and the cwd and
+# those folders are candidates. Candidates are
 # normalized so a trailing slash, a doubled slash, a dot segment or a capital
 # letter does not walk past the wall.
 input=$(cat)
@@ -35,18 +36,21 @@ candidates=$(printf '%s' "$input" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  # The cwd, then each folder a cd or pushd of the command moves to, in order (a relative one from
-  # the folder before it). Mirrors the Claude wall, deny-acceptance-to-subagents.sh.
-  def dirs:
-    (.cwd // "") as $c
-    | [ .tool_input.command? | strings | clean
-        | match("(?:^|[;&|(\n\u0027\"])[ \t]*(?:cd|pushd)(?:[ \t]+-[A-Za-z@]+)*[ \t]+[\u0027\"]?(?<d>[^ \t\n;|&()<>\u0027\"`]+)"; "g")
-        | .captures[] | select(.name == "d") | .string ]
-    | reduce .[] as $d ([$c]; . + [ if ($d | startswith("/")) then $d else .[-1] + "/" + $d end ]);
+  # A token walk over each field, in order: the folder starts at the cwd; a cd or pushd token makes the next
+  # token not starting with - (options, --) its target, absolute or joined to the folder, and a folder
+  # reached; any other token is joined to the folder at that point.
+  # Subshell scope is not tracked: after (cd x && ...), a later token still joins to x.
+  # Mirrors the Claude wall, deny-acceptance-to-subagents.sh.
   def relative($all):
     if (.cwd // "") == "" then [] else
-      dirs as $dirs
-      | $dirs + [ $dirs[] as $w | $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $w + "/" + . ]
+      .cwd as $c
+      | [$c] + [ $all[] | reduce (splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0)) as $t
+          ({w: $c, cd: false, out: []};
+            if .cd and ($t | startswith("-")) then .
+            elif .cd then .w = (if ($t | startswith("/")) then $t else .w + "/" + $t end) | .cd = false | .out += [.w]
+            elif $t == "cd" or $t == "pushd" then .cd = true
+            else .out += [.w + "/" + $t] end)
+        | .out[] ]
     end;
   (fields + joins) as $all | ($all + relative($all)) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 candidates=$(printf '%s' "$candidates" \
