@@ -572,6 +572,30 @@ class MergeCheckTests(Sandbox):
         self.assertEqual((out["merge"], out["reasons"]), ("auto", []))
         self.assertEqual(out["unreviewed_minor"], [{"commit": self.head(wt), "paths": ["README.md", "tests/unit/test_x.py"]}])
 
+    def test_dropped_reviewed_commit(self) -> None:
+        """A reviewed fix that no landing commit carries waits, unless main already has it."""
+        for case in ("skipped", "upstream", "clean-rebase"):
+            with self.subTest(case=case):
+                self.tearDown()
+                self.setUp()
+                wt, _ = self.reviewed_feature()
+                self.commit(wt, "src/fix.py", "f\n")
+                fix = self.head(wt)
+                self.gate_green(wt, fix)
+                if case == "skipped":
+                    git(wt, "reset", "-q", "--hard", "HEAD~1")
+                else:
+                    if case == "upstream":
+                        git(self.repo, "cherry-pick", fix)
+                    else:
+                        self.commit(self.repo, "other.txt", "x\n")
+                    git(self.repo, "push", "-q", "origin", "main")
+                    git(wt, "fetch", "-q", "origin")
+                    git(wt, "rebase", "-q", "origin/main")
+                out = self.ok(wt)
+                expected = [{"reason": "dropped", "commit": fix}] if case == "skipped" else []
+                self.assertEqual(out["reasons"], expected)
+
     def test_is_test_or_doc(self) -> None:
         devloop = load_devloop()
         rows = {
@@ -648,11 +672,13 @@ class MergeCheckTests(Sandbox):
         """A conflict resolution that only re-indents a reviewed line changes the code: whitespace counts."""
         wt = self.feature()
         self.commit(wt, "src/app.py", "if x:\n    a()\nb()\n")
-        self.gate_green(wt, self.head(wt))
+        reviewed = self.head(wt)
+        self.gate_green(wt, reviewed)
         git(wt, "reset", "-q", "--hard", "HEAD~1")
         self.commit(wt, "src/app.py", "if x:\n    a()\n    b()\n")
         out = self.ok(wt)
-        self.assertEqual(out["reasons"], [{"reason": "unreviewed", "commit": self.head(wt), "paths": ["src/app.py"]}])
+        self.assertEqual(out["reasons"], [{"reason": "unreviewed", "commit": self.head(wt), "paths": ["src/app.py"]},
+                                          {"reason": "dropped", "commit": reviewed}])
 
     def test_root_commit_in_the_landing_range_is_unreviewed(self) -> None:
         """A commit whose diff cannot be computed (no first parent) fails closed, even with only doc paths."""
@@ -681,7 +707,8 @@ class MergeCheckTests(Sandbox):
                 out = self.ok(wt)
                 self.assertEqual(out["reviewed"], reviewed)
                 self.assertEqual(out["reasons"],
-                                 [{"reason": "unreviewed", "commit": self.head(wt), "paths": ["src/app.py"]}])
+                                 [{"reason": "unreviewed", "commit": self.head(wt), "paths": ["src/app.py"]},
+                                  {"reason": "dropped", "commit": reviewed}])
 
     def test_bad_shape_on_main_is_config_unreadable(self) -> None:
         rows = ['[]', '{"merge": "maybe"}', '{"merge": "human", "merge_human_paths": "src/*"}',
