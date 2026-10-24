@@ -630,6 +630,23 @@ class VerifyTextTests(unittest.TestCase):
         self.assertIn("model: sonnet", (refs / "claude.md").read_text())
         self.assertNotIn("computer-use", (refs / "codex.md").read_text())
 
+    def test_kit_text_names_closing_drive_and_captures(self) -> None:
+        skill = (SCRIPTS.parent / "SKILL.md").read_text()
+        stage6, stage7 = section(skill, "6 Feature gate"), section(skill, "7 Ship")
+        self.assertTrue(any("drive --since" in p and "closing" in p.lower() and "acceptance" in p
+                            for p in stage6.split("\n")), stage6)
+        for needle in ("devloop.py capture", "drive --routes-from", "captures:", "git worktree remove --force"):
+            self.assertIn(needle, stage7)
+        self.assertLess(stage7.index("devloop.py capture"), stage7.index("ci wait"))
+        verify_md = (SCRIPTS.parent / "references" / "verify.md").read_text()
+        for needle in ("## Stage 7: PR captures", "## Journey script contract", "recordVideo", "page.video().path()",
+                       "before.json", "captures: skipped:"):
+            self.assertIn(needle, verify_md)
+        for route in ("claude.md", "codex.md"):
+            text = (SCRIPTS.parent / "references" / route).read_text()
+            self.assertIn("closing drive", text)
+            self.assertIn("devloop.py capture", text)
+
 
 if __name__ == "__main__":
     unittest.main()
