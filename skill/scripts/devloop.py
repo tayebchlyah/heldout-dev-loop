@@ -939,8 +939,12 @@ def cmd_drive(args: argparse.Namespace) -> int:
     else:
         base = merge_base(repo)
         revs = f"{args.since}..HEAD" if args.since else f"{base}...HEAD" if base else None
-        diff = git(repo, "-c", "core.quotepath=off", "diff", "--name-only", "-z", "--no-renames", revs) if revs else ""
-        changed = set((diff or "").split("\0")) - {""}
+        if revs is None:
+            return emit({"error": "no base branch: run drive --all or --since <sha>"}, 1)
+        diff = git(repo, "-c", "core.quotepath=off", "diff", "--name-only", "-z", "--no-renames", revs)
+        if diff is None:
+            return emit({"error": f"git diff failed: {revs}"}, 1)
+        changed = set(diff.split("\0")) - {""}
         selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
             fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
     if not selected:
