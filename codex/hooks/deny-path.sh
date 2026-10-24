@@ -9,9 +9,10 @@
 # Path fields only, never the whole tool input: a write whose body mentions a
 # path is not access to it, and blocking that teaches evasion. Path is joined
 # to both glob and pattern, because a grep or a glob splits a location that
-# way. With a cwd, each candidate token is also joined to it, and the cwd itself
-# is a candidate. Candidates are normalized so a trailing slash, a doubled
-# slash, a dot segment or a capital letter does not walk past the wall.
+# way. With a cwd, each candidate token is also joined to it and to each folder
+# a cd in the command moves to, and those folders are candidates. Candidates are
+# normalized so a trailing slash, a doubled slash, a dot segment or a capital
+# letter does not walk past the wall.
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
@@ -34,11 +35,19 @@ candidates=$(printf '%s' "$input" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  def relative($all):
+  # The cwd, then each folder a cd or pushd of the command moves to, in order (a relative one from
+  # the folder before it). Mirrors the Claude wall, deny-acceptance-to-subagents.sh.
+  def dirs:
     (.cwd // "") as $c
-    | if $c == "" then [] else
-        [$c] + [ $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $c + "/" + . ]
-      end;
+    | [ .tool_input.command? | strings | clean
+        | match("(?:^|[;&|(\n\u0027\"])[ \t]*(?:cd|pushd)(?:[ \t]+-[A-Za-z@]+)*[ \t]+[\u0027\"]?(?<d>[^ \t\n;|&()<>\u0027\"`]+)"; "g")
+        | .captures[] | select(.name == "d") | .string ]
+    | reduce .[] as $d ([$c]; . + [ if ($d | startswith("/")) then $d else .[-1] + "/" + $d end ]);
+  def relative($all):
+    if (.cwd // "") == "" then [] else
+      dirs as $dirs
+      | $dirs + [ $dirs[] as $w | $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $w + "/" + . ]
+    end;
   (fields + joins) as $all | ($all + relative($all)) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 candidates=$(printf '%s' "$candidates" \
   | tr 'A-Z' 'a-z' \

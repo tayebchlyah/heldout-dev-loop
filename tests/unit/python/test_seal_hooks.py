@@ -522,5 +522,144 @@ class CanaryScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
 
 
+KIT_AGENTS = sorted([(".claude/agents", p.name) for p in (ROOT / "claude/agents").glob("*.md")]
+                    + [(".codex/agents", p.name) for p in (ROOT / "codex/agents").glob("*.toml")])
+
+
+def patch(*headers: str, body: str = "+x") -> str:
+    return "\n".join(["*** Begin Patch", *headers, body, "*** End Patch"])
+
+
+class KitWallTests(unittest.TestCase):
+    """No caller edits an installed kit file through a file tool: kit files change only by `upgrade`."""
+
+    def run_hook(self, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
+        harness = "codex" if script == "acceptance-wall.sh" else "claude"
+        return subprocess.run([SHELL[harness], str(ROOT / harness / "hooks" / script)], input=json.dumps(payload),
+                              capture_output=True, text=True, timeout=60)
+
+    def test_file_tools_cannot_change_a_kit_file(self) -> None:
+        kit = [".agents/skills/dev-loop/scripts/seal/check.py", ".agents/skills/dev-loop/SKILL.md",
+               ".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/MANIFEST.json", ".claude/skills/dev-loop/SKILL.md",
+               ".codex/rules/dev-loop.rules", *[f"{folder}/{name}" for folder, name in KIT_AGENTS]]
+        open_paths = ["skill/scripts/seal/check.py", "claude/hooks/git-guard.sh", ".claude/agents/my-reviewer.md",
+                      ".codex/agents/mine.toml", ".codex/rules/mine.rules", "docs/dev-loop/x.md",
+                      "dev-loop.json", "../dev-loop-worktrees/x/README.md"]
+        callers = [{}, {"agent_id": "a", "agent_type": "implementer"}]
+        rows = []
+        for path, deny in [(p, True) for p in kit] + [(p, False) for p in open_paths]:
+            for caller in callers + [{"agent_id": "b", "agent_type": "spec-tester"}]:
+                rows += [("deny-acceptance-to-subagents.sh", caller, "Edit", {"file_path": f"/repo/{path}"}, deny),
+                         ("deny-acceptance-to-subagents.sh", caller, "Write", {"file_path": path}, deny)]
+            for caller in callers + [{"agent_id": "b", "agent_type": "spec_tester"}]:
+                rows += [("acceptance-wall.sh", caller, "apply_patch",
+                          {"command": patch(f"*** Update File: {path}")}, deny)]
+        rows += [
+            ("deny-acceptance-to-subagents.sh", {}, "NotebookEdit",
+             {"notebook_path": "/repo/.agents/skills/dev-loop/x.ipynb"}, True),
+            ("deny-acceptance-to-subagents.sh", {}, "Edit", {"file_path": "/repo/.Dev-Loop//hooks/./claude/gate.sh"}, True),
+            ("deny-acceptance-to-subagents.sh", {}, "Write",
+             {"file_path": "/repo/docs/x.md", "content": "edit .dev-loop/hooks/claude/gate.sh"}, False),
+            ("deny-acceptance-to-subagents.sh", {}, "Read", {"file_path": "/repo/.dev-loop/MANIFEST.json"}, False),
+            ("deny-acceptance-to-subagents.sh", {"agent_id": "a", "agent_type": "implementer"}, "Read",
+             {"file_path": "/repo/.agents/skills/dev-loop/SKILL.md"}, False),
+            ("acceptance-wall.sh", {}, "apply_patch",
+             {"command": patch("*** Update File: src/y.py", "*** Move to: .dev-loop/hooks/codex/gate.sh")}, True),
+            ("acceptance-wall.sh", {}, "apply_patch",
+             {"command": patch("*** Add File: docs/y.md", body="+see .dev-loop/hooks/codex/gate.sh")}, False),
+            ("acceptance-wall.sh", {}, "Bash", {"command": "cat .dev-loop/hooks/codex/gate.sh"}, False),
+        ]
+        for script, caller, tool, tool_input, deny in rows:
+            with self.subTest(script=script, caller=caller.get("agent_type", "main"), tool=tool, tool_input=tool_input):
+                result = self.run_hook(script, {**caller, "cwd": "/repo", "tool_name": tool, "tool_input": tool_input})
+                self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
+                if deny:
+                    self.assertEqual(result.stderr.count("\n"), 1, result.stderr)
+                    self.assertIn("upgrade", result.stderr)
+
+
+class CdWallTests(unittest.TestCase):
+    """A `cd` earlier in the same command moves the folder the walls resolve a relative path against."""
+
+    def test_a_cd_in_the_command_cannot_hide_a_walled_path(self) -> None:
+        claude = ("bash", ROOT / "claude/hooks/deny-acceptance-to-subagents.sh")
+        codex = ("sh", ROOT / "codex/hooks/acceptance-wall.sh")
+        rows = []
+        for (shell, script), tester in [(claude, "spec-tester"), (codex, "spec_tester")]:
+            implementer = {"agent_id": "a", "agent_type": "implementer"}
+            spec_tester = {"agent_id": "b", "agent_type": tester}
+            rows += [(shell, script, implementer, command, deny) for command, deny in [
+                ("cd tests && cat acceptance/x.py", True),
+                ("cd tests; cd acceptance && ls", True),
+                ("cd tests && cd acceptance && cat x.py", True),
+                ("cd /repo/tests && cat acceptance/x.py", True),
+                ("cd ./docs/../tests && cat acceptance/x.py", True),
+                ("(cd tests && ls acceptance)", True),
+                ("bash -c 'cd tests && cat acceptance/x.py'", True),
+                ("pushd tests && cat acceptance/x.py", True),
+                ("cd -P tests && cat acceptance/x.py", True),
+                ("cd tests && cat unit/x.py", False),
+                ("cd docs && ls", False),
+                ("cd tests/unit && cat ../README.md", False),
+            ]]
+            rows += [(shell, script, spec_tester, command, deny) for command, deny in [
+                ("cd lib/.. && cd backend && cat main.py", True),
+                ("cd tests && cat ../src/x.py", True),
+                ("cd tests && cat acceptance/x.py", False),
+            ]]
+        rows.append(("sh", codex[1], {}, "cd tests && cat acceptance/x.py", False))
+        for shell, script, caller, command, deny in rows:
+            with self.subTest(script=script.name, caller=caller.get("agent_type", "main"), command=command):
+                payload = {**caller, "cwd": "/repo", "tool_name": "Bash", "tool_input": {"command": command}}
+                result = subprocess.run([shell, str(script)], input=json.dumps(payload), capture_output=True,
+                                        text=True, timeout=60)
+                self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
+
+
+class CodexTrustWarningTests(unittest.TestCase):
+    """Codex skips an untrusted hook without a message: its SessionStart hook names the untrusted events."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name).resolve() / "home"
+        self.repo = Path(tmp.name).resolve() / "repo"
+        put(self.repo / "dev-loop.json", '{"version": "2.2.0", "harnesses": ["codex"]}\n')
+        put(self.repo / ".codex" / "hooks.json", json.dumps({"hooks": {
+            "SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": "y"}]}]}}))
+        (self.repo / ".agents" / "skills").mkdir(parents=True)
+        (self.repo / ".agents" / "skills" / "dev-loop").symlink_to(ROOT / "skill")
+        git(self.repo, "init", "-q")
+
+    def start(self, *events: str) -> subprocess.CompletedProcess[str]:
+        lines = [f'[projects."{self.repo}"]', 'trust_level = "trusted"']
+        for event in events:
+            lines += [f'[hooks.state."{self.repo}/.codex/hooks.json:{event}:0:0"]', 'trusted_hash = "sha256:x"']
+        put(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
+        return subprocess.run(["sh", str(ROOT / "codex/hooks/session-start.sh")],
+                              input=json.dumps({"cwd": str(self.repo)}), capture_output=True, text=True, timeout=60,
+                              env={**os.environ, "HOME": str(self.home)})
+
+    def test_untrusted_hooks_are_named_and_trusted_hooks_add_nothing(self) -> None:
+        result = self.start("session_start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Invoke it before any other action.", result.stdout)
+        self.assertIn("Warning:", result.stdout)
+        self.assertIn("stop", result.stdout)
+        self.assertNotIn("session_start", result.stdout.split("Warning:")[1])
+        self.assertIn("/hooks", result.stdout)
+        result = self.start("session_start", "stop")
+        self.assertEqual((result.returncode, result.stdout.count("\n")), (0, 1), result.stdout)
+        self.assertNotIn("Warning:", result.stdout)
+
+    def test_no_kit_checker_or_no_dev_loop_adds_no_warning(self) -> None:
+        (self.repo / ".agents" / "skills" / "dev-loop").unlink()
+        result = self.start()
+        self.assertEqual((result.returncode, result.stdout.count("\n")), (0, 1), result.stdout)
+        (self.repo / "dev-loop.json").unlink()
+        self.assertEqual(self.start().stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
