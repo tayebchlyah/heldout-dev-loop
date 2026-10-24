@@ -35,7 +35,7 @@ npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global inst
 
 ## Verify skill
 
-A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<skill>/`: how an agent launches, checks, drives and cleans up the real app, and a feature map, one file per feature, with the routes and the accessible names a user sees. Stage 0 writes it with `devloop.py verify-init`, then `skill/references/verify.md`. Stage 6 runs `devloop.py drive` on the routes the branch changed, and one subagent checks the layout on the screenshots. `"verify": false` in `dev-loop.json` opts out.
+A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<skill>/`: how an agent launches, checks, drives and cleans up the real app, and a feature map, one file per feature, with the routes and the accessible names a user sees. Stage 0 writes it with `devloop.py verify-init`, then `skill/references/verify.md`. Stage 6 runs `devloop.py drive` on the routes the branch changed, and one subagent checks the layout on the screenshots. Stage 7 adds the before and after screens to the PR body. `"verify": false` in `dev-loop.json` opts out.
 
 ## The devloop command
 
@@ -46,7 +46,8 @@ A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<
 - `gate --summary`: runs `commands.gate`, else `scripts/gate.sh`, and reports the exit code, the log, the failure lines and the slowest tests.
 - `board`: writes a status note per feature to the `dev-loop-board` folder of the notes folder, writes `Dev Loop Board.md` (needs the Obsidian Dataview plugin with JavaScript queries on), and runs a local page at `http://127.0.0.1:7777/` (`DEVLOOP_BOARD_PORT` sets the port). Hooks run it; `--claim <slug>` shows a new spec at Stage 2. Add `dev-loop-board/` to the vault `.gitignore`: `check_setup.py` reports both.
 - `verify-init --base-url <url>`: writes the skeleton of the project's verify skill and its feature map, and the `verify` key.
-- `drive`: drives each feature map route the branch changed in Chromium (needs Playwright in the project), checks the status, the accessible names and the console errors, and saves one screenshot per route.
+- `drive`: drives each feature map route the branch changed in Chromium (needs Playwright in the project), checks the status, the accessible names and the console errors, and saves one screenshot per route. `--routes-from` drives the same routes on the base branch (the before run).
+- `capture --pr <n>`: puts a before and an after screenshot of each driven route (a WebM for a journey) in the PR body, uploaded with `gh pr edit --attach` (gh 2.99.0 or later).
 - `ci wait`: waits for the checks of the current branch's pull request, and on a failure names the failed job and its first error.
 
 ## Before the first `init` on a machine
