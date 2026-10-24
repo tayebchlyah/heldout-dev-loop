@@ -15,7 +15,10 @@
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
-  devloop.py drive [--all | --since SHA]              drive the feature map routes the branch changed, save the evidence
+  devloop.py drive [--all | --since SHA | --routes-from FILE]
+                                                      drive the feature map routes the branch changed, save the evidence
+  devloop.py capture --pr N [--before FILE] [--after FILE]
+                                                      put the before and after screens in the PR body
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -1054,6 +1057,22 @@ def cmd_drive(args: argparse.Namespace) -> int:
     return emit(out, 0 if out["ok"] or mode == "before" else 1)
 
 
+def cmd_capture(args: argparse.Namespace) -> int:
+    from capture import run
+
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 1)
+    payload, code = run(Path(top), args.pr, args.before, args.after)
+    return emit(payload, code)
+
+
+def positive_int(value: str) -> int:
+    if not value.isdigit() or int(value) < 1:
+        raise argparse.ArgumentTypeError(f"not a positive integer: {value}")
+    return int(value)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -1122,6 +1141,12 @@ def main() -> int:
     scope.add_argument("--since")
     scope.add_argument("--routes-from")
     drive.set_defaults(run=cmd_drive)
+
+    capture = commands.add_parser("capture")
+    capture.add_argument("--pr", type=positive_int, required=True)
+    capture.add_argument("--before")
+    capture.add_argument("--after")
+    capture.set_defaults(run=cmd_capture)
 
     args = parser.parse_args()
     return args.run(args)
