@@ -412,7 +412,7 @@ class ProjectConfigTests(unittest.TestCase):
 
     def test_merge_human_paths_shape(self) -> None:
         message = "merge_human_paths in dev-loop.json must be a list of non-empty strings"
-        for value in ("src/*", [""], [1], {}):
+        for value in ("src/*", [""], [" "], [1], {}, ["src/auth/"]):
             self.assertEqual(self.check({"merge_human_paths": value}), [message], value)
         self.assertEqual(self.check({"merge_human_paths": ["src/auth/*"]}), [])
 
@@ -1606,6 +1606,24 @@ class SecurityAuditCheckTests(unittest.TestCase):
         scratch = Path(self._tmp.name) / "scratch"
         self.make_files(folder, scratch)
         self.assertEqual(check_setup.tree_id(folder), self.reference_tree(scratch))
+
+    def test_tree_id_ignores_a_ds_store(self) -> None:
+        folder = self.home / "skill"
+        self.make_files(folder)
+        before = check_setup.tree_id(folder)
+        write(folder / ".DS_Store", "junk\n")
+        write(folder / "sub" / ".DS_Store", "junk\n")
+        self.assertEqual(check_setup.tree_id(folder), before)
+
+    def test_tree_id_ignores_inherited_git_env(self) -> None:
+        folder = self.home / "skill"
+        scratch = Path(self._tmp.name) / "scratch"
+        self.make_files(folder, scratch)
+        stray = {"GIT_DIR": str(self.home / "nope"), "GIT_INDEX_FILE": str(self.home / "idx"),
+                 "GIT_WORK_TREE": str(self.home), "GIT_OBJECT_DIRECTORY": str(self.home / "obj")}
+        expected = self.reference_tree(scratch)
+        with unittest.mock.patch.dict(os.environ, stray):
+            self.assertEqual(check_setup.tree_id(folder), expected)
 
     def test_tree_id_ignores_the_user_git_config(self) -> None:
         folder = self.home / "skill"
