@@ -463,11 +463,13 @@ def cmd_merge_check(args: argparse.Namespace) -> int:
         reasons.append({"reason": "no-review"})
     else:
         base = git(repo, "merge-base", reviewed, ref)
-        seen = {patch_id(repo, c) for c in
-                (git(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed) or "").split()}
-        seen -= {None, ""}
+        reviewed_pids = {c: patch_id(repo, c) for c in
+                         (git(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed) or "").split()}
+        seen = set(reviewed_pids.values()) - {None, ""}
+        landing: set[str | None] = set()
         for commit in (git(repo, "rev-list", "--reverse", f"{ref}..{head}") or "").split():
             pid = patch_id(repo, commit)
+            landing.add(pid)
             if pid == "" or pid in seen:
                 continue
             paths = changed_paths(repo, f"{commit}^1", commit)
@@ -478,6 +480,12 @@ def cmd_merge_check(args: argparse.Namespace) -> int:
                 reasons.append({"reason": "unreviewed", "commit": commit, "paths": code})
             else:
                 minor.append({"commit": commit, "paths": paths})
+        # `git cherry` marks `-` a reviewed commit main already holds: dropping it in a rebase is fine.
+        cherry_out = git(repo, "cherry", ref, reviewed, *([base] if base else [])) or ""
+        upstream = {line[2:] for line in cherry_out.splitlines() if line.startswith("- ")}
+        for commit, pid in reviewed_pids.items():
+            if pid and pid not in landing and commit not in upstream:
+                reasons.append({"reason": "dropped", "commit": commit})
     return emit({"merge": "human" if reasons else "auto", "reasons": reasons, "reviewed": reviewed,
                  "unreviewed_minor": minor, "feature": slug, "track": track}, 0)
 
