@@ -910,7 +910,7 @@ def reachable(url: str, seconds: float) -> bool:
 
 def cmd_drive(args: argparse.Namespace) -> int:
     from seal import git_dir, merge_base
-    from verify import config_errors, entries, load_entry
+    from verify import config_errors, entries, load_entry, skill_dir
 
     top = git(Path.cwd(), "rev-parse", "--show-toplevel")
     if top is None:
@@ -925,6 +925,9 @@ def cmd_drive(args: argparse.Namespace) -> int:
         return emit({"ok": True, "skipped": "no-verify", "routes": []}, 0)
     if errors := config_errors(verify):
         return emit({"error": "; ".join(errors)}, 1)
+    base = skill_dir(verify["skill"])
+    if not (repo / base / "SKILL.md").is_file():
+        return emit({"error": f"missing {base}/SKILL.md (verify.skill)"}, 1)
     loaded = {}
     for path in entries(repo, verify["skill"]):
         entry, reason = load_entry(repo, path)
