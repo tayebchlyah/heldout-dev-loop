@@ -384,8 +384,9 @@ def git_out(repo: Path, *args: str) -> str:
 
 
 def changed_paths(repo: Path, *revs: str) -> list[str]:
-    """`git diff --name-only --no-renames`, sorted: a rename counts as both paths."""
-    out = git_out(repo, "diff", "--name-only", "--no-renames", "-z", *revs)
+    """`git diff --name-only --no-renames`, sorted: a rename counts as both paths. `--ignore-submodules=none`: a
+    `.gitmodules` or user `ignore = all` cannot hide a submodule pointer move."""
+    out = git_out(repo, "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", *revs)
     return sorted(p for p in out.split("\0") if p)
 
 
@@ -394,7 +395,7 @@ def patch_id(repo: Path, commit: str) -> str | None:
     diff, None when git fails (no first parent, for one). The diff flags keep `.gitattributes` and user config from
     rendering two different changes the same way."""
     diff = subprocess.run(["git", "-C", str(repo), "diff", "--no-ext-diff", "--no-textconv", "--no-color",
-                           "--no-renames", "-a", f"{commit}^1", commit], capture_output=True)
+                           "--no-renames", "--ignore-submodules=none", "-a", f"{commit}^1", commit], capture_output=True)
     if diff.returncode != 0:
         return None
     out = subprocess.run(["git", "-C", str(repo), "patch-id", "--verbatim"], input=diff.stdout,
