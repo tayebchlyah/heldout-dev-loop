@@ -125,6 +125,13 @@ CdWallTests = test_seal_hooks.CdWallTests
 CodexTrustWarningTests = test_seal_hooks.CodexTrustWarningTests
 CanaryScriptTests = test_seal_hooks.CanaryScriptTests
 
+_autonomy_spec = importlib.util.spec_from_file_location("test_autonomy", Path(__file__).resolve().parent / "test_autonomy.py")
+if _autonomy_spec is None or _autonomy_spec.loader is None:
+    raise ImportError("cannot load test_autonomy module")
+test_autonomy = importlib.util.module_from_spec(_autonomy_spec)
+_autonomy_spec.loader.exec_module(test_autonomy)
+DecideTests = test_autonomy.DecideTests
+
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
