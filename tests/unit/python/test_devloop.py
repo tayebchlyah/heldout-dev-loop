@@ -780,7 +780,8 @@ class MergeCheckTests(Sandbox):
 
     def test_bad_shape_on_main_is_config_unreadable(self) -> None:
         rows = ['[]', '{"merge": "maybe"}', '{"merge": "human", "merge_human_paths": "src/*"}',
-                '{"merge_human_paths": [""]}', '{"merge_human_paths": [1]}']
+                '{"merge_human_paths": [""]}', '{"merge_human_paths": [1]}', '{"merge_human_paths": [" "]}',
+                '{"merge_human_paths": ["src/auth/"]}']
         wt, _ = self.reviewed_feature()
         for raw in rows:
             with self.subTest(raw=raw):
