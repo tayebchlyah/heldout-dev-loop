@@ -20,6 +20,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
+from verify import check as check_verify  # noqa: E402
 
 
 CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"]
@@ -598,6 +599,7 @@ def main() -> int:
     failures += check_notes(args.home, args.repo)
     failures += check_project_config(args.repo)
     failures += check_mutation(args.repo)
+    failures += check_verify(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
 
     if failures or action_groups:
