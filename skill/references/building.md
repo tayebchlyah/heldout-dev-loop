@@ -4,7 +4,7 @@ Read before writing code. Four parts: principles, code volume, scope for your ha
 
 ## Principles
 
-Source: pstack 0.15.32 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `b1a1298`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. The incident is the dev-loop project mistake it would have stopped.
+Source: pstack 0.15.32 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `b1a1298`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. Where a rule names an incident, it is a real mistake in a project that runs dev-loop (couchbase-doctor) that the rule would have stopped. The Stage 7 merge danger ladder in SKILL.md is copied from `pstack/skills/blast-radius/SKILL.md`, same commit.
 
 1. **Prove it works.** Apply before you call a task done. Check the real thing (run it, read the actual value, read the diff), not a proxy, a self-report or "it compiles". Script the check when you can.
 2. **Fix root causes.** Apply when debugging. Trace the symptom to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate.
