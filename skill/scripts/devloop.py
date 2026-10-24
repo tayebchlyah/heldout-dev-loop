@@ -483,8 +483,10 @@ def merge_check(args: argparse.Namespace) -> int:
             reasons.append({"reason": "config-changed"})
 
     reviewed = reviewed_head(repo, worktree, notes, spec)
-    if reviewed is not None and git(repo, "rev-parse", "--verify", "-q", f"{reviewed}^{{commit}}") is None:
-        reviewed = None
+    # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.
+    if reviewed is not None:
+        reviewed = git(worktree, "rev-parse", "--verify", "-q", f"{reviewed}^{{commit}}") \
+            if re.fullmatch(r"[0-9a-f]{7,40}", reviewed) else None
     minor: list[dict] = []
     if reviewed is None:
         reasons.append({"reason": "no-review"})
