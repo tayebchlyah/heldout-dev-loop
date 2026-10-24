@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 from typing import Mapping
@@ -140,6 +141,11 @@ def check_project_config(repo: Path) -> list[str]:
             failures.append(f"commands.{key} in dev-loop.json must be a non-empty string")
     if config.get("merge", "auto") not in MERGE_VALUES:
         failures.append("merge in dev-loop.json must be auto or human")
+    paths = config.get("merge_human_paths")
+    if "merge_human_paths" in config and not (
+        isinstance(paths, list) and all(isinstance(item, str) and item.strip() for item in paths)
+    ):
+        failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
     return failures
 
 
@@ -418,15 +424,52 @@ def project_trust_groups(home: Path, repo: Path) -> list[tuple[str, list[str]]]:
     return [("Trust the project, then run /hooks in Codex.", trust_failures)] if trust_failures else []
 
 
+SECURITY_AUDIT_COMMIT = "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+SECURITY_AUDIT_TREE = "ccbc33ed119b28c3ef7b44a7e2081ab191ad63af"
+SECURITY_AUDIT_INSTALL = (
+    f"npx skills add https://github.com/cloudflare/security-audit-skill/tree/{SECURITY_AUDIT_COMMIT} "
+    "--skill security-audit --global --agent claude-code codex"
+)
+
+
+def tree_id(folder: Path) -> str | None:
+    """The git tree id of the folder's files: the Skills CLI lock's skillFolderHash."""
+    with tempfile.TemporaryDirectory() as tmp:
+        git = ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
+               f"--git-dir={tmp}/g", f"--work-tree={folder}"]
+        env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
+        try:
+            for args in (["init", "-q", "--bare", f"{tmp}/g"], [*git, "add", "-A", "-f", "."]):
+                subprocess.run(args if args[0] == "git" else ["git", *args], check=True, capture_output=True, env=env)
+            out = subprocess.run([*git, "write-tree"], check=True, capture_output=True, text=True, env=env)
+        except (subprocess.CalledProcessError, OSError):
+            return None
+        return out.stdout.strip()
+
+
+def security_audit_groups(home: Path, harness: str, env: Mapping[str, str]) -> list[tuple[str, list[str]]]:
+    """D6: the Cloudflare security-audit skill at the pinned commit, in this harness's skills folder."""
+    folder = home / (".claude" if harness == "claude" else ".agents") / "skills" / "security-audit"
+    if not (folder / "SKILL.md").is_file():
+        item = f"missing {folder / 'SKILL.md'}"
+    else:
+        tree = tree_id(folder.resolve())
+        if tree == (env.get("DEVLOOP_TEST_SECURITY_AUDIT_TREE") or SECURITY_AUDIT_TREE):
+            return []
+        item = f"{folder} is tree {tree}"
+    heading = f"Install the Cloudflare security-audit skill at {SECURITY_AUDIT_COMMIT}: {SECURITY_AUDIT_INSTALL}"
+    return [(heading, [item])]
+
+
 def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
     """D10: the kit against its manifest, the project merged files, and no user-level skill."""
     failures = check_manifest(repo) + check_user_skill(home) + check_gate_guard(repo)
     if harness == "claude":
         check_claude_settings(repo / ".claude" / "settings.json", failures)
-        return failures + check_on_failure(repo) + check_claude_repo(repo), []
+        return failures + check_on_failure(repo) + check_claude_repo(repo), security_audit_groups(home, harness, os.environ)
     root = repo / ".codex"
     failures += check_codex_root(root, root / "rules" / "dev-loop.rules")
-    return failures, project_trust_groups(home, repo) + codex_skill_groups(home)
+    return failures, project_trust_groups(home, repo) + codex_skill_groups(home) + security_audit_groups(home, harness, os.environ)
 
 
 def repo_files(repo: Path, name: str) -> list[Path]:
