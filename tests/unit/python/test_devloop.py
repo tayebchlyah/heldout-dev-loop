@@ -1342,7 +1342,7 @@ class TracksContractTests(unittest.TestCase):
         for value in [
             "git fetch origin", "git rebase origin/main", "scripts/devloop.py gate --summary",
             "scripts/devloop.py ci wait", "`merge: auto`", "`merge: human`", "two-way door", "blast radius",
-            "Track L", "gh pr merge --rebase", "security item in `## Deferred`",
+            "Track L", "gh pr merge --rebase --match-head-commit <sha>", "git rev-parse HEAD", "security item in `## Deferred`",
             "Right after the merge: write `shipped: <merge date>`", "`pr: <PR url>`",
             "into the spec frontmatter in the notes folder", "Track S: no spec, skip",
             "scripts/devloop.py merge-check", "`merge` `auto`", "merge_human_paths",
