@@ -648,6 +648,22 @@ class MergeCheckTests(Sandbox):
                 out = self.ok(wt)
                 self.assertEqual(out["reasons"], expected)
 
+    def test_submodule_pointer_move_is_unreviewed(self) -> None:
+        """`.gitmodules` `ignore = all` must not hide a submodule pointer move from the diffs."""
+        self.main_config({"merge_human_paths": ["sub"]})
+        put(self.repo / ".gitmodules", '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n\tignore = all\n')
+        git(self.repo, "add", ".gitmodules")
+        git(self.repo, "update-index", "--add", "--cacheinfo", f"160000,{self.head(self.repo)},sub")
+        git(self.repo, "commit", "-q", "-m", "sub")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+        wt, _ = self.reviewed_feature()
+        git(wt, "update-index", "--cacheinfo", f"160000,{self.head(wt)},sub")
+        git(wt, "commit", "-q", "-m", "move sub")
+        out = self.ok(wt)
+        self.assertEqual(out["reasons"], [{"reason": "human-path", "path": "sub", "pattern": "sub"},
+                                          {"reason": "unreviewed", "commit": self.head(wt), "paths": ["sub"]}])
+
     def test_is_test_or_doc(self) -> None:
         devloop = load_devloop()
         rows = {
