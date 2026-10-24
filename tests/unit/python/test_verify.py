@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "scripts"
@@ -119,6 +120,27 @@ class VerifyCheckTests(unittest.TestCase):
         self.assertEqual(verify_lines(make_repo(self.tmp / "a", verify=False)), [])
         self.assertEqual(verify_lines(make_repo(self.tmp / "b", stacks="python")), [])
         self.assertEqual(verify_lines(make_repo(self.tmp / "c", stacks=None)), [])
+
+    def stub_gh(self, version: str) -> Path:
+        folder = self.tmp / f"gh-{version}"
+        put(folder / "gh", f"#!/bin/sh\necho 'gh version {version} (2026-01-01)'\n")
+        (folder / "gh").chmod(0o755)
+        return folder
+
+    def test_gh_line_for_old_or_missing_gh(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        line = "gh 2.99.0 or later needed for PR captures (gh pr edit --attach), found {}"
+        empty = self.tmp / "empty"
+        empty.mkdir()
+        for path, found in ((self.stub_gh("2.98.0"), "2.98.0"), (empty, "none"), (self.stub_gh("2.103.2"), None)):
+            with self.subTest(found=found), mock.patch.dict(os.environ, {"PATH": str(path)}):
+                self.assertEqual(self.verify.gh_line(root), [line.format(found)] if found else [])
+        off, absent = make_repo(self.tmp / "off", verify=False), make_repo(self.tmp / "none")
+        with mock.patch.dict(os.environ, {"PATH": str(empty)}):
+            self.assertEqual(self.verify.gh_line(off), [])
+            self.assertEqual(self.verify.gh_line(absent), [])
+        with mock.patch.dict(os.environ, {"PATH": f"{self.stub_gh('2.98.0')}{os.pathsep}{os.environ['PATH']}"}):
+            self.assertIn(f"- {line.format('2.98.0')}", verify_lines(root, ("gh ",)))
 
     def test_filled_skill_with_one_entry_is_silent(self) -> None:
         root = make_repo(self.tmp / "app", verify=VALID)
