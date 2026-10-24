@@ -31,10 +31,12 @@ Session B: Stages 3 to 7 chained, under the grant. Each stage ends, run `scripts
 
 Autonomy grant (Session B, Track S after Stage 1):
 
-- Make each open decision yourself: pick the option you would recommend, record it in the spec under `## Assumptions`, one line of reason. Track S: in the PR body.
-- Stop and report only for: a gate still red after three fix rounds, a one-way door the approved spec does not cover, an action that deletes data or reaches production, a usage limit, a conflict with an earlier spec that its Supersedes list does not name.
+- Run instead of ask. Before a question or a stop, find out whether a run answers it: a command, a test, a prototype, a read. Yes: do the run, decide from its result. Claude: the ask wall denies `AskUserQuestion` in a feature worktree.
+- Make each open decision yourself: pick the option you would recommend, then log it: `scripts/devloop.py decide --kind decision --what <pick> --why <one line> --evidence <run, file:line, or link> [--result <text>]`. Add `--risk` when a wrong pick changes what users see, changes or loses data, touches security, or costs more than one task to undo. Each surprise: `--kind discovery`. Only the controller runs `decide`: the log is in the spec (`## Decision log`, Track S: `<git-dir>/dev-loop/decisions.md`). Old specs keep their Assumptions section, read only.
+- Stop and report only for: a gate still red after three fix rounds, a one-way door the approved spec does not cover (a stop item, never a `decide` row), an action that deletes data or reaches production, a usage limit, a conflict with an earlier spec that its Supersedes list does not name.
 - Push the feature branch, open the PR. Merge only under Stage 7 merge rule. Ask before a tag push.
-- Report once, at the end: PR link, gate results, the `## Assumptions` list, deferred items.
+- Report once, at the end, the full report. First sentence: what waits on the user. Then each waiting item, riskiest first: each `risk` row, the stop item when the session stopped, each Attention item (Stage 7 log audit), each new `## Deferred` item. Per item: link, what it changes for users, evidence, risk, pick. Never cut or shrink an item for length. Then the PR link and the gate lines. The PR body carries the same list in its `Decisions` section.
+
 
 Monitor rule: a command longer than two minutes runs in the background as `scripts/devloop.py logged -- <cmd>`, full log in a file, with a Monitor on it. Never end a turn while a run has nobody watching.
 
@@ -48,6 +50,17 @@ Verification budget. The kit enforces no time cap: a hook the harness kills is a
 | T3 | CI, feature gate | API 11 min, Playwright 9 min per shard | held-out acceptance, flows only |
 | T4 | Nightly | about 60 min | mutation on critical modules, test-value audit, flake statistics |
 
+## Pause and continue
+
+A usage limit, a switch of account or of harness stops the work. Two kit skills, both harnesses (Codex: `$pause`, `$continue`):
+
+- `/pause`: the user stops the work now, any stage. Stop each running subagent, leave background runs alive, write the note with `scripts/devloop.py pause`. User-invoked only.
+- `/continue`: the user calls it, or you run it after a plain "continue". It runs the procedure below.
+- Claude: a `StopFailure` `rate_limit` in a feature worktree writes the note itself (`pause.sh`). Codex: only `/pause` writes one.
+
+`status` reads the note (`<git-dir>/dev-loop/pause.json`). `paused` in the output, `next` `resume from the pause note`: another session left it; hand off: read the note, the last 20 assistant messages of its `transcript`, the decision log, the ledger, `git status`; log `decide --kind discovery --what "resumed from a pause note (<reason>)"` with the transcript as evidence; `scripts/devloop.py pause --clear`; give each note agent to a fresh agent with its full brief plus "the uncommitted work in the worktree is yours, continue it"; continue the stage. A session start, a new session that names the feature (`status --feature <slug>`), and a bare "continue" on `main` (one `paused: true` feature: take it; more: ask which) all land here.
+No `paused`, same session: wake. Each subagent that stopped during its work gets a message to continue (Claude `SendMessage`; Codex `send_input` or `followup_task`). Never dispatch a new agent on unfinished work. Re-attach to each background run still alive; never start it again. A finished agent never gets new work: new work goes to a fresh agent.
+
 ## Detect the stage
 
 Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left.
@@ -59,7 +72,7 @@ Board: hooks write it. Never edit a status note. Never send `devloop.py` JSON to
 ## Where each stage runs
 
 Stages 0 to 2 run in the main checkout on `main`. Stages 3 to 7 run in the feature's own worktree, on the feature's own branch, one worktree for the feature's whole life.
-At the start of Stages 3 to 7, work in that worktree yourself: find it with `git worktree list`, or create it with the harness's own worktree mechanism. The branch exists: attach the worktree to it. Else: branch from `origin/main` after `git fetch origin`. Never ask the user to change directory.
+At the start of Stages 3 to 7, work in that worktree yourself: find it with `git worktree list`, or create it with the harness's own worktree mechanism. The branch exists: attach the worktree to it. Else: branch from `origin/main` after `git fetch origin`. Never ask the user to change directory. Claude: enter it with `EnterWorktree` (`path` for an existing worktree): the session cwd, and so the hook `cwd` of the ask wall and of `pause.sh`, is then the worktree. A `cd` in Bash does not move it.
 
 Rebase onto `origin/main` at four points only, each right after `git fetch origin`: Stage 2 start (on `main`), Stage 3 start, Stage 6 start, Stage 7. Never during Stages 4 and 5: the SDD ledger and the review packages name commits by hash.
 Every conflict under `tests/acceptance/` goes to `spec-tester`: it resolves the file and runs `scripts/devloop.py seal --rebase-continue`, which writes the new seal value into the commit message of the rebase and continues it. A conflict happens only in a file the seal commit touched.
@@ -114,7 +127,7 @@ Skip the executor's final whole-branch review: the Stage 6 review wave replaces 
 Whoever writes code reads [references/building.md](references/building.md) and [references/tests.md](references/tests.md) first. A test that needs a running stack: `commands.stack_up`, else `docker compose --profile test up -d --wait`. Test-first: the route's `tdd` skill. A bug or a failing test with no clear cause: the route's `diagnosing-bugs` skill.
 Track L: use the selected route's implementer and reviewer roles. Claude Code implementers use `subagent_type: implementer`; Codex implementers use custom agent `implementer`. Task numbers 1, 2, 3, no suffixes.
 Taint: an implementer or spec-tester read what its wall hides (transcript audit at SubagentStop). `gate --summary` is red with `taint`, the Stop hooks block until it closes. Implementer taint: revert the listed commits with `git revert`, give the task to a fresh implementer. Spec-tester taint: a fresh spec-tester runs `git revert --no-commit <sha>`, then `scripts/devloop.py seal --feature <slug> --reverts <sha> --message <subject>` with only the revert staged, then writes the tests again and runs `scripts/devloop.py seal --feature <slug> --message <subject>`. A tainted subagent with no commit closes its record, a warning only. An implementer that meets a guard block or a taint report stops and reports; it never rephrases the call.
-Ledger gets `## Discoveries` section, one line per surprise.
+Each implementer final report ends with a `Discoveries` list. The controller logs each line: `scripts/devloop.py decide --kind discovery`. Own surprises too.
 Deferred findings go to the project note `## Deferred` in the notes folder, not to ledger.
 
 ## 6 Feature gate
@@ -144,7 +157,8 @@ Never invoke `superpowers:verification-before-completion`. The shell gate owns r
 ## 7 Ship
 dev-loop's own steps, no finishing skill.
 `git fetch origin`, `git rebase origin/main`, `scripts/devloop.py gate --summary` (`exit` 0, else fix first), `git push`.
-PR body through the route's `pr` skill. It names the door (one-way or two-way) and the blast radius.
+Log audit, before the PR body: one fresh subagent, same harness, gets the decision log, the main transcript of this session, and each transcript a handoff row names in its `Evidence`. It reads only assistant text and tool calls, part by part when a file is large. It lists decisions in the transcripts with no row, and rows whose evidence does not exist. A transcript it cannot find: an item "not audited: <path>". Its list is the `Attention` section of the final report and of the PR body.
+PR body through the route's `pr` skill. It names the door (one-way or two-way) and the blast radius. Sections `Decisions` (the final report list: each `risk` row, each Attention item, each new `## Deferred` item) and `Attention`. Track S: the rows of `<git-dir>/dev-loop/decisions.md` too.
 Captures, right after the PR opens, [references/verify.md](references/verify.md) section Stage 7: the before run in a temporary detached worktree at the base (base Launch, this worktree's `scripts/devloop.py drive --routes-from <after.json>`, base Cleanup), then `scripts/devloop.py capture --pr <n> --after <after.json> [--before <before drive.json>]` from the feature worktree, where `<after.json>` comes from `scripts/devloop.py capture --write-after <after.json>` run first in the feature worktree, then `git worktree remove --force` of the temporary worktree. Report line `captures: <n> routes` or `captures: skipped: <reason>`. A failure never blocks the merge. `verify` absent or `false`, or no route with `ok` true: no before run, no capture.
 `scripts/devloop.py ci wait`. `state` `fail`: read `failed_job` and `first_error`, fix, push, wait again. Three red rounds: stop, report.
 Merge rule. Take `<sha>` = `git rev-parse HEAD` in the feature worktree, then run `scripts/devloop.py merge-check`: it checks that HEAD and reads `merge` and `merge_human_paths` from `dev-loop.json` on the main ref, never the branch. Merge without the user only when it returns `merge` `auto` and, after green CI and the Stage 6 review wave, the PR is Track S or M, a two-way door with a small blast radius. Else wait for the user and name each of its `reasons`. A one-way door or Track L waits for the user. `merge: auto` is the default, `merge: human`: every PR waits for the user.

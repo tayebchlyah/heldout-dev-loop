@@ -387,5 +387,40 @@ class KitSkillTests(unittest.TestCase):
                 self.assertEqual(yaml.is_file() and "allow_implicit_invocation: false" in yaml.read_text(), user_only)
 
 
+ROOT = HERE.parents[2]
+IMPLEMENTERS = [ROOT / "claude" / "agents" / "implementer.md", ROOT / "codex" / "agents" / "implementer.toml"]
+
+
+class AutonomyContractTests(unittest.TestCase):
+    """The kit text of Session B autonomy: run instead of ask, the decision log, the report, pause and continue."""
+
+    def test_kit_text_names(self) -> None:
+        refs = ROOT / "skill" / "references"
+        cases = [
+            (ROOT / "skill" / "SKILL.md", ["devloop.py decide", "/pause", "/continue", "`paused`", "Attention", "Decisions",
+                                           "never dispatch a new agent on unfinished work", "EnterWorktree",
+                                           "--kind discovery", "--risk"]),
+            (refs / "spec.md", ["## Decision log", "| Time | Stage | Session | Kind | Risk | Decision | Why | Evidence | Result |",
+                                "decide --feature <slug>"]),
+            (refs / "claude.md", ["EnterWorktree", "SendMessage", "TaskStop", "deny-ask", "StopFailure"]),
+            (refs / "codex.md", ["send_input", "followup_task", "resume_agent", "interrupt_agent", "close_agent",
+                                 "CODEX_THREAD_ID", "errored", "writable root", "$pause", "$continue"]),
+            *[(path, ["Discoveries"]) for path in IMPLEMENTERS],
+        ]
+        for path, values in cases:
+            for value in values:
+                with self.subTest(path=path.name, value=value):
+                    self.assertIn(value.lower(), path.read_text().lower())
+
+    def test_old_sections_are_gone(self) -> None:
+        cases = [(ROOT / "skill" / "SKILL.md", ["## Assumptions", "## Discoveries"]),
+                 (ROOT / "skill" / "references" / "spec.md", ["## Assumptions"]),
+                 *[(path, ["devloop.py decide"]) for path in IMPLEMENTERS]]
+        for path, values in cases:
+            for value in values:
+                with self.subTest(path=path.name, value=value):
+                    self.assertNotIn(value, path.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
