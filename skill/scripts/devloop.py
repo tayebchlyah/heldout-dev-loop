@@ -19,6 +19,8 @@
                                                       drive the feature map routes the branch changed, save the evidence
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
+  devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
+                                                      append one row to the decision log
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -40,6 +42,7 @@ from pathlib import Path
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
+import autonomy  # noqa: E402
 from notes_path import NotesPathError, resolve  # noqa: E402
 
 CHECKS_RETRY_SECONDS = 15
@@ -1071,6 +1074,53 @@ def positive_int(value: str) -> int:
     return int(value)
 
 
+# decide
+
+
+def branch_slug(repo: Path) -> str | None:
+    """The slug of the checked-out branch `<prefix>/<slug>`, or None."""
+    branch = git(repo, "symbolic-ref", "--short", "-q", "HEAD")
+    return branch.rsplit("/", 1)[1].lower() if branch and "/" in branch else None
+
+
+def log_target(repo: Path, slug: str, notes: Path) -> Path | None:
+    """The decision log of a feature: its spec, else (Track S) `decisions.md` in its worktree git dir."""
+    matches = [path for name, path in specs(notes) if name == slug]
+    if matches:
+        return matches[-1]
+    worktree, _ = feature_checkout(repo, slug)
+    git_dir = git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
+    return Path(git_dir) / "dev-loop" / "decisions.md" if git_dir else None
+
+
+def cmd_decide(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    for name in ("what", "why", "evidence"):
+        if not getattr(args, name).strip():
+            return emit({"error": f"--{name} is empty"}, 1)
+    slug = (args.feature or "").lower() or branch_slug(repo)
+    if slug is None:
+        return emit({"error": "no feature: pass --feature or run on a branch <prefix>/<slug>"}, 1)
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    try:  # A spec that cannot be read (an iCloud placeholder, a mode change) fails before any write.
+        target = log_target(repo, slug, notes)
+        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if target is None or common is None:
+            return emit({"error": f"no spec and no branch worktree for {slug}"}, 1)
+        session, _ = autonomy.session_id(os.environ)
+        stage = detect_feature(repo, slug, notes)["stage"]
+        values = [datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), str(stage), (session or "")[:8], args.kind,
+                  "risk" if args.risk else "", args.what, args.why, args.evidence, args.result or ""]
+        row = "| " + " | ".join(autonomy.cell(v) for v in values) + " |"
+        autonomy.append_row(target, row, Path(common) / "dev-loop" / "decide.lock")
+    except OSError as exc:
+        return emit({"error": f"cannot read or write the decision log: {exc}"}, 1)
+    return emit({"file": str(target), "row": row}, 0)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -1146,6 +1196,17 @@ def main() -> int:
     capture.add_argument("--after")
     capture.add_argument("--write-after")
     capture.set_defaults(run=cmd_capture)
+
+    decide = commands.add_parser("decide")
+    decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
+    decide.add_argument("--what", required=True)
+    decide.add_argument("--why", required=True)
+    decide.add_argument("--evidence", required=True)
+    decide.add_argument("--result")
+    decide.add_argument("--risk", action="store_true")
+    decide.add_argument("--feature")
+    decide.add_argument("--repo", default=".")
+    decide.set_defaults(run=cmd_decide)
 
     args = parser.parse_args()
     if args.command == "capture":
