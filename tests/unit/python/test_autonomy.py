@@ -461,6 +461,14 @@ class AutonomyContractTests(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertNotIn(value, path.read_text())
 
+    def test_session_b_text_never_asks(self) -> None:
+        text = (ROOT / "skill" / "SKILL.md").read_text().lower()
+        grant = text[text.index("autonomy grant"):text.index("monitor rule")]
+        session_b = grant + text[text.index("## 3 acceptance"):]
+        for value in ["ask before a tag push", "ask the user"]:
+            with self.subTest(value=value):
+                self.assertNotIn(value, session_b)
+
 
 if __name__ == "__main__":
     unittest.main()
