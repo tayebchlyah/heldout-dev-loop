@@ -143,7 +143,8 @@ def check_project_config(repo: Path) -> list[str]:
         failures.append("merge in dev-loop.json must be auto or human")
     paths = config.get("merge_human_paths")
     if "merge_human_paths" in config and not (
-        isinstance(paths, list) and all(isinstance(item, str) and item.strip() for item in paths)
+        isinstance(paths, list)
+        and all(isinstance(item, str) and item.strip() and not item.endswith("/") for item in paths)
     ):
         failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
     return failures
@@ -437,10 +438,13 @@ def tree_id(folder: Path) -> str | None:
     with tempfile.TemporaryDirectory() as tmp:
         git = ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false", "-c", "core.attributesFile=/dev/null",
                f"--git-dir={tmp}/g", f"--work-tree={folder}"]
-        env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
         try:
-            for args in (["init", "-q", "--bare", f"{tmp}/g"], [*git, "add", "-A", "-f", "."]):
-                subprocess.run(args if args[0] == "git" else ["git", *args], check=True, capture_output=True, env=env)
+            subprocess.run(["git", "init", "-q", "--bare", f"{tmp}/g"], check=True, capture_output=True, env=env)
+            # Finder litter is not skill content
+            subprocess.run([*git, "add", "-A", "-f", ".", ":(exclude,glob)**/.DS_Store"],
+                           check=True, capture_output=True, env=env)
             out = subprocess.run([*git, "write-tree"], check=True, capture_output=True, text=True, env=env)
         except (subprocess.CalledProcessError, OSError):
             return None
