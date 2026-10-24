@@ -1293,10 +1293,10 @@ class ReviewWaveContractTests(unittest.TestCase):
             with self.subTest(path=name):
                 self.assertIn("Act On list: every defect", (REFERENCES / name).read_text())
 
-    def test_track_s_marker_comes_after_the_fix_wave(self) -> None:
+    def test_track_s_marker_comes_after_the_fix_wave_and_the_drive(self) -> None:
         line = next(line for line in self.stage.splitlines() if line.startswith("Track S:"))
-        self.assertIn("After the fix wave: `mkdir -p", line)
-        self.assertLess(line.index("fix wave only"), line.index("review-done"))
+        self.assertIn("After the drive: `mkdir -p", line)
+        self.assertLess(line.index("fix wave and drive only"), line.index("review-done"))
 
     def test_gate_writes_ledger_line(self) -> None:
         self.assertIn("`Feature gate: green at <sha>`", self.stage)
