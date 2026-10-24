@@ -44,6 +44,28 @@
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/deny-ask.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "rate_limit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pause.sh",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "Stop": [
