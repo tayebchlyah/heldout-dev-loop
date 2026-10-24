@@ -29,6 +29,11 @@ if not any(
         "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
     })
 
+# CI runners have no global git identity: every CLI or hook subprocess that commits needs one from the environment.
+for _key, _value in (("GIT_AUTHOR_NAME", "dev-loop test"), ("GIT_AUTHOR_EMAIL", "test@example.invalid"),
+                     ("GIT_COMMITTER_NAME", "dev-loop test"), ("GIT_COMMITTER_EMAIL", "test@example.invalid")):
+    os.environ.setdefault(_key, _value)
+
 DEVLOOP = Path(__file__).resolve().parents[3] / "skill" / "scripts" / "devloop.py"
 
 
