@@ -17,7 +17,7 @@
                                                       write the verify skill skeleton and the verify key
   devloop.py drive [--all | --since SHA | --routes-from FILE]
                                                       drive the feature map routes the branch changed, save the evidence
-  devloop.py capture --pr N [--before FILE] [--after FILE]
+  devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
@@ -924,19 +924,15 @@ def clean_video(value: object, folder: Path) -> str | None:
 def before_jobs(repo: Path, base: str, source: str, kit_runner: str) -> list[tuple[str, list, str]] | str:
     """The before run of `--routes-from`: per entry of the after `drive.json` with an `ok` route, its `ok` route
     paths (no names) and its runner. Only those map entries are read; a missing or bad one counts as absent."""
+    from capture import read_drive
     from verify import load_entry
 
-    try:
-        after = json.loads(Path(source).read_text())
-        if not isinstance(after, dict) or not isinstance(after.get("routes"), list):
-            raise ValueError
-    except (OSError, ValueError):
+    after = read_drive(Path(source))
+    if after is None:
         return f"--routes-from {source} is not a JSON object with a routes list"
     wanted: dict[str, list[dict]] = {}
     journeys = set()
     for route in after["routes"]:
-        if not isinstance(route, dict) or not isinstance(route.get("entry"), str) or not isinstance(route.get("path"), str):
-            continue
         if route.get("video"):
             journeys.add(route["entry"])
         if route.get("ok") is True:
@@ -1058,11 +1054,13 @@ def cmd_drive(args: argparse.Namespace) -> int:
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
-    from capture import run
+    from capture import run, write_after
 
     top = git(Path.cwd(), "rev-parse", "--show-toplevel")
     if top is None:
         return emit({"error": "not a git repository"}, 1)
+    if args.write_after:
+        return emit(*write_after(Path(top), args.write_after))
     payload, code = run(Path(top), args.pr, args.before, args.after)
     return emit(payload, code)
 
@@ -1143,12 +1141,18 @@ def main() -> int:
     drive.set_defaults(run=cmd_drive)
 
     capture = commands.add_parser("capture")
-    capture.add_argument("--pr", type=positive_int, required=True)
+    capture.add_argument("--pr", type=positive_int)
     capture.add_argument("--before")
     capture.add_argument("--after")
+    capture.add_argument("--write-after")
     capture.set_defaults(run=cmd_capture)
 
     args = parser.parse_args()
+    if args.command == "capture":
+        if args.write_after and (args.pr or args.before or args.after):
+            parser.error("--write-after takes no --pr, --before or --after")
+        if not args.write_after and not args.pr:
+            parser.error("--pr is required unless --write-after is given")
     return args.run(args)
 
 
