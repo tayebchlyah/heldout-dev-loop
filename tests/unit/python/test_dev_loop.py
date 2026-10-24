@@ -87,6 +87,7 @@ if _devloop_tests_spec is None or _devloop_tests_spec.loader is None:
 test_devloop = importlib.util.module_from_spec(_devloop_tests_spec)
 _devloop_tests_spec.loader.exec_module(test_devloop)
 StatusTests = test_devloop.StatusTests
+MergeCheckTests = test_devloop.MergeCheckTests
 LoggedTests = test_devloop.LoggedTests
 GateTests = test_devloop.GateTests
 CiWaitTests = test_devloop.CiWaitTests
