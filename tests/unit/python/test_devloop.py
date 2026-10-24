@@ -443,6 +443,248 @@ class StatusTests(Sandbox):
         self.assertEqual(self.status("--feature", "fix-the-api-v2")["stage"], 2)
 
 
+class MergeCheckTests(Sandbox):
+    """`devloop.py merge-check` as a process: config from the main ref, human paths, patch-id review check."""
+
+    PLAN_NAME = "20261002 Widget Plan"
+
+    def setUp(self) -> None:
+        super().setUp()
+        put(self.repo / ".git" / "info" / "exclude", ".superpowers/\n")
+        self.main_config({"version": "2.0.0"})
+
+    def main_config(self, config: object, raw: str | None = None) -> None:
+        """Commit `dev-loop.json` on main and push it to origin."""
+        self.commit(self.repo, "dev-loop.json", raw if raw is not None else json.dumps(config), "config")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+
+    def feature(self, track: str = "M") -> Path:
+        put(self.notes / "specs" / "20261001 Add Widget.md",
+            frontmatter(feature="widget", track=track, review_status="approved"))
+        put(self.notes / "plans" / f"{self.PLAN_NAME}.md", PLAN)
+        wt = self.root / "wt-widget"
+        git(self.repo, "worktree", "add", "-q", "-b", "feat/widget", str(wt), "origin/main")
+        return wt.resolve()
+
+    def head(self, cwd: Path) -> str:
+        return git(cwd, "rev-parse", "HEAD").strip()
+
+    def gate_green(self, wt: Path, *shas: str) -> None:
+        put(wt / ".superpowers" / "sdd" / self.PLAN_NAME / "progress.md",
+            "Task 1: complete\n" + "".join(f"Feature gate: green at {sha}\n" for sha in shas))
+
+    def reviewed_feature(self, track: str = "M") -> tuple[Path, str]:
+        wt = self.feature(track)
+        self.commit(wt, "src/app.py", "print('a')\n")
+        sha = self.head(wt)
+        self.gate_green(wt, sha)
+        return wt, sha
+
+    def merge_check(self, *args: str, cwd: Path) -> tuple[int, dict]:
+        return run_cli("merge-check", *args, cwd=cwd, env=self.env)
+
+    def ok(self, cwd: Path, *args: str) -> dict:
+        code, out = self.merge_check(*args, cwd=cwd)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def reasons(self, out: dict, name: str) -> list[dict]:
+        return [r for r in out["reasons"] if r["reason"] == name]
+
+    def test_clean_track_m_is_auto(self) -> None:
+        wt, sha = self.reviewed_feature()
+        self.commit(self.repo, "other.txt", "x\n")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(wt, "fetch", "-q", "origin")
+        git(wt, "rebase", "-q", "origin/main")
+        self.assertNotEqual(self.head(wt), sha)
+        out = self.ok(wt)
+        self.assertEqual(out, {"merge": "auto", "reasons": [], "reviewed": sha, "unreviewed_minor": [],
+                               "feature": "widget", "track": "M"})
+
+    def test_track_s_reads_the_review_done_marker(self) -> None:
+        git(self.repo, "switch", "-q", "-c", "fix/tiny")
+        self.commit(self.repo, "src/app.py", "print('a')\n")
+        out = self.ok(self.repo)
+        self.assertEqual((out["track"], out["reasons"], out["reviewed"]), ("S", [{"reason": "no-review"}], None))
+        sha = self.head(self.repo)
+        put(self.repo / ".git" / "dev-loop" / "review-done", sha + "\n")
+        out = self.ok(self.repo)
+        self.assertEqual((out["merge"], out["reasons"], out["reviewed"], out["feature"]), ("auto", [], sha, "tiny"))
+
+    def test_reasons_each_shape(self) -> None:
+        cases = {
+            "merge-human": ({"merge": "human"}, "M", None, {"reason"}),
+            "track-l": ({}, "L", None, {"reason"}),
+            "human-path": ({"merge_human_paths": ["src/auth/*"]}, "M", "auth", {"reason", "path", "pattern"}),
+            "config-changed": ({"merge_human_paths": ["x/*"]}, "M", "config", {"reason"}),
+            "no-review": ({}, "M", "no-ledger", {"reason"}),
+            "unreviewed": ({}, "M", "late", {"reason", "commit", "paths"}),
+            "config-unreadable": (None, "M", None, {"reason"}),
+        }
+        for name, (config, track, change, keys) in cases.items():
+            with self.subTest(reason=name):
+                self.tearDown()
+                self.setUp()
+                if config is None:
+                    self.main_config(None, raw="{")
+                else:
+                    self.main_config(config)
+                wt, sha = self.reviewed_feature(track)
+                if change == "auth":
+                    self.commit(wt, "src/auth/token.py", "t\n")
+                    self.gate_green(wt, self.head(wt))
+                elif change == "config":
+                    self.commit(wt, "dev-loop.json", json.dumps({"merge_human_paths": []}))
+                    self.gate_green(wt, self.head(wt))
+                elif change == "no-ledger":
+                    (wt / ".superpowers" / "sdd" / self.PLAN_NAME / "progress.md").unlink()
+                elif change == "late":
+                    self.commit(wt, "src/app.py", "print('b')\n")
+                out = self.ok(wt)
+                self.assertEqual(out["merge"], "human")
+                self.assertEqual([r["reason"] for r in out["reasons"]], [name], out)
+                self.assertEqual(set(out["reasons"][0]), keys)
+                if name == "human-path":
+                    self.assertEqual(out["reasons"][0], {"reason": name, "path": "src/auth/token.py",
+                                                         "pattern": "src/auth/*"})
+                if name == "unreviewed":
+                    self.assertEqual(out["reasons"][0], {"reason": name, "commit": self.head(wt),
+                                                         "paths": ["src/app.py"]})
+                if name == "no-review":
+                    self.assertIsNone(out["reviewed"])
+
+    def test_last_ledger_line_wins(self) -> None:
+        wt, first = self.reviewed_feature()
+        self.commit(wt, "src/more.py", "m\n")
+        second = self.head(wt)
+        self.gate_green(wt, first, second)
+        out = self.ok(wt)
+        self.assertEqual((out["reviewed"], out["reasons"]), (second, []))
+
+    def test_minor_commit_is_listed_not_blocking(self) -> None:
+        wt, _ = self.reviewed_feature()
+        put(wt / "tests" / "unit" / "test_x.py", "x\n")
+        self.commit(wt, "README.md", "r\n")
+        out = self.ok(wt)
+        self.assertEqual((out["merge"], out["reasons"]), ("auto", []))
+        self.assertEqual(out["unreviewed_minor"], [{"commit": self.head(wt), "paths": ["README.md", "tests/unit/test_x.py"]}])
+
+    def test_is_test_or_doc(self) -> None:
+        devloop = load_devloop()
+        rows = {
+            "tests/a.py": True, "a/test/b.go": True, "docs/x.md": True, "test_a.py": True, "pkg/a_test.py": True,
+            "a_test.go": True, "x.test.ts": True, "x.spec.js": True, "README.md": True, "sub/CHANGELOG.md": True,
+            "skill/SKILL.md": False, "AGENTS.md": False, "src/app.py": False, "testing/a.py": False, "readme.md": False,
+        }
+        for path, expected in rows.items():
+            with self.subTest(path=path):
+                self.assertEqual(devloop.is_test_or_doc(path), expected)
+
+    def test_empty_commit_is_not_listed(self) -> None:
+        wt, _ = self.reviewed_feature()
+        git(wt, "commit", "-q", "--allow-empty", "-m", "empty")
+        out = self.ok(wt)
+        self.assertEqual((out["merge"], out["reasons"], out["unreviewed_minor"]), ("auto", [], []))
+
+    def test_short_ref_shadow_is_ignored(self) -> None:
+        self.main_config({"merge": "human"})
+        wt, _ = self.reviewed_feature()
+        self.commit(wt, "dev-loop.json", json.dumps({"version": "2.0.0"}), "permissive")
+        forged = self.head(wt)
+        git(wt, "reset", "-q", "--hard", "HEAD~1")
+        git(wt, "tag", "origin/main", forged)
+        git(wt, "branch", "origin/main", forged)
+        out = self.ok(wt)
+        self.assertEqual([r["reason"] for r in out["reasons"]], ["merge-human"])
+
+    def test_falls_back_to_local_main_without_origin(self) -> None:
+        wt, _ = self.reviewed_feature()
+        git(self.repo, "remote", "remove", "origin")
+        self.assertEqual(git(self.repo, "for-each-ref", "refs/remotes"), "")
+        self.commit(self.repo, "dev-loop.json", json.dumps({"version": "2.0.0", "merge": "human"}))
+        out = self.ok(wt)
+        self.assertIn({"reason": "merge-human"}, out["reasons"])
+        git(self.repo, "branch", "-q", "-m", "main", "trunk")
+        code, out = self.merge_check(cwd=wt)
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+
+    def test_no_feature_on_main_exits_1(self) -> None:
+        code, out = self.merge_check(cwd=self.repo)
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+        code, out = self.merge_check("--feature", "nope", cwd=self.repo)
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+
+    def test_rename_out_of_protected_path_waits(self) -> None:
+        self.commit(self.repo, "src/auth/token.py", "t\n")
+        self.main_config({"merge_human_paths": ["src/auth/*"]})
+        wt = self.feature()
+        git(wt, "mv", "src/auth/token.py", "src/token.py")
+        git(wt, "commit", "-q", "-m", "move")
+        self.gate_green(wt, self.head(wt))
+        out = self.ok(wt)
+        self.assertEqual(out["reasons"], [{"reason": "human-path", "path": "src/auth/token.py", "pattern": "src/auth/*"}])
+
+    def test_merge_commit_is_checked_against_first_parent(self) -> None:
+        wt, _ = self.reviewed_feature()
+        git(wt, "switch", "-q", "-c", "side")
+        self.commit(wt, "docs/x.md", "d\n")
+        git(wt, "switch", "-q", "feat/widget")
+        git(wt, "merge", "-q", "--no-ff", "--no-commit", "side")
+        put(wt / "src" / "app.py", "print('evil')\n")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", "merge side")
+        merge = self.head(wt)
+        out = self.ok(wt)
+        self.assertEqual(self.reasons(out, "unreviewed"),
+                         [{"reason": "unreviewed", "commit": merge, "paths": ["src/app.py"]}])
+
+    def test_gitattributes_binary_does_not_hide_a_change(self) -> None:
+        """A reviewed commit swapped for another one with the same subject: the rendered diff must not hide it."""
+        for attributes in ("*.py binary\n", "*.py diff=hide\n"):
+            with self.subTest(attributes=attributes):
+                self.tearDown()
+                self.setUp()
+                git(self.repo, "config", "diff.hide.textconv", "sh -c 'echo same'")  # User config, not the branch.
+                self.commit(self.repo, ".gitattributes", attributes)
+                git(self.repo, "push", "-q", "origin", "main")
+                git(self.repo, "fetch", "-q", "origin")
+                wt, reviewed = self.reviewed_feature()
+                git(wt, "reset", "-q", "--hard", "HEAD~1")
+                self.commit(wt, "src/app.py", "print('evil')\n")
+                out = self.ok(wt)
+                self.assertEqual(out["reviewed"], reviewed)
+                self.assertEqual(out["reasons"],
+                                 [{"reason": "unreviewed", "commit": self.head(wt), "paths": ["src/app.py"]}])
+
+    def test_bad_shape_on_main_is_config_unreadable(self) -> None:
+        rows = ['[]', '{"merge": "maybe"}', '{"merge": "human", "merge_human_paths": "src/*"}',
+                '{"merge_human_paths": [""]}', '{"merge_human_paths": [1]}']
+        wt, _ = self.reviewed_feature()
+        for raw in rows:
+            with self.subTest(raw=raw):
+                self.main_config(None, raw=raw)
+                out = self.ok(wt)
+                self.assertEqual(out["reasons"][0], {"reason": "config-unreadable"})
+                self.assertFalse({"merge-human", "human-path", "config-changed"} & {r["reason"] for r in out["reasons"]})
+
+    def test_head_config_unparsable_is_config_changed(self) -> None:
+        for main, changed in (({"merge_human_paths": ["x/*"]}, True), ({"version": "2.1.0"}, False)):
+            with self.subTest(main=main):
+                self.tearDown()
+                self.setUp()
+                self.main_config(main)
+                wt = self.feature()
+                self.commit(wt, "dev-loop.json", "{")
+                self.gate_green(wt, self.head(wt))
+                out = self.ok(wt)
+                self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [])
+
+
 class LoggedTests(Sandbox):
     SCRIPT = "import sys\nfor i in range(30): print(f'line {i}')\nprint('to stderr', file=sys.stderr)\nsys.exit(int(sys.argv[1]))\n"
 
