@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install Playwright and Chromium
+        run: npm ci && npx playwright install --with-deps chromium
+
       - name: Installer suite
         run: npm test
 
@@ -41,6 +44,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
+
+      - name: Install Playwright and Chromium
+        run: npm ci && npx playwright install --with-deps chromium
 
       - name: Held-out acceptance suite
         run: python3 -m unittest discover -s tests/acceptance -p 'test_*.py' && node --test tests/acceptance/*.test.mjs
