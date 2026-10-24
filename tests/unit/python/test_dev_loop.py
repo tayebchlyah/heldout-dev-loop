@@ -143,6 +143,7 @@ _verify_spec.loader.exec_module(test_verify)
 VerifyCheckTests = test_verify.VerifyCheckTests
 VerifyInitTests = test_verify.VerifyInitTests
 DriveTests = test_verify.DriveTests
+VerifyTextTests = test_verify.VerifyTextTests
 
 
 def all_instructions() -> str:
@@ -518,7 +519,7 @@ class SkillContractTests(unittest.TestCase):
     def test_codex_branch_uses_real_codex_operations(self) -> None:
         codex = (SKILL_ROOT / "references" / "codex.md").read_text()
         self.assertIn("Codex `/review`", codex)
-        self.assertIn("browser or computer-use tools", codex)
+        self.assertNotIn("browser or computer-use tools", codex)
         self.assertNotIn("`/code-review medium`", codex)
         self.assertNotIn("`/security-review`", codex)
         self.assertNotIn("`/verify`", codex)
