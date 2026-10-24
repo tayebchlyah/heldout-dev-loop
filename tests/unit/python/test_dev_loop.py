@@ -2183,7 +2183,11 @@ class MutationContractTests(unittest.TestCase):
                 self.assertIn(value, mutation)
 
     def test_no_route_uses_a_stryker_flag_that_does_not_exist(self) -> None:
-        self.assertNotIn("--since", all_instructions())
+        # `--since` is a devloop.py drive option, never a Stryker one.
+        for line in all_instructions().splitlines():
+            if "--since" in line:
+                self.assertNotIn("stryker", line.lower())
+                self.assertIn("drive", line)
 
     def test_reference_names_the_selection_gap_and_the_setup_owner(self) -> None:
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()
