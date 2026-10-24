@@ -1033,6 +1033,21 @@ TEN_RULES = [
     "a growth report on each pr",
     "tests only at the seams the spec names",
 ]
+PSTACK_PRINCIPLES = [
+    "prove it works",
+    "fix root causes",
+    "attack the premise",
+    "make operations idempotent",
+    "migrate callers, then delete the legacy api",
+    "boundary discipline",
+    "separate before serializing shared state",
+    "explain the number",
+]
+CODEBASE_DESIGN_RULES = [
+    "the interface is the test surface",
+    "replace old tests, do not layer new ones",
+    "one adapter is a hypothetical seam, two adapters are a real one",
+]
 IMPLEMENTERS = [REPO_ROOT / "claude" / "agents" / "implementer.md", REPO_ROOT / "codex" / "agents" / "implementer.toml"]
 SPEC_TESTERS = [REPO_ROOT / "claude" / "agents" / "spec-tester.md", REPO_ROOT / "codex" / "agents" / "spec-tester.toml"]
 
@@ -1058,6 +1073,33 @@ class InstructionContractTests(unittest.TestCase):
         for rule in TEN_RULES:
             with self.subTest(rule=rule):
                 self.assertIn(rule, text)
+
+    def test_building_md_holds_pstack_principles_and_their_incidents(self) -> None:
+        text = (SKILL_ROOT / "references" / "building.md").read_text().lower()
+        for value in [*PSTACK_PRINCIPLES, "f17a", "f14b", "f6d to f6g", "b1a1298", "lauren tan", "benchmark.md"]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+
+    def test_tests_md_holds_codebase_design_rules(self) -> None:
+        text = (SKILL_ROOT / "references" / "tests.md").read_text().lower()
+        for rule in CODEBASE_DESIGN_RULES:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, text)
+
+    def test_benchmark_md_holds_the_checklist_and_its_notice(self) -> None:
+        text = (SKILL_ROOT / "references" / "benchmark.md").read_text()
+        for value in ["Why not double?", "Did it even happen?", "inconclusive", "b1a1298", "Lauren Tan"]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+
+    def test_stage_6_tests_the_premise_before_a_third_fix(self) -> None:
+        self.assertIn("test the premise before a third fix", stage_text(6))
+
+    def test_stage_7_proves_the_safety_fact_of_a_risky_merge(self) -> None:
+        text = stage_text(7)
+        for value in ["Merge danger", "the one fact", "`human-path`", "You ran it"]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
 
     def test_implementers_read_building_and_tests(self) -> None:
         for path in IMPLEMENTERS:
