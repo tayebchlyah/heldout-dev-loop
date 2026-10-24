@@ -13,6 +13,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Callable
 
+import autonomy  # the scripts folder, on sys.path wherever the board package loads
+
 from . import sources, state, store
 
 TIME = "%Y-%m-%dT%H:%M:%SZ"
@@ -135,6 +137,12 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
     return out
 
 
+def log_decisions(text: str) -> list[str]:
+    """Session B Autonomy D18: each `decision` row of the decision log as `<Decision>: <Why>`, `Risk: ` on a risk row."""
+    return [("Risk: " if r["risk"] == "risk" else "") + f"{r['decision']}: {r['why']}"
+            for r in autonomy.log_rows(text) if r["kind"] == "decision"]
+
+
 def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, now: str, waiting: str) -> dict:
     """The new status note of one feature from its detect result, its spec, plan and ledger, and its state entry
     (Board Robustness D1: never from the old note). `updated` is the caller's."""
@@ -177,6 +185,11 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         times.setdefault(str(stage), now)
     # A1: a Track S branch with commits ahead records its last commit, so a ship is seen once the branch is gone.
     head = ctx.dl.git(Path(worktree), "rev-parse", "HEAD") if spec is None and worktree and stage in (6, 7) else None
+    log = text
+    if spec is None and worktree:  # Track S: the log lives in the worktree git dir.
+        git_dir = ctx.dl.git(Path(worktree), "rev-parse", "--absolute-git-dir")
+        path = Path(git_dir) / "dev-loop" / "decisions.md" if git_dir else None
+        log = path.read_text() if path is not None and path.is_file() else ""
     return {
         "type": "dev-loop-status",
         "schema": 1,
@@ -193,7 +206,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         "stage_times": times,
         "tasks": task_list,
         "waiting": waiting,
-        "decisions": [a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else [],
+        "decisions": ([a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else []) + log_decisions(log),
         "assumptions_baseline": baseline,
         **({"head": head} if head else {}),
         "shipped_at": "",
