@@ -21,7 +21,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - Wake (same session): `send_input` (v1) or `followup_task` (v2) to each subagent that stopped during its work; a closed one: `resume_agent` first. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
 - `$pause`: `interrupt_agent` (v2), else `close_agent` (v1), on each running subagent; background runs stay alive.
 - No ask tool outside plan mode: no ask wall needed.
-- Gaps, written down, not closed: no failure event (Codex `Stop` has no error field), so only `$pause` writes a pause note, a usage limit writes none; `CODEX_THREAD_ID` in a shell command (the `decide` Session cell, the note session) and the wake of an `errored` agent are unconfirmed until a live check.
+- Gaps, written down, not closed: no failure event (Codex `Stop` has no error field), so only `$pause` writes a pause note, a usage limit writes none; the wake of an `errored` agent and the `$pause`, `$continue` entries of the `/` menu are unconfirmed until a live check. Confirmed on 0.162.1: a shell command sees `CODEX_THREAD_ID`, the id of the session file `rollout-<time>-<id>.jsonl`.
 
 ## Skill and agent names
 
