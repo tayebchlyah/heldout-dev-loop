@@ -23,6 +23,12 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)
 fi
 
+# The node suite drives a real Chromium (drive.test.mjs). The gate installs nothing itself.
+if [ $node = 1 ] && [ ! -d node_modules/playwright ]; then
+  echo "run npm ci && npx playwright install chromium"
+  exit 1
+fi
+
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 report=()
