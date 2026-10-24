@@ -664,15 +664,16 @@ class CodexTrustWarningTests(unittest.TestCase):
         put(self.repo / "dev-loop.json", '{"version": "2.2.0", "harnesses": ["codex"]}\n')
         put(self.repo / ".codex" / "hooks.json", json.dumps({"hooks": {
             "SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}],
-            "Stop": [{"hooks": [{"type": "command", "command": "y"}]}]}}))
+            "Stop": [{"hooks": [{"type": "command", "command": "y"}, {"type": "command", "command": "z"}]}]}}))
         (self.repo / ".agents" / "skills").mkdir(parents=True)
         (self.repo / ".agents" / "skills" / "dev-loop").symlink_to(ROOT / "skill")
         git(self.repo, "init", "-q")
 
-    def start(self, *events: str) -> subprocess.CompletedProcess[str]:
+    def start(self, *events: str, hooks: int = 2) -> subprocess.CompletedProcess[str]:
         lines = [f'[projects."{self.repo}"]', 'trust_level = "trusted"']
         for event in events:
-            lines += [f'[hooks.state."{self.repo}/.codex/hooks.json:{event}:0:0"]', 'trusted_hash = "sha256:x"']
+            for j in range(hooks):
+                lines += [f'[hooks.state."{self.repo}/.codex/hooks.json:{event}:0:{j}"]', 'trusted_hash = "sha256:x"']
         put(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         return subprocess.run(["sh", str(ROOT / "codex/hooks/session-start.sh")],
                               input=json.dumps({"cwd": str(self.repo)}), capture_output=True, text=True, timeout=60,
@@ -689,6 +690,11 @@ class CodexTrustWarningTests(unittest.TestCase):
         result = self.start("session_start", "stop")
         self.assertEqual((result.returncode, result.stdout.count("\n")), (0, 1), result.stdout)
         self.assertNotIn("Warning:", result.stdout)
+
+    def test_a_second_untrusted_hook_of_a_trusted_event_is_named(self) -> None:
+        result = self.start("session_start", "stop", hooks=1)
+        self.assertIn("Warning:", result.stdout)
+        self.assertIn("stop", result.stdout.split("Warning:")[1])
 
     def test_no_kit_checker_or_no_dev_loop_adds_no_warning(self) -> None:
         (self.repo / ".agents" / "skills" / "dev-loop").unlink()

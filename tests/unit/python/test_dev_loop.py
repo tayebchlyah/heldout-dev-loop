@@ -1588,8 +1588,12 @@ class ProjectSetupCheckerTests(unittest.TestCase):
     def trust_codex(self) -> None:
         main = self.main_checkout()
         lines = [f'[projects."{main}"]', 'trust_level = "trusted"']
-        for event in ["session_start", "user_prompt_submit", "pre_tool_use", "post_tool_use", "stop", "subagent_start", "subagent_stop"]:
-            lines += [f'[hooks.state."{main}/.codex/hooks.json:{event}:0:0"]', 'trusted_hash = "sha256:test"']
+        events = json.loads((self.repo / ".codex" / "hooks.json").read_text())["hooks"]
+        for event, groups in events.items():
+            for i, group in enumerate(groups):
+                for j in range(len(group["hooks"])):
+                    key = f"{main}/.codex/hooks.json:{check_setup.snake_case(event)}:{i}:{j}"
+                    lines += [f'[hooks.state."{key}"]', 'trusted_hash = "sha256:test"']
         write(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         for name in check_setup.CODEX_SKILLS:
             write(self.home / ".agents" / "skills" / name / "SKILL.md", f"name: {name}\n")
@@ -1656,6 +1660,16 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         result = self.run_checker("codex")
         self.assertEqual(result.returncode, 1)
         self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
+
+    def test_codex_project_needs_a_trusted_hash_for_each_hook_entry(self) -> None:
+        self.init()
+        self.trust_codex()
+        config = self.home / ".codex" / "config.toml"
+        write(config, config.read_text().replace(".codex/hooks.json:stop:0:1", ".codex/hooks.json:stop:9:9"))
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
+        self.assertNotIn("missing trusted Codex hook hash: session_start", result.stdout)
 
     def test_claude_project_needs_the_hook_events_and_denies(self) -> None:
         self.init("claude")
