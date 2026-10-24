@@ -939,7 +939,8 @@ def cmd_drive(args: argparse.Namespace) -> int:
     else:
         base = merge_base(repo)
         revs = f"{args.since}..HEAD" if args.since else f"{base}...HEAD" if base else None
-        changed = set((git(repo, "diff", "--name-only", "--no-renames", revs) or "").splitlines()) if revs else set()
+        diff = git(repo, "-c", "core.quotepath=off", "diff", "--name-only", "-z", "--no-renames", revs) if revs else ""
+        changed = set((diff or "").split("\0")) - {""}
         selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
             fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
     if not selected:
