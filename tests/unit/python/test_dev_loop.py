@@ -145,6 +145,13 @@ VerifyInitTests = test_verify.VerifyInitTests
 DriveTests = test_verify.DriveTests
 VerifyTextTests = test_verify.VerifyTextTests
 
+_capture_spec = importlib.util.spec_from_file_location("test_capture", Path(__file__).resolve().parent / "test_capture.py")
+if _capture_spec is None or _capture_spec.loader is None:
+    raise ImportError("cannot load test_capture module")
+test_capture = importlib.util.module_from_spec(_capture_spec)
+_capture_spec.loader.exec_module(test_capture)
+CaptureTests = test_capture.CaptureTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
