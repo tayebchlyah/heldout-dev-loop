@@ -138,7 +138,7 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
 
 
 def log_decisions(text: str) -> list[str]:
-    """Session B Autonomy D18: each `decision` row of the decision log as `<Decision>: <Why>`, `Risk: ` on a risk row."""
+    """Each `decision` row of the decision log as `<Decision>: <Why>`, `Risk: ` on a risk row."""
     return [("Risk: " if r["risk"] == "risk" else "") + f"{r['decision']}: {r['why']}"
             for r in autonomy.log_rows(text) if r["kind"] == "decision"]
 
