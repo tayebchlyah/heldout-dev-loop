@@ -366,6 +366,24 @@ class DriveTests(unittest.TestCase):
         code, out = devloop(root, "drive")
         self.assertEqual((code, out["selected"]), (0, ["a"]), out)
 
+    def test_no_base_fails_closed_but_all_works(self) -> None:
+        root = self.repo()
+        git(root, "switch", "-q", "main")
+        git(root, "branch", "-qm", "master")
+        code, out = devloop(root, "drive")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(out["error"], "no base branch: run drive --all or --since <sha>")
+        self.assertEqual(devloop(root, "drive", "--all")[0], 0)
+
+    def test_failed_diff_fails_closed(self) -> None:
+        root = self.repo()
+        self.commit(root, "web/a.ts")
+        tree = git(root, "rev-parse", "main^{tree}").strip()
+        (root / ".git/objects" / tree[:2] / tree[2:]).unlink()
+        code, out = devloop(root, "drive")
+        self.assertEqual(code, 1, out)
+        self.assertIn("git diff failed", out["error"])
+
     def test_since_selects_fix_only(self) -> None:
         root = self.repo()
         sha = self.commit(root, "web/a.ts")
