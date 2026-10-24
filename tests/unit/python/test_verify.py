@@ -447,5 +447,34 @@ class DriveTests(unittest.TestCase):
         self.assertNotIn("routes", out)
 
 
+
+def section(text: str, heading: str) -> str:
+    start = text.index(f"\n## {heading}\n")
+    end = text.find("\n## ", start + 1)
+    return text[start:end if end != -1 else None]
+
+
+class VerifyTextTests(unittest.TestCase):
+    def test_kit_text_names_verify_commands(self) -> None:
+        skill = (SCRIPTS.parent / "SKILL.md").read_text()
+        stage0 = section(skill, "0 Bootstrap")
+        self.assertIn("devloop.py verify-init", stage0)
+        self.assertIn("references/verify.md", stage0)
+        stage6 = section(skill, "6 Feature gate")
+        self.assertIn("devloop.py drive", stage6)
+        self.assertIn("drive:", stage6)
+        self.assertIn("Report five lines", stage6)
+        refs = SCRIPTS.parent / "references"
+        verify_md = (refs / "verify.md").read_text()
+        for needle in ("## Licenses", "9580c23", "Lauren Tan", "devloop.py verify-init", "drive --all",
+                       "Sub-features", "How to get to it (user POV)", "Driving it with", "Gotchas"):
+            self.assertIn(needle, verify_md)
+        for route in ("claude.md", "codex.md"):
+            text = (refs / route).read_text()
+            self.assertIn("devloop.py drive", text)
+        self.assertIn("model: sonnet", (refs / "claude.md").read_text())
+        self.assertNotIn("computer-use", (refs / "codex.md").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
