@@ -14,3 +14,11 @@ Read before writing a test. Source: Dev Process Review, "Test Strategy".
 10. A growth report on each PR.
 
 Plus: tests only at the seams the spec names.
+
+## Seams
+
+Source: Pocock skills v1.3.1 `codebase-design` (`skills/engineering/codebase-design/SKILL.md` and `DEEPENING.md`, commit `24fe0ef`). Incident: the shop test suite held 198 private-helper suppressions and 89 mutation or pin test files.
+
+11. The interface is the test surface. Callers and tests cross the same seam. A test that must reach past the interface means the module has the wrong shape.
+12. Replace old tests, do not layer new ones. Once tests exist at the deepened interface, delete the old tests on the shallow modules.
+13. One adapter is a hypothetical seam, two adapters are a real one. Add a seam only when something varies across it, typically production and test.
