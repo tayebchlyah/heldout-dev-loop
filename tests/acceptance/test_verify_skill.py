@@ -167,7 +167,7 @@ def free_port() -> int:
 
 class VerifyInitAndSetupTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="verify-skill-"))
+        self.root = Path(tempfile.mkdtemp(prefix="dl-stage0-"))
         self.addCleanup(shutil.rmtree, self.root, True)
         self.home = self.root / "home"
         self.home.mkdir()
@@ -215,15 +215,19 @@ class VerifyInitAndSetupTests(unittest.TestCase):
 
         with self.subTest(oracle=6):
             config_path.write_text(json.dumps({**base_config, "verify": False}, indent=2) + "\n")
-            output = self.checker(repo)
-            self.assertEqual(self.verify_lines(output), [], output)
-            config_path.write_text(json.dumps(base_config, indent=2) + "\n")
+            try:
+                output = self.checker(repo)
+                self.assertEqual(self.verify_lines(output), [], output)
+            finally:
+                config_path.write_text(json.dumps(base_config, indent=2) + "\n")
 
         with self.subTest(oracle=7):
             agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python\n")
-            output = self.checker(repo)
-            self.assertEqual(self.verify_lines(output), [], output)
-            agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python, ui\n")
+            try:
+                output = self.checker(repo)
+                self.assertEqual(self.verify_lines(output), [], output)
+            finally:
+                agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python, ui\n")
 
         name = "verify-shop-app"
         skill_dir = repo / ".agents" / "skills" / name
@@ -234,7 +238,7 @@ class VerifyInitAndSetupTests(unittest.TestCase):
             self.assertEqual(payload.get("skill"), name)
             self.assertEqual(payload.get("config"), {"skill": name, "base_url": "http://127.0.0.1:4173"})
             skill_md = (skill_dir / "SKILL.md").read_text()
-            self.assertRegex(skill_md, rf"(?s)\A---\n.*^name: {name}\s*$.*?\n---\n", skill_md)
+            self.assertRegex(skill_md, rf"(?ms)\A---\n.*^name: {name}\s*$.*?\n---\n", skill_md)
             for section in SECTIONS:
                 self.assertRegex(skill_md, rf"(?m)^## {section}\s*$", section)
             self.assertTrue((skill_dir / "features" / "README.md").is_file())
