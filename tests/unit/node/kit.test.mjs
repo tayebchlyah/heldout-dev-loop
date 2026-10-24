@@ -32,7 +32,7 @@ test('a command with no hook path does not change', () => {
 test('a Claude-only kit has the link and no Codex path', () => {
   const kit = buildKit({ packageRoot, harnesses: ['claude'] })
   const paths = kit.files.map((file) => file.path)
-  assert.deepEqual(kit.link, { path: '.claude/skills/dev-loop', target: '../../.agents/skills/dev-loop' })
+  assert.deepEqual(kit.links, ['dev-loop', 'pause', 'continue'].map((name) => ({ path: `.claude/skills/${name}`, target: `../../.agents/skills/${name}` })))
   assert.ok(!paths.some((path) => path.startsWith('.codex/') || path.includes('/codex/')))
   assert.ok(paths.includes('.agents/skills/dev-loop/SKILL.md'))
   assert.ok(paths.includes('.agents/skills/dev-loop/scripts/check_setup.py'))
@@ -49,7 +49,10 @@ test('a Claude-only kit has the link and no Codex path', () => {
 test('a Codex-only kit has no link and no Claude path', () => {
   const kit = buildKit({ packageRoot, harnesses: ['codex'] })
   const paths = kit.files.map((file) => file.path)
-  assert.equal(kit.link, null)
+  assert.deepEqual(kit.links, [])
+  for (const path of ['.agents/skills/pause/SKILL.md', '.agents/skills/pause/agents/openai.yaml', '.agents/skills/continue/SKILL.md']) {
+    assert.ok(paths.includes(path), path)
+  }
   assert.ok(!paths.some((path) => path.startsWith('.claude/') || path.includes('/claude/')))
   assert.ok(paths.includes('.codex/agents/implementer.toml'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/session-start.sh'))
@@ -73,6 +76,7 @@ test('the kit has no test_*.py filter: a skill/scripts/test_x.py is included', (
   cpSync(join(packageRoot, 'skill'), join(root, 'skill'), { recursive: true })
   cpSync(join(packageRoot, 'claude'), join(root, 'claude'), { recursive: true })
   cpSync(join(packageRoot, 'codex'), join(root, 'codex'), { recursive: true })
+  cpSync(join(packageRoot, 'skills'), join(root, 'skills'), { recursive: true })
   writeFileSync(join(root, 'skill', 'scripts', 'test_x.py'), 'x = 1\n')
   const kit = buildKit({ packageRoot: root, harnesses: ['claude', 'codex'] })
   const paths = kit.files.map((file) => file.path)
