@@ -135,6 +135,13 @@ BoardTaskStateTests = test_board_robust.BoardTaskStateTests
 BoardSubagentTests = test_board_robust.BoardSubagentTests
 SnapshotBoardHookTests = test_board_robust.SnapshotBoardHookTests
 
+_verify_spec = importlib.util.spec_from_file_location("test_verify", Path(__file__).resolve().parent / "test_verify.py")
+if _verify_spec is None or _verify_spec.loader is None:
+    raise ImportError("cannot load test_verify module")
+test_verify = importlib.util.module_from_spec(_verify_spec)
+_verify_spec.loader.exec_module(test_verify)
+VerifyCheckTests = test_verify.VerifyCheckTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]

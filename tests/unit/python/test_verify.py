@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Tests for the verify skill: verify.py rules, check_setup.py lines, devloop.py verify-init and drive."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "scripts"
+CHECK_SETUP = SCRIPTS / "check_setup.py"
+DEVLOOP = SCRIPTS / "devloop.py"
+
+GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main",
+       "-c", "commit.gpgsign=false"]
+
+
+def load_verify():
+    spec = importlib.util.spec_from_file_location("verify_for_tests", SCRIPTS / "verify.py")
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load verify module")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def git(cwd: Path, *args: str) -> str:
+    return subprocess.run([*GIT, *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
+
+
+def put(path: Path, text: str = "") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+SKILL_TEXT = """---
+name: verify-shop
+description: Launch, check, drive and clean up the shop.
+---
+
+# verify-shop
+
+## Launch
+uv run shop up
+
+## Doctor
+uv run shop doctor
+
+## Drive
+devloop.py drive
+
+## Evidence
+The evidence folder.
+
+## Cleanup
+uv run shop down
+"""
+
+
+def entry_text(routes: object = None, paths: object = None, script: str | None = None) -> str:
+    routes = [{"path": "/clusters", "names": [{"role": "heading", "name": "Clusters"}]}] if routes is None else routes
+    lines = ["---", f"routes: {json.dumps(routes)}", f"paths: {json.dumps(paths or ['web/*'])}"]
+    if script:
+        lines.append(f"script: {json.dumps(script)}")
+    return "\n".join(lines + ["---", "", "# Clusters", "", "The cluster list.", ""])
+
+
+def make_repo(root: Path, verify: object = "absent", stacks: str | None = "python, ui",
+              harnesses: list[str] | None = None) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    git(root, "init", "-q")
+    config: dict = {"version": "2.2.0", "harnesses": harnesses or ["claude", "codex"]}
+    if verify != "absent":
+        config["verify"] = verify
+    put(root / "dev-loop.json", json.dumps(config, indent=2) + "\n")
+    put(root / "AGENTS.md", f"# AGENTS.md\n\nstacks: {stacks}\n" if stacks else "# AGENTS.md\n")
+    return root
+
+
+def make_skill(root: Path, entries: dict[str, str] | None = None, link: bool = True) -> None:
+    skill = root / ".agents" / "skills" / "verify-shop"
+    put(skill / "SKILL.md", SKILL_TEXT)
+    put(skill / "features" / "README.md", "# Feature map\n\n- clusters.md\n")
+    for name, text in (entries if entries is not None else {"clusters": entry_text()}).items():
+        put(skill / "features" / f"{name}.md", text)
+    if link:
+        (root / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+        (root / ".claude" / "skills" / "verify-shop").symlink_to("../../.agents/skills/verify-shop")
+
+
+VALID = {"skill": "verify-shop", "base_url": "http://127.0.0.1:4173"}
+
+
+def verify_lines(root: Path, words: tuple[str, ...] = ("verify", "base_url")) -> list[str]:
+    out = subprocess.run([sys.executable, str(CHECK_SETUP), "--harness", "claude", "--repo", str(root)],
+                         capture_output=True, text=True).stdout
+    return [line for line in out.splitlines() if any(w in line for w in words)]
+
+
+class VerifyCheckTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.verify = load_verify()
+
+    def test_ui_stack_without_verify_names_verify_init(self) -> None:
+        root = make_repo(self.tmp / "app")
+        self.assertIn(f"- {self.verify.MISSING}", verify_lines(root))
+        self.assertIn("verify-init", self.verify.MISSING)
+
+    def test_verify_false_and_python_stack_are_silent(self) -> None:
+        self.assertEqual(verify_lines(make_repo(self.tmp / "a", verify=False)), [])
+        self.assertEqual(verify_lines(make_repo(self.tmp / "b", stacks="python")), [])
+        self.assertEqual(verify_lines(make_repo(self.tmp / "c", stacks=None)), [])
+
+    def test_filled_skill_with_one_entry_is_silent(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        make_skill(root)
+        self.assertEqual(self.verify.check(root), [])
+        self.assertEqual(verify_lines(root), [])
+
+    def test_skeleton_fails_on_marker_and_empty_map(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        make_skill(root, entries={})
+        skill_md = root / ".agents/skills/verify-shop/SKILL.md"
+        skill_md.write_text(SKILL_TEXT.replace("uv run shop up", self.verify.FILL))
+        lines = self.verify.check(root)
+        self.assertIn(f"fill marker {self.verify.FILL} in .agents/skills/verify-shop/SKILL.md", lines)
+        self.assertIn("no feature map entry under .agents/skills/verify-shop/features/", lines)
+
+    def test_skill_md_name_and_sections(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        make_skill(root)
+        skill_md = root / ".agents/skills/verify-shop/SKILL.md"
+        skill_md.write_text(SKILL_TEXT.replace("name: verify-shop", "name: other").replace("## Doctor", "## Doc"))
+        lines = self.verify.check(root)
+        self.assertIn(".agents/skills/verify-shop/SKILL.md lacks frontmatter name: verify-shop", lines)
+        self.assertIn(".agents/skills/verify-shop/SKILL.md lacks the H2 section Doctor", lines)
+
+    def test_fill_marker_under_features_is_named(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        make_skill(root)
+        put(root / ".agents/skills/verify-shop/features/README.md", f"# Feature map\n{self.verify.FILL}\n")
+        self.assertEqual(self.verify.check(root),
+                         [f"fill marker {self.verify.FILL} in .agents/skills/verify-shop/features/README.md"])
+
+    def test_bad_entries_name_the_file(self) -> None:
+        cases = {
+            "not_list": entry_text(routes={"path": "/x"}),
+            "no_slash": entry_text(routes=[{"path": "clusters", "names": []}]),
+            "no_role": entry_text(routes=[{"path": "/c", "names": [{"name": "Clusters"}]}]),
+            "empty_paths": entry_text().replace('paths: ["web/*"]', "paths: []"),
+            "dir_path": entry_text(paths=["web/"]),
+            "not_json": entry_text().replace('paths: ["web/*"]', "paths: web/*"),
+            "no_front": "# Clusters\n",
+            "no_script": entry_text(script="tools/missing.mjs"),
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                root = make_repo(self.tmp / name, verify=VALID)
+                make_skill(root, entries={name: text})
+                lines = self.verify.check(root)
+                self.assertEqual(len(lines), 1, lines)
+                self.assertTrue(lines[0].startswith(f"bad feature map entry .agents/skills/verify-shop/features/{name}.md: "),
+                                lines)
+
+    def test_entry_names_default_to_empty(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        make_skill(root, entries={"c": entry_text(routes=[{"path": "/c"}])})
+        entry, reason = self.verify.load_entry(root, root / ".agents/skills/verify-shop/features/c.md")
+        self.assertIsNone(reason)
+        self.assertEqual(entry["routes"], [{"path": "/c", "names": []}])
+
+    def test_bad_config_names_the_field(self) -> None:
+        cases = {
+            "verify.base_url": {**VALID, "base_url": "localhost:5173"},
+            "verify.setup": {**VALID, "setup": "make login"},
+            "verify.storage_state": {**VALID, "storage_state": "/abs/state.json"},
+            "verify.skill": {**VALID, "skill": "Bad_Name"},
+            "verify in dev-loop.json": ["x"],
+        }
+        for field, verify in cases.items():
+            with self.subTest(field=field):
+                root = make_repo(self.tmp / field, verify=verify)
+                lines = self.verify.check(root)
+                self.assertEqual(len(lines), 1, lines)
+                self.assertIn(field, lines[0])
+
+    def test_skill_without_skill_md_names_the_path(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        (root / ".agents/skills/verify-shop").mkdir(parents=True)
+        self.assertIn("missing .agents/skills/verify-shop/SKILL.md (verify.skill)", self.verify.check(root))
+
+    def test_missing_claude_link_is_named(self) -> None:
+        root = make_repo(self.tmp / "app", verify=VALID)
+        make_skill(root, link=False)
+        self.assertEqual(self.verify.check(root),
+                         [".claude/skills/verify-shop must link to ../../.agents/skills/verify-shop"])
+        codex = make_repo(self.tmp / "codex", verify=VALID, harnesses=["codex"])
+        make_skill(codex, link=False)
+        self.assertEqual(self.verify.check(codex), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
