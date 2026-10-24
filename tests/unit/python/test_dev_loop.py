@@ -133,6 +133,7 @@ _autonomy_spec.loader.exec_module(test_autonomy)
 DecideTests = test_autonomy.DecideTests
 PauseTests = test_autonomy.PauseTests
 PauseStatusTests = test_autonomy.PauseStatusTests
+AutonomyHookTests = test_autonomy.AutonomyHookTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
@@ -1991,8 +1992,9 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         commands = []
         for entry in settings["hooks"]["PreToolUse"]:
             for hook in entry["hooks"]:
-                commands.append(hook["command"])
-                del hook["onFailure"]
+                if "onFailure" in hook:  # The guards; the ask wall fails open by design.
+                    commands.append(hook["command"])
+                    del hook["onFailure"]
         write(path, json.dumps(settings))
         self.assertEqual(len(commands), 2)
         result = self.run_checker("claude")

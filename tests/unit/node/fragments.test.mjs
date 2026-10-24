@@ -61,6 +61,17 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
         },
       ],
     },
+    {
+      matcher: 'AskUserQuestion',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/deny-ask.sh', timeout: 5 }],
+    },
+  ])
+
+  assert.deepEqual(fragment.hooks.StopFailure, [
+    {
+      matcher: 'rate_limit',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/pause.sh', timeout: 30 }],
+    },
   ])
 
   assert.deepEqual(fragment.hooks.PostToolUse, [
