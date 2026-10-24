@@ -435,9 +435,9 @@ SECURITY_AUDIT_INSTALL = (
 def tree_id(folder: Path) -> str | None:
     """The git tree id of the folder's files: the Skills CLI lock's skillFolderHash."""
     with tempfile.TemporaryDirectory() as tmp:
-        git = ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
+        git = ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false", "-c", "core.attributesFile=/dev/null",
                f"--git-dir={tmp}/g", f"--work-tree={folder}"]
-        env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
+        env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
         try:
             for args in (["init", "-q", "--bare", f"{tmp}/g"], [*git, "add", "-A", "-f", "."]):
                 subprocess.run(args if args[0] == "git" else ["git", *args], check=True, capture_output=True, env=env)
