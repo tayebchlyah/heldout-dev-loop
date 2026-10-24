@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -595,6 +596,28 @@ class MergeCheckTests(Sandbox):
                 out = self.ok(wt)
                 expected = [{"reason": "dropped", "commit": fix}] if case == "skipped" else []
                 self.assertEqual(out["reasons"], expected)
+
+    def test_git_failure_exits_1(self) -> None:
+        """A path or commit listing git cannot give fails closed: an error, no `merge` value."""
+        for case in ("worktree-gone", "no-merge-base"):
+            with self.subTest(case=case):
+                self.tearDown()
+                self.setUp()
+                wt, _ = self.reviewed_feature()
+                if case == "worktree-gone":
+                    shutil.rmtree(wt)
+                    cwd = self.repo
+                else:
+                    git(wt, "switch", "-q", "--orphan", "feat/x")
+                    self.commit(wt, "src/app.py", "print('x')\n")
+                    git(wt, "branch", "-q", "-D", "feat/widget")
+                    git(wt, "branch", "-q", "-m", "feat/widget")
+                    self.gate_green(wt, self.head(wt))
+                    cwd = wt
+                code, out = self.merge_check("--feature", "widget", cwd=cwd)
+                self.assertEqual(code, 1, out)
+                self.assertIn("error", out)
+                self.assertNotIn("merge", out)
 
     def test_is_test_or_doc(self) -> None:
         devloop = load_devloop()
