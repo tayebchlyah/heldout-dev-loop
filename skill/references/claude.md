@@ -26,14 +26,14 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
-1. **Review wave, once, in parallel.** In one message, four Agent calls, all `general-purpose` with `model: opus`. Three reviewers: native `code-review`, Pocock (Pocock = two desks: spec, standards), `security-review`. Each call works in the feature worktree on `main...GATE_SHA`: whole branch, report only, no fixes. Returns a table: file, line, finding, verdict or severity, reviewer. Never `caveman:cavecrew-*`.
+1. **Review wave, once, in parallel.** In one message, four Agent calls, all `general-purpose` with `model: opus` and `effort: high`. Three reviewers: native `code-review`, Pocock (Pocock = two desks: spec, standards), `security-review`. Each call works in the feature worktree on `main...GATE_SHA`: whole branch, report only, no fixes. Returns a table: file, line, finding, verdict or severity, reviewer. Never `caveman:cavecrew-*`.
    - Invoke skill `code-review`, args `high <feature branch>`: effort `high`, the feature branch as target (no target reviews only the working diff). No `--fix`.
    - Invoke skill `security-review`. Review `git diff main...GATE_SHA` from the feature worktree, not the working tree.
    - Pocock spec desk: read `mattpocock-skills:code-review` SKILL.md, do its spec desk only, fixed point `main`.
    - Pocock standards desk: read `mattpocock-skills:code-review` SKILL.md, do its standards desk only, fixed point `main`.
    - Both desks: direct Agent calls, no nested agents. A desk started inside a subagent reports after its parent hands back.
-2. **Triage, controller.** SKILL.md Stage 6.
-3. **Fix wave.** One `implementer` per file cluster, one at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
+2. **Triage, controller.** SKILL.md Stage 6. Security verifier: one fresh Agent call per security finding, `general-purpose`, `model: opus`, `effort: high`. Prompt: the candidate-verifier prompt from `~/.claude/skills/security-audit/VALIDATION-AND-REPORTING.md` (Phase 3, "Candidate-verifier prompt"), plus the finding.
+3. **Fix wave.** One new `implementer` per file cluster, one at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
 4. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. Failures only when `commands.acceptance_failed` is absent: `pytest tests/acceptance --lf -q --tb=no`, `npx playwright test tests/acceptance --last-failed`. Every run after a fix repeats the stack reset first. Stale image run does not count.
 
 No `/verify` step. `/verify` is a real bundled skill but user-invoked only; the model cannot call it. Playwright E2E is the model's live check. The user may type `/verify` after the gate.
