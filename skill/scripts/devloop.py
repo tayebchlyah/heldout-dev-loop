@@ -863,6 +863,8 @@ def cmd_verify_init(args: argparse.Namespace) -> int:
     link = f".claude/skills/{skill}" if isinstance(harnesses, list) and "claude" in harnesses else None
     if link and os.path.lexists(repo / link):
         return emit({"error": f"{link} already exists"}, 1)
+    if link and os.path.lexists(repo / ".claude/skills") and not (repo / ".claude/skills").is_dir():
+        return emit({"error": ".claude/skills exists and is not a folder"}, 1)
 
     (repo / folder / "features").mkdir(parents=True)
     (repo / folder / "SKILL.md").write_text(SKILL_TEMPLATE.format(skill=skill, fill=FILL))
