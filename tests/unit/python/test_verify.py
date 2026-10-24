@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import importlib.util
+import http.server
+import threading
 import json
 import os
 import subprocess
@@ -294,6 +296,155 @@ class VerifyInitTests(unittest.TestCase):
         self.assertIn(f"fill marker {self.verify.FILL} in .agents/skills/verify-app/SKILL.md", lines)
         self.assertIn("no feature map entry under .agents/skills/verify-app/features/", lines)
         self.assertNotIn(self.verify.MISSING, lines)
+
+
+# A runner script: records its stdin, answers one ok route per input route.
+RUNNER = """import { readFileSync, writeFileSync } from 'node:fs'
+const input = JSON.parse(readFileSync(0, 'utf8'))
+writeFileSync(`runner-${input.entry}.json`, JSON.stringify(input))
+console.log(JSON.stringify({ routes: input.routes.map((r, i) => ({ entry: input.entry, path: r.path, ok: true,
+  status: 200, missing: [], console_errors: [], error: null, screenshot: `${input.evidence}/${input.entry}-${i + 1}.jpg`,
+  seconds: 0 })) }))
+"""
+
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+class DriveTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.shutdown)
+        self.base_url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def repo(self, verify: dict | None = None, entries: dict[str, list[str]] | None = None,
+             playwright: bool = True) -> Path:
+        root = make_repo(self.tmp / "app", verify={**VALID, "base_url": self.base_url, **(verify or {})})
+        put(root / "tools/runner.mjs", RUNNER)
+        make_skill(root, entries={name: entry_text(paths=paths, script="tools/runner.mjs")
+                                  for name, paths in (entries or {"a": ["web/a*"], "b": ["web/b/*"]}).items()})
+        put(root / ".gitignore", "runner-*.json\nnode_modules/\n")
+        if playwright:
+            (root / "node_modules/playwright").mkdir(parents=True)
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "base")
+        git(root, "switch", "-qc", "feat/x")
+        return root
+
+    def commit(self, root: Path, *paths: str) -> str:
+        for path in paths:
+            put(root / path, "change\n")
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "change")
+        return git(root, "rev-parse", "HEAD").strip()
+
+    def test_no_verify_skips(self) -> None:
+        for verify in ("absent", False):
+            with self.subTest(verify=verify):
+                root = make_repo(self.tmp / str(verify), verify=verify)
+                self.assertEqual(devloop(root, "drive"), (0, {"ok": True, "skipped": "no-verify", "routes": []}))
+
+    def test_selection_by_branch_diff_and_entry_file(self) -> None:
+        root = self.repo()
+        self.commit(root, "web/a.ts")
+        code, out = devloop(root, "drive")
+        self.assertEqual((code, out["selected"]), (0, ["a"]), out)
+        self.assertEqual([r["entry"] for r in out["routes"]], ["a"])
+        put(root / ".agents/skills/verify-shop/features/b.md",
+            entry_text(paths=["web/b/*"], script="tools/runner.mjs") + "## Gotchas\n\nNone.\n")
+        self.commit(root)
+        self.assertEqual(devloop(root, "drive")[1]["selected"], ["a", "b"])
+        self.assertEqual(devloop(root, "drive", "--all")[1]["selected"], ["a", "b"])
+
+    def test_since_selects_fix_only(self) -> None:
+        root = self.repo()
+        sha = self.commit(root, "web/a.ts")
+        self.commit(root, "web/b/x.ts")
+        self.assertEqual(devloop(root, "drive", "--since", sha)[1]["selected"], ["b"])
+        code, out = devloop(root, "drive", "--since", "nope")
+        self.assertEqual(code, 1)
+        self.assertIn("--since", out["error"])
+
+    def test_no_match_is_ok_empty(self) -> None:
+        root = self.repo()
+        self.commit(root, "docs/x.md")
+        code, out = devloop(root, "drive")
+        self.assertEqual(code, 0)
+        self.assertEqual((out["ok"], out["selected"], out["routes"]), (True, [], []))
+
+    def test_unreachable_base_url_runs_no_setup(self) -> None:
+        root = self.repo(verify={"base_url": "http://127.0.0.1:9", "setup": ["touch setup-ran"]})
+        code, out = devloop(root, "drive", "--all", env={"DEVLOOP_TEST_READY_WAIT": "1"})
+        self.assertEqual(code, 1)
+        self.assertEqual(out["error"], "base_url not reachable: http://127.0.0.1:9")
+        self.assertNotIn("routes", out)
+        self.assertFalse((root / "setup-ran").exists())
+
+    def test_failing_setup_names_command(self) -> None:
+        root = self.repo(verify={"setup": ["echo first-out", "echo oops; exit 1", "touch never"]})
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertIn("echo oops; exit 1", out["error"])
+        self.assertIn("oops", out["tail"])
+        self.assertNotIn("routes", out)
+        self.assertFalse((root / "never").exists())
+
+    def test_script_receives_runner_input(self) -> None:
+        root = self.repo(verify={"setup": ["echo '{}' > state.json"], "storage_state": "state.json"})
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 0, out)
+        received = json.loads((root / "runner-a.json").read_text())
+        self.assertEqual(received, {"base_url": self.base_url, "storage_state": str((root / "state.json").resolve()),
+                                    "routes": [{"path": "/clusters", "names": [{"role": "heading", "name": "Clusters"}]}],
+                                    "evidence": out["evidence"], "entry": "a"})
+        self.assertEqual([r["entry"] for r in out["routes"]], ["a", "b"])
+
+    def test_evidence_drive_json_matches_stdout(self) -> None:
+        root = self.repo()
+        code, out = devloop(root, "drive", "--all")
+        evidence = Path(out["evidence"])
+        git_dir = Path(git(root, "rev-parse", "--path-format=absolute", "--git-dir").strip())
+        self.assertEqual(evidence.parent, git_dir / "dev-loop" / "evidence")
+        self.assertRegex(evidence.name, r"^\d{8}T\d{6}Z$")
+        self.assertEqual(json.loads((evidence / "drive.json").read_text()), out)
+        self.assertEqual(set(out), {"ok", "selected", "routes", "evidence"})
+
+    def test_runner_crash_names_entry(self) -> None:
+        root = self.repo()
+        put(root / "tools/runner.mjs", "console.error('crashed here'); process.exit(3)\n")
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertEqual(out["error"], "runner failed for a")
+        self.assertIn("crashed here", out["tail"])
+
+    def test_missing_storage_state_named(self) -> None:
+        root = self.repo(verify={"storage_state": "state.json"})
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertIn("state.json", out["error"])
+
+    def test_no_playwright_folder_even_in_parent(self) -> None:
+        (self.tmp / "node_modules/playwright").mkdir(parents=True)
+        root = self.repo(playwright=False)
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertIn("playwright", out["error"])
+
+    def test_all_and_since_is_usage_error(self) -> None:
+        root = self.repo()
+        self.assertEqual(devloop(root, "drive", "--all", "--since", "HEAD")[0], 2)
+
+    def test_bad_entry_refuses(self) -> None:
+        root = self.repo()
+        put(root / ".agents/skills/verify-shop/features/c.md", entry_text(routes=[{"path": "nope"}]))
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertIn("features/c.md", out["error"])
+        self.assertNotIn("routes", out)
 
 
 if __name__ == "__main__":
