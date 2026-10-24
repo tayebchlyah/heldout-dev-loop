@@ -1,7 +1,8 @@
-"""`devloop.py seal-check`: the net change of ACCEPTANCE_DIR on the branch against its seal commits, and the taint."""
+"""`devloop.py seal-check`: the net change of ACCEPTANCE_DIR on the branch against its seal commits, the kit, and the taint."""
 
 from __future__ import annotations
 
+import json
 import re
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
@@ -72,9 +73,40 @@ def uncommitted_violations(repo: Path) -> list[dict]:
             if not entry.startswith("??") or any(fnmatchcase(PurePosixPath(entry[3:]).name, g) for g in TEST_FILES)]
 
 
+MANIFEST = ".dev-loop/MANIFEST.json"
+KIT_DIRS = (".agents/skills/dev-loop/", ".dev-loop/")
+
+
+def read_json(repo: Path, rev: str | None, path: str) -> dict:
+    """The JSON object at `<rev>:<path>`, or in the working tree when `rev` is None; {} when absent or invalid."""
+    try:
+        text = (repo / path).read_text() if rev is None else run_git(repo, "show", f"{rev}:{path}").stdout
+        found = json.loads(text)
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def kit_violations(repo: Path, base: str, uncommitted: bool) -> list[dict]:
+    """A kit file differs from `<base>` while the `dev-loop.json` version did not change: only `upgrade` moves the kit."""
+    head = None if uncommitted else "HEAD"
+    if read_json(repo, base, "dev-loop.json").get("version") != read_json(repo, head, "dev-loop.json").get("version"):
+        return []
+    manifests = [read_json(repo, rev, MANIFEST).get("files") for rev in (base, head)]
+    files = {key for found in manifests if isinstance(found, dict) for key in found}
+    if not files:
+        return []
+    pathspecs = [f":(top){d}" for d in KIT_DIRS] + [f":(top,literal){key}" for key in sorted(files)]
+    changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base,
+                              *([] if uncommitted else ["HEAD"]), "--", *pathspecs).stdout)
+    return [violation("kit-changed", path=path) for path in changed]
+
+
 def check(repo: Path, uncommitted: bool) -> dict:
     base = merge_base(repo)
     violations = commit_violations(repo, base) if base else []
+    if base:
+        violations += kit_violations(repo, base, uncommitted)
     if uncommitted:
         violations += uncommitted_violations(repo)
     try:
