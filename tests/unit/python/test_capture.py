@@ -315,6 +315,73 @@ Before: `bbbbbbb`, after: `aaaaaaa`.
                 self.assertEqual(code, 1, out)
                 self.assertIn(flag, out["error"])
 
+    def test_write_after_merges_the_after_set(self) -> None:
+        self.drive(self.evidence / "20260101T000000Z", [{"entry": "a", "path": "/one", "shot": "0"},
+                                                       {"entry": "b", "path": "/two", "shot": "2"}])
+        since = self.drive(self.evidence / "20260101T000001Z", [{"entry": "a", "path": "/one", "shot": "s"}], "since", "c" * 40)
+        target = self.tmp / "after.json"
+        code, out = self.capture("--write-after", str(target))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out, {"ok": True, "after": str(target), "routes": 2, "head": "c" * 40})
+        written = json.loads(target.read_text())
+        self.assertEqual([r["path"] for r in written["routes"]], ["/one", "/two"])
+        self.assertEqual((written["mode"], written["head"], written["folder"]), ("diff", "c" * 40, str(since.parent)))
+        self.assertEqual(self.calls(), [])
+
+    def test_write_after_edges(self) -> None:
+        target = self.tmp / "after.json"
+        code, out = self.capture("--write-after", str(target))
+        self.assertEqual(code, 1, out)
+        self.assertIn("no diff drive", out["error"])
+        self.root = self.repo("absent", name="off")
+        self.assertEqual(self.capture("--write-after", str(target)), (0, {"ok": True, "skipped": "no-verify"}))
+        for extra in (("--pr", "7"), ("--before", "x"), ("--after", "x")):
+            with self.subTest(extra=extra):
+                code, out = self.capture("--write-after", str(target), *extra)
+                self.assertEqual(code, 2, out)
+                self.assertIn("error", out)
+        self.assertEqual(self.calls(), [])
+
+    def test_overflow_line_names_the_folder_key(self) -> None:
+        routes = [{"entry": "a", "path": f"/r{i}", "shot": str(i)} for i in range(52)]
+        after = self.drive(self.tmp / "after", routes)
+        data = json.loads(after.read_text())
+        folder = Path.home() / "x"
+        after.write_text(json.dumps({**data, "folder": str(folder)}))
+        self.assertEqual(self.capture("--pr", "7", "--after", str(after))[0], 0)
+        self.assertIn("more routes in the evidence: ~/x", self.edit()["body"])
+        self.assertNotIn(str(Path.home()), self.edit()["body"])
+
+    def test_route_position_counts_failed_routes(self) -> None:
+        after = self.drive(self.tmp / "after", [{"entry": "a", "path": "/one", "shot": "1", "ok": False},
+                                                {"entry": "a", "path": "/two", "shot": "2"}])
+        code, out = self.capture("--pr", "7", "--after", str(after))
+        self.assertEqual((code, out["routes"]), (0, 1), out)
+        self.assertEqual([Path(p).name for p in out["files"]], ["after-a-2.jpg"])
+        self.assertNotIn("/one", self.edit()["body"])
+
+    def test_journey_found_through_a_failed_route(self) -> None:
+        clip = self.video(self.tmp / "after", "j.webm")
+        after = self.drive(self.tmp / "after", [{"entry": "j", "path": "/s1", "ok": False, "video": clip},
+                                                {"entry": "j", "path": "/s2", "shot": "2"}])
+        code, out = self.capture("--pr", "7", "--after", str(after))
+        self.assertEqual((code, out["routes"]), (0, 1), out)
+        self.assertIn("#### j (journey)", self.edit()["body"])
+        self.assertEqual([Path(p).name for p in out["files"]], ["after-j.webm"])
+
+    def test_stray_start_marker_keeps_user_text(self) -> None:
+        self.body(f"A\n{START}\nB")
+        after = self.drive(self.tmp / "after", [{"entry": "a", "path": "/one", "shot": "A"}])
+        self.assertEqual(self.capture("--pr", "7", "--after", str(after))[0], 0)
+        first = self.edit()["body"]
+        self.assertTrue(first.startswith(f"A\n{START}\nB\n\n{START}\n## Screens"), first)
+        (self.stub / "calls.jsonl").unlink()
+        self.body(first.removesuffix("\n"))
+        self.assertEqual(self.capture("--pr", "7", "--after", str(after))[0], 0)
+        second = self.edit()["body"]
+        self.assertTrue(second.startswith(f"A\n{START}\nB\n\n{START}\n## Screens"), second)
+        self.assertEqual(second.count("## Screens"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
