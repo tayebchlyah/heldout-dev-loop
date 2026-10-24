@@ -472,6 +472,7 @@ class DriveTests(unittest.TestCase):
         code, out = devloop(root, "drive", "--all")
         self.assertEqual(code, 1)
         self.assertIn("playwright", out["error"])
+        self.assertIn("npm i -D playwright && npx playwright install chromium in the repo root", out["error"])
 
     def test_all_and_since_is_usage_error(self) -> None:
         root = self.repo()
