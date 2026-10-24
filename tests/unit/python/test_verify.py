@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -439,7 +440,9 @@ class DriveTests(unittest.TestCase):
         received = json.loads((root / "runner-a.json").read_text())
         self.assertEqual(received, {"base_url": self.base_url, "storage_state": str((root / "state.json").resolve()),
                                     "routes": [{"path": "/clusters", "names": [{"role": "heading", "name": "Clusters"}]}],
-                                    "evidence": out["evidence"], "entry": "a"})
+                                    "evidence": out["evidence"], "entry": "a",
+                                    "video": str(Path(out["evidence"]) / "video" / "a")})
+        self.assertTrue(Path(received["video"]).is_dir())
         self.assertEqual([r["entry"] for r in out["routes"]], ["a", "b"])
 
     def test_evidence_drive_json_matches_stdout(self) -> None:
@@ -450,7 +453,43 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(evidence.parent, git_dir / "dev-loop" / "evidence")
         self.assertRegex(evidence.name, r"^\d{8}T\d{6}Z$")
         self.assertEqual(json.loads((evidence / "drive.json").read_text()), out)
-        self.assertEqual(set(out), {"ok", "selected", "routes", "evidence"})
+        self.assertEqual(set(out), {"ok", "selected", "routes", "evidence", "mode", "head"})
+
+    def test_mode_and_head(self) -> None:
+        root = self.repo()
+        sha = self.commit(root, "web/a.ts")
+        head = git(root, "rev-parse", "HEAD").strip()
+        for args, mode in (((), "diff"), (("--all",), "all"), (("--since", sha), "since")):
+            with self.subTest(mode=mode):
+                code, out = devloop(root, "drive", *args)
+                self.assertEqual((out["mode"], out["head"]), (mode, head), out)
+        self.assertEqual(devloop(root, "drive", "--since", "HEAD")[1],
+                         {"ok": True, "selected": [], "routes": [], "evidence": None, "mode": "since", "head": head})
+
+    def test_video_key_kept_only_inside_its_folder(self) -> None:
+        root = self.repo(entries={"a": ["web/a*"]})
+        cases = {"inside": "join(input.video, 'a.webm')", "relative": "'a.webm'",
+                 "escape": "join(input.video, '..', 'a.webm')", "outside": "join(input.evidence, 'a.webm')",
+                 "missing": "join(input.video, 'gone.webm')"}
+        for case, expr in cases.items():
+            with self.subTest(case=case):
+                put(root / "tools/runner.mjs", f"""import {{ readFileSync, writeFileSync }} from 'node:fs'
+import {{ join }} from 'node:path'
+const input = JSON.parse(readFileSync(0, 'utf8'))
+for (const f of [join(input.video, 'a.webm'), join(input.evidence, 'a.webm')]) writeFileSync(f, 'webm')
+console.log(JSON.stringify({{ routes: [{{ entry: input.entry, path: '/a', ok: true, status: 200, missing: [],
+  console_errors: [], error: null, screenshot: null, seconds: 0, video: {expr} }}] }}))
+""")
+                code, out = devloop(root, "drive", "--all")
+                expected = str((Path(out["evidence"]) / "video" / "a" / "a.webm").resolve()) if case == "inside" else None
+                self.assertEqual(out["routes"][0]["video"], expected, out)
+                self.assertEqual(json.loads((Path(out["evidence"]) / "drive.json").read_text()), out)
+                time.sleep(1.05)
+
+    def test_runner_without_video_key_gets_null(self) -> None:
+        root = self.repo()
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual([r["video"] for r in out["routes"]], [None, None], out)
 
     def test_runner_crash_names_entry(self) -> None:
         root = self.repo()

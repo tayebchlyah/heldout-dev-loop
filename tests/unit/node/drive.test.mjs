@@ -111,6 +111,7 @@ test('drive.mjs loads the storage state into the context', async () => {
   const { code, out } = await drive(dir, input(dir, [{ path: '/cookie', names: CLUSTERS }], { storage_state: state }))
   assert.equal(code, 0)
   assert.equal(out.routes[0].ok, true)
+  assert.equal(out.routes[0].video, null)
 })
 
 test('drive.mjs finds no Playwright outside the four repo folders', async () => {
