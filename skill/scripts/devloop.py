@@ -364,10 +364,15 @@ def read_config(repo: Path, rev: str) -> dict | None:
     return config if isinstance(config, dict) else None
 
 
+MERGE_VALUES = ("auto", "human")
+
+
 def config_shape_ok(config: dict) -> bool:
+    """A known `merge`, and `merge_human_paths` items non-empty after strip and not ending in `/` (a directory
+    pattern never matches under fnmatchcase: write `src/auth/*`)."""
     paths = config.get("merge_human_paths", [])
-    return (config.get("merge", "auto") in ("auto", "human")
-            and isinstance(paths, list) and all(isinstance(p, str) and p for p in paths))
+    return (config.get("merge", "auto") in MERGE_VALUES and isinstance(paths, list)
+            and all(isinstance(p, str) and p.strip() and not p.endswith("/") for p in paths))
 
 
 class GitFailed(Exception):
