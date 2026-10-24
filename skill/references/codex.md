@@ -26,7 +26,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Feature gate
 
-Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
+Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
 1. **Review wave, once.** Three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `main...GATE_SHA`: whole branch, report only, and returns a table: file, line, finding, verdict or severity, reviewer.
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
@@ -35,6 +35,7 @@ Four phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
    - Both custom reviewers run at `model_reasoning_effort = "high"` (their agent files).
 2. **Triage, controller.** SKILL.md Stage 6. Read `seal` and `weakened` from the gate JSON. Security verifier: a fresh `security_reviewer` per security finding. Prompt: the candidate-verifier prompt from `~/.agents/skills/security-audit/VALIDATION-AND-REPORTING.md` (Phase 3, "Candidate-verifier prompt"), plus the finding.
 3. **Fix wave.** A new custom agent `implementer` per round, one file cluster at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
-4. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`, then drive one real journey with browser or computer-use tools. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
+4. **Drive.** SKILL.md Stage 6, `references/verify.md` section Stage 6. `scripts/devloop.py drive`, then the layout check: one fresh generic worker with the `drive.json` path.
+5. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.
