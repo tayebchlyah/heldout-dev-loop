@@ -391,6 +391,22 @@ def snake_case(event: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()
 
 
+def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
+    """The project hook events with no trusted hash in ~/.codex/config.toml: Codex skips them without a message."""
+    hooks_file = f"{main}/.codex/hooks.json"
+    states = config.get("hooks", {}).get("state", {})
+    events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
+    return [
+        event for event in map(snake_case, events)
+        if not any(
+            key.startswith(f"{hooks_file}:{event}:")
+            and isinstance(value, dict)
+            and str(value.get("trusted_hash", "")).startswith("sha256:")
+            for key, value in states.items()
+        )
+    ]
+
+
 def project_trust_groups(home: Path, repo: Path) -> list[tuple[str, list[str]]]:
     """D14: the trust Codex records in ~/.codex/config.toml once the user trusts the project."""
     main = main_checkout(repo)
@@ -398,18 +414,7 @@ def project_trust_groups(home: Path, repo: Path) -> list[tuple[str, list[str]]]:
     trust_failures: list[str] = []
     if config.get("projects", {}).get(main, {}).get("trust_level") != "trusted":
         trust_failures.append(f'missing trusted Codex project: [projects."{main}"] trust_level = "trusted"')
-    hooks_file = f"{main}/.codex/hooks.json"
-    states = config.get("hooks", {}).get("state", {})
-    events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
-    for event in map(snake_case, events):
-        prefix = f"{hooks_file}:{event}:"
-        if not any(
-            key.startswith(prefix)
-            and isinstance(value, dict)
-            and str(value.get("trusted_hash", "")).startswith("sha256:")
-            for key, value in states.items()
-        ):
-            trust_failures.append(f"missing trusted Codex hook hash: {event}")
+    trust_failures += [f"missing trusted Codex hook hash: {event}" for event in untrusted_hook_events(config, repo, main)]
     return [("Trust the project, then run /hooks in Codex.", trust_failures)] if trust_failures else []
 
 
@@ -528,7 +533,14 @@ def main() -> int:
     parser.add_argument("--harness", choices=["claude", "codex"], required=True)
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--repo", type=Path, default=Path.cwd())
+    # Codex SessionStart: one line, the untrusted project hook events joined by ", " (empty when all are trusted).
+    parser.add_argument("--hooks-trust", action="store_true")
     args = parser.parse_args()
+
+    if args.hooks_trust:
+        config, _ = load_toml(args.home / ".codex" / "config.toml", [])
+        print(", ".join(untrusted_hook_events(config, args.repo, main_checkout(args.repo))))
+        return 0
 
     if not uses_dev_loop(args.repo):
         print(f"{args.harness}: FAIL")
