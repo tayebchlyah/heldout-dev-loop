@@ -12,6 +12,7 @@ const DRIVE = join(ROOT, 'skill', 'scripts', 'drive.mjs')
 
 const PAGES = {
   '/ok': '<title>ok</title><h1>Clusters</h1>',
+  '/app/prefixed': '<title>app ok</title><h1>Clusters</h1>',
   '/missing': '<title>missing</title><h1>Buckets</h1>',
   '/console': '<title>console</title><h1>Clusters</h1><script>console.error("boom")</script>',
   '/throw': '<title>throw</title><h1>Clusters</h1><script>throw new Error("uncaught boom")</script>',
@@ -117,4 +118,14 @@ test('drive.mjs finds no Playwright outside the four repo folders', async () => 
   const { code, out } = await drive(dir, input(dir, [{ path: '/ok', names: [] }]))
   assert.equal(code, 1)
   assert.match(out.error, /playwright/)
+})
+
+test('drive.mjs joins a route path to a base_url that has a path prefix', async () => {
+  for (const base of [`${baseUrl}/app`, `${baseUrl}/app/`]) {
+    const dir = repo()
+    const { code, out, stderr } = await drive(dir, input(dir, [{ path: '/prefixed', names: CLUSTERS }], { base_url: base }))
+    assert.equal(code, 0, stderr)
+    assert.equal(out.routes[0].status, 200)
+    assert.equal(out.routes[0].ok, true)
+  }
 })
