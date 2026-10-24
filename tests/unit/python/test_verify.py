@@ -360,6 +360,12 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(devloop(root, "drive")[1]["selected"], ["a", "b"])
         self.assertEqual(devloop(root, "drive", "--all")[1]["selected"], ["a", "b"])
 
+    def test_non_ascii_changed_path_selects_entry(self) -> None:
+        root = self.repo(entries={"a": ["web/*"]})
+        self.commit(root, "web/récap.ts")
+        code, out = devloop(root, "drive")
+        self.assertEqual((code, out["selected"]), (0, ["a"]), out)
+
     def test_since_selects_fix_only(self) -> None:
         root = self.repo()
         sha = self.commit(root, "web/a.ts")
