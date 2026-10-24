@@ -910,6 +910,14 @@ def reachable(url: str, seconds: float) -> bool:
             time.sleep(0.5)
 
 
+def clean_video(value: object, folder: Path) -> str | None:
+    """A runner's `video` path, kept only when it is a file inside the entry's video folder."""
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        return None
+    path = Path(value).resolve()
+    return str(path) if path.is_file() and path.is_relative_to(folder.resolve()) else None
+
+
 def cmd_drive(args: argparse.Namespace) -> int:
     from seal import git_dir, merge_base
     from verify import config_errors, entries, load_entry, skill_dir
@@ -952,8 +960,10 @@ def cmd_drive(args: argparse.Namespace) -> int:
         changed = set(diff.split("\0")) - {""}
         selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
             fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
+    mode = "all" if args.all else "since" if args.since else "diff"
+    head = git(repo, "rev-parse", "HEAD")
     if not selected:
-        return emit({"ok": True, "selected": [], "routes": [], "evidence": None}, 0)
+        return emit({"ok": True, "selected": [], "routes": [], "evidence": None, "mode": mode, "head": head}, 0)
 
     if not any((repo / d).exists() for d in PLAYWRIGHT_DIRS):
         return emit({"error": f"playwright not found in {', '.join(PLAYWRIGHT_DIRS)}: run npm i -D playwright "
@@ -978,8 +988,10 @@ def cmd_drive(args: argparse.Namespace) -> int:
     for stem in selected:
         _, entry = loaded[stem]
         runner = str(repo / entry["script"]) if entry["script"] else str(Path(__file__).parent / "drive.mjs")
+        video = evidence / "video" / stem
+        video.mkdir(parents=True, exist_ok=True)
         payload = {"base_url": url, "storage_state": state, "routes": entry["routes"], "evidence": str(evidence),
-                   "entry": stem}
+                   "entry": stem, "video": str(video)}
         done = subprocess.run(["node", runner], cwd=repo, input=json.dumps(payload), capture_output=True, text=True)
         try:
             result = json.loads(done.stdout)
@@ -987,9 +999,9 @@ def cmd_drive(args: argparse.Namespace) -> int:
                 raise ValueError
         except (ValueError, AttributeError):
             return emit({"error": f"runner failed for {stem}", "tail": tail(done.stdout + done.stderr)}, 1)
-        routes += result["routes"]
+        routes += [{**r, "video": clean_video(r.get("video"), video)} for r in result["routes"]]
     out = {"ok": all(r.get("ok") is True for r in routes), "selected": selected, "routes": routes,
-           "evidence": str(evidence)}
+           "evidence": str(evidence), "mode": mode, "head": head}
     (evidence / "drive.json").write_text(json.dumps(out, indent=2) + "\n")
     return emit(out, 0 if out["ok"] else 1)
 
