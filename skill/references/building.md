@@ -4,16 +4,16 @@ Read before writing code. Four parts: principles, code volume, scope for your ha
 
 ## Principles
 
-Source: pstack 0.15.32 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `b1a1298`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. Where a rule names an incident, it is a real mistake in a project that runs dev-loop (couchbase-doctor) that the rule would have stopped. The Stage 7 merge danger ladder in SKILL.md is copied from `pstack/skills/blast-radius/SKILL.md`, same commit.
+Source: pstack 0.15.32 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `b1a1298`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. The Stage 7 merge danger ladder in SKILL.md is copied from `pstack/skills/blast-radius/SKILL.md`, same commit.
 
 1. **Prove it works.** Apply before you call a task done. Check the real thing (run it, read the actual value, read the diff), not a proxy, a self-report or "it compiles". Script the check when you can.
 2. **Fix root causes.** Apply when debugging. Trace the symptom to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate.
 3. **Attack the premise.** Apply when two or more fixes that share one premise failed the same gate. Write the premise down and test it before a third fix.
-4. **Make operations idempotent.** Apply to a command, lifecycle step or loop that can crash, restart or retry. A rerun after a partial run reaches the same end state. Incident: the F17a backfill crashed on two legacy documents after Terraform had already replaced the indexes, and prod was repaired by hand.
-5. **Migrate callers, then delete the legacy API.** Apply when a new internal API replaces an old one. Move every caller and delete the old API in the same change, no compatibility shim. Incident: F14b added re-export shims that S18 removed two days later with its own spec and plan.
+4. **Make operations idempotent.** Apply to a command, lifecycle step or loop that can crash, restart or retry. A rerun after a partial run reaches the same end state.
+5. **Migrate callers, then delete the legacy API.** Apply when a new internal API replaces an old one. Move every caller and delete the old API in the same change, no compatibility shim.
 6. **Boundary discipline.** Apply when you wire validation, error handling or a framework adapter. Validate at the boundary (CLI, config, network, external API), trust internal types, keep business logic in pure functions.
 7. **Separate before serializing shared state.** Apply when concurrent actors can write the same file, branch, key or state object. Give each actor its own target first. Use a lock only when one shared writer is a real invariant.
-8. **Explain the number.** Apply before you trust, report or act on a number you measured. Name what limits it and rule out that it measured something else. For a performance number, run [benchmark.md](benchmark.md). Incident: the F6d to F6g speed targets were missed or amended, and their budgets were raised within a week.
+8. **Explain the number.** Apply before you trust, report or act on a number you measured. Name what limits it and rule out that it measured something else. For a performance number, run [benchmark.md](benchmark.md).
 
 ## pstack license
 
