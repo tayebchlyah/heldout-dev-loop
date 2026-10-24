@@ -1097,7 +1097,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_stage_7_proves_the_safety_fact_of_a_risky_merge(self) -> None:
         text = stage_text(7)
-        for value in ["Merge danger", "the one fact", "`human-path`", "You ran it"]:
+        for value in ["Merge danger", "the one fact", "`human-path`", "You ran it", "gh pr edit"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
