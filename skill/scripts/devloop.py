@@ -957,7 +957,7 @@ def cmd_drive(args: argparse.Namespace) -> int:
 
     if not any((repo / d).exists() for d in PLAYWRIGHT_DIRS):
         return emit({"error": f"playwright not found in {', '.join(PLAYWRIGHT_DIRS)}: run npm i -D playwright "
-                              "in the repo root"}, 1)
+                              "&& npx playwright install chromium in the repo root"}, 1)
     url = verify["base_url"]
     if not reachable(url, float(os.environ.get("DEVLOOP_TEST_READY_WAIT", READY_SECONDS))):
         return emit({"error": f"base_url not reachable: {url}"}, 1)
