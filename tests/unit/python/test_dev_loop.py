@@ -1545,7 +1545,6 @@ PACKAGE_ROOT = SKILL_ROOT.parent
 INSTALLER = PACKAGE_ROOT / "bin" / "install.mjs"
 
 
-@unittest.skipUnless(shutil.which("node"), "node is required to run the installer")
 class SecurityAuditCheckTests(unittest.TestCase):
     COMMIT = "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
     INSTALL = (f"npx skills add https://github.com/cloudflare/security-audit-skill/tree/{COMMIT} "
@@ -1588,21 +1587,37 @@ class SecurityAuditCheckTests(unittest.TestCase):
         env = {"DEVLOOP_TEST_SECURITY_AUDIT_TREE": check_setup.tree_id(folder)}
         self.assertEqual(check_setup.security_audit_groups(self.home, "claude", env), [])
 
-    def test_tree_id_matches_git(self) -> None:
-        files = {"SKILL.md": "a\n", "sub/deep/b.txt": "b\n", "run.sh": "#!/bin/sh\n"}
-        folder = self.home / "skill"
-        scratch = Path(self._tmp.name) / "scratch"
-        for root in (folder, scratch):
-            for name, text in files.items():
+    def reference_tree(self, scratch: Path) -> str:
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+        git = ["git", "-C", str(scratch)]
+        subprocess.run([*git, "init", "-q"], check=True, env=env)
+        subprocess.run([*git, "add", "-A"], check=True, env=env)
+        return subprocess.run([*git, "write-tree"], text=True, capture_output=True, check=True, env=env).stdout.strip()
+
+    def make_files(self, *roots: Path) -> None:
+        for root in roots:
+            for name, text in {"SKILL.md": "a\r\n", "sub/deep/b.txt": "b\n", "run.sh": "#!/bin/sh\n"}.items():
                 write(root / name, text)
             (root / "run.sh").chmod(0o755)
-        git = ["git", "-C", str(scratch)]
-        subprocess.run([*git, "init", "-q"], check=True)
-        subprocess.run([*git, "add", "-A"], check=True)
-        expected = subprocess.run([*git, "write-tree"], text=True, capture_output=True, check=True).stdout.strip()
-        self.assertEqual(check_setup.tree_id(folder), expected)
+
+    def test_tree_id_matches_git(self) -> None:
+        folder = self.home / "skill"
+        scratch = Path(self._tmp.name) / "scratch"
+        self.make_files(folder, scratch)
+        self.assertEqual(check_setup.tree_id(folder), self.reference_tree(scratch))
+
+    def test_tree_id_ignores_the_user_git_config(self) -> None:
+        folder = self.home / "skill"
+        scratch = Path(self._tmp.name) / "scratch"
+        self.make_files(folder, scratch)
+        write(self.home / "attrs", "*.md text eol=crlf\n")
+        write(self.home / ".gitconfig", f"[core]\n\tattributesFile = {self.home / 'attrs'}\n")
+        env = {k: v for k, v in os.environ.items() if k != "GIT_CONFIG_GLOBAL"}
+        with unittest.mock.patch.dict(os.environ, {**env, "HOME": str(self.home)}, clear=True):
+            self.assertEqual(check_setup.tree_id(folder), self.reference_tree(scratch))
 
 
+@unittest.skipUnless(shutil.which("node"), "node is required to run the installer")
 class ProjectSetupCheckerTests(unittest.TestCase):
     versions: dict[str, str | None] = {}
 
