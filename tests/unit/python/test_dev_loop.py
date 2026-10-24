@@ -409,6 +409,12 @@ class ProjectConfigTests(unittest.TestCase):
     def test_bad_merge_value_fails(self) -> None:
         self.assertEqual(self.check({"merge": "yes"}), ["merge in dev-loop.json must be auto or human"])
 
+    def test_merge_human_paths_shape(self) -> None:
+        message = "merge_human_paths in dev-loop.json must be a list of non-empty strings"
+        for value in ("src/*", [""], [1], {}):
+            self.assertEqual(self.check({"merge_human_paths": value}), [message], value)
+        self.assertEqual(self.check({"merge_human_paths": ["src/auth/*"]}), [])
+
     def test_valid_commands_and_merge_pass(self) -> None:
         commands = {key: f"run {key}" for key in check_setup.COMMAND_KEYS}
         self.assertEqual(self.check({"commands": commands, "merge": "human"}), [])
@@ -1540,6 +1546,63 @@ INSTALLER = PACKAGE_ROOT / "bin" / "install.mjs"
 
 
 @unittest.skipUnless(shutil.which("node"), "node is required to run the installer")
+class SecurityAuditCheckTests(unittest.TestCase):
+    COMMIT = "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+    INSTALL = (f"npx skills add https://github.com/cloudflare/security-audit-skill/tree/{COMMIT} "
+               "--skill security-audit --global --agent claude-code codex")
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name) / "home"
+        self.home.mkdir()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_missing_skill_names_the_commit(self) -> None:
+        heading = f"Install the Cloudflare security-audit skill at {self.COMMIT}: {self.INSTALL}"
+        for harness, root in (("claude", ".claude"), ("codex", ".agents")):
+            skill = self.home / root / "skills" / "security-audit" / "SKILL.md"
+            self.assertEqual(
+                check_setup.security_audit_groups(self.home, harness, {}), [(heading, [f"missing {skill}"])]
+            )
+
+    def test_wrong_tree_names_the_tree(self) -> None:
+        folder = self.home / ".agents" / "skills" / "security-audit"
+        write(folder / "SKILL.md", "x\n")
+        (group,) = check_setup.security_audit_groups(self.home, "codex", {})
+        self.assertEqual(group[1], [f"{folder} is tree {check_setup.tree_id(folder)}"])
+
+    def test_expected_tree_override_passes(self) -> None:
+        folder = self.home / ".agents" / "skills" / "security-audit"
+        write(folder / "SKILL.md", "x\n")
+        env = {"DEVLOOP_TEST_SECURITY_AUDIT_TREE": check_setup.tree_id(folder)}
+        self.assertEqual(check_setup.security_audit_groups(self.home, "codex", env), [])
+
+    def test_security_audit_through_a_link_passes(self) -> None:
+        folder = self.home / ".agents" / "skills" / "security-audit"
+        write(folder / "SKILL.md", "x\n")
+        link = self.home / ".claude" / "skills" / "security-audit"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(folder)
+        env = {"DEVLOOP_TEST_SECURITY_AUDIT_TREE": check_setup.tree_id(folder)}
+        self.assertEqual(check_setup.security_audit_groups(self.home, "claude", env), [])
+
+    def test_tree_id_matches_git(self) -> None:
+        files = {"SKILL.md": "a\n", "sub/deep/b.txt": "b\n", "run.sh": "#!/bin/sh\n"}
+        folder = self.home / "skill"
+        scratch = Path(self._tmp.name) / "scratch"
+        for root in (folder, scratch):
+            for name, text in files.items():
+                write(root / name, text)
+            (root / "run.sh").chmod(0o755)
+        git = ["git", "-C", str(scratch)]
+        subprocess.run([*git, "init", "-q"], check=True)
+        subprocess.run([*git, "add", "-A"], check=True)
+        expected = subprocess.run([*git, "write-tree"], text=True, capture_output=True, check=True).stdout.strip()
+        self.assertEqual(check_setup.tree_id(folder), expected)
+
+
 class ProjectSetupCheckerTests(unittest.TestCase):
     versions: dict[str, str | None] = {}
 
@@ -1567,14 +1630,22 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def install_security_audit(self) -> None:
+        for root in (".claude", ".agents"):
+            write(self.home / root / "skills" / "security-audit" / "SKILL.md", "name: security-audit\n")
+
     def run_checker(self, harness: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(CHECKER), "--harness", harness, "--home", str(self.home), "--repo", str(self.repo)],
             text=True,
             capture_output=True,
             check=False,
-            env=checker_env(Path(self._tmp.name) / "bin", **self.versions),
+            env=checker_env(Path(self._tmp.name) / "bin", **self.versions, **self.audit_tree()),
         )
+
+    def audit_tree(self) -> dict[str, str]:
+        folder = self.home / ".agents" / "skills" / "security-audit"
+        return {"DEVLOOP_TEST_SECURITY_AUDIT_TREE": check_setup.tree_id(folder)} if folder.exists() else {}
 
     def main_checkout(self) -> str:
         common = subprocess.run(
@@ -1601,6 +1672,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
 
     def test_claude_project_passes(self) -> None:
         self.init("claude")
+        self.install_security_audit()
         # Stage 0 writes the repo walls; init does not.
         path = self.repo / ".claude" / "settings.json"
         settings = json.loads(path.read_text())
@@ -1634,10 +1706,12 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertIn("trust_level", result.stdout)
         self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
         self.assertIn("grilling", result.stdout)
+        self.assertIn("security-audit", result.stdout)
 
     def test_codex_project_with_trust_and_skills_passes(self) -> None:
         self.init()
         self.trust_codex()
+        self.install_security_audit()
         result = self.run_checker("codex")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("codex: PASS", result.stdout)
@@ -1696,6 +1770,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             "missing Claude repo env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1",
         ]
         self.init("claude")
+        self.install_security_audit()
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("Claude repo", result.stdout)
@@ -1834,6 +1909,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
 
     def test_only_the_checked_harness_version_is_read(self) -> None:
         self.init("claude")
+        self.install_security_audit()
         self.versions = {"codex": None}
         self.assertEqual(self.run_checker("claude").returncode, 0)
 
