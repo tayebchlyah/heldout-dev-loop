@@ -141,6 +141,7 @@ if _verify_spec is None or _verify_spec.loader is None:
 test_verify = importlib.util.module_from_spec(_verify_spec)
 _verify_spec.loader.exec_module(test_verify)
 VerifyCheckTests = test_verify.VerifyCheckTests
+VerifyInitTests = test_verify.VerifyInitTests
 
 
 def all_instructions() -> str:

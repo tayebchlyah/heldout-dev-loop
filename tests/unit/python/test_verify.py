@@ -205,5 +205,96 @@ class VerifyCheckTests(unittest.TestCase):
         self.assertEqual(self.verify.check(codex), [])
 
 
+def devloop(cwd: Path, *args: str, env: dict | None = None) -> tuple[int, dict]:
+    result = subprocess.run([sys.executable, str(DEVLOOP), *args], cwd=cwd, capture_output=True, text=True,
+                            env={**os.environ, **(env or {})})
+    return result.returncode, json.loads(result.stdout)
+
+
+def snapshot(root: Path) -> dict[str, str]:
+    """Every path under root except .git, with its content or link target."""
+    out = {}
+    for path in sorted(root.rglob("*")):
+        if ".git" in path.relative_to(root).parts:
+            continue
+        rel = path.relative_to(root).as_posix()
+        out[rel] = f"link:{os.readlink(path)}" if path.is_symlink() else path.read_text() if path.is_file() else "dir"
+    return out
+
+
+class VerifyInitTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.verify = load_verify()
+
+    def test_writes_skeleton_link_and_config(self) -> None:
+        root = make_repo(self.tmp / "Shop App")
+        config = json.loads((root / "dev-loop.json").read_text())
+        code, out = devloop(root, "verify-init", "--base-url", "http://127.0.0.1:4173")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["skill"], "verify-shop-app")
+        self.assertEqual(out["config"], {"skill": "verify-shop-app", "base_url": "http://127.0.0.1:4173"})
+        skill = root / ".agents/skills/verify-shop-app"
+        text = (skill / "SKILL.md").read_text()
+        self.assertEqual(self.verify.frontmatter(text)["name"], "verify-shop-app")
+        for section in self.verify.SECTIONS:
+            self.assertRegex(text, rf"(?m)^## {section}$")
+        self.assertIn(self.verify.FILL, text)
+        self.assertIn(self.verify.FILL, (skill / "features/README.md").read_text())
+        self.assertEqual(os.readlink(root / ".claude/skills/verify-shop-app"), "../../.agents/skills/verify-shop-app")
+        written = (root / "dev-loop.json").read_text()
+        self.assertEqual(json.loads(written), {**config, "verify": out["config"]})
+        self.assertEqual(list(json.loads(written)), [*config, "verify"])
+        self.assertTrue(written.startswith('{\n  "version"'))
+        self.assertEqual(sorted(out["files"]), sorted([
+            ".agents/skills/verify-shop-app/SKILL.md", ".agents/skills/verify-shop-app/features/README.md",
+            ".claude/skills/verify-shop-app", "dev-loop.json"]))
+
+    def test_codex_only_writes_no_link(self) -> None:
+        root = make_repo(self.tmp / "kiosk", harnesses=["codex"])
+        code, out = devloop(root, "verify-init", "--base-url", "https://kiosk.test")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((root / ".claude").exists())
+        self.assertNotIn(".claude/skills/verify-kiosk", out["files"])
+
+    def test_refuses_and_writes_nothing(self) -> None:
+        cases = {
+            "verify_present": (lambda r: put(r / "dev-loop.json", json.dumps({"harnesses": ["claude"], "verify": False}))),
+            "folder_present": (lambda r: (r / ".agents/skills/verify-app").mkdir(parents=True)),
+            "link_present": (lambda r: ((r / ".claude/skills").mkdir(parents=True),
+                                         (r / ".claude/skills/verify-app").symlink_to("../../gone"))),
+            "no_config": (lambda r: (r / "dev-loop.json").unlink()),
+        }
+        for name, prepare in cases.items():
+            with self.subTest(name=name):
+                root = make_repo(self.tmp / name / "app")
+                prepare(root)
+                before = snapshot(root)
+                code, out = devloop(root, "verify-init", "--base-url", "http://127.0.0.1:4173")
+                self.assertEqual(code, 1, out)
+                self.assertIn("error", out)
+                self.assertEqual(snapshot(root), before)
+        for args in (["--name", "Bad_Name", "--base-url", "http://x"], ["--base-url", "ftp://x"]):
+            with self.subTest(args=args):
+                root = make_repo(self.tmp / args[-1].replace("/", "_") / "app")
+                before = snapshot(root)
+                code, out = devloop(root, "verify-init", *args)
+                self.assertEqual(code, 1, out)
+                self.assertIn("error", out)
+                self.assertEqual(snapshot(root), before)
+
+    def test_usage_error_exits_2(self) -> None:
+        root = make_repo(self.tmp / "app")
+        self.assertEqual(devloop(root, "verify-init")[0], 2)
+
+    def test_skeleton_then_check_flags_marker_and_empty_map(self) -> None:
+        root = make_repo(self.tmp / "app")
+        devloop(root, "verify-init", "--base-url", "http://127.0.0.1:4173")
+        lines = self.verify.check(root)
+        self.assertIn(f"fill marker {self.verify.FILL} in .agents/skills/verify-app/SKILL.md", lines)
+        self.assertIn("no feature map entry under .agents/skills/verify-app/features/", lines)
+        self.assertNotIn(self.verify.MISSING, lines)
+
+
 if __name__ == "__main__":
     unittest.main()
