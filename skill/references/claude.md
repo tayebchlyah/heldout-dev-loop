@@ -15,7 +15,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 ## Skill and agent names
 
 - Domain work: `mattpocock-skills:domain-modeling`, `mattpocock-skills:codebase-design`, `mattpocock-skills:code-review`.
-- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Track M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`.
+- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Track M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`, then `scripts/devloop.py capture` (`references/verify.md` section Stage 7).
 - Denied in the project, never invoke: `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
 - Acceptance author: `spec-tester`.
 - SDD implementers: `subagent_type: implementer`.
@@ -34,7 +34,7 @@ Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
    - Both desks: direct Agent calls, no nested agents. A desk started inside a subagent reports after its parent hands back.
 2. **Triage, controller.** SKILL.md Stage 6. Security verifier: one fresh Agent call per security finding, `general-purpose`, `model: opus`, `effort: high`. Prompt: the candidate-verifier prompt from `~/.claude/skills/security-audit/VALIDATION-AND-REPORTING.md` (Phase 3, "Candidate-verifier prompt"), plus the finding.
 3. **Fix wave.** One new `implementer` per file cluster, one at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
-4. **Drive.** SKILL.md Stage 6, `references/verify.md` section Stage 6. `scripts/devloop.py drive`, then the layout check: one fresh Agent call, `general-purpose`, `model: sonnet`, with the `drive.json` path.
+4. **Drive.** SKILL.md Stage 6, `references/verify.md` section Stage 6. `scripts/devloop.py drive`, then the layout check: one fresh Agent call, `general-purpose`, `model: sonnet`, with the `drive.json` path. After the final full acceptance run: the closing drive (`references/verify.md` Stage 6 step 7).
 5. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. Failures only when `commands.acceptance_failed` is absent: `pytest tests/acceptance --lf -q --tb=no`, `npx playwright test tests/acceptance --last-failed`. Every run after a fix repeats the stack reset first. Stale image run does not count.
 
 No `/verify` step. `/verify` is a real bundled skill but user-invoked only; the model cannot call it. Playwright E2E is the model's live check. The user may type `/verify` after the gate.
