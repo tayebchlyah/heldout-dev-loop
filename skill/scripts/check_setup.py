@@ -392,18 +392,18 @@ def snake_case(event: str) -> str:
 
 
 def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
-    """The project hook events with no trusted hash in ~/.codex/config.toml: Codex skips them without a message."""
+    """The project hook events with a hook entry lacking a trusted hash in ~/.codex/config.toml: Codex skips it without a message. Codex's hash method is unknown, so only the sha256: prefix is checked."""
     hooks_file = f"{main}/.codex/hooks.json"
     states = config.get("hooks", {}).get("state", {})
     events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
+
+    def trusted(event: str, i: int, j: int) -> bool:
+        value = states.get(f"{hooks_file}:{event}:{i}:{j}")
+        return isinstance(value, dict) and str(value.get("trusted_hash", "")).startswith("sha256:")
+
     return [
-        event for event in map(snake_case, events)
-        if not any(
-            key.startswith(f"{hooks_file}:{event}:")
-            and isinstance(value, dict)
-            and str(value.get("trusted_hash", "")).startswith("sha256:")
-            for key, value in states.items()
-        )
+        snake_case(event) for event, groups in events.items()
+        if not all(trusted(snake_case(event), i, j) for i, group in enumerate(groups) for j in range(len(group.get("hooks", []))))
     ]
 
 
