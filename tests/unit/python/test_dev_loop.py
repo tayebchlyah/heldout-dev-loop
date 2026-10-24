@@ -95,6 +95,7 @@ InstructionContractTests = test_devloop.InstructionContractTests
 SkillStackContractTests = test_devloop.SkillStackContractTests
 ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
 TracksContractTests = test_devloop.TracksContractTests
+ReviewYieldContractTests = test_devloop.ReviewYieldContractTests
 SpecGapContractTests = test_devloop.SpecGapContractTests
 
 _seal_tests_spec = importlib.util.spec_from_file_location("test_seal", Path(__file__).resolve().parent / "test_seal.py")
