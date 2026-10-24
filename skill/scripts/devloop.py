@@ -370,9 +370,21 @@ def config_shape_ok(config: dict) -> bool:
             and isinstance(paths, list) and all(isinstance(p, str) and p for p in paths))
 
 
+class GitFailed(Exception):
+    """A merge-check git call failed: the command exits 1 with `error`, no `merge` value (fail closed)."""
+
+
+def git_out(repo: Path, *args: str) -> str:
+    """Like `git`, for merge-check: a failure raises GitFailed instead of reading as empty."""
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise GitFailed(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
 def changed_paths(repo: Path, *revs: str) -> list[str]:
     """`git diff --name-only --no-renames`, sorted: a rename counts as both paths."""
-    out = git(repo, "diff", "--name-only", "--no-renames", "-z", *revs) or ""
+    out = git_out(repo, "diff", "--name-only", "--no-renames", "-z", *revs)
     return sorted(p for p in out.split("\0") if p)
 
 
@@ -408,6 +420,13 @@ def reviewed_head(repo: Path, worktree: Path | None, notes: Path, spec: Path | N
 
 
 def cmd_merge_check(args: argparse.Namespace) -> int:
+    try:
+        return merge_check(args)
+    except GitFailed as exc:
+        return emit({"error": str(exc)}, 1)
+
+
+def merge_check(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     slug = args.feature.lower() if args.feature else None
     if slug is None:
@@ -418,7 +437,8 @@ def cmd_merge_check(args: argparse.Namespace) -> int:
     worktree, branch = feature_checkout(repo, slug)
     if branch is None:
         return emit({"error": f"no feature {slug}: no branch <prefix>/{slug}"}, 1)
-    head = git(worktree, "rev-parse", "HEAD") if worktree else git(repo, "rev-parse", f"refs/heads/{branch}")
+    head = (git_out(worktree, "rev-parse", "HEAD") if worktree
+            else git_out(repo, "rev-parse", f"refs/heads/{branch}")).strip()
     try:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
@@ -464,24 +484,29 @@ def cmd_merge_check(args: argparse.Namespace) -> int:
     else:
         base = git(repo, "merge-base", reviewed, ref)
         reviewed_pids = {c: patch_id(repo, c) for c in
-                         (git(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed) or "").split()}
+                         git_out(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed).split()}
         seen = set(reviewed_pids.values()) - {None, ""}
         landing: set[str | None] = set()
-        for commit in (git(repo, "rev-list", "--reverse", f"{ref}..{head}") or "").split():
+        for commit in git_out(repo, "rev-list", "--reverse", f"{ref}..{head}").split():
             pid = patch_id(repo, commit)
             landing.add(pid)
             if pid == "" or pid in seen:
                 continue
+            if pid is None:  # Fail closed: a diff git cannot compute is unreviewed, whatever its paths.
+                try:
+                    paths = changed_paths(repo, f"{commit}^1", commit)
+                except GitFailed:
+                    paths = []
+                reasons.append({"reason": "unreviewed", "commit": commit, "paths": paths})
+                continue
             paths = changed_paths(repo, f"{commit}^1", commit)
             code = [p for p in paths if not is_test_or_doc(p)]
-            if pid is None:  # Fail closed: a diff git cannot compute is unreviewed, whatever its paths.
-                reasons.append({"reason": "unreviewed", "commit": commit, "paths": paths})
-            elif code:
+            if code:
                 reasons.append({"reason": "unreviewed", "commit": commit, "paths": code})
             else:
                 minor.append({"commit": commit, "paths": paths})
         # `git cherry` marks `-` a reviewed commit main already holds: dropping it in a rebase is fine.
-        cherry_out = git(repo, "cherry", ref, reviewed, *([base] if base else [])) or ""
+        cherry_out = git_out(repo, "cherry", ref, reviewed, *([base] if base else []))
         upstream = {line[2:] for line in cherry_out.splitlines() if line.startswith("- ")}
         for commit, pid in reviewed_pids.items():
             if pid and pid not in landing and commit not in upstream:
