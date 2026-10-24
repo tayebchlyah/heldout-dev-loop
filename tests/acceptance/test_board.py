@@ -372,7 +372,9 @@ class BoardWriterTests(Board):
         self.assertLess(abs(at(tasks[2]["started"]) - brief), 1)
 
     def test_o23_decisions_are_assumptions_added_after_stage_3(self) -> None:
-        """O23, D18: decisions lists only the Assumptions items added after the first run at Stage 3 or later."""
+        """O23, D18, amended by session-b-autonomy: decisions lists the Assumptions items added after the first
+        run at Stage 3 or later, then each `decision` row of `## Decision log` as `<Decision>: <Why>`, with the
+        prefix `Risk: ` on a `risk` row."""
         spec = self.spec("gadget", "Gadget Export", assumptions=("Widgets are blue.", "Exports are CSV."))
         wt = self.worktree("gadget")
         self.ok(cwd=wt)
@@ -384,6 +386,18 @@ class BoardWriterTests(Board):
         note = self.note("gadget")
         self.assertEqual(len(note["decisions"]), 1)
         self.assertIn("Retries use a queue.", note["decisions"][0])
+        self.assertEqual(len(note["assumptions_baseline"]), 2)
+        spec.write_text(spec.read_text() + "\n## Decision log\n\n"
+                        "| Time | Stage | Session | Kind | Risk | Decision | Why | Evidence | Result |\n"
+                        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                        "| 2026-10-02T09:00Z | 5 | 01234567 | decision |  | Use JSON | stdlib only | src/a.py:3 |  |\n"
+                        "| 2026-10-02T09:05Z | 5 | 01234567 | decision | risk | Drop cache | too slow | bench.log |  |\n"
+                        "| 2026-10-02T09:10Z | 5 | 01234567 | discovery |  | Parser drops tabs | tabs in input | t.py:1 |  |\n")
+        self.ok(cwd=wt)
+        note = self.note("gadget")
+        self.assertEqual(len(note["decisions"]), 3, note["decisions"])
+        self.assertIn("Retries use a queue.", note["decisions"][0])
+        self.assertEqual(note["decisions"][1:], ["Use JSON: stdlib only", "Risk: Drop cache: too slow"])
         self.assertEqual(len(note["assumptions_baseline"]), 2)
 
     def test_o27_note_of_a_feature_that_left_the_write_set_is_deleted(self) -> None:
