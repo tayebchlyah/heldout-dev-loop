@@ -2,6 +2,7 @@
 """dev-loop CLI. Each command prints one JSON object on stdout.
 
   devloop.py status [--repo PATH] [--feature SLUG]   stage of the repo or of one feature
+  devloop.py merge-check [--repo PATH] [--feature SLUG]   auto or human merge, with reasons
   devloop.py logged [--name NAME] -- CMD...          run CMD, full output to a log file
   devloop.py gate --summary                           run the gate through `logged`, summarize it
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
@@ -19,6 +20,7 @@ Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -331,6 +333,146 @@ def cmd_status(args: argparse.Namespace) -> int:
     return emit(out, 0)
 
 
+# merge-check
+
+
+def main_ref(repo: Path) -> str | None:
+    """The fully qualified ref to read the trusted config from. A short `origin/main` can be shadowed by a local
+    tag or branch of that name."""
+    for ref in ("refs/remotes/origin/main", "refs/heads/main"):
+        if git(repo, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"):
+            return ref
+    return None
+
+
+TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
+
+
+def is_test_or_doc(path: str) -> bool:
+    """A segment `tests`, `test` or `docs`, or a test or doc file name. Kit Markdown is code: it is behaviour."""
+    *dirs, name = path.split("/")
+    return bool({"tests", "test", "docs"} & set(dirs)) or any(fnmatch.fnmatchcase(name, p) for p in TEST_OR_DOC_NAMES)
+
+
+def read_config(repo: Path, rev: str) -> dict | None:
+    """`dev-loop.json` at `rev` as an object, or None when absent, not JSON or not an object."""
+    raw = git(repo, "show", f"{rev}:dev-loop.json")
+    try:
+        config = json.loads(raw) if raw is not None else None
+    except ValueError:
+        return None
+    return config if isinstance(config, dict) else None
+
+
+def config_shape_ok(config: dict) -> bool:
+    paths = config.get("merge_human_paths", [])
+    return (config.get("merge", "auto") in ("auto", "human")
+            and isinstance(paths, list) and all(isinstance(p, str) and p for p in paths))
+
+
+def changed_paths(repo: Path, *revs: str) -> list[str]:
+    """`git diff --name-only --no-renames`, sorted: a rename counts as both paths."""
+    out = git(repo, "diff", "--name-only", "--no-renames", "-z", *revs) or ""
+    return sorted(p for p in out.split("\0") if p)
+
+
+def patch_id(repo: Path, commit: str) -> str | None:
+    """`git patch-id --stable` of the commit against its first parent, None for an empty diff. The flags keep
+    `.gitattributes` and user config from rendering two different changes the same way."""
+    diff = subprocess.run(["git", "-C", str(repo), "diff", "--no-ext-diff", "--no-textconv", "--no-color",
+                           "--no-renames", "-a", f"{commit}^1", commit], capture_output=True).stdout
+    out = subprocess.run(["git", "-C", str(repo), "patch-id", "--stable"], input=diff, capture_output=True).stdout
+    return out.split()[0].decode() if out.split() else None
+
+
+def reviewed_head(repo: Path, worktree: Path | None, notes: Path, spec: Path | None) -> str | None:
+    """The sha of the last `Feature gate: green at` ledger line (Tracks M and L), else of the `review-done` marker."""
+    if worktree is None:
+        return None
+    if spec is not None:
+        plan = find_plan(notes, spec)
+        ledger = worktree / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan else None
+        found = re.findall(r"^Feature gate: green at (\S+)", ledger.read_text(), re.MULTILINE) \
+            if ledger and ledger.is_file() else []
+        return found[-1] if found else None
+    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
+    lines = marker.read_text().splitlines() if marker and marker.is_file() else []
+    return (lines[0].strip() or None) if lines else None
+
+
+def cmd_merge_check(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    slug = args.feature.lower() if args.feature else None
+    if slug is None:
+        branch = git(repo, "symbolic-ref", "--short", "-q", "HEAD") or ""
+        if "/" not in branch:
+            return emit({"error": "no feature: run merge-check on a feature branch or pass --feature"}, 1)
+        slug = branch.rsplit("/", 1)[1].lower()
+    worktree, branch = feature_checkout(repo, slug)
+    if branch is None:
+        return emit({"error": f"no feature {slug}: no branch <prefix>/{slug}"}, 1)
+    head = git(worktree, "rev-parse", "HEAD") if worktree else git(repo, "rev-parse", f"refs/heads/{branch}")
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    matches = [path for name, path in specs(notes) if name == slug]
+    spec = matches[-1] if matches else None
+    track = (frontmatter(spec).get("track") or None) if spec else "S"
+    ref = main_ref(repo)
+    if ref is None:
+        return emit({"error": "no refs/remotes/origin/main and no refs/heads/main"}, 1)
+
+    reasons: list[dict] = []
+    config = read_config(repo, ref)
+    if config is not None and not config_shape_ok(config):
+        config = None  # Fail closed: an unknown value must not merge without a human.
+    if config is None:
+        reasons.append({"reason": "config-unreadable"})
+    elif config.get("merge") == "human":
+        reasons.append({"reason": "merge-human"})
+    if (track or "").upper() == "L":
+        reasons.append({"reason": "track-l"})
+    if config is not None:
+        patterns = config.get("merge_human_paths", [])
+        for path in changed_paths(repo, f"{ref}...{head}"):
+            pattern = next((p for p in patterns if fnmatch.fnmatchcase(path, p)), None)
+            if pattern is not None:
+                reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
+        trusted = (config.get("merge"), config.get("merge_human_paths"))
+        branch_config = read_config(repo, head)
+        if branch_config is None:
+            changed = trusted != (None, None)
+        else:
+            changed = (branch_config.get("merge"), branch_config.get("merge_human_paths")) != trusted
+        if changed:
+            reasons.append({"reason": "config-changed"})
+
+    reviewed = reviewed_head(repo, worktree, notes, spec)
+    if reviewed is not None and git(repo, "rev-parse", "--verify", "-q", f"{reviewed}^{{commit}}") is None:
+        reviewed = None
+    minor: list[dict] = []
+    if reviewed is None:
+        reasons.append({"reason": "no-review"})
+    else:
+        base = git(repo, "merge-base", reviewed, ref)
+        seen = {patch_id(repo, c) for c in
+                (git(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed) or "").split()}
+        for commit in (git(repo, "rev-list", "--reverse", f"{ref}..{head}") or "").split():
+            pid = patch_id(repo, commit)
+            if pid is None or pid in seen:
+                continue
+            paths = changed_paths(repo, f"{commit}^1", commit)
+            code = [p for p in paths if not is_test_or_doc(p)]
+            if code:
+                reasons.append({"reason": "unreviewed", "commit": commit, "paths": code})
+            else:
+                minor.append({"commit": commit, "paths": paths})
+    return emit({"merge": "human" if reasons else "auto", "reasons": reasons, "reviewed": reviewed,
+                 "unreviewed_minor": minor, "feature": slug, "track": track}, 0)
+
+
 # logged and gate
 
 
@@ -617,6 +759,11 @@ def main() -> int:
     status.add_argument("--repo", default=".")
     status.add_argument("--feature")
     status.set_defaults(run=cmd_status)
+
+    merge_check = commands.add_parser("merge-check")
+    merge_check.add_argument("--repo", default=".")
+    merge_check.add_argument("--feature")
+    merge_check.set_defaults(run=cmd_merge_check)
 
     logged = commands.add_parser("logged")
     logged.add_argument("--name")
