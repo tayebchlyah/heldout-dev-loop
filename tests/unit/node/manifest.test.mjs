@@ -11,7 +11,10 @@ const kit = {
     { path: '.dev-loop/hooks/claude/gate.sh', content: 'gate\n', executable: true },
     { path: '.agents/skills/dev-loop/SKILL.md', content: 'skill\n', executable: false },
   ],
-  link: { path: '.claude/skills/dev-loop', target: '../../.agents/skills/dev-loop' },
+  links: [
+    { path: '.claude/skills/dev-loop', target: '../../.agents/skills/dev-loop' },
+    { path: '.claude/skills/pause', target: '../../.agents/skills/pause' },
+  ],
 }
 
 function writeKit(repo) {
@@ -20,7 +23,7 @@ function writeKit(repo) {
     writeFileSync(join(repo, file.path), file.content)
   }
   mkdirSync(join(repo, '.claude', 'skills'), { recursive: true })
-  symlinkSync(kit.link.target, join(repo, kit.link.path))
+  for (const link of kit.links) symlinkSync(link.target, join(repo, link.path))
 }
 
 test('sha256 names the algorithm and hashes the utf8 content', () => {
@@ -33,11 +36,13 @@ test('the manifest lists the version and each kit path, sorted, with the link', 
   assert.deepEqual(Object.keys(manifest.files), [
     '.agents/skills/dev-loop/SKILL.md',
     '.claude/skills/dev-loop',
+    '.claude/skills/pause',
     '.dev-loop/hooks/claude/gate.sh',
   ])
   assert.equal(manifest.files['.claude/skills/dev-loop'], 'link:../../.agents/skills/dev-loop')
   assert.equal(manifest.files['.dev-loop/hooks/claude/gate.sh'], sha256('gate\n'))
-  assert.equal(buildManifest('1.5.0', { ...kit, link: null }).files['.claude/skills/dev-loop'], undefined)
+  assert.equal(manifest.files['.claude/skills/pause'], 'link:../../.agents/skills/pause')
+  assert.equal(buildManifest('1.5.0', { ...kit, links: [] }).files['.claude/skills/dev-loop'], undefined)
 })
 
 test('readManifest returns the parsed file, or null when there is none', () => {

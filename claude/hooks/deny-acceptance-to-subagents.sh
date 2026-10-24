@@ -40,7 +40,7 @@ normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|
 
 # Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs),
 # matched on repo-relative paths only: a user-level ~/.claude/agents/implementer.md is not a kit file.
-KIT='^(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+KIT='^(\.agents/skills/(dev-loop|pause|continue)|\.claude/skills/(dev-loop|pause|continue)|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
 # Normalized paths on stdin, repo top in $1: a path under the top (or its /private variant) becomes
 # repo-relative, any other absolute path is dropped (not a kit path), a leading ./ goes.
 repo_rel() { awk -v t="$1" 'BEGIN { p = index(t, "/private/") == 1 ? substr(t, 9) : "/private" t }

@@ -75,8 +75,11 @@ test('init --yes writes every path of the layout, and the manifest agrees with t
   ]) {
     assert.ok(existsSync(join(repo, path)), path)
   }
-  assert.equal(readlinkSync(join(repo, '.claude/skills/dev-loop')), '../../.agents/skills/dev-loop')
-  assert.ok(existsSync(join(repo, '.claude/skills/dev-loop/SKILL.md')))
+  for (const name of ['dev-loop', 'pause', 'continue']) {
+    assert.equal(readlinkSync(join(repo, `.claude/skills/${name}`)), `../../.agents/skills/${name}`)
+    assert.ok(existsSync(join(repo, `.claude/skills/${name}/SKILL.md`)), name)
+  }
+  assert.ok(existsSync(join(repo, '.agents/skills/pause/agents/openai.yaml')))
   assert.equal(existsSync(join(repo, 'dev-loop.local.json')), false)
 
   const devLoop = readFileSync(join(repo, 'dev-loop.json'), 'utf8')
@@ -88,7 +91,7 @@ test('init --yes writes every path of the layout, and the manifest agrees with t
   assert.equal(manifest.version, version)
   assert.deepEqual(compareManifest(repo, manifest), { changed: [], missing: [] })
   const kit = buildKit({ packageRoot, harnesses: ['claude', 'codex'] })
-  assert.deepEqual(Object.keys(manifest.files).sort(), [...kit.files.map((file) => file.path), kit.link.path].sort())
+  assert.deepEqual(Object.keys(manifest.files).sort(), [...kit.files.map((file) => file.path), ...kit.links.map((link) => link.path)].sort())
 
   assert.match(output, /installed/)
   assert.match(output, / \.claude\/settings\.json/)
@@ -282,7 +285,7 @@ test('writeKit writes changed files, skips equal ones, links, and deletes files 
       { path: 'a/old.txt', content: 'new\n', executable: false },
       { path: 'b/run.sh', content: '#!/bin/sh\n', executable: true },
     ],
-    link: { path: 'links/kept', target: '../skill' },
+    links: [{ path: 'links/kept', target: '../skill' }],
   }
   const oldManifest = { version: '0.0.1', files: { 'a/same.txt': 'x', 'a/old.txt': 'x', 'a/gone.txt': sha256('gone\n'), 'links/kept': 'link:../skill' } }
 
@@ -347,7 +350,7 @@ test('writeKit replaces a link that points elsewhere', () => {
   const repo = mkdtempSync(join(tmpdir(), 'dev-loop-kit-'))
   mkdirSync(join(repo, 'links'))
   symlinkSync('../other', join(repo, 'links/kept'))
-  const reports = writeKit({ repo, kit: { files: [], link: { path: 'links/kept', target: '../skill' } }, oldManifest: null, dryRun: false })
+  const reports = writeKit({ repo, kit: { files: [], links: [{ path: 'links/kept', target: '../skill' }] }, oldManifest: null, dryRun: false })
   assert.deepEqual(reports.map((entry) => entry.action), ['replace'])
   assert.equal(readlinkSync(join(repo, 'links/kept')), '../skill')
 })
@@ -422,7 +425,7 @@ test('init backs up an existing dev-loop.local.json before replacing it', () => 
 // to move to. `edit` changes the copy before it is used.
 function fakePackage(nextVersion, edit = () => {}) {
   const root = mkdtempSync(join(tmpdir(), 'dev-loop-pkg-'))
-  for (const name of ['bin', 'lib', 'skill', 'claude', 'codex', 'package.json']) {
+  for (const name of ['bin', 'lib', 'skill', 'skills', 'claude', 'codex', 'package.json']) {
     cpSync(join(packageRoot, name), join(root, name), { recursive: true })
   }
   const pkg = readJson(join(root, 'package.json'))
@@ -622,6 +625,32 @@ test('upgrade with the same version applies the kit again', () => {
   const output = upgrade(repo, home)
   assert.match(output, /0 changed/)
   assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade from a kit with the one skill link creates the pause and continue links', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const path = join(repo, '.dev-loop/MANIFEST.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8'))
+  for (const name of ['pause', 'continue']) {
+    rmSync(join(repo, `.agents/skills/${name}`), { recursive: true })
+    unlinkSync(join(repo, `.claude/skills/${name}`))
+    for (const key of Object.keys(manifest.files)) if (key.startsWith(`.agents/skills/${name}/`) || key === `.claude/skills/${name}`) delete manifest.files[key]
+  }
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
+  upgrade(repo, home)
+  for (const name of ['pause', 'continue']) {
+    assert.equal(readlinkSync(join(repo, `.claude/skills/${name}`)), `../../.agents/skills/${name}`)
+    assert.ok(existsSync(join(repo, `.agents/skills/${name}/SKILL.md`)), name)
+  }
+})
+
+test('init refuses a real directory at the pause skill link path, and writes nothing', () => {
+  const { home, repo } = setup()
+  mkdirSync(join(repo, '.claude/skills/pause'), { recursive: true })
+  writeFileSync(join(repo, '.claude/skills/pause/mine.md'), 'mine\n')
+  initFails(repo, home, ['--yes', '--harness=claude'], /\.claude\/skills\/pause/)
+  assert.equal(readFileSync(join(repo, '.claude/skills/pause/mine.md'), 'utf8'), 'mine\n')
 })
 
 test('upgrade with no dev-loop.json refuses and names init', () => {

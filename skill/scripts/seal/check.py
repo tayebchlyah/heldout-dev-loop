@@ -77,7 +77,7 @@ def uncommitted_violations(repo: Path) -> list[dict]:
 
 
 MANIFEST = ".dev-loop/MANIFEST.json"
-KIT_DIRS = (".agents/skills/dev-loop/", ".dev-loop/")
+KIT_DIRS = (".agents/skills/dev-loop/", ".agents/skills/pause/", ".agents/skills/continue/", ".dev-loop/")
 LINK_PREFIX = "link:"
 
 
