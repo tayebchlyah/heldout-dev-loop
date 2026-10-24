@@ -918,6 +918,40 @@ def clean_video(value: object, folder: Path) -> str | None:
     return str(path) if path.is_file() and path.is_relative_to(folder.resolve()) else None
 
 
+def before_jobs(repo: Path, base: str, source: str, kit_runner: str) -> list[tuple[str, list, str]] | str:
+    """The before run of `--routes-from`: per entry of the after `drive.json` with an `ok` route, its `ok` route
+    paths (no names) and its runner. Only those map entries are read; a missing or bad one counts as absent."""
+    from verify import load_entry
+
+    try:
+        after = json.loads(Path(source).read_text())
+        if not isinstance(after, dict) or not isinstance(after.get("routes"), list):
+            raise ValueError
+    except (OSError, ValueError):
+        return f"--routes-from {source} is not a JSON object with a routes list"
+    wanted: dict[str, list[dict]] = {}
+    journeys = set()
+    for route in after["routes"]:
+        if not isinstance(route, dict) or not isinstance(route.get("entry"), str) or not isinstance(route.get("path"), str):
+            continue
+        if route.get("video"):
+            journeys.add(route["entry"])
+        if route.get("ok") is True:
+            wanted.setdefault(route["entry"], []).append({"path": route["path"], "names": []})
+    jobs = []
+    for stem, routes in wanted.items():
+        path = repo / base / "features" / f"{stem}.md"
+        entry = None
+        if Path(stem).name == stem and not stem.startswith(".") and path.is_file():
+            entry, _ = load_entry(repo, path)
+        if stem in journeys:
+            if entry and entry["script"]:
+                jobs.append((stem, routes, str(repo / entry["script"])))
+        else:
+            jobs.append((stem, routes, kit_runner))
+    return jobs
+
+
 def cmd_drive(args: argparse.Namespace) -> int:
     from seal import git_dir, merge_base
     from verify import config_errors, entries, load_entry, skill_dir
@@ -938,29 +972,40 @@ def cmd_drive(args: argparse.Namespace) -> int:
     base = skill_dir(verify["skill"])
     if not (repo / base / "SKILL.md").is_file():
         return emit({"error": f"missing {base}/SKILL.md (verify.skill)"}, 1)
-    loaded = {}
-    for path in entries(repo, verify["skill"]):
-        entry, reason = load_entry(repo, path)
-        if reason:
-            return emit({"error": f"bad feature map entry {path.relative_to(repo).as_posix()}: {reason}"}, 1)
-        loaded[path.stem] = (path.relative_to(repo).as_posix(), entry)
-
-    if args.since and not git(repo, "rev-parse", "--verify", "-q", f"{args.since}^{{commit}}"):
-        return emit({"error": f"--since is not a commit: {args.since}"}, 1)
-    if args.all:
-        selected = sorted(loaded)
+    kit_runner = str(Path(__file__).parent / "drive.mjs")
+    if args.routes_from:
+        mode = "before"
+        jobs = before_jobs(repo, base, args.routes_from, kit_runner)
+        if isinstance(jobs, str):
+            return emit({"error": jobs}, 1)
     else:
-        base = merge_base(repo)
-        revs = f"{args.since}..HEAD" if args.since else f"{base}...HEAD" if base else None
-        if revs is None:
-            return emit({"error": "no base branch: run drive --all or --since <sha>"}, 1)
-        diff = git(repo, "-c", "core.quotepath=off", "diff", "--name-only", "-z", "--no-renames", revs)
-        if diff is None:
-            return emit({"error": f"git diff failed: {revs}"}, 1)
-        changed = set(diff.split("\0")) - {""}
-        selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
-            fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
-    mode = "all" if args.all else "since" if args.since else "diff"
+        loaded = {}
+        for path in entries(repo, verify["skill"]):
+            entry, reason = load_entry(repo, path)
+            if reason:
+                return emit({"error": f"bad feature map entry {path.relative_to(repo).as_posix()}: {reason}"}, 1)
+            loaded[path.stem] = (path.relative_to(repo).as_posix(), entry)
+
+        if args.since and not git(repo, "rev-parse", "--verify", "-q", f"{args.since}^{{commit}}"):
+            return emit({"error": f"--since is not a commit: {args.since}"}, 1)
+        if args.all:
+            selected = sorted(loaded)
+        else:
+            base = merge_base(repo)
+            revs = f"{args.since}..HEAD" if args.since else f"{base}...HEAD" if base else None
+            if revs is None:
+                return emit({"error": "no base branch: run drive --all or --since <sha>"}, 1)
+            diff = git(repo, "-c", "core.quotepath=off", "diff", "--name-only", "-z", "--no-renames", revs)
+            if diff is None:
+                return emit({"error": f"git diff failed: {revs}"}, 1)
+            changed = set(diff.split("\0")) - {""}
+            selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
+                fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
+        mode = "all" if args.all else "since" if args.since else "diff"
+        jobs = [(stem, loaded[stem][1]["routes"],
+                 str(repo / loaded[stem][1]["script"]) if loaded[stem][1]["script"] else kit_runner)
+                for stem in selected]
+    selected = [stem for stem, _, _ in jobs]
     head = git(repo, "rev-parse", "HEAD")
     if not selected:
         return emit({"ok": True, "selected": [], "routes": [], "evidence": None, "mode": mode, "head": head}, 0)
@@ -985,12 +1030,10 @@ def cmd_drive(args: argparse.Namespace) -> int:
     evidence = git_dir(repo) / "dev-loop" / "evidence" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     evidence.mkdir(parents=True, exist_ok=True)
     routes = []
-    for stem in selected:
-        _, entry = loaded[stem]
-        runner = str(repo / entry["script"]) if entry["script"] else str(Path(__file__).parent / "drive.mjs")
+    for stem, entry_routes, runner in jobs:
         video = evidence / "video" / stem
         video.mkdir(parents=True, exist_ok=True)
-        payload = {"base_url": url, "storage_state": state, "routes": entry["routes"], "evidence": str(evidence),
+        payload = {"base_url": url, "storage_state": state, "routes": entry_routes, "evidence": str(evidence),
                    "entry": stem, "video": str(video)}
         done = subprocess.run(["node", runner], cwd=repo, input=json.dumps(payload), capture_output=True, text=True)
         try:
@@ -998,12 +1041,17 @@ def cmd_drive(args: argparse.Namespace) -> int:
             if done.returncode != 0 or not isinstance(result.get("routes"), list):
                 raise ValueError
         except (ValueError, AttributeError):
+            if mode == "before":
+                routes += [{"entry": stem, "path": r["path"], "ok": False, "status": None, "missing": [],
+                            "console_errors": [], "error": "runner failed", "screenshot": None, "video": None,
+                            "seconds": 0} for r in entry_routes]
+                continue
             return emit({"error": f"runner failed for {stem}", "tail": tail(done.stdout + done.stderr)}, 1)
         routes += [{**r, "video": clean_video(r.get("video"), video)} for r in result["routes"]]
     out = {"ok": all(r.get("ok") is True for r in routes), "selected": selected, "routes": routes,
            "evidence": str(evidence), "mode": mode, "head": head}
     (evidence / "drive.json").write_text(json.dumps(out, indent=2) + "\n")
-    return emit(out, 0 if out["ok"] else 1)
+    return emit(out, 0 if out["ok"] or mode == "before" else 1)
 
 
 class Parser(argparse.ArgumentParser):
@@ -1072,6 +1120,7 @@ def main() -> int:
     scope = drive.add_mutually_exclusive_group()
     scope.add_argument("--all", action="store_true")
     scope.add_argument("--since")
+    scope.add_argument("--routes-from")
     drive.set_defaults(run=cmd_drive)
 
     args = parser.parse_args()
