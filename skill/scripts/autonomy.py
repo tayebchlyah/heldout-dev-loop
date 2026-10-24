@@ -31,7 +31,7 @@ def session_id(env: Mapping[str, str]) -> tuple[str | None, str | None]:
 
 
 def cell(text: str) -> str:
-    return re.sub(r"[\r\n]+", " ", text.strip()).replace("|", "\\|")
+    return re.sub(r"\r\n|\r|\n", " ", text.strip()).replace("|", "\\|")
 
 
 def split_row(line: str) -> list[str]:
@@ -55,9 +55,11 @@ def log_rows(text: str) -> list[dict]:
         return []
     rows = []
     for line in lines[span[0] + 1:span[1]]:
-        if not line.startswith("|") or line.strip() in (LOG_HEADER, LOG_RULE):
+        if not line.startswith("|"):
             continue
         values = split_row(line)
+        if values and (values[0].lower() == "time" or all(re.fullmatch(r":?-+:?", v) for v in values)):
+            continue  # the header and the rule, whatever a Markdown formatter made of them
         if len(values) == len(LOG_COLUMNS):
             rows.append({**dict(zip(LOG_COLUMNS, values)), "row": line})
     return rows
@@ -85,8 +87,17 @@ def append_row(path: Path, row: str, lock: Path) -> None:
 
 
 def write_atomic(path: Path, text: str) -> None:
+    """Replace `path` (a symlink: its target) in one rename, keeping its mode (new file: 0666 minus the umask)."""
+    path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        mode = path.stat().st_mode & 0o7777
+    else:
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    os.chmod(tmp, mode)
     with os.fdopen(fd, "w") as out:
         out.write(text)
     os.replace(tmp, path)
