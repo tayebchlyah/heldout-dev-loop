@@ -28,10 +28,10 @@ npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global inst
 
 ## Project settings
 
-`dev-loop.json` holds `version` and `harnesses`, and two optional keys:
+`dev-loop.json` holds `version` and `harnesses`, and optional keys:
 
 - `commands`: the project's own command for a step. Keys: `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`. Each value is a non-empty string. A missing key falls back to `scripts/gate.sh`, `docker compose` and the stack's test runner. `check_setup.py` fails on any other key.
-- `merge`: `auto` (the default) or `human`. With `auto`, Stage 7 merges a Track S or M pull request after green CI and the review wave, when it is a two-way door with a small blast radius. A one-way door or a Track L pull request waits for you. With `human`, every pull request waits for you.
+- `merge`: `auto` (the default) or `human`. With `auto`, Stage 7 merges a Track S or M pull request after green CI and the review wave, when it is a two-way door with a small blast radius. A one-way door or a Track L pull request waits for you. With `human`, every pull request waits for you. Stage 7 runs `devloop.py merge-check` to decide, and `merge_human_paths` in `dev-loop.json` lists path patterns whose changes always wait for you.
 
 ## The devloop command
 
@@ -86,10 +86,11 @@ Every merged file the installer replaces (`.claude/settings.json`, `.codex/hooks
 
 ## After installing
 
-`check_setup.py` can report two things under "User actions required" that no installer can fix. Both are expected, not a broken install:
+`check_setup.py` can report three things under "User actions required" that no installer can fix. All are expected, not a broken install:
 
 1. **Trusted Codex hooks.** Codex only trusts hook definitions after you run `/hooks` inside Codex and approve the dev-loop hooks. Until you trust the project and its hooks, the trusted-project and trusted-hook-hash checks fail.
 2. **Third-party skills.** dev-loop does not ship the Codex skills `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr` and `prototype` (Matt Pocock's skills). Install them separately from their own source.
+3. **The security-audit skill.** For both harnesses, the Stage 6 security verifier reads its prompt from Cloudflare's `security-audit` skill, pinned to one commit. Install it with `npx skills add https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 --skill security-audit --global --agent claude-code codex`.
 
 ## Develop
 
