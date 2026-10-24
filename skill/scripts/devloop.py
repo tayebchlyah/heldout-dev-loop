@@ -13,6 +13,8 @@
   devloop.py seal --rebase-continue                   write the new seal into the rebase commit, continue it
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
+  devloop.py verify-init --base-url URL [--name SKILL]
+                                                      write the verify skill skeleton and the verify key
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -796,6 +798,86 @@ def cmd_seal_check(args: argparse.Namespace) -> int:
     return emit(out, 0 if out["ok"] else 1)
 
 
+SKILL_TEMPLATE = """---
+name: {skill}
+description: Launch, check, drive and clean up this project's app, as a user does. {fill}
+---
+
+# {skill}
+
+## Launch
+The exact command that starts the app for verification, and how to tell it is ready (usable, not only up). {fill}
+
+## Doctor
+One read-only check that this instance is worth driving: process up, right build, port ours, auth valid. {fill}
+
+## Drive
+`python3 .agents/skills/dev-loop/scripts/devloop.py drive`, and the project CLI commands an agent uses to reach a state. {fill}
+
+## Evidence
+What a proof captures and where it stays: `drive` writes `<git-dir>/dev-loop/evidence/<run>/`. {fill}
+
+## Cleanup
+How to stop what Launch started, never by process name. Cleanup keeps the evidence. {fill}
+"""
+
+FEATURES_TEMPLATE = """# Feature map
+
+One file per user-facing feature: frontmatter `routes`, `paths`, optional `script` (one line of JSON each), then
+`## Sub-features`, `## How to get to it (user POV)`, `## Driving it with <harness>`, `## Gotchas`. The dev-loop skill's
+`references/verify.md` has the contract.
+
+{fill}
+"""
+
+
+def cmd_verify_init(args: argparse.Namespace) -> int:
+    from verify import FILL, SKILL_NAME, url_ok
+
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 1)
+    repo = Path(top)
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        return emit({"error": f"no readable dev-loop.json in {repo}"}, 1)
+    if not isinstance(config, dict):
+        return emit({"error": "dev-loop.json must hold a JSON object"}, 1)
+    if "verify" in config:
+        return emit({"error": "dev-loop.json already has a verify key"}, 1)
+    skill = args.name
+    if skill is None:
+        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        main = Path(common).parent if common else repo
+        skill = "verify-" + re.sub(r"[^a-z0-9]+", "-", main.name.lower()).strip("-")
+    if not SKILL_NAME.match(skill):
+        return emit({"error": f"skill name must be lower case words joined by -: {skill}"}, 1)
+    if not url_ok(args.base_url):
+        return emit({"error": f"base URL must be http:// or https://: {args.base_url}"}, 1)
+    folder = f".agents/skills/{skill}"
+    if os.path.lexists(repo / folder):
+        return emit({"error": f"{folder} already exists"}, 1)
+    harnesses = config.get("harnesses", [])
+    link = f".claude/skills/{skill}" if isinstance(harnesses, list) and "claude" in harnesses else None
+    if link and os.path.lexists(repo / link):
+        return emit({"error": f"{link} already exists"}, 1)
+
+    (repo / folder / "features").mkdir(parents=True)
+    (repo / folder / "SKILL.md").write_text(SKILL_TEMPLATE.format(skill=skill, fill=FILL))
+    (repo / folder / "features" / "README.md").write_text(FEATURES_TEMPLATE.format(fill=FILL))
+    files = [f"{folder}/SKILL.md", f"{folder}/features/README.md"]
+    if link:
+        (repo / link).parent.mkdir(parents=True, exist_ok=True)
+        (repo / link).symlink_to(f"../../{folder}")
+        files.append(link)
+    verify = {"skill": skill, "base_url": args.base_url}
+    config["verify"] = verify
+    (repo / "dev-loop.json").write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
+    files.append("dev-loop.json")
+    return emit({"skill": skill, "files": files, "config": verify}, 0)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -852,6 +934,11 @@ def main() -> int:
     seal_check = commands.add_parser("seal-check")
     seal_check.add_argument("--uncommitted", action="store_true")
     seal_check.set_defaults(run=cmd_seal_check)
+
+    verify_init = commands.add_parser("verify-init")
+    verify_init.add_argument("--base-url", required=True)
+    verify_init.add_argument("--name")
+    verify_init.set_defaults(run=cmd_verify_init)
 
     args = parser.parse_args()
     return args.run(args)
