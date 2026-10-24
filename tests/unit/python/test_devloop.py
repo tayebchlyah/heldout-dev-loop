@@ -565,6 +565,16 @@ class MergeCheckTests(Sandbox):
         out = self.ok(wt)
         self.assertEqual((out["reviewed"], out["reasons"]), (second, []))
 
+    def test_reviewed_is_a_full_sha(self) -> None:
+        """A short sha resolves to the full sha; a ref name or another token is no review."""
+        wt, sha = self.reviewed_feature()
+        for token, reviewed in ((sha[:7], sha), ("HEAD", None), ("feat/widget", None), (sha + "0", None)):
+            with self.subTest(token=token):
+                self.gate_green(wt, token)
+                out = self.ok(wt)
+                self.assertEqual(out["reviewed"], reviewed)
+                self.assertEqual(out["reasons"], [] if reviewed else [{"reason": "no-review"}])
+
     def test_minor_commit_is_listed_not_blocking(self) -> None:
         wt, _ = self.reviewed_feature()
         put(wt / "tests" / "unit" / "test_x.py", "x\n")
