@@ -719,5 +719,66 @@ class WeakenedTests(GateSealRepo):
                 self.assertEqual((code, out["weakened"]), (0, expected), out)
 
 
+KIT_FILE = ".agents/skills/dev-loop/scripts/seal/check.py"
+KIT_AGENT = ".claude/agents/implementer.md"
+
+
+class KitChangedTests(SealRepo):
+    """A kit file differs from `<base>` while the `dev-loop.json` version did not change: `kit-changed`."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        git(self.repo, "checkout", "-q", "main")
+        manifest = {"version": "2.2.0", "files": {KIT_FILE: "sha256:x", KIT_AGENT: "sha256:y"}}
+        put(self.repo / ".dev-loop" / "MANIFEST.json", json.dumps(manifest))
+        put(self.repo / "dev-loop.json", '{"version": "2.2.0"}\n')
+        put(self.repo / KIT_FILE, "def check(): pass\n")
+        put(self.repo / KIT_AGENT, "agent\n")
+        self.commit(".claude/agents/mine.md", "mine\n", "kit")
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+
+    def test_a_committed_kit_change_without_a_version_change(self) -> None:
+        for path, text in [(KIT_FILE, "def check(): return OK\n"), (".agents/skills/dev-loop/scripts/seal/new.py", "x\n"),
+                           (".dev-loop/hooks/claude/git-guard.sh", "exit 0\n"), (".dev-loop/MANIFEST.json", "{}\n")]:
+            with self.subTest(path=path):
+                self.commit(path, text)
+                code, out = self.check()
+                self.assertEqual((code, out["ok"]), (1, False), out)
+                self.assertEqual(self.violations(), [("kit-changed", None, path)])
+                git(self.repo, "reset", "-q", "--hard", "main")
+
+    def test_a_deleted_kit_agent_is_a_kit_change(self) -> None:
+        git(self.repo, "rm", "-q", KIT_AGENT)
+        git(self.repo, "commit", "-q", "-m", "drop")
+        self.assertEqual(self.violations(), [("kit-changed", None, KIT_AGENT)])
+
+    def test_an_upgrade_changes_the_version_and_passes(self) -> None:
+        put(self.repo / KIT_FILE, "def check(): return 2\n")
+        self.commit("dev-loop.json", '{"version": "2.3.0"}\n', "upgrade")
+        self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
+
+    def test_a_file_outside_the_kit_is_not_a_kit_change(self) -> None:
+        for path in (".claude/agents/mine.md", ".agents/skills/other/SKILL.md", "skill/scripts/seal/check.py"):
+            self.commit(path, "changed\n")
+        self.assertEqual(self.check()[0], 0)
+
+    def test_an_uncommitted_kit_change_counts_only_with_the_flag(self) -> None:
+        put(self.repo / KIT_FILE, "def check(): return OK\n")
+        self.assertEqual(self.violations(), [])
+        self.assertEqual(self.violations("--uncommitted"), [("kit-changed", None, KIT_FILE)])
+        put(self.repo / "dev-loop.json", '{"version": "2.3.0"}\n')
+        self.assertEqual(self.violations("--uncommitted"), [])
+
+    def test_a_repo_without_a_manifest_has_no_kit(self) -> None:
+        git(self.repo, "rm", "-q", "-r", ".dev-loop")
+        git(self.repo, "commit", "-q", "-m", "no kit")
+        git(self.repo, "checkout", "-q", "main")
+        git(self.repo, "rm", "-q", "-r", ".dev-loop")
+        git(self.repo, "commit", "-q", "-m", "no kit")
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        self.commit(KIT_FILE, "changed\n")
+        self.assertEqual(self.check()[0], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
