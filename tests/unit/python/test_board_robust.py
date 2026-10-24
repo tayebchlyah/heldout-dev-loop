@@ -319,6 +319,27 @@ class BoardRobustTests(Board):
         self.assertEqual(self.own_notes(), {})
         self.assertEqual(json.loads(features.read_text()), [])
 
+    def test_decision_log_rows_follow_the_new_assumptions(self) -> None:
+        """Session B Autonomy D18: each `decision` row as `<Decision>: <Why>`, `Risk: ` on a risk row, no baseline for
+        the log (rows present at the first run show), discovery rows left out; Track S reads its git dir log."""
+        log = ("\n## Decision log\n\n| Time | Stage | Session | Kind | Risk | Decision | Why | Evidence | Result |\n"
+               "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+               "| 2026-10-25T10:00Z | 5 |  | decision |  | Use JSON | stdlib only | a.py:3 |  |\n"
+               "| 2026-10-25T10:01Z | 5 |  | decision | risk | Drop cache | too slow | b.py:1 |  |\n"
+               "| 2026-10-25T10:02Z | 5 |  | discovery |  | Port busy | other run | log |  |\n")
+        wt, plan = self.stage5("logged", "Logged Thing")
+        self.ledger(wt, plan, "started")
+        spec = self.notes / "specs" / "20261001 Logged Thing.md"
+        spec.write_text(spec.read_text() + log)
+        self.ok(cwd=wt)
+        spec.write_text(spec.read_text().replace("- Widgets are blue.\n", "- Widgets are blue.\n- Keep v1\n"))
+        self.ok(cwd=wt)
+        self.assertEqual(self.note("logged")["decisions"], ["Keep v1", "Use JSON: stdlib only", "Risk: Drop cache: too slow"])
+        quick = self.worktree("quick", prefix="fix")
+        put(Path(git(quick, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "decisions.md", log)
+        self.ok(cwd=quick)
+        self.assertEqual(self.note("quick")["decisions"], ["Use JSON: stdlib only", "Risk: Drop cache: too slow"])
+
     def test_track_s_note_after_its_branch_is_gone(self) -> None:
         """A1, D11, D12: worktree and branch removed; its `head` on origin/main ships the note, else it is deleted."""
         for slug, merged in (("tiny", True), ("stray", False)):
