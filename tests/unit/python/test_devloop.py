@@ -619,6 +619,35 @@ class MergeCheckTests(Sandbox):
                 self.assertIn("error", out)
                 self.assertNotIn("merge", out)
 
+    def test_non_utf8_input_gives_json(self) -> None:
+        """Bytes that are not UTF-8 in branch input never crash the command."""
+        for case in ("config", "path", "ledger"):
+            with self.subTest(case=case):
+                self.tearDown()
+                self.setUp()
+                self.main_config({"merge_human_paths": ["src/auth/*"]})
+                wt, sha = self.reviewed_feature()
+                if case == "config":
+                    (wt / "dev-loop.json").write_bytes(b"\xff{")
+                    git(wt, "add", "-A")
+                    git(wt, "commit", "-q", "-m", "config")
+                    self.gate_green(wt, self.head(wt))
+                    expected = [{"reason": "config-changed"}]
+                elif case == "path":
+                    blob = subprocess.run(["git", "-C", str(wt), "hash-object", "-w", "--stdin"], input="t\n",
+                                          capture_output=True, text=True, check=True).stdout.strip()
+                    subprocess.run([b"git", b"-C", bytes(wt), b"update-index", b"--add", b"--cacheinfo",
+                                    b"100644," + blob.encode() + b",src/auth/\xff.py"], check=True)
+                    git(wt, "commit", "-q", "-m", "odd name")
+                    self.gate_green(wt, self.head(wt))
+                    expected = [{"reason": "human-path", "path": "src/auth/�.py", "pattern": "src/auth/*"}]
+                else:
+                    ledger = wt / ".superpowers" / "sdd" / self.PLAN_NAME / "progress.md"
+                    ledger.write_bytes(b"\xff\n" + ledger.read_bytes())
+                    expected = []
+                out = self.ok(wt)
+                self.assertEqual(out["reasons"], expected)
+
     def test_is_test_or_doc(self) -> None:
         devloop = load_devloop()
         rows = {
