@@ -1205,18 +1205,30 @@ def cmd_pause(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError:
         notes = None
-    if notes is not None:
-        stage = detect(repo, None, notes)["stage"]
-        target = log_target(repo, slug, notes) if slug else None
-        if target is not None and target.is_file():
-            rows = autonomy.log_rows(target.read_text())
-            last_decision = rows[-1]["row"] if rows else None
-            plan = find_plan(notes, target) if target.suffix == ".md" and target.parent == notes / "specs" else None
-            top = git(repo, "rev-parse", "--show-toplevel")
-            ledger = Path(top) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and top else None
-            if ledger is not None and ledger.is_file():
-                ledger_last = next((line for line in reversed(ledger.read_text().splitlines()) if line.strip()), None)
-    dirty = [line[3:] for line in (git(repo, "status", "--porcelain") or "").splitlines() if line.strip()]
+    try:  # An unreadable spec, plan or ledger (an iCloud placeholder) must not cost the note.
+        if notes is not None:
+            stage = detect(repo, None, notes)["stage"]
+            target = log_target(repo, slug, notes) if slug else None
+            if target is not None and target.is_file():
+                rows = autonomy.log_rows(target.read_text())
+                last_decision = rows[-1]["row"] if rows else None
+                plan = find_plan(notes, target) if target.suffix == ".md" and target.parent == notes / "specs" else None
+                top = git(repo, "rev-parse", "--show-toplevel")
+                ledger = Path(top) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and top else None
+                if ledger is not None and ledger.is_file():
+                    ledger_last = next((line for line in reversed(ledger.read_text().splitlines()) if line.strip()),
+                                       None)
+    except OSError:
+        stage = ledger_last = last_decision = None
+    # Not git(): its strip() eats the leading space of a first ` M <path>` line.
+    status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "-z"], capture_output=True, text=True)
+    entries = iter(status.stdout.split("\0") if status.returncode == 0 else [])
+    dirty = []
+    for entry in entries:
+        if len(entry) > 3:
+            dirty.append(entry[3:])
+            if entry[0] in "RC":
+                next(entries, None)  # a rename or copy: the source path follows, keep the destination
     note = {
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "reason": reason,
