@@ -491,6 +491,60 @@ console.log(JSON.stringify({{ routes: [{{ entry: input.entry, path: '/a', ok: tr
         code, out = devloop(root, "drive", "--all")
         self.assertEqual([r["video"] for r in out["routes"]], [None, None], out)
 
+    def routes_file(self, root: Path, routes: list[dict]) -> str:
+        path = self.tmp / f"after-{len(list(self.tmp.glob('after-*')))}.json"
+        path.write_text(json.dumps({"routes": [{"ok": True, "names": [{"role": "heading", "name": "X"}], **r}
+                                               for r in routes]}))
+        return str(path)
+
+    def test_routes_from_drives_ok_routes_without_names(self) -> None:
+        root = self.repo()
+        # A journey (an after route with a video) runs the entry's own script.
+        after = self.routes_file(root, [{"entry": "a", "path": "/one", "video": "/x/a.webm"},
+                                        {"entry": "b", "path": "/two", "ok": False, "video": "/x/b.webm"}])
+        code, out = devloop(root, "drive", "--routes-from", after)
+        self.assertEqual((code, out["mode"], out["selected"]), (0, "before", ["a"]), out)
+        self.assertEqual(json.loads((root / "runner-a.json").read_text())["routes"], [{"path": "/one", "names": []}])
+        self.assertFalse((root / "runner-b.json").exists())
+        self.assertEqual(json.loads((Path(out["evidence"]) / "drive.json").read_text()), out)
+
+    def test_routes_from_absent_entries(self) -> None:
+        root = self.repo()
+        (root / "node_modules").rename(root / "node_modules.fake")
+        (root / "node_modules").symlink_to(Path(__file__).resolve().parents[3] / "node_modules")
+        after = self.routes_file(root, [{"entry": "j", "path": "/j", "video": "/x/after.webm"},
+                                        {"entry": "z", "path": "/"}])
+        code, out = devloop(root, "drive", "--routes-from", after)
+        self.assertEqual((code, out["selected"]), (0, ["z"]), out)
+        self.assertEqual([(r["entry"], r["path"]) for r in out["routes"]], [("z", "/")])
+        self.assertTrue(Path(out["routes"][0]["screenshot"]).is_file(), out)
+
+    def test_routes_from_runner_failure_continues(self) -> None:
+        root = self.repo()
+        put(root / "tools/crash.mjs", "process.exit(1)\n")
+        put(root / ".agents/skills/verify-shop/features/a.md", entry_text(paths=["web/a*"], script="tools/crash.mjs"))
+        put(root / ".agents/skills/verify-shop/features/c.md", "no frontmatter\n")
+        after = self.routes_file(root, [{"entry": "a", "path": "/one", "video": "/x/a.webm"},
+                                        {"entry": "a", "path": "/two"},
+                                        {"entry": "b", "path": "/three", "video": "/x/b.webm"}])
+        code, out = devloop(root, "drive", "--routes-from", after)
+        self.assertEqual(code, 0, out)
+        self.assertEqual([(r["entry"], r["path"], r["ok"], r["error"]) for r in out["routes"]],
+                         [("a", "/one", False, "runner failed"), ("a", "/two", False, "runner failed"),
+                          ("b", "/three", True, None)])
+
+    def test_routes_from_usage_and_bad_file(self) -> None:
+        root = self.repo()
+        after = self.routes_file(root, [{"entry": "a", "path": "/one"}])
+        self.assertEqual(devloop(root, "drive", "--routes-from", after, "--all")[0], 2)
+        self.assertEqual(devloop(root, "drive", "--routes-from", after, "--since", "HEAD")[0], 2)
+        for text in ("not json", '{"routes": 1}', "[]"):
+            with self.subTest(text=text):
+                put(self.tmp / "bad.json", text)
+                code, out = devloop(root, "drive", "--routes-from", str(self.tmp / "bad.json"))
+                self.assertEqual(code, 1, out)
+                self.assertIn("--routes-from", out["error"])
+
     def test_runner_crash_names_entry(self) -> None:
         root = self.repo()
         put(root / "tools/runner.mjs", "console.error('crashed here'); process.exit(3)\n")
