@@ -377,12 +377,18 @@ def changed_paths(repo: Path, *revs: str) -> list[str]:
 
 
 def patch_id(repo: Path, commit: str) -> str | None:
-    """`git patch-id --stable` of the commit against its first parent, None for an empty diff. The flags keep
-    `.gitattributes` and user config from rendering two different changes the same way."""
+    """`git patch-id --verbatim` (stable, whitespace kept) of the commit against its first parent: "" for an empty
+    diff, None when git fails (no first parent, for one). The diff flags keep `.gitattributes` and user config from
+    rendering two different changes the same way."""
     diff = subprocess.run(["git", "-C", str(repo), "diff", "--no-ext-diff", "--no-textconv", "--no-color",
-                           "--no-renames", "-a", f"{commit}^1", commit], capture_output=True).stdout
-    out = subprocess.run(["git", "-C", str(repo), "patch-id", "--stable"], input=diff, capture_output=True).stdout
-    return out.split()[0].decode() if out.split() else None
+                           "--no-renames", "-a", f"{commit}^1", commit], capture_output=True)
+    if diff.returncode != 0:
+        return None
+    out = subprocess.run(["git", "-C", str(repo), "patch-id", "--verbatim"], input=diff.stdout,
+                         capture_output=True)
+    if out.returncode != 0:
+        return None
+    return out.stdout.split()[0].decode() if out.stdout.split() else ""
 
 
 def reviewed_head(repo: Path, worktree: Path | None, notes: Path, spec: Path | None) -> str | None:
@@ -459,13 +465,16 @@ def cmd_merge_check(args: argparse.Namespace) -> int:
         base = git(repo, "merge-base", reviewed, ref)
         seen = {patch_id(repo, c) for c in
                 (git(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed) or "").split()}
+        seen -= {None, ""}
         for commit in (git(repo, "rev-list", "--reverse", f"{ref}..{head}") or "").split():
             pid = patch_id(repo, commit)
-            if pid is None or pid in seen:
+            if pid == "" or pid in seen:
                 continue
             paths = changed_paths(repo, f"{commit}^1", commit)
             code = [p for p in paths if not is_test_or_doc(p)]
-            if code:
+            if pid is None:  # Fail closed: a diff git cannot compute is unreviewed, whatever its paths.
+                reasons.append({"reason": "unreviewed", "commit": commit, "paths": paths})
+            elif code:
                 reasons.append({"reason": "unreviewed", "commit": commit, "paths": code})
             else:
                 minor.append({"commit": commit, "paths": paths})
