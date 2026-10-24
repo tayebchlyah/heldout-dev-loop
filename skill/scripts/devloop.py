@@ -410,7 +410,7 @@ def patch_id(repo: Path, commit: str) -> str | None:
     return out.stdout.split()[0].decode() if out.stdout.split() else ""
 
 
-def reviewed_head(repo: Path, worktree: Path | None, notes: Path, spec: Path | None) -> str | None:
+def reviewed_head(worktree: Path | None, notes: Path, spec: Path | None) -> str | None:
     """The sha of the last `Feature gate: green at` ledger line (Tracks M and L), else of the `review-done` marker."""
     if worktree is None:
         return None
@@ -482,7 +482,7 @@ def merge_check(args: argparse.Namespace) -> int:
         if changed:
             reasons.append({"reason": "config-changed"})
 
-    reviewed = reviewed_head(repo, worktree, notes, spec)
+    reviewed = reviewed_head(worktree, notes, spec)
     # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.
     if reviewed is not None:
         reviewed = git(worktree, "rev-parse", "--verify", "-q", f"{reviewed}^{{commit}}") \
