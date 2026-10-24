@@ -356,10 +356,10 @@ def is_test_or_doc(path: str) -> bool:
 
 def read_config(repo: Path, rev: str) -> dict | None:
     """`dev-loop.json` at `rev` as an object, or None when absent, not JSON or not an object."""
-    raw = git(repo, "show", f"{rev}:dev-loop.json")
-    try:
-        config = json.loads(raw) if raw is not None else None
-    except ValueError:
+    try:  # Bytes: a copy that is not UTF-8 does not parse (UnicodeDecodeError is a ValueError).
+        config = json.loads(subprocess.run(["git", "-C", str(repo), "show", f"{rev}:dev-loop.json"],
+                                           capture_output=True, check=True).stdout)
+    except (subprocess.CalledProcessError, ValueError):
         return None
     return config if isinstance(config, dict) else None
 
@@ -375,11 +375,12 @@ class GitFailed(Exception):
 
 
 def git_out(repo: Path, *args: str) -> str:
-    """Like `git`, for merge-check: a failure raises GitFailed instead of reading as empty."""
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    """Like `git`, for merge-check: a failure raises GitFailed instead of reading as empty, and bytes that are not
+    UTF-8 (a branch path name) read as U+FFFD instead of crashing."""
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
     if result.returncode != 0:
-        raise GitFailed(f"git {' '.join(args)} failed: {result.stderr.strip()}")
-    return result.stdout
+        raise GitFailed(f"git {' '.join(args)} failed: {result.stderr.decode(errors='replace').strip()}")
+    return result.stdout.decode(errors="replace")
 
 
 def changed_paths(repo: Path, *revs: str) -> list[str]:
@@ -410,12 +411,12 @@ def reviewed_head(repo: Path, worktree: Path | None, notes: Path, spec: Path | N
     if spec is not None:
         plan = find_plan(notes, spec)
         ledger = worktree / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan else None
-        found = re.findall(r"^Feature gate: green at (\S+)", ledger.read_text(), re.MULTILINE) \
+        found = re.findall(r"^Feature gate: green at (\S+)", ledger.read_text(errors="replace"), re.MULTILINE) \
             if ledger and ledger.is_file() else []
         return found[-1] if found else None
     git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
     marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
-    lines = marker.read_text().splitlines() if marker and marker.is_file() else []
+    lines = marker.read_text(errors="replace").splitlines() if marker and marker.is_file() else []
     return (lines[0].strip() or None) if lines else None
 
 
