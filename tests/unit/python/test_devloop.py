@@ -1314,6 +1314,7 @@ class ReviewYieldContractTests(unittest.TestCase):
 
     def test_open_needs_validation_item_blocks_a_release(self) -> None:
         self.assertIn("NEEDS VALIDATION", stage_text(7))
+        self.assertIn("writes a ruling under it", stage_text(7))
 
     def test_every_fix_round_starts_a_new_implementer(self) -> None:
         for value in ["new `implementer`", "Never resume a finished agent"]:
