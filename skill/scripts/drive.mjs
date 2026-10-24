@@ -31,7 +31,7 @@ async function driveRoute(context, input, route, n) {
   let error = null
   const missing = []
   try {
-    const response = await page.goto(new URL(route.path, input.base_url).href, { waitUntil: 'load' })
+    const response = await page.goto(`${input.base_url.replace(/\/$/, '')}${route.path}`, { waitUntil: 'load' })
     status = response ? response.status() : null
     for (const name of route.names ?? []) {
       try {
