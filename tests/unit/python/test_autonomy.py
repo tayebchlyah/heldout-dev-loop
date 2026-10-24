@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -149,6 +150,110 @@ class DecideTests(AutonomySandbox):
                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(2)]
         self.assertEqual([p.wait(timeout=60) for p in procs], [0, 0])
         self.assertEqual(sorted(cells(r)[5] for r in self.rows()), ["w0", "w1"])
+
+
+EVENT = {"session_id": "s-1", "transcript_path": "/t/s-1.jsonl", "hook_event_name": "StopFailure",
+         "error": "rate_limit", "last_assistant_message": "API Error: Rate limit reached"}
+INTENT = ("intent", "verified", "open", "next")
+
+
+class PauseSandbox(AutonomySandbox):
+    """Plus a plan for the spec and a ledger in the worktree."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        put(self.notes / "plans" / SPEC, f"---\nspec: {SPEC}\n---\n\n# Plan\n\n### Task 1: one\n")
+        put(self.wt / ".superpowers" / "sdd" / Path(SPEC).stem / "progress.md", "# ledger\nTask 1: complete\n\n")
+        self.note = Path(git(self.wt, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "pause.json"
+
+    def event(self, payload: dict | str, cwd: Path | None = None) -> tuple[int, dict]:
+        stdin = payload if isinstance(payload, str) else json.dumps({**payload, "cwd": str(cwd or self.wt)})
+        result = subprocess.run([sys.executable, str(DEVLOOP), "pause", "--event"], cwd=self.root, env=self.env,
+                                input=stdin, capture_output=True, text=True, timeout=60)
+        return result.returncode, json.loads(result.stdout)
+
+    def saved(self) -> dict:
+        return json.loads(self.note.read_text())
+
+
+class PauseTests(PauseSandbox):
+    def test_manual_note_fields(self) -> None:
+        put(self.wt / "new.txt", "x\n")
+        code, out = self.cli("pause", "--intent", "fix parser", "--next", "run gate", "--agent", "a1=Task 2")
+        self.assertEqual(code, 0, out)
+        note = self.saved()
+        self.assertEqual(out, {"file": str(self.note), "note": note})
+        stage = run_cli("status", cwd=self.wt, env=self.env)[1]["stage"]
+        expected = {"reason": "manual", "intent": "fix parser", "next": "run gate", "verified": None, "open": None,
+                    "agents": [{"id": "a1", "task": "Task 2"}], "runs": [], "feature": "demo", "stage": stage,
+                    "ledger_last": "Task 1: complete", "message": None, "harness": None, "session": None,
+                    "transcript": None, "last_decision": None}
+        self.assertEqual({k: note[k] for k in expected}, expected)
+        self.assertIn("new.txt", note["dirty"])
+        self.assertRegex(note["at"], r"^\d{4}-\d\d-\d\dT")
+
+    def test_session_and_transcript(self) -> None:
+        claude = self.root / "cfg" / "projects" / "x" / "s-9.jsonl"
+        codex = self.root / "cx" / "sessions" / "2026" / "10" / "25" / "rollout-1-c-1.jsonl"
+        put(claude)
+        put(codex)
+        cases = [
+            ({"CLAUDE_CODE_SESSION_ID": "s-9", "CLAUDE_CONFIG_DIR": str(self.root / "cfg")}, ("claude", "s-9", str(claude))),
+            ({"CODEX_THREAD_ID": "c-1", "CODEX_HOME": str(self.root / "cx")}, ("codex", "c-1", str(codex))),
+            ({"CLAUDE_CODE_SESSION_ID": "s-0", "CLAUDE_CONFIG_DIR": str(self.root / "cfg")}, ("claude", "s-0", None)),
+        ]
+        for env, expected in cases:
+            with self.subTest(env=env):
+                self.assertEqual(self.cli("pause", **env)[0], 0)
+                note = self.saved()
+                self.assertEqual((note["harness"], note["session"], note["transcript"]), expected)
+
+    def test_last_decision(self) -> None:
+        row = self.cli(*DECIDE)[1]["row"]
+        self.cli("pause")
+        self.assertEqual(self.saved()["last_decision"], row)
+
+    def test_event_note(self) -> None:
+        cases = [
+            (EVENT, "API Error: Rate limit reached"),
+            ({**{k: v for k, v in EVENT.items() if k != "last_assistant_message"}, "error_details": "x"}, "x"),
+        ]
+        for payload, message in cases:
+            with self.subTest(message=message):
+                code, out = self.event(payload)
+                self.assertEqual(code, 0, out)
+                note = self.saved()
+                self.assertEqual((note["reason"], note["message"], note["session"], note["transcript"], note["harness"]),
+                                 ("rate_limit", message, "s-1", "/t/s-1.jsonl", "claude"))
+                self.assertEqual([note[k] for k in INTENT], [None] * 4)
+
+    def test_event_skips(self) -> None:
+        cases = [(EVENT, self.repo, "not-a-feature-worktree"), ("not json", None, "bad-input")]
+        for payload, cwd, reason in cases:
+            with self.subTest(reason=reason):
+                self.assertEqual(self.event(payload, cwd), (0, {"skipped": reason}))
+                self.assertFalse(self.note.exists())
+
+    def test_new_pause_replaces_note(self) -> None:
+        self.cli("pause", "--intent", "one")
+        self.cli("pause", "--intent", "two")
+        self.assertEqual(self.saved()["intent"], "two")
+
+    def test_clear(self) -> None:
+        self.cli("pause")
+        self.assertEqual(self.cli("pause", "--clear"), (0, {"cleared": True}))
+        self.assertFalse(self.note.exists())
+        self.assertEqual(self.cli("pause", "--clear"), (0, {"cleared": False}))
+
+    def test_refusals(self) -> None:
+        cases = [(("pause", "--clear", "--intent", "x"), self.wt, 2), (("pause", "--event", "--intent", "x"), self.wt, 2),
+                 (("pause", "--agent", "noequals"), self.wt, 2), (("pause",), self.home, 1)]
+        for args, cwd, expected in cases:
+            with self.subTest(args=args):
+                code, out = self.cli(*args, cwd=cwd)
+                self.assertEqual(code, expected, out)
+                self.assertIn("error", out)
+        self.assertFalse(self.note.exists())
 
 
 if __name__ == "__main__":
