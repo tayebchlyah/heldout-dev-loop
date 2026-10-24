@@ -96,6 +96,17 @@ class SealHookTests(unittest.TestCase):
                 result = self.hook(harness, "seal.sh", {"hook_event_name": "Stop", "stop_hook_active": False}, "turn")
                 self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
 
+    def test_a_kit_change_names_the_upgrade_remedy(self) -> None:
+        put(self.repo / ".dev-loop/MANIFEST.json", '{"version": "0.0.0", "files": {}}')
+        put(self.repo / ".dev-loop/hooks/claude/x.sh", "exit 0\n")
+        git(self.repo, "add", "-f", ".dev-loop/MANIFEST.json", ".dev-loop/hooks/claude/x.sh")
+        git(self.repo, "commit", "-q", "-m", "kit edit")
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn("kit-changed - .dev-loop/hooks/claude/x.sh", reason)
+                self.assertIn("run upgrade", reason)
+
     def test_changed_after_seal_names_the_change_not_the_seal(self) -> None:
         put(self.repo / SUITE, "def test_flow():\n    pass\n")
         git(self.repo, "add", "--", SUITE)

@@ -721,63 +721,94 @@ class WeakenedTests(GateSealRepo):
 
 KIT_FILE = ".agents/skills/dev-loop/scripts/seal/check.py"
 KIT_AGENT = ".claude/agents/implementer.md"
+KIT_LINK = ".claude/skills/dev-loop"
+NEW_KIT_FILE = ".agents/skills/dev-loop/scripts/seal/new.py"
+
+
+def sha(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
 
 
 class KitChangedTests(SealRepo):
-    """A kit file differs from `<base>` while the `dev-loop.json` version did not change: `kit-changed`."""
+    """A kit path differs from `<base>` and does not match the current MANIFEST: `kit-changed`."""
 
     def setUp(self) -> None:
         super().setUp()
         git(self.repo, "checkout", "-q", "main")
-        manifest = {"version": "2.2.0", "files": {KIT_FILE: "sha256:x", KIT_AGENT: "sha256:y"}}
-        put(self.repo / ".dev-loop" / "MANIFEST.json", json.dumps(manifest))
         put(self.repo / "dev-loop.json", '{"version": "2.2.0"}\n')
         put(self.repo / KIT_FILE, "def check(): pass\n")
         put(self.repo / KIT_AGENT, "agent\n")
-        self.commit(".claude/agents/mine.md", "mine\n", "kit")
+        os.makedirs(self.repo / ".claude/skills")
+        os.symlink("../../.agents/skills/dev-loop", self.repo / KIT_LINK)
+        self.entries = {KIT_FILE: sha("def check(): pass\n"), KIT_AGENT: sha("agent\n"),
+                        KIT_LINK: "link:../../.agents/skills/dev-loop"}
+        self.manifest()
+        self.main = self.commit(".claude/agents/mine.md", "mine\n", "kit")
         git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
 
-    def test_a_committed_kit_change_without_a_version_change(self) -> None:
-        for path, text in [(KIT_FILE, "def check(): return OK\n"), (".agents/skills/dev-loop/scripts/seal/new.py", "x\n"),
-                           (".dev-loop/hooks/claude/git-guard.sh", "exit 0\n"), (".dev-loop/MANIFEST.json", "{}\n")]:
-            with self.subTest(path=path):
-                self.commit(path, text)
-                code, out = self.check()
-                self.assertEqual((code, out["ok"]), (1, False), out)
-                self.assertEqual(self.violations(), [("kit-changed", None, path)])
-                git(self.repo, "reset", "-q", "--hard", "main")
+    def manifest(self, **changes: str | None) -> None:
+        """Writes the MANIFEST in the working tree, `entries` with `changes` (None drops the key)."""
+        entries = {**self.entries, **changes}
+        files = {key: value for key, value in entries.items() if value is not None}
+        put(self.repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "2.2.0", "files": files}))
 
-    def test_a_deleted_kit_agent_is_a_kit_change(self) -> None:
-        git(self.repo, "rm", "-q", KIT_AGENT)
-        git(self.repo, "commit", "-q", "-m", "drop")
-        self.assertEqual(self.violations(), [("kit-changed", None, KIT_AGENT)])
+    def stage(self) -> None:
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "change")
 
-    def test_an_upgrade_changes_the_version_and_passes(self) -> None:
-        put(self.repo / KIT_FILE, "def check(): return 2\n")
-        self.commit("dev-loop.json", '{"version": "2.3.0"}\n', "upgrade")
-        self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
+    def retarget(self) -> None:
+        (self.repo / KIT_LINK).unlink()
+        os.symlink("../../.agents/skills/other", self.repo / KIT_LINK)
 
-    def test_a_file_outside_the_kit_is_not_a_kit_change(self) -> None:
-        for path in (".claude/agents/mine.md", ".agents/skills/other/SKILL.md", "skill/scripts/seal/check.py"):
-            self.commit(path, "changed\n")
-        self.assertEqual(self.check()[0], 0)
+    def no_manifest(self) -> None:
+        for branch in ("main", "feat/x"):
+            git(self.repo, "checkout", "-q", branch)
+            git(self.repo, "rm", "-q", "-r", ".dev-loop")
+            git(self.repo, "commit", "-q", "-m", "no kit")
+        git(self.repo, "rebase", "-q", "main")
+        put(self.repo / KIT_FILE, "changed\n")
 
-    def test_an_uncommitted_kit_change_counts_only_with_the_flag(self) -> None:
-        put(self.repo / KIT_FILE, "def check(): return OK\n")
-        self.assertEqual(self.violations(), [])
-        self.assertEqual(self.violations("--uncommitted"), [("kit-changed", None, KIT_FILE)])
-        put(self.repo / "dev-loop.json", '{"version": "2.3.0"}\n')
-        self.assertEqual(self.violations("--uncommitted"), [])
-
-    def test_a_repo_without_a_manifest_has_no_kit(self) -> None:
-        git(self.repo, "rm", "-q", "-r", ".dev-loop")
-        git(self.repo, "commit", "-q", "-m", "no kit")
-        git(self.repo, "checkout", "-q", "main")
-        git(self.repo, "rm", "-q", "-r", ".dev-loop")
-        git(self.repo, "commit", "-q", "-m", "no kit")
-        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
-        self.commit(KIT_FILE, "changed\n")
-        self.assertEqual(self.check()[0], 0)
+    def test_kit_changed(self) -> None:
+        edit = lambda: put(self.repo / KIT_FILE, "def check(): return OK\n")  # noqa: E731
+        new = lambda path: put(self.repo / path, "x\n")  # noqa: E731
+        drop = lambda: (self.repo / KIT_AGENT).unlink()  # noqa: E731
+        rows = [
+            ("edit, MANIFEST not updated", [edit, self.stage], (), [KIT_FILE]),
+            ("edit and version bump", [edit, lambda: put(self.repo / "dev-loop.json", '{"version": "2.3.0"}\n'),
+                                       self.stage], (), [KIT_FILE]),
+            ("upgrade: edit and MANIFEST updated", [edit, lambda: self.manifest(**{KIT_FILE: sha("def check(): return OK\n")}),
+                                                     self.stage], (), []),
+            ("init --harness=both: new kit file listed", [lambda: new(".codex/agents/implementer.toml"),
+                                                          lambda: self.manifest(**{".codex/agents/implementer.toml": sha("x\n")}),
+                                                          self.stage], (), []),
+            ("new file under the skill, not listed", [lambda: new(NEW_KIT_FILE), self.stage], (), [NEW_KIT_FILE]),
+            ("new hook, not listed", [lambda: new(".dev-loop/hooks/claude/x.sh"), self.stage], (),
+             [".dev-loop/hooks/claude/x.sh"]),
+            ("kit agent deleted, still listed", [drop, self.stage], (), [KIT_AGENT]),
+            ("kit agent deleted and unlisted", [drop, lambda: self.manifest(**{KIT_AGENT: None}), self.stage], (), []),
+            ("link retargeted", [self.retarget, self.stage], (), [KIT_LINK]),
+            ("invalid dev-loop.json and an edit", [edit, lambda: put(self.repo / "dev-loop.json", "{"), self.stage], (),
+             [KIT_FILE]),
+            ("files outside the kit", [lambda: new(".claude/agents/mine.md"), lambda: new(".agents/skills/other/SKILL.md"),
+                                       lambda: new("skill/scripts/seal/check.py"), self.stage], (), []),
+            ("uncommitted edit, no flag", [edit], (), []),
+            ("uncommitted edit, flag", [edit], ("--uncommitted",), [KIT_FILE]),
+            ("untracked new file, no flag", [lambda: new(NEW_KIT_FILE)], (), []),
+            ("untracked new file, flag", [lambda: new(NEW_KIT_FILE)], ("--uncommitted",), [NEW_KIT_FILE]),
+            ("untracked bytecode", [lambda: new(".agents/skills/dev-loop/scripts/__pycache__/x.pyc")],
+             ("--uncommitted",), []),
+            ("no MANIFEST at base nor HEAD", [self.no_manifest, self.stage], ("--uncommitted",), []),
+        ]
+        for name, steps, args, expected in rows:
+            with self.subTest(name):
+                try:
+                    for step in steps:
+                        step()
+                    self.assertEqual(self.violations(*args), [("kit-changed", None, path) for path in expected])
+                finally:
+                    git(self.repo, "checkout", "-q", "-f", "-B", "feat/x", self.main)
+                    git(self.repo, "branch", "-q", "-f", "main", self.main)
+                    git(self.repo, "clean", "-q", "-f", "-d", "-x")
 
 
 if __name__ == "__main__":

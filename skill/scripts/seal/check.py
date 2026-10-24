@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import subprocess
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
@@ -75,6 +78,7 @@ def uncommitted_violations(repo: Path) -> list[dict]:
 
 MANIFEST = ".dev-loop/MANIFEST.json"
 KIT_DIRS = (".agents/skills/dev-loop/", ".dev-loop/")
+LINK_PREFIX = "link:"
 
 
 def read_json(repo: Path, rev: str | None, path: str) -> dict:
@@ -87,19 +91,50 @@ def read_json(repo: Path, rev: str | None, path: str) -> dict:
     return found if isinstance(found, dict) else {}
 
 
+def kit_entry(repo: Path, head: str | None, path: str) -> str | None:
+    """The MANIFEST entry the path has at HEAD, or in the working tree when `head` is None; None when absent."""
+    if head is None:
+        full = repo / path
+        if full.is_symlink():
+            return LINK_PREFIX + os.readlink(full)
+        try:
+            return "sha256:" + hashlib.sha256(full.read_bytes()).hexdigest()
+        except OSError:  # absent, or a folder
+            return None
+    tree = run_git(repo, "ls-tree", "-z", head, "--", f":(top,literal){path}").stdout.rstrip("\0")
+    if not tree:
+        return None
+    mode, kind, blob = tree.split("\t", 1)[0].split()
+    if kind != "blob":
+        return None
+    # Bytes, not `run_git`: that decodes text, and the hash is of the raw bytes.
+    data = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True).stdout
+    return LINK_PREFIX + data.decode("utf-8", "replace") if mode == "120000" else "sha256:" + hashlib.sha256(data).hexdigest()
+
+
 def kit_violations(repo: Path, base: str, uncommitted: bool) -> list[dict]:
-    """A kit file differs from `<base>` while the `dev-loop.json` version did not change: only `upgrade` moves the kit."""
+    """A kit path differs from `<base>` and does not match the current MANIFEST: only `upgrade` moves the kit."""
     head = None if uncommitted else "HEAD"
-    if read_json(repo, base, "dev-loop.json").get("version") != read_json(repo, head, "dev-loop.json").get("version"):
-        return []
     manifests = [read_json(repo, rev, MANIFEST).get("files") for rev in (base, head)]
-    files = {key for found in manifests if isinstance(found, dict) for key in found}
-    if not files:
+    if not any(isinstance(found, dict) for found in manifests):
         return []
+    current = manifests[1] if isinstance(manifests[1], dict) else {}
+    files = {key for found in manifests if isinstance(found, dict) for key in found}
     pathspecs = [f":(top){d}" for d in KIT_DIRS] + [f":(top,literal){key}" for key in sorted(files)]
-    changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base,
-                              *([] if uncommitted else ["HEAD"]), "--", *pathspecs).stdout)
-    return [violation("kit-changed", path=path) for path in changed]
+    candidates = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base,
+                                 *([] if uncommitted else ["HEAD"]), "--", *pathspecs).stdout)
+    if uncommitted:
+        untracked = z_paths(run_git(repo, "ls-files", "-z", "--others", "--exclude-standard", "--",
+                                    *(f":(top){d}" for d in KIT_DIRS)).stdout)
+        candidates += [path for path in untracked if "__pycache__" not in PurePosixPath(path).parts
+                       and not path.endswith(".pyc")]
+    found = []
+    for path in sorted(set(candidates)):
+        entry = kit_entry(repo, head, path)
+        if path == MANIFEST or (path in current and entry == current[path]) or (entry is None and path not in current):
+            continue
+        found.append(violation("kit-changed", path=path))
+    return found
 
 
 def check(repo: Path, uncommitted: bool) -> dict:
