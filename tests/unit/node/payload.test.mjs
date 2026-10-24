@@ -13,6 +13,7 @@ const REQUIRED = [
   'skill/references/claude.md',
   'skill/references/codex.md',
   'skill/references/mutation.md',
+  'skill/references/benchmark.md',
   'skill/scripts/check_setup.py',
   'skill/scripts/select_mutants.py',
   'skill/scripts/notes_path.py',
