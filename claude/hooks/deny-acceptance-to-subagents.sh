@@ -22,9 +22,9 @@
 # blocking that produces a false positive that teaches evasion.
 # Every field a tool reaches a path through is listed, and path is joined to
 # both glob and pattern, because Grep and Glob each split a location that way.
-# Each candidate token is also resolved against the subagent's working
-# directory and against each folder a cd or pushd of the command moves to, and
-# those folders are candidates: a shell that sits in tests/ or inside the suite,
+# Each candidate token is also resolved against the folder a cd or pushd
+# earlier in the command has moved to (else the subagent's working directory),
+# and the cwd and those folders are candidates: a shell that sits in tests/ or inside the suite,
 # or a `cd tests && cat acceptance/x`, cannot reach it through a relative path.
 # Edit, Write and NotebookEdit of an installed kit file are denied to every
 # caller: kit files change only by upgrade.
@@ -38,8 +38,16 @@ command -v jq >/dev/null 2>&1 || fail "jq is missing"
 printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
 normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
 
-# Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs).
-KIT='(^|/)(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|(^|/)\.codex/rules/dev-loop\.rules$|(^|/)\.claude/agents/(implementer|spec-tester)\.md$|(^|/)\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+# Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs),
+# matched on repo-relative paths only: a user-level ~/.claude/agents/implementer.md is not a kit file.
+KIT='^(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+# Normalized paths on stdin, repo top in $1: a path under the top (or its /private variant) becomes
+# repo-relative, any other absolute path is dropped (not a kit path), a leading ./ goes.
+repo_rel() { awk -v t="$1" 'BEGIN { p = index(t, "/private/") == 1 ? substr(t, 9) : "/private" t }
+    /^\// { if (t != "" && index($0, t "/") == 1) $0 = substr($0, length(t) + 2)
+            else if (t != "" && index($0, p "/") == 1) $0 = substr($0, length(p) + 2)
+            else next }
+    { sub(/^(\.\/)+/, ""); print }'; }
 
 TOOL=$(echo "$IN" | jq -r '.tool_name // empty')
 case "$TOOL" in
@@ -49,7 +57,14 @@ case "$TOOL" in
       | (.tool_input.file_path // .tool_input.notebook_path // "") | select(. != "")
       | ., (select(startswith("/") | not) | select($c != "") | $c + "/" + .)' 2>/dev/null) || fail "path extraction failed"
     # Every caller: a kit file changes only by upgrade. A shell write is left to seal-check (kit-changed).
-    if printf '%s\n' "$TARGETS" | normalize | grep -Eq "$KIT"; then
+    # Repo top: the git top of the cwd, else the cwd itself. A relative path with no cwd stays repo-relative.
+    C=$(echo "$IN" | jq -r '.cwd // empty')
+    T=
+    [ -z "$C" ] || T=$(git -C "$C" rev-parse --show-toplevel 2>/dev/null) || T=$C
+    T=$(printf '%s' "${T%/}" | normalize)
+    if echo "$IN" | jq -r '(.cwd // "") as $c | (.tool_input.file_path // .tool_input.notebook_path // "")
+      | select(. != "") | if startswith("/") or $c == "" then . else $c + "/" + . end' 2>/dev/null \
+      | normalize | repo_rel "$T" | grep -Eq "$KIT"; then
       echo "Blocked: installed dev-loop kit file. Kit files change only by upgrade: change dev-loop, then run upgrade." >&2
       exit 2
     fi ;;
@@ -100,18 +115,20 @@ CANDIDATES=$(echo "$IN" | jq -r '
     [ (.tool_input.path? | .. | strings) as $p
       | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
-  # The cwd, then each folder a cd or pushd of the command moves to, in order (a relative one from
-  # the folder before it).
-  def dirs:
-    (.cwd // "") as $c
-    | [ .tool_input.command? | strings | clean
-        | match("(?:^|[;&|(\n\u0027\"])[ \t]*(?:cd|pushd)(?:[ \t]+-[A-Za-z@]+)*[ \t]+[\u0027\"]?(?<d>[^ \t\n;|&()<>\u0027\"`]+)"; "g")
-        | .captures[] | select(.name == "d") | .string ]
-    | reduce .[] as $d ([$c]; . + [ if ($d | startswith("/")) then $d else .[-1] + "/" + $d end ]);
+  # A token walk over each field, in order: the folder starts at the cwd; a cd or pushd token makes the next
+  # token not starting with - (options, --) its target, absolute or joined to the folder, and a folder
+  # reached; any other token is joined to the folder at that point.
+  # Subshell scope is not tracked: after (cd x && ...), a later token still joins to x.
   def relative($all):
     if (.cwd // "") == "" then [] else
-      dirs as $dirs
-      | $dirs + [ $dirs[] as $w | $all[] | splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0) | $w + "/" + . ]
+      .cwd as $c
+      | [$c] + [ $all[] | reduce (splits("[\\s;|&()<>\\x27\"`=]+") | select(length > 0)) as $t
+          ({w: $c, cd: false, out: []};
+            if .cd and ($t | startswith("-")) then .
+            elif .cd then .w = (if ($t | startswith("/")) then $t else .w + "/" + $t end) | .cd = false | .out += [.w]
+            elif $t == "cd" or $t == "pushd" then .cd = true
+            else .out += [.w + "/" + $t] end)
+        | .out[] ]
     end;
   (fields + joins) as $all | ($all + relative($all)) | join("\n")' 2>/dev/null) || fail "path extraction failed"
 CANDIDATES=$(printf '%s' "$CANDIDATES" | normalize)

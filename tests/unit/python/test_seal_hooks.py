@@ -568,10 +568,28 @@ class KitWallTests(unittest.TestCase):
             ("acceptance-wall.sh", {}, "apply_patch",
              {"command": patch("*** Add File: docs/y.md", body="+see .dev-loop/hooks/codex/gate.sh")}, False),
             ("acceptance-wall.sh", {}, "Bash", {"command": "cat .dev-loop/hooks/codex/gate.sh"}, False),
+            ("deny-acceptance-to-subagents.sh", {}, "Write", {"file_path": "../other/.dev-loop/x"}, False),
+            ("acceptance-wall.sh", {}, "apply_patch", {"command": patch("*** Update File: .codex/rules/dev-loop.rules\r")}, True),
+            ("acceptance-wall.sh", {}, "apply_patch", {"command": patch("*** Update File: .codex/rules/dev-loop.rules ")}, True),
         ]
-        for script, caller, tool, tool_input, deny in rows:
-            with self.subTest(script=script, caller=caller.get("agent_type", "main"), tool=tool, tool_input=tool_input):
-                result = self.run_hook(script, {**caller, "cwd": "/repo", "tool_name": tool, "tool_input": tool_input})
+        for caller in callers:
+            rows += [("deny-acceptance-to-subagents.sh", caller, "Write", {"file_path": "/home/u/.claude/agents/implementer.md"}, False),
+                     ("acceptance-wall.sh", caller, "apply_patch",
+                      {"command": patch("*** Update File: /home/u/.codex/agents/implementer.toml")}, False)]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name)
+        git(repo, "init", "-q")
+        (repo / "tests").mkdir()
+        rows = [(*row, "/repo") for row in rows] + [
+            ("deny-acceptance-to-subagents.sh", {}, "Write", {"file_path": "../.dev-loop/hooks/x.sh"}, True, str(repo / "tests")),
+            ("acceptance-wall.sh", {}, "apply_patch", {"command": patch("*** Update File: ../.dev-loop/hooks/x.sh")}, True,
+             str(repo / "tests")),
+        ]
+        for script, caller, tool, tool_input, deny, cwd in rows:
+            with self.subTest(script=script, caller=caller.get("agent_type", "main"), tool=tool, tool_input=tool_input,
+                              cwd=cwd):
+                result = self.run_hook(script, {**caller, "cwd": cwd, "tool_name": tool, "tool_input": tool_input})
                 self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
                 if deny:
                     self.assertEqual(result.stderr.count("\n"), 1, result.stderr)
@@ -601,6 +619,14 @@ class CdWallTests(unittest.TestCase):
                 ("cd tests && cat unit/x.py", False),
                 ("cd docs && ls", False),
                 ("cd tests/unit && cat ../README.md", False),
+                ("{ cd tests; cat acceptance/x.py; }", True),
+                ("if true; then cd tests; cat acceptance/x.py; fi", True),
+                ("for f in a; do cd tests; cat acceptance/x.py; done", True),
+                ("echo `cd tests && cat acceptance/x.py`", True),
+                ("cd -- tests && cat acceptance/x.py", True),
+                ("builtin cd tests && cat acceptance/x.py", True),
+                ("command cd tests && cat acceptance/x.py", True),
+                ("cat acceptance/notes.md; cd tests && make", False),
             ]]
             rows += [(shell, script, spec_tester, command, deny) for command, deny in [
                 ("cd lib/.. && cd backend && cat main.py", True),

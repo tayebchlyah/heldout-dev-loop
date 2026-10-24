@@ -43,15 +43,24 @@ if [ "$tool" = Bash ]; then
 else
   call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" "$rel"'
     {tool_input: {paths: [ (.tool_input.command // .tool_input.patch // "") | strings | splits("\n")
-      | capture("^\\*\\*\\* (Add File|Update File|Delete File|Move to): (?<p>.+)$").p
+      | capture("^\\*\\*\\* (Add File|Update File|Delete File|Move to): (?<p>.+)$").p | sub("[ \t\r]+$"; "")
       | if startswith("/") then rel else $b + "/" + . end ]}}' 2>/dev/null) || fail "cannot read the patch headers"
 fi
-# Every caller: an installed kit file changes only by upgrade (the same list as the Claude wall).
+# Every caller: an installed kit file changes only by upgrade (the same list as the Claude wall),
+# matched on repo-relative paths only: a user-level ~/.codex/agents/implementer.toml is not a kit file.
+# The header paths come out as ./x (absolute in the repo) or <base>/x (relative); outside a git repo
+# base is the cwd, so the repo top is the cwd. Any other absolute path is dropped (not a kit path).
 # A shell write is left to seal-check (kit-changed).
 if [ "$tool" != Bash ]; then
-  kit='(^|/)(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|(^|/)\.codex/rules/dev-loop\.rules$|(^|/)\.claude/agents/(implementer|spec-tester)\.md$|(^|/)\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
-  if printf '%s' "$call" | jq -r '.tool_input.paths[]' | tr 'A-Z' 'a-z' \
-    | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta' | grep -Eq "$kit"; then
+  kit='^(\.agents/skills/dev-loop|\.claude/skills/dev-loop|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+  normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
+  repo_rel() { awk -v t="$1" 'BEGIN { p = index(t, "/private/") == 1 ? substr(t, 9) : "/private" t }
+    /^\// { if (t != "" && index($0, t "/") == 1) $0 = substr($0, length(t) + 2)
+            else if (t != "" && index($0, p "/") == 1) $0 = substr($0, length(p) + 2)
+            else next }
+    { sub(/^(\.\/)+/, ""); print }'; }
+  kit_top=$(printf '%s' "${top:-$cwd}" | sed 's|/*$||' | normalize)
+  if printf '%s' "$call" | jq -r '.tool_input.paths[]' | normalize | repo_rel "$kit_top" | grep -Eq "$kit"; then
     echo "Blocked: installed dev-loop kit file. Kit files change only by upgrade: change dev-loop, then run upgrade." >&2
     exit 2
   fi
