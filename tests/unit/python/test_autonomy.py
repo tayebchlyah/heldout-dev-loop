@@ -373,5 +373,19 @@ class AutonomyHookTests(PauseSandbox):
                 self.assertNotIn(line, failures)
 
 
+class KitSkillTests(unittest.TestCase):
+    def test_pause_is_user_invoked_only(self) -> None:
+        skills = HERE.parents[2] / "skills"
+        cases = [("pause", True), ("continue", False)]
+        for name, user_only in cases:
+            with self.subTest(name=name):
+                text = (skills / name / "SKILL.md").read_text()
+                head = text.split("---")[1]
+                self.assertIn(f"name: {name}\n", head)
+                self.assertEqual("disable-model-invocation: true" in head, user_only)
+                yaml = skills / name / "agents" / "openai.yaml"
+                self.assertEqual(yaml.is_file() and "allow_implicit_invocation: false" in yaml.read_text(), user_only)
+
+
 if __name__ == "__main__":
     unittest.main()

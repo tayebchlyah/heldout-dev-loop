@@ -134,6 +134,7 @@ DecideTests = test_autonomy.DecideTests
 PauseTests = test_autonomy.PauseTests
 PauseStatusTests = test_autonomy.PauseStatusTests
 AutonomyHookTests = test_autonomy.AutonomyHookTests
+KitSkillTests = test_autonomy.KitSkillTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
@@ -2000,6 +2001,12 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         result = self.run_checker("claude")
         for command in commands:
             self.assertIn(f'- missing onFailure: "block" on {command}\n', result.stdout)
+
+    def test_a_missing_kit_skill_link_is_named(self) -> None:
+        self.init("claude")
+        self.assertNotIn("continue", self.run_checker("claude").stdout)
+        (self.repo / ".claude" / "skills" / "continue").unlink()
+        self.assertIn("- missing kit file: .claude/skills/continue\n", self.run_checker("claude").stdout)
 
     def test_an_agent_deny_path_hook_without_on_failure_block_fails(self) -> None:
         self.init("claude")
