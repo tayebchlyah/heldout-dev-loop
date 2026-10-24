@@ -627,8 +627,8 @@ test('upgrade with the same version applies the kit again', () => {
   assert.deepEqual(snapshot(repo), before)
 })
 
-test('upgrade from a kit with the one skill link creates the pause and continue links', () => {
-  const { home, repo } = setup()
+// A project on the kit before the pause and continue skills.
+function initOldKit(repo, home) {
   init(repo, home, ['--yes'])
   const path = join(repo, '.dev-loop/MANIFEST.json')
   const manifest = JSON.parse(readFileSync(path, 'utf8'))
@@ -638,6 +638,46 @@ test('upgrade from a kit with the one skill link creates the pause and continue 
     for (const key of Object.keys(manifest.files)) if (key.startsWith(`.agents/skills/${name}/`) || key === `.claude/skills/${name}`) delete manifest.files[key]
   }
   writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
+function writeUserSkill(repo, content) {
+  mkdirSync(join(repo, '.agents/skills/continue'), { recursive: true })
+  writeFileSync(join(repo, '.agents/skills/continue/SKILL.md'), content)
+}
+
+test('upgrade refuses a file of yours at a new kit path, names it and --force, and writes nothing', () => {
+  const { home, repo } = setup()
+  initOldKit(repo, home)
+  writeUserSkill(repo, 'mine\n')
+  const before = snapshot(repo)
+  upgradeFails(repo, home, [], /files of yours at dev-loop paths:\n {2}\.agents\/skills\/continue\/SKILL\.md\n[\s\S]*--force/)
+  upgradeFails(repo, home, ['--dry-run'], /\.agents\/skills\/continue\/SKILL\.md/)
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('upgrade --force moves a file of yours at a new kit path to a backup beside it, then writes the kit', () => {
+  const { home, repo } = setup()
+  initOldKit(repo, home)
+  writeUserSkill(repo, 'mine\n')
+  const output = upgrade(repo, home, ['--force'])
+  const backups = readdirSync(join(repo, '.agents/skills/continue')).filter((name) => name.startsWith('SKILL.md.bak-'))
+  assert.equal(backups.length, 1)
+  assert.equal(readFileSync(join(repo, '.agents/skills/continue', backups[0]), 'utf8'), 'mine\n')
+  assert.equal(readFileSync(join(repo, '.agents/skills/continue/SKILL.md'), 'utf8'), kitContent('.agents/skills/continue/SKILL.md'))
+  assert.match(output, /backup .*SKILL\.md\.bak-/)
+})
+
+test('upgrade accepts a new kit path that already holds the kit content', () => {
+  const { home, repo } = setup()
+  initOldKit(repo, home)
+  writeUserSkill(repo, kitContent('.agents/skills/continue/SKILL.md'))
+  upgrade(repo, home)
+  assert.equal(readdirSync(join(repo, '.agents/skills/continue')).some((name) => name.includes('.bak')), false)
+})
+
+test('upgrade from a kit with the one skill link creates the pause and continue links', () => {
+  const { home, repo } = setup()
+  initOldKit(repo, home)
   upgrade(repo, home)
   for (const name of ['pause', 'continue']) {
     assert.equal(readlinkSync(join(repo, `.claude/skills/${name}`)), `../../.agents/skills/${name}`)
