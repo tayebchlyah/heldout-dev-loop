@@ -44,7 +44,7 @@ def by_entry(routes: list[dict]) -> dict[str, list[dict]]:
 
 
 def after_set(evidence: Path) -> dict | None:
-    """D4: the newest `diff` drive gives the entries; each newer `since` or `all` drive replaces the routes of
+    """The newest `diff` drive gives the entries; each newer `since` or `all` drive replaces the routes of
     the entries of that set it ran, and never adds one. None when there is no `diff` drive."""
     drives = []
     for folder in sorted(evidence.iterdir()) if evidence.is_dir() else []:
@@ -83,15 +83,34 @@ def short(head: object) -> str:
 
 def merge_body(body: str, section: str) -> str:
     """The section in place of an existing one, the rest kept; else appended after one blank line."""
-    start = body.find(START)
-    end = body.find(END, start) if start != -1 else -1
-    if end != -1:
+    end = body.find(END)
+    start = body.rfind(START, 0, end) if end != -1 else -1
+    if start != -1:
         return body[:start] + section.rstrip("\n") + body[end + len(END):]
     return (body.rstrip("\n") + "\n\n" if body.strip() else "") + section
 
 
 def tail(text: str) -> str:
     return "\n".join(text.splitlines()[-TAIL_LINES:])
+
+
+def write_after(repo: Path, target: str) -> tuple[dict, int]:
+    """The after set of the evidence folder, written to `target` as a drive.json for `drive --routes-from`."""
+    if not isinstance(read_config(repo).get("verify"), dict):
+        return {"ok": True, "skipped": "no-verify"}, 0
+    evidence = git_dir(repo) / "dev-loop" / "evidence"
+    after = after_set(evidence)
+    if after is None:
+        return {"error": f"no diff drive in {evidence}: run drive first"}, 1
+    path = Path(target).absolute()
+    path.write_text(json.dumps({**after, "mode": "diff"}, indent=2) + "\n")
+    return {"ok": True, "after": str(path), "routes": len(after["routes"]), "head": after["head"]}, 0
+
+
+def home_short(folder: str) -> str:
+    """The folder with the home folder prefix as `~`."""
+    home = str(Path.home())
+    return "~" + folder[len(home):] if folder == home or folder.startswith(home + "/") else folder
 
 
 def run(repo: Path, pr: int, before_path: str | None, after_path: str | None) -> tuple[dict, int]:
@@ -110,18 +129,21 @@ def run(repo: Path, pr: int, before_path: str | None, after_path: str | None) ->
         drive = read_drive(Path(after_path))
         if drive is None:
             return {"error": f"--after {after_path} is not a JSON object with a routes list"}, 1
-        after = {"routes": drive["routes"], "head": drive.get("head"), "folder": str(Path(after_path).resolve().parent)}
+        after = {"routes": drive["routes"], "head": drive.get("head"), "folder": drive["folder"] if isinstance(drive.get("folder"), str)
+                 else str(Path(after_path).resolve().parent)}
     else:
         after = after_set(evidence)
         if after is None:
             return {"error": f"no diff drive in {evidence}: run drive first"}, 1
-    groups = by_entry(sorted((r for r in after["routes"] if r.get("ok") is True), key=lambda r: r["entry"]))
+    # An entry stays when one route is ok; its route position k counts every route of the entry.
+    groups = {e: rs for e, rs in by_entry(sorted(after["routes"], key=lambda r: r["entry"])).items()
+              if any(r.get("ok") is True for r in rs)}
     if not groups:
         return {"ok": True, "skipped": "no-routes"}, 0
 
     folder = evidence / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-capture")
     folder.mkdir(parents=True, exist_ok=True)
-    # Every before file is kept, so a recapture (D10) finds them after the before worktree is gone.
+    # Every before file is kept, so a recapture finds them after the before worktree is gone.
     kept, before_shot, before_video = [], {}, {}
     for entry, routes in by_entry(before["routes"] if before else []).items():
         for k, route in enumerate(routes, 1):
@@ -152,20 +174,23 @@ def run(repo: Path, pr: int, before_path: str | None, after_path: str | None) ->
 
     for entry, routes in groups.items():
         name = safe(entry)
+        ok_count = sum(r.get("ok") is True for r in routes)
         clip = next((v for v in (file_of(r.get("video")) for r in routes) if v), None)
         if clip and clip.stat().st_size <= MAX_BYTES:
             if not fits(need := [f for f in (before_video.get(entry),) if f and f.stat().st_size <= MAX_BYTES]
                         + [folder / f"after-{name}.webm"]):
-                omitted += len(routes)
+                omitted += ok_count
                 continue
             copy(clip, folder / f"after-{name}.webm")
             add(need)
-            count += len(routes)
+            count += ok_count
             shown = f"![](./{need[0].name})" if len(need) == 2 else "new"
             blocks.append(f"#### {entry} (journey)\n\nBefore\n\n{shown}\n\nAfter\n\n![](./after-{name}.webm)")
             continue
         notes, rows = (["Video over 10 MB, screenshots shown."] if clip else []), []
         for k, route in enumerate(routes, 1):
+            if route.get("ok") is not True:
+                continue
             if full:
                 omitted += 1
                 continue
@@ -193,7 +218,7 @@ def run(repo: Path, pr: int, before_path: str | None, after_path: str | None) ->
             blocks.append("\n\n".join([f"#### {entry}", *notes,
                                        "| Route | Before | After |\n| --- | --- | --- |\n" + "\n".join(rows)]))
     if omitted:
-        blocks.append(f"{omitted} more routes in the evidence: {after['folder']}")
+        blocks.append(f"{omitted} more routes in the evidence: {home_short(after['folder'])}")
     section = "\n\n".join(blocks) + f"\n{END}\n"
 
     view = subprocess.run(["gh", "pr", "view", str(pr), "--json", "body", "--jq", ".body"], cwd=repo,
