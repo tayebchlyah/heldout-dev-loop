@@ -15,6 +15,7 @@
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
+  devloop.py drive [--all | --since SHA]              drive the feature map routes the branch changed, save the evidence
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -30,7 +31,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
@@ -878,6 +879,111 @@ def cmd_verify_init(args: argparse.Namespace) -> int:
     return emit({"skill": skill, "files": files, "config": verify}, 0)
 
 
+PLAYWRIGHT_DIRS = ("node_modules/playwright", "node_modules/@playwright/test",
+                   "frontend/node_modules/playwright", "frontend/node_modules/@playwright/test")
+READY_SECONDS = 30
+TAIL_LINES = 20
+
+
+def tail(text: str) -> str:
+    return "\n".join(text.splitlines()[-TAIL_LINES:])
+
+
+def reachable(url: str, seconds: float) -> bool:
+    """Any HTTP answer counts, an error status too. Direct: a proxy setting never answers for the app."""
+    import urllib.error
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            opener.open(url, timeout=2).close()
+            return True
+        except urllib.error.HTTPError:
+            return True
+        except (urllib.error.URLError, OSError):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.5)
+
+
+def cmd_drive(args: argparse.Namespace) -> int:
+    from seal import git_dir, merge_base
+    from verify import config_errors, entries, load_entry
+
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 1)
+    repo = Path(top)
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        return emit({"error": f"no readable dev-loop.json in {repo}"}, 1)
+    verify = config.get("verify", False) if isinstance(config, dict) else False
+    if verify is False:
+        return emit({"ok": True, "skipped": "no-verify", "routes": []}, 0)
+    if errors := config_errors(verify):
+        return emit({"error": "; ".join(errors)}, 1)
+    loaded = {}
+    for path in entries(repo, verify["skill"]):
+        entry, reason = load_entry(repo, path)
+        if reason:
+            return emit({"error": f"bad feature map entry {path.relative_to(repo).as_posix()}: {reason}"}, 1)
+        loaded[path.stem] = (path.relative_to(repo).as_posix(), entry)
+
+    if args.since and not git(repo, "rev-parse", "--verify", "-q", f"{args.since}^{{commit}}"):
+        return emit({"error": f"--since is not a commit: {args.since}"}, 1)
+    if args.all:
+        selected = sorted(loaded)
+    else:
+        base = merge_base(repo)
+        revs = f"{args.since}..HEAD" if args.since else f"{base}...HEAD" if base else None
+        changed = set((git(repo, "diff", "--name-only", "--no-renames", revs) or "").splitlines()) if revs else set()
+        selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
+            fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
+    if not selected:
+        return emit({"ok": True, "selected": [], "routes": [], "evidence": None}, 0)
+
+    if not any((repo / d).exists() for d in PLAYWRIGHT_DIRS):
+        return emit({"error": f"playwright not found in {', '.join(PLAYWRIGHT_DIRS)}: run npm i -D playwright "
+                              "in the repo root"}, 1)
+    url = verify["base_url"]
+    if not reachable(url, float(os.environ.get("DEVLOOP_TEST_READY_WAIT", READY_SECONDS))):
+        return emit({"error": f"base_url not reachable: {url}"}, 1)
+    for command in verify.get("setup", []):
+        done = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True)
+        if done.returncode != 0:
+            return emit({"error": f"setup command failed: {command}", "tail": tail(done.stdout + done.stderr)}, 1)
+    state = None
+    if "storage_state" in verify:
+        state = repo / verify["storage_state"]
+        if not state.is_file():
+            return emit({"error": f"storage_state not found after setup: {verify['storage_state']}"}, 1)
+        state = str(state.resolve())
+
+    evidence = git_dir(repo) / "dev-loop" / "evidence" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    evidence.mkdir(parents=True, exist_ok=True)
+    routes = []
+    for stem in selected:
+        _, entry = loaded[stem]
+        runner = str(repo / entry["script"]) if entry["script"] else str(Path(__file__).parent / "drive.mjs")
+        payload = {"base_url": url, "storage_state": state, "routes": entry["routes"], "evidence": str(evidence),
+                   "entry": stem}
+        done = subprocess.run(["node", runner], cwd=repo, input=json.dumps(payload), capture_output=True, text=True)
+        try:
+            result = json.loads(done.stdout)
+            if done.returncode != 0 or not isinstance(result.get("routes"), list):
+                raise ValueError
+        except (ValueError, AttributeError):
+            return emit({"error": f"runner failed for {stem}", "tail": tail(done.stdout + done.stderr)}, 1)
+        routes += result["routes"]
+    out = {"ok": all(r.get("ok") is True for r in routes), "selected": selected, "routes": routes,
+           "evidence": str(evidence)}
+    (evidence / "drive.json").write_text(json.dumps(out, indent=2) + "\n")
+    return emit(out, 0 if out["ok"] else 1)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -939,6 +1045,12 @@ def main() -> int:
     verify_init.add_argument("--base-url", required=True)
     verify_init.add_argument("--name")
     verify_init.set_defaults(run=cmd_verify_init)
+
+    drive = commands.add_parser("drive")
+    scope = drive.add_mutually_exclusive_group()
+    scope.add_argument("--all", action="store_true")
+    scope.add_argument("--since")
+    drive.set_defaults(run=cmd_drive)
 
     args = parser.parse_args()
     return args.run(args)
