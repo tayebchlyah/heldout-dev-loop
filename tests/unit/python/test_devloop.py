@@ -643,6 +643,27 @@ class MergeCheckTests(Sandbox):
         self.assertEqual(self.reasons(out, "unreviewed"),
                          [{"reason": "unreviewed", "commit": merge, "paths": ["src/app.py"]}])
 
+    def test_indentation_change_is_unreviewed(self) -> None:
+        """A conflict resolution that only re-indents a reviewed line changes the code: whitespace counts."""
+        wt = self.feature()
+        self.commit(wt, "src/app.py", "if x:\n    a()\nb()\n")
+        self.gate_green(wt, self.head(wt))
+        git(wt, "reset", "-q", "--hard", "HEAD~1")
+        self.commit(wt, "src/app.py", "if x:\n    a()\n    b()\n")
+        out = self.ok(wt)
+        self.assertEqual(out["reasons"], [{"reason": "unreviewed", "commit": self.head(wt), "paths": ["src/app.py"]}])
+
+    def test_root_commit_in_the_landing_range_is_unreviewed(self) -> None:
+        """A commit whose diff cannot be computed (no first parent) fails closed, even with only doc paths."""
+        wt, _ = self.reviewed_feature()
+        git(wt, "switch", "-q", "--orphan", "side")
+        self.commit(wt, "docs/x.md", "d\n")
+        root = self.head(wt)
+        git(wt, "switch", "-q", "feat/widget")
+        git(wt, "merge", "-q", "--allow-unrelated-histories", "-m", "merge side", "side")
+        out = self.ok(wt)
+        self.assertEqual(out["reasons"], [{"reason": "unreviewed", "commit": root, "paths": []}])
+
     def test_gitattributes_binary_does_not_hide_a_change(self) -> None:
         """A reviewed commit swapped for another one with the same subject: the rendered diff must not hide it."""
         for attributes in ("*.py binary\n", "*.py diff=hide\n"):
