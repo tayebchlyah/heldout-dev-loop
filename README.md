@@ -33,6 +33,10 @@ npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global inst
 - `commands`: the project's own command for a step. Keys: `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`. Each value is a non-empty string. A missing key falls back to `scripts/gate.sh`, `docker compose` and the stack's test runner. `check_setup.py` fails on any other key.
 - `merge`: `auto` (the default) or `human`. With `auto`, Stage 7 merges a Track S or M pull request after green CI and the review wave, when it is a two-way door with a small blast radius. A one-way door or a Track L pull request waits for you. With `human`, every pull request waits for you. Stage 7 runs `devloop.py merge-check` to decide, and `merge_human_paths` in `dev-loop.json` lists path patterns whose changes always wait for you.
 
+## Verify skill
+
+A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<skill>/`: how an agent launches, checks, drives and cleans up the real app, and a feature map, one file per feature, with the routes and the accessible names a user sees. Stage 0 writes it with `devloop.py verify-init`, then `skill/references/verify.md`. Stage 6 runs `devloop.py drive` on the routes the branch changed, and one subagent checks the layout on the screenshots. `"verify": false` in `dev-loop.json` opts out.
+
 ## The devloop command
 
 `skill/scripts/devloop.py` does the deterministic work. In a project it runs as `python3 .agents/skills/dev-loop/scripts/devloop.py <command>`. Each command prints one JSON object. Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
@@ -41,6 +45,8 @@ npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global inst
 - `logged -- <cmd>`: runs a long command and writes its full output to a log file under the git folder.
 - `gate --summary`: runs `commands.gate`, else `scripts/gate.sh`, and reports the exit code, the log, the failure lines and the slowest tests.
 - `board`: writes a status note per feature to the `dev-loop-board` folder of the notes folder, writes `Dev Loop Board.md` (needs the Obsidian Dataview plugin with JavaScript queries on), and runs a local page at `http://127.0.0.1:7777/` (`DEVLOOP_BOARD_PORT` sets the port). Hooks run it; `--claim <slug>` shows a new spec at Stage 2. Add `dev-loop-board/` to the vault `.gitignore`: `check_setup.py` reports both.
+- `verify-init --base-url <url>`: writes the skeleton of the project's verify skill and its feature map, and the `verify` key.
+- `drive`: drives each feature map route the branch changed in Chromium (needs Playwright in the project), checks the status, the accessible names and the console errors, and saves one screenshot per route.
 - `ci wait`: waits for the checks of the current branch's pull request, and on a failure names the failed job and its first error.
 
 ## Before the first `init` on a machine
@@ -102,7 +108,8 @@ cd ~/Projects/tchlyah/dev-loop
 To try a change in a project, run `node ~/Projects/tchlyah/dev-loop/bin/install.mjs init` (or `upgrade`) from the project's top level.
 
 ```bash
-npm test                                    # node suite: installer and board render tests
+npm ci && npx playwright install chromium   # once per clone or worktree
+npm test                                    # node suite: installer, board render and drive tests
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 python3 -m unittest discover -s tests/acceptance -p 'test_*.py' && node --test tests/acceptance/*.test.mjs  # held-out acceptance suite (CI job `acceptance`)
 ```
