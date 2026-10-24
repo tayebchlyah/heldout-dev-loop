@@ -95,6 +95,29 @@ class DecideTests(AutonomySandbox):
         self.assertEqual(code, 0, out)
         self.assertEqual(cells(self.rows()[0])[5], "a\\|b c")
         self.assertEqual(autonomy.log_rows(self.spec_path.read_text())[0]["decision"], "a|b c")
+        for text, expected in (("a\n\nb", "a  b"), ("a\r\nb", "a b"), ("a\rb\n", "a b")):
+            with self.subTest(text=text):
+                self.assertEqual(autonomy.cell(text), expected)
+
+    def test_log_rows_formatted_table(self) -> None:
+        row = "| t | 4 | s | decision |  | w | y | e |  |"
+        header = "|  " + "  |  ".join(c.capitalize() for c in autonomy.LOG_COLUMNS) + "  |"
+        rule = "|" + "|".join(":---:" if i == 0 else "---" for i, _ in enumerate(autonomy.LOG_COLUMNS)) + "|"
+        for rows in ([], [row]):
+            with self.subTest(rows=rows):
+                text = "\n".join([autonomy.LOG_HEADING, "", header, rule, *rows]) + "\n"
+                self.assertEqual([r["row"] for r in autonomy.log_rows(text)], rows)
+
+    def test_spec_mode_and_link_kept(self) -> None:
+        self.spec_path.chmod(0o644)
+        self.assertEqual(self.cli(*DECIDE)[0], 0)
+        self.assertEqual(self.spec_path.stat().st_mode & 0o777, 0o644)
+        target = self.root / "elsewhere.md"
+        self.spec_path.rename(target)
+        self.spec_path.symlink_to(target)
+        self.assertEqual(self.cli(*DECIDE)[0], 0)
+        self.assertTrue(self.spec_path.is_symlink())
+        self.assertEqual(len(self.rows(target)), 2)
 
     def test_track_s_row_goes_to_git_dir(self) -> None:
         quick = self.worktree("feat/quick", "wt-quick")
@@ -178,6 +201,8 @@ class PauseSandbox(AutonomySandbox):
 
 class PauseTests(PauseSandbox):
     def test_manual_note_fields(self) -> None:
+        self.commit(self.wt, "a/x.py", "x\n")
+        put(self.wt / "a" / "x.py", "y\n")
         put(self.wt / "new.txt", "x\n")
         code, out = self.cli("pause", "--intent", "fix parser", "--next", "run gate", "--agent", "a1=Task 2")
         self.assertEqual(code, 0, out)
@@ -189,7 +214,7 @@ class PauseTests(PauseSandbox):
                     "ledger_last": "Task 1: complete", "message": None, "harness": None, "session": None,
                     "transcript": None, "last_decision": None}
         self.assertEqual({k: note[k] for k in expected}, expected)
-        self.assertIn("new.txt", note["dirty"])
+        self.assertEqual(note["dirty"], ["a/x.py", "new.txt"])
         self.assertRegex(note["at"], r"^\d{4}-\d\d-\d\dT")
 
     def test_session_and_transcript(self) -> None:
@@ -226,6 +251,21 @@ class PauseTests(PauseSandbox):
                 self.assertEqual((note["reason"], note["message"], note["session"], note["transcript"], note["harness"]),
                                  ("rate_limit", message, "s-1", "/t/s-1.jsonl", "claude"))
                 self.assertEqual([note[k] for k in INTENT], [None] * 4)
+
+    def test_unreadable_other_spec_still_writes_note(self) -> None:
+        self.cli(*DECIDE)
+        other = self.notes / "specs" / "20261002 Other.md"
+        put(other, frontmatter(feature="other", track="M", review_status="approved"))
+        other.chmod(0)
+        try:
+            for run in (lambda: self.cli("pause"), lambda: self.event(EVENT)):
+                self.note.unlink(missing_ok=True)
+                code, out = run()
+                self.assertEqual(code, 0, out)
+                note = self.saved()
+                self.assertEqual((note["stage"], note["ledger_last"], note["last_decision"]), (None, None, None))
+        finally:
+            other.chmod(0o644)
 
     def test_event_skips(self) -> None:
         cases = [(EVENT, self.repo, "not-a-feature-worktree"), ("not json", None, "bad-input")]
