@@ -303,5 +303,75 @@ class PauseStatusTests(PauseSandbox):
         self.assertEqual((out["paused"], out["next"]), ({"error": "unreadable pause note"}, "resume from the pause note"))
 
 
+HOOKS = HERE.parents[2] / "claude" / "hooks"
+DENY_REASON = ("Session B autonomy grant: no questions. Decide, log it with devloop.py decide, and go on. "
+               "A stop-list item: stop and report it as your final message.")
+
+
+class AutonomyHookTests(PauseSandbox):
+    def hook(self, script: str, stdin: str, env: dict | None = None) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["/bin/bash", str(HOOKS / script)], input=stdin, capture_output=True, text=True,
+                              env=env or self.env, cwd=self.root, timeout=60)
+
+    def ask(self, cwd: Path) -> str:
+        return json.dumps({"tool_name": "AskUserQuestion", "cwd": str(cwd)})
+
+    def test_deny_ask(self) -> None:
+        scratch = self.root / "scratch"
+        git(self.repo, "worktree", "add", "-q", "-b", "scratch", str(scratch), "origin/main")
+        bare = self.root / "bare"
+        bare.mkdir()
+        git(bare, "init", "-q")
+        self.commit(bare, "a.txt", "a\n")
+        git(bare, "worktree", "add", "-q", "-b", "feat/x", str(self.root / "bare-x"))
+        no_jq = {**self.env, "PATH": "/nonexistent"}
+        cases = [(self.ask(self.wt), None, True), (self.ask(self.repo), None, False), (self.ask(scratch), None, False),
+                 (self.ask(self.root / "bare-x"), None, False), ("", None, False), (self.ask(self.wt), no_jq, False)]
+        for stdin, env, denied in cases:
+            with self.subTest(stdin=stdin, env=bool(env)):
+                result = self.hook("deny-ask.sh", stdin, env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if denied:
+                    out = json.loads(result.stdout)["hookSpecificOutput"]
+                    self.assertEqual((out["hookEventName"], out["permissionDecision"], out["permissionDecisionReason"]),
+                                     ("PreToolUse", "deny", DENY_REASON))
+                else:
+                    self.assertEqual(result.stdout, "")
+
+    def test_pause_hook(self) -> None:
+        import shutil
+        shutil.copytree(HERE.parents[2] / "skill" / "scripts", self.wt / ".agents" / "skills" / "dev-loop" / "scripts")
+        outside = self.root / "outside"
+        outside.mkdir()
+        cases = [(self.wt, True), (outside, False)]
+        for cwd, written in cases:
+            with self.subTest(cwd=cwd):
+                self.note.unlink(missing_ok=True)
+                result = self.hook("pause.sh", json.dumps({**EVENT, "cwd": str(cwd)}))
+                self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+                self.assertEqual(self.note.exists(), written)
+                if written:
+                    self.assertEqual(self.saved()["reason"], "rate_limit")
+
+    def test_check_setup_names_missing_hook_entries(self) -> None:
+        import check_setup
+        settings = json.loads((HERE.parents[2] / "claude" / "settings.fragment.json").read_text())
+        cases = [("PreToolUse", "AskUserQuestion", "missing Claude hook: PreToolUse AskUserQuestion deny-ask.sh"),
+                 ("StopFailure", "rate_limit", "missing Claude hook: StopFailure rate_limit pause.sh")]
+        for event, matcher, line in cases:
+            with self.subTest(event=event):
+                trimmed = json.loads(json.dumps(settings))
+                trimmed["hooks"][event] = [g for g in trimmed["hooks"][event] if g.get("matcher") != matcher]
+                path = self.root / "settings.json"
+                path.write_text(json.dumps(trimmed))
+                failures: list[str] = []
+                check_setup.check_claude_settings(path, failures)
+                self.assertIn(line, failures)
+                path.write_text(json.dumps(settings))
+                failures = []
+                check_setup.check_claude_settings(path, failures)
+                self.assertNotIn(line, failures)
+
+
 if __name__ == "__main__":
     unittest.main()

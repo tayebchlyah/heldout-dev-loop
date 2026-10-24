@@ -39,6 +39,9 @@ test('a Claude-only kit has the link and no Codex path', () => {
   assert.ok(paths.includes('.claude/agents/implementer.md'))
   assert.ok(paths.includes('.dev-loop/hooks/claude/gate.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/claude/seal.sh'))
+  for (const name of ['deny-ask.sh', 'pause.sh']) {
+    assert.equal(kit.files.find((file) => file.path === `.dev-loop/hooks/claude/${name}`)?.executable, true, name)
+  }
   assert.equal(kit.files.find((file) => file.path === '.dev-loop/hooks/claude/gate.sh').executable, true)
   assert.equal(kit.files.find((file) => file.path === '.claude/agents/implementer.md').executable, false)
 })
