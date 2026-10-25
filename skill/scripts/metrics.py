@@ -335,7 +335,8 @@ def test_counts(worktree: Path, ref: str) -> dict[str, int]:
     base = subprocess.run([*git, "merge-base", "HEAD", ref], capture_output=True, text=True).stdout.strip()
     if not base:
         return counts
-    diff = subprocess.run([*git, "diff", "--no-color", "--no-ext-diff", "-U0", f"{base}...HEAD"],
+    diff = subprocess.run([*git, "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+                           "-U0", f"{base}...HEAD"],
                           capture_output=True, text=True, errors="replace").stdout
     path = ""
     for line in diff.splitlines():
