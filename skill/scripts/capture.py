@@ -43,12 +43,29 @@ def by_entry(routes: list[dict]) -> dict[str, list[dict]]:
     return groups
 
 
+CAPTURE_NAME = re.compile(r"-capture(-\d+)?$")
+
+
+def new_capture_folder(evidence: Path, stamp: str) -> Path:
+    """`<stamp>-capture`, else `-capture-2`, `-capture-3`: a taken name is never reused, so a recapture in the
+    same second keeps the first one's files."""
+    evidence.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        folder = evidence / (f"{stamp}-capture" if n == 1 else f"{stamp}-capture-{n}")
+        try:
+            folder.mkdir()
+            return folder
+        except FileExistsError:
+            n += 1
+
+
 def after_set(evidence: Path) -> dict | None:
     """The newest `diff` drive gives the entries; each newer `since` or `all` drive replaces the routes of
     the entries of that set it ran, and never adds one. None when there is no `diff` drive."""
     drives = []
     for folder in sorted(evidence.iterdir()) if evidence.is_dir() else []:
-        drive = read_drive(folder / "drive.json") if folder.is_dir() and not folder.name.endswith("-capture") else None
+        drive = read_drive(folder / "drive.json") if folder.is_dir() and not CAPTURE_NAME.search(folder.name) else None
         if drive and drive.get("mode") in AFTER_MODES:
             drives.append((folder, drive))
     bases = [i for i, (_, drive) in enumerate(drives) if drive["mode"] == "diff"]
@@ -141,8 +158,7 @@ def run(repo: Path, pr: int, before_path: str | None, after_path: str | None) ->
     if not groups:
         return {"ok": True, "skipped": "no-routes"}, 0
 
-    folder = evidence / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-capture")
-    folder.mkdir(parents=True, exist_ok=True)
+    folder = new_capture_folder(evidence, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     # Every before file is kept, so a recapture finds them after the before worktree is gone.
     kept, before_shot, before_video = [], {}, {}
     for entry, routes in by_entry(before["routes"] if before else []).items():

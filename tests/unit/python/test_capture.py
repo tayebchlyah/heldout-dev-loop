@@ -107,6 +107,23 @@ class CaptureTests(unittest.TestCase):
         argv = call["argv"]
         return [argv[i + 1] for i, a in enumerate(argv) if a == "--attach"]
 
+    def test_same_second_captures_get_own_folders(self) -> None:
+        sys.path.insert(0, str(DEVLOOP.parent))
+        import capture
+        first = capture.new_capture_folder(self.evidence, "20260101T000000Z")
+        second = capture.new_capture_folder(self.evidence, "20260101T000000Z")
+        third = capture.new_capture_folder(self.evidence, "20260101T000000Z")
+        self.assertEqual([f.name for f in (first, second, third)],
+                         ["20260101T000000Z-capture", "20260101T000000Z-capture-2", "20260101T000000Z-capture-3"])
+        self.assertTrue(second.is_dir())
+
+    def test_suffixed_capture_folder_is_not_a_drive(self) -> None:
+        self.drive(self.evidence / "20260101T000000Z", [{"entry": "a", "path": "/one", "shot": "0"}])
+        self.drive(self.evidence / "20260101T000001Z-capture-2", [{"entry": "b", "path": "/two", "shot": "x"}])
+        code, out = self.capture("--pr", "7")
+        self.assertEqual((code, out["routes"]), (0, 1), out)
+        self.assertNotIn("/two", self.edit()["body"])
+
     def test_no_verify_skips_without_gh(self) -> None:
         for verify in ("absent", False):
             with self.subTest(verify=verify):
