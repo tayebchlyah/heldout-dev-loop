@@ -1109,13 +1109,15 @@ def cmd_second_review(args: argparse.Namespace) -> int:
 
 
 def cmd_release_check(args: argparse.Namespace) -> int:
-    from release import check
+    from release import check, is_release_tag
 
     repo = Path(args.repo).resolve()
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
+    notes = None  # a non-release tag is skipped before any note read, so it needs no notes path
+    if args.tag is None or is_release_tag(args.tag):
+        try:
+            notes = resolve(repo, os.environ, Path.home())
+        except NotesPathError as exc:
+            return emit({"error": str(exc)}, 1)
     return emit(*check(repo, notes, args.tag or args.sha, args.tag))
 
 
