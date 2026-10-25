@@ -49,7 +49,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
@@ -360,6 +360,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     for item in out.get("features", []):
         if item["worktree"] and pause_state(Path(item["worktree"]), os.environ, delete=True) is not None:
             item["paused"] = True
+    if "features" in out:
+        import retro
+
+        due = retro.review_due(repo, notes, date.today())
+        if due is not None:
+            out["review_due"] = due
     # Lazy, as in cmd_board: the old tests load this file with importlib and must not need the board package.
     sys.path.insert(0, str(Path(__file__).parent))
     from board import state, store, writer
