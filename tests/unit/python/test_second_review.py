@@ -210,7 +210,13 @@ class SecondReviewExportTests(unittest.TestCase):
 
     def test_export_diff_ignores_user_config_and_attributes(self) -> None:
         import second_review
-        repo, base, sha = self.branch()
+        repo, base, _ = self.branch()
+        secret = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, input=b"CASED=1\n", capture_output=True,
+                                check=True).stdout.decode().strip()
+        for name in (".ENV", "config/.Env.Local"):
+            git(repo, "update-index", "--add", "--cacheinfo", f"100644,{secret},{name}")
+        git(repo, "commit", "-qm", "cased env")
+        sha = git(repo, "rev-parse", "HEAD")
         marker, script, config = self.tmp / "ran", self.tmp / "ext.sh", self.tmp / "gitconfig"
         script.write_text(f"#!/bin/sh\ntouch {marker}\n")
         script.chmod(0o755)
@@ -225,6 +231,7 @@ class SecondReviewExportTests(unittest.TestCase):
         self.assertNotIn("tests/acceptance", diff)
         self.assertNotIn("held", diff)
         self.assertNotIn("SECRET", diff)
+        self.assertNotIn("CASED", diff)
         self.assertNotIn("\x1b[", diff)
         self.assertFalse(marker.exists())
 
