@@ -11,7 +11,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
@@ -192,6 +191,15 @@ def docker_up() -> bool:
         return False
 
 
+def expected_base(repo: Path, record_sha: str, commit: str) -> str | None:
+    """The base of an audit of `commit` after the record at `record_sha`: that sha when it is an ancestor of `commit`,
+    else their merge base, else None."""
+    if run_git(repo, "merge-base", "--is-ancestor", record_sha, commit).returncode == 0:
+        return record_sha
+    merged = run_git(repo, "merge-base", record_sha, commit)
+    return merged.stdout.strip() if merged.returncode == 0 and merged.stdout.strip() else None
+
+
 def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:
     """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created."""
     if notes is None:
@@ -221,11 +229,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     first = record is None
     base = None
     if record is not None:
-        if run_git(repo, "merge-base", "--is-ancestor", record["sha"], head_sha).returncode == 0:
-            base = record["sha"]
-        else:
-            merged = run_git(repo, "merge-base", record["sha"], head_sha)
-            base = merged.stdout.strip() if merged.returncode == 0 and merged.stdout.strip() else None
+        base = expected_base(repo, record["sha"], head_sha)
     runs = sorted(
         (int(p.name[4:]), p) for p in audits.iterdir() if p.is_dir() and re.fullmatch(r"run-\d+", p.name)
     ) if audits.is_dir() else []
@@ -328,14 +332,14 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
     try:
         meta = json.loads((run / "run-metadata.json").read_text())
         status = meta.get("run_status")
+        if status != "complete":
+            return {"error": "run-incomplete", "run_status": status}, 1
         sha = meta["source_ref"]["commit"]
         profile = meta["profile"]
         if not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) and isinstance(profile, str) and re.fullmatch(r"\S+", profile)):
             raise ValueError("bad commit or profile")
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         return {"error": "invalid-run", "tail": f"run-metadata.json: {type(exc).__name__}"}, 1
-    if status != "complete":
-        return {"error": "run-incomplete", "run_status": status}, 1
     if (tail := validate_run(skill_dir(harness, env), run)) is not None:
         return {"error": "invalid-run", "tail": tail}, 1
     try:
@@ -359,6 +363,11 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         recorded = [line for line in section(text, "Release audits") if RECORD_RE.match(line.rstrip())]
         if any(RECORD_RE.match(line.rstrip()).group(2) == name for line in recorded):
             return {"error": "already-recorded"}, 1
+        current = current_record(text)
+        if current is not None:
+            expected = expected_base(repo, current["sha"], sha)
+            if base != expected:
+                return {"error": "bad-base", "expected_base": expected}, 1
         open_prints = {i["fingerprint"] for i in security_items(text)[0] if i["fingerprint"]}
         deferred: list[str] = []
         skipped: list[str] = []
