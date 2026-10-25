@@ -32,6 +32,7 @@ npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global inst
 
 - `commands`: the project's own command for a step. Keys: `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`. Each value is a non-empty string. A missing key falls back to `scripts/gate.sh`, `docker compose` and the stack's test runner. `check_setup.py` fails on any other key.
 - `merge`: `auto` (the default) or `human`. With `auto`, Stage 7 merges a Track S or M pull request after green CI and the review wave, when it is a two-way door with a small blast radius. A one-way door or a Track L pull request waits for you. With `human`, every pull request waits for you. Stage 7 runs `devloop.py merge-check` to decide, and `merge_human_paths` in `dev-loop.json` lists path patterns whose changes always wait for you.
+- `security_audit`: `{"images": {"<name>": "<image>"}}`, the container images the release audit sandbox may start (name: lower case letters, digits, `_` and `-`). Pull each image first; `check_setup.py` reports a stopped Docker engine or a missing image. No key: the audit runs source-only. Add `security-audit/` to the vault `.gitignore`.
 
 ## Verify skill
 
@@ -48,6 +49,7 @@ A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<
 - `verify-init --base-url <url>`: writes the skeleton of the project's verify skill and its feature map, and the `verify` key.
 - `drive`: drives each feature map route the branch changed in Chromium (needs Playwright in the project), checks the status, the accessible names and the console errors, and saves one screenshot per route. `--routes-from` drives the same routes on the base branch (the before run).
 - `capture --pr <n>`: puts a before and an after screenshot of each driven route (a WebM for a journey) in the PR body, uploaded with `gh pr edit --attach` (gh 2.99.0 or later).
+- `release-plan`, `release-record`, `release-check`: the release security audit. Before a `v*` tag, run `/release-audit` (Codex `$release-audit`) in the main session on `main`: it runs the Cloudflare `security-audit` skill, then `release-record` writes the confirmed and needs-validation findings into `## Deferred` of the project note and one line into `## Release audits`. `release-check --sha HEAD` says whether the commit may get the tag; the git guard runs it on a tag push and `gh release create`. A run takes hours and costs tens of dollars. Target code runs only in the container sandbox `sandbox-run.py` (Docker).
 - `ci wait`: waits for the checks of the current branch's pull request, and on a failure names the failed job and its first error.
 
 ## Before the first `init` on a machine
