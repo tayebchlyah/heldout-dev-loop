@@ -28,3 +28,48 @@ class GardenSkillTests(unittest.TestCase):
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
+
+
+GUARD = "`codebase-design`: reference only. Never invoke it alone. Never run its design-it-twice step unless the user asks for it."
+
+
+def comments_section(text: str) -> str:
+    body = text.split("\n## Comments\n", 1)[1]
+    return body.split("\n## ", 1)[0]
+
+
+class KitTextTests(unittest.TestCase):
+    def read(self, rel: str) -> str:
+        return (ROOT / rel).read_text()
+
+    def test_template_names_six_kinds(self) -> None:
+        section = comments_section(self.read("skill/references/coding-standards.md"))
+        for value in [
+            "license header", "outside dependency", "public API", "issue or an RFC", "tool directive",
+            "shortcut: <the limit>, <when to upgrade>", "new and changed lines",
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, section)
+
+    def test_repo_standards_match_template(self) -> None:
+        self.assertEqual(
+            comments_section(self.read("skill/references/coding-standards.md")),
+            comments_section(self.read("CODING_STANDARDS.md")),
+        )
+
+    def test_stage_lines(self) -> None:
+        text = self.read("skill/SKILL.md")
+        self.assertIn("references/coding-standards.md", text)
+        self.assertNotIn("empty `CODING_STANDARDS.md`", text)
+        self.assertIn("triaged weekly with `/garden` (Codex `$garden`)", text)
+
+    def test_building_pointer(self) -> None:
+        text = self.read("skill/references/building.md")
+        self.assertIn("coding-standards.md", text)
+        self.assertIn("shortcut: <the limit>, <when to upgrade>", text)
+        self.assertNotIn("Comment only the why the code cannot show", text)
+
+    def test_codebase_design_guard(self) -> None:
+        for rel in ["skill/references/claude.md", "skill/references/codex.md"]:
+            with self.subTest(rel=rel):
+                self.assertIn(GUARD, self.read(rel))
