@@ -455,10 +455,10 @@ class ReleaseRecordTests(unittest.TestCase):
         self.run_dir = self.notes / "security-audit" / "run-2"
         self.make_run()
 
-    def make_run(self, findings: list | None = None, status: str = "complete", hardening: int = 3) -> None:
+    def make_run(self, findings: list | None = None, status: str = "complete", hardening: int = 3, commit: str = SHA) -> None:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         (self.run_dir / "run-metadata.json").write_text(json.dumps(
-            {"run_status": status, "profile": "standard", "source_ref": {"commit": SHA}}))
+            {"run_status": status, "profile": "standard", "source_ref": {"commit": commit}}))
         if findings is None:
             findings = [
                 {"verdict": "confirmed", "fingerprint": "f-c", "title": "Confirmed one", "blockers": []},
@@ -553,6 +553,62 @@ class ReleaseRecordTests(unittest.TestCase):
         before = self.note.read_bytes()
         out, code = self.record()
         self.assertEqual((code, out["error"], self.note.read_bytes()), (1, "run-incomplete", before))
+
+    def test_incomplete_run_without_commit_or_profile_is_run_incomplete(self) -> None:
+        (self.run_dir / "run-metadata.json").write_text(json.dumps({"run_status": "incomplete", "incomplete_reason": "budget"}))
+        before = self.note.read_bytes()
+        out, code = self.record()
+        self.assertEqual((code, out["error"], self.note.read_bytes()), (1, "run-incomplete", before))
+
+    def git(self, *args: str) -> str:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+    def commit(self, name: str) -> str:
+        (self.repo / name).write_text(name)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "HEAD")
+
+    def with_record(self, sha: str, run: str = "run-1") -> None:
+        self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n"
+                             f"- 2026-01-01 {run} at {sha}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole\n")
+
+    def test_base_checked_against_current_record(self) -> None:
+        a, b, c = self.commit("a"), self.commit("b"), self.commit("c")
+        self.with_record(a)
+        self.make_run(commit=c)
+        before = self.note.read_bytes()
+        for args in (("--base", b), ()):
+            out, code = self.record(*args)
+            self.assertEqual((code, out["error"], out.get("expected_base"), self.note.read_bytes()), (1, "bad-base", a, before), args)
+        out, code = self.record("--base", a)
+        self.assertEqual((code, out["record"].endswith(f"scope {a}..{c}")), (0, True))
+
+    def test_base_after_rewrite_is_the_merge_base(self) -> None:
+        a = self.commit("a")
+        self.git("checkout", "-q", "-b", "side")
+        old = self.commit("old")
+        self.git("checkout", "-q", "main")
+        c = self.commit("c")
+        self.with_record(old)
+        self.make_run(commit=c)
+        out, code = self.record("--base", old)
+        self.assertEqual((code, out["error"], out["expected_base"]), (1, "bad-base", a))
+        out, code = self.record("--base", a)
+        self.assertEqual(code, 0)
+
+    def test_base_given_with_no_merge_base_is_refused(self) -> None:
+        a = self.commit("a")
+        self.git("checkout", "-q", "--orphan", "other")
+        self.git("rm", "-rqf", ".")
+        c = self.commit("c")
+        self.with_record(a)
+        self.make_run(commit=c)
+        out, code = self.record("--base", a)
+        self.assertEqual((code, out["error"], out["expected_base"]), (1, "bad-base", None))
+        out, code = self.record()
+        self.assertTrue(out["record"].endswith("scope whole"))
 
     def test_failing_validator_writes_nothing(self) -> None:
         (self.skill / "validate-findings.cjs").write_text(FAILING)
