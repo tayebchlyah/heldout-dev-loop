@@ -360,6 +360,15 @@ class MetricsCommandTests(TempDir):
         self.assertEqual(lines[-1], ROW)
         self.assertIn(metrics.HEADER, lines)
 
+    def test_write_slug_feature_keeps_header(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        line = ROW.replace("| a |", "| feature |", 1)
+        metrics.write_row(file, "feature", line)
+        metrics.write_row(file, "feature", line)
+        lines = file.read_text().splitlines()
+        self.assertEqual(lines.count(metrics.HEADER), 1)
+        self.assertEqual(lines.count(line), 1)
+
     # CLI
 
     def git(self, cwd: Path, *args: str) -> str:
