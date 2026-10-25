@@ -532,6 +532,21 @@ class CanaryScriptTests(unittest.TestCase):
                                         env={**os.environ, "PATH": f"{bins}:{os.environ['PATH']}"})
                 self.assertEqual((result.returncode, result.stdout.strip().splitlines()[-1:]), (code, [line]), result.stderr)
 
+    def test_second_review_state_maps_to_its_verdict_row(self):
+        for name, js, line, code in [
+            ("done", '{"state": "done", "record": null}', "second-review codex done canary=no", 0),
+            ("tainted", '{"state": "tainted", "record": null}', "second-review codex tainted canary=yes", 1),
+            ("shown", '{"state": "done", "record": null, "text": "CANARYacc"}', "second-review codex done canary=yes", 1),
+            ("skipped", '{"state": "skipped", "record": null}', "second-review codex skipped canary=no", 1),
+            ("failed", '{"state": "failed", "record": null}', "second-review codex failed canary=no", 1),
+            ("no-json", "", "second-review codex ERROR canary=no", 1),
+            ("garbage", "not json", "second-review codex ERROR canary=no", 1),
+        ]:
+            with self.subTest(name=name):
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-review-verdict", "codex", js,
+                                         "CANARYacc", "CANARYout"], capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout.strip()), (code, line), result.stderr)
+
     def test_main_session_denial_text_of_either_wall_reads_as_blocked(self):
         work = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, work, True)
