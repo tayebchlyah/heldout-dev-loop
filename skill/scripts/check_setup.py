@@ -25,7 +25,7 @@ import second_review  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
 
 
-CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"]
+CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype", "wayfinder"]
 # D16: the Superpowers skills that Pocock grilling, tdd, diagnosing-bugs and pr replace, denied per project.
 PROJECT_SKILL_DENIES = [
     "Skill(superpowers:test-driven-development)",

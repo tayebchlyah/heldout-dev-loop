@@ -1,6 +1,6 @@
 # Spec template
 
-Stage 2 writes the spec from this template to `$NOTES/specs/`. Then the builder check. Track L: threat model too. A one-way door in the spec: doubt review. Licenses at the end.
+Stage 2 writes the spec from this template to `$NOTES/specs/`. Size target: 1,500 words for Goal, Non-goals, Interfaces and seams, Acceptance oracle, Acceptance flows and Supersedes (SKILL.md Stage 2). Then the builder check. Track L: threat model too. A one-way door in the spec: doubt review. Licenses at the end.
 
 ## Template
 
@@ -17,19 +17,27 @@ pr:
 
 # <Title>
 
+## Sources
+Links only: the framing note with the grilling detail, the map decisions this spec relies on, research.
+
 ## Goal
 One paragraph: what the user gets.
 
+## Non-goals
+What this slice does not do, one line each, at least one. Stage 6 triage drops a finding that asks for one. `spec-tester` writes no test for a non-goal.
+
 ## Decisions
-One row per decision: ID, topic, decision. Mark each one-way door.
+One row per decision: ID, topic, decision, one line each. Mark each one-way door. The reasoning stays in the framing note.
 
 ## Interfaces and seams
 Public interfaces: names, parameter types, return types. `ui` in stacks: routes and accessible names.
 Seams under test. Prefer an existing seam, the highest one. The ideal number of seams is one.
+Under each seam: `Catches:` one line, what a test at this seam catches. `Misses:` one line, what it cannot see.
 
 ## Acceptance oracle
 One line per observable behaviour. Each line testable, quoted later by tests and reviewers.
 `acceptance: regression` or `none`: one line, why no user or system flow changes.
+A speed target (time, throughput, size): the line is the claim sentence of [benchmark.md](benchmark.md) "Before you run anything", with the number, its unit, the data set, the run count and the statistic. Whoever measures it runs benchmark.md. The verdict and the number go in the PR body.
 
 ## Acceptance flows
 One flow per user journey. `spec-tester` writes one test per flow.
@@ -102,7 +110,7 @@ If you can't name the trust boundaries for a feature, you're not ready to secure
 
 ## One-way door: doubt review
 
-Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user.
+Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user. Session B: a stop item (SKILL.md autonomy grant), not a question.
 
 Source: Addy Osmani agent-skills 0.6.12, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `1be8e34`), core reviewer prompt and its rule, copied verbatim:
 
