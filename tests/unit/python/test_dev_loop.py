@@ -179,6 +179,7 @@ ReviewDueTests = test_retro.ReviewDueTests
 ReviewDueStatusTests = test_retro.ReviewDueStatusTests
 SessionsTests = test_retro.SessionsTests
 SessionsCommandTests = test_retro.SessionsCommandTests
+RetroTextTests = test_retro.RetroTextTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
@@ -2271,11 +2272,11 @@ class MutationContractTests(unittest.TestCase):
                 self.assertIn(value, mutation)
 
     def test_no_route_uses_a_stryker_flag_that_does_not_exist(self) -> None:
-        # `--since` is a devloop.py drive option, never a Stryker one.
+        # `--since` is a devloop.py drive and sessions option, never a Stryker one.
         for line in all_instructions().splitlines():
             if "--since" in line:
                 self.assertNotIn("stryker", line.lower())
-                self.assertIn("drive", line)
+                self.assertTrue("drive" in line or "devloop.py sessions" in line, line)
 
     def test_reference_names_the_selection_gap_and_the_setup_owner(self) -> None:
         mutation = (SKILL_ROOT / "references" / "mutation.md").read_text()

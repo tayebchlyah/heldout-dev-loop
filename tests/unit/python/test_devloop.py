@@ -1202,7 +1202,7 @@ class SkillStackContractTests(unittest.TestCase):
     def test_codex_skill_list(self) -> None:
         self.assertEqual(
             load_check_setup().CODEX_SKILLS,
-            ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype", "wayfinder"],
+            ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype", "wayfinder", "retro"],
         )
 
     def test_claude_project_check_requires_the_skill_denies(self) -> None:
