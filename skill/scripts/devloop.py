@@ -20,6 +20,8 @@
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
+  devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
+                                                      the release gate: a current audit record, no open security item
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
                                                       append one row to the decision log
   devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
@@ -1106,6 +1108,17 @@ def cmd_second_review(args: argparse.Namespace) -> int:
     return emit(*run(Path(top or "."), args.harness, args.timeout, os.environ))
 
 
+def cmd_release_check(args: argparse.Namespace) -> int:
+    from release import check
+
+    repo = Path(args.repo).resolve()
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    return emit(*check(repo, notes, args.tag or args.sha, args.tag))
+
+
 def finite_minutes(value: str) -> float:
     try:
         minutes = float(value)
@@ -1348,6 +1361,13 @@ def main() -> int:
     second.add_argument("--harness", choices=["claude", "codex"], required=True)
     second.add_argument("--timeout", type=finite_minutes, default=15)
     second.set_defaults(run=cmd_second_review)
+
+    release = commands.add_parser("release-check")
+    release.add_argument("--repo", default=".")
+    target = release.add_mutually_exclusive_group(required=True)
+    target.add_argument("--tag")
+    target.add_argument("--sha")
+    release.set_defaults(run=cmd_release_check)
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
