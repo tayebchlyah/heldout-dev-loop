@@ -164,6 +164,13 @@ test_capture = importlib.util.module_from_spec(_capture_spec)
 _capture_spec.loader.exec_module(test_capture)
 CaptureTests = test_capture.CaptureTests
 
+_second_spec = importlib.util.spec_from_file_location("test_second_review", Path(__file__).resolve().parent / "test_second_review.py")
+if _second_spec is None or _second_spec.loader is None:
+    raise ImportError("cannot load test_second_review module")
+test_second_review = importlib.util.module_from_spec(_second_spec)
+_second_spec.loader.exec_module(test_second_review)
+SecondReviewDecisionTests = test_second_review.SecondReviewDecisionTests
+
 
 def all_instructions() -> str:
     parts = [SKILL.read_text()]
