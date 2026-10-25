@@ -168,7 +168,7 @@ def export(repo: Path, ref: str, sha: str, dest: Path) -> tuple[list[str], int]:
         batch.wait()
     diff = subprocess.run(["git", "-C", str(repo), "-c", "core.quotepath=off", "diff", "--no-ext-diff", "--no-textconv",
                            "--no-color", "-a", f"{ref}...{sha}", "--", ".", ":(exclude,icase)tests/acceptance/**",
-                           ":(exclude,glob)**/.env", ":(exclude,glob)**/.env.*"], capture_output=True)
+                           ":(exclude,glob,icase)**/.env", ":(exclude,glob,icase)**/.env.*"], capture_output=True)
     if diff.returncode != 0:
         raise RuntimeError(f"git diff failed: {diff.stderr.decode(errors='replace').strip()}")
     (dest / DIFF).write_bytes(diff.stdout)
