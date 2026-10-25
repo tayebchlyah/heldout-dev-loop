@@ -330,6 +330,10 @@ ROW = "| a | M | 2026-10-25 | 2 | 1.5 | 4 | 3 | 62 | 5 | 1 | 3 | 0 | 2 | - | 12 
 
 
 class MetricsCommandTests(TempDir):
+    @property
+    def lock(self) -> Path:
+        return self.tmp / "sub" / "metrics.lock"
+
     def test_row_cells(self) -> None:
         self.assertEqual(metrics.row("a", "M", "2026-10-25", payload(), {"3", "5", "6", "7"}), ROW)
 
@@ -339,7 +343,7 @@ class MetricsCommandTests(TempDir):
 
     def test_write_new_file(self) -> None:
         file = self.tmp / "Feature Metrics.md"
-        metrics.write_row(file, "a", ROW)
+        metrics.write_row(file, "a", ROW, self.lock)
         lines = file.read_text().splitlines()
         self.assertEqual(lines[:4], ["---", "type: note", "tags: [dev-loop, feature-metrics]", "---"])
         self.assertIn("# Feature Metrics", lines)
@@ -354,7 +358,7 @@ class MetricsCommandTests(TempDir):
         other = "| b | S | | 1 | 0.1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | - | - | 1 | 1 | 1 | 3 |  |"
         file.write_text("intro\n\n" + metrics.HEADER + "\n|---|\n" + ROW.replace("|  |", "| yes: #12 |") + "\n"
                         + other + "\n\ntail\n")
-        metrics.write_row(file, "a", ROW.replace("| 15 |", "| 99 |"))
+        metrics.write_row(file, "a", ROW.replace("| 15 |", "| 99 |"), self.lock)
         text = file.read_text()
         self.assertIn("| 99 | yes: #12 |", text)
         self.assertIn(other + "\n", text)
@@ -364,13 +368,13 @@ class MetricsCommandTests(TempDir):
     def test_write_appends_after_last_table_line(self) -> None:
         file = self.tmp / "Feature Metrics.md"
         file.write_text(metrics.HEADER + "\n|---|\n| b | x |\nnotes after\n")
-        metrics.write_row(file, "a", ROW)
+        metrics.write_row(file, "a", ROW, self.lock)
         self.assertEqual(file.read_text().splitlines()[3:], [ROW, "notes after"])
 
     def test_write_no_table(self) -> None:
         file = self.tmp / "Feature Metrics.md"
         file.write_text("just text\n")
-        metrics.write_row(file, "a", ROW)
+        metrics.write_row(file, "a", ROW, self.lock)
         lines = file.read_text().splitlines()
         self.assertEqual(lines[0], "just text")
         self.assertEqual(lines[-1], ROW)
@@ -379,11 +383,23 @@ class MetricsCommandTests(TempDir):
     def test_write_slug_feature_keeps_header(self) -> None:
         file = self.tmp / "Feature Metrics.md"
         line = ROW.replace("| a |", "| feature |", 1)
-        metrics.write_row(file, "feature", line)
-        metrics.write_row(file, "feature", line)
+        metrics.write_row(file, "feature", line, self.lock)
+        metrics.write_row(file, "feature", line, self.lock)
         lines = file.read_text().splitlines()
         self.assertEqual(lines.count(metrics.HEADER), 1)
         self.assertEqual(lines.count(line), 1)
+
+    def test_write_takes_the_lock(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        metrics.write_row(file, "a", ROW, self.lock)
+        self.assertTrue(self.lock.is_file())
+
+    def test_write_placeholder_refused(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        (self.tmp / ".Feature Metrics.md.icloud").write_text("")
+        with self.assertRaises(OSError):
+            metrics.write_row(file, "a", ROW, self.lock)
+        self.assertFalse(file.exists())
 
     # CLI
 
@@ -494,6 +510,15 @@ class MetricsCommandTests(TempDir):
                          usage_msg("2", "2026-01-01T10:31:00Z", "m1", "opus", output_tokens=1000)])
         code, out = self.run_cli("--feature", "b")
         self.assertEqual((code, out.get("total")), (0, 5000), out)
+
+    def test_cli_placeholder(self) -> None:
+        self.fixture()
+        self.transcript(self.work())
+        (self.notes / ".Feature Metrics.md.icloud").write_text("")
+        code, out = self.run_cli("--write")
+        self.assertEqual(code, 1, out)
+        self.assertIn("iCloud placeholder", out["error"])
+        self.assertFalse((self.notes / "Feature Metrics.md").exists())
 
     def test_cli_track_s(self) -> None:
         self.fixture(slug="quick-fix", prefix="fix", spec=False)

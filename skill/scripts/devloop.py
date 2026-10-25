@@ -1185,7 +1185,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     if args.write:
         file = notes / "Feature Metrics.md"
         try:
-            metrics.write_row(file, slug, payload["row"])
+            metrics.write_row(file, slug, payload["row"], Path(common) / "dev-loop" / "metrics.lock")
         except (OSError, UnicodeError) as exc:
             return emit({"error": f"cannot read or write {file}: {exc}"}, 1)
         payload["file"] = str(file)

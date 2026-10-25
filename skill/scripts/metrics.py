@@ -5,6 +5,7 @@ D2 read, D3 feature of a record, D4 stage of a record, D5 weights, D6 numbers, D
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -368,8 +369,17 @@ def cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().removeprefix("|").removesuffix("|").split("|")]
 
 
-def write_row(file: Path, slug: str, line: str) -> None:
+def write_row(file: Path, slug: str, line: str, lock: Path) -> None:
     """Replace the feature's row (its `escaped` cell kept), else add it after the last table line. Raises OSError."""
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        if not file.exists() and file.with_name(f".{file.name}.icloud").exists():
+            raise OSError(f"iCloud placeholder: {file}")
+        write_locked(file, slug, line)
+
+
+def write_locked(file: Path, slug: str, line: str) -> None:
     table = [HEADER, "| " + " | ".join(["---"] * len(cells(HEADER))) + " |"]
     if file.exists():
         lines = file.read_text().splitlines()
