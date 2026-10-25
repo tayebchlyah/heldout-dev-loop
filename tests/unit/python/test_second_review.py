@@ -374,6 +374,21 @@ class SecondReviewRunTests(unittest.TestCase):
         seen = json.loads(self.log.read_text()) if self.log.exists() else {}
         return out, code, seen
 
+    def test_stop_survives_eperm_from_killpg(self) -> None:
+        import second_review
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+        self.addCleanup(child.kill)
+        real = os.killpg
+
+        def eperm(pgid: int, sig: int) -> None:
+            if sig:
+                real(pgid, sig)
+            raise PermissionError(1, "Operation not permitted")
+
+        with mock.patch.object(os, "killpg", side_effect=eperm):
+            second_review._stop(child)
+        self.assertIsNotNone(child.returncode)
+
     def test_codex_run(self) -> None:
         self.stub("codex", "out(TABLE)\nsys.stderr.write('tokens used\\n1,000\\nwork\\ntokens used\\n12,345\\n')".replace(
             "TABLE", repr(TABLE)))
