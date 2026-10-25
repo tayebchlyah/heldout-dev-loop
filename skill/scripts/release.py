@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+)\): (.+)$")
@@ -171,3 +173,83 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple
         reasons.append({"reason": "unparsed-security", "lines": unparsed})
     ok = not reasons
     return {"ok": ok, "tag": tag, "target": sha, "record": record["line"] if record else None, "reasons": reasons}, 0 if ok else 1
+
+
+def skill_dir(harness: str, env: Mapping[str, str]) -> Path:
+    """The `security-audit` skill folder of the harness; `DEVLOOP_TEST_SECURITY_AUDIT_DIR` overrides it (tests)."""
+    if env.get("DEVLOOP_TEST_SECURITY_AUDIT_DIR"):
+        return Path(env["DEVLOOP_TEST_SECURITY_AUDIT_DIR"])
+    return Path.home() / (".claude" if harness == "claude" else ".agents") / "skills" / "security-audit"
+
+
+def docker_up() -> bool:
+    try:
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:
+    """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created."""
+    if notes is None:
+        return {"error": "notes path unresolved"}, 1
+    note = project_note(notes)
+    if note is None:
+        return {"error": "no-project-note"}, 1
+    try:
+        text = note.read_text()
+    except (OSError, ValueError) as exc:
+        return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
+    status = run_git(repo, "status", "--porcelain", "-z", "--untracked-files=no")
+    if status.returncode != 0:
+        return {"error": "git status failed"}, 1
+    dirty = [e[3:] for e in status.stdout.split("\0") if e]
+    if dirty:
+        return {"error": "dirty", "paths": dirty}, 1
+    audits = notes / "security-audit"
+    placeholders = sorted(str(p) for p in audits.rglob(".*.icloud")) if audits.is_dir() else []
+    if placeholders:
+        return {"error": "placeholder", "files": placeholders}, 1
+    head = run_git(repo, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        return {"error": "cannot resolve HEAD"}, 1
+    head_sha = head.stdout.strip()
+    record = current_record(text)
+    first = record is None
+    base = None
+    if record is not None:
+        if run_git(repo, "merge-base", "--is-ancestor", record["sha"], head_sha).returncode == 0:
+            base = record["sha"]
+        else:
+            merged = run_git(repo, "merge-base", record["sha"], head_sha)
+            base = merged.stdout.strip() if merged.returncode == 0 and merged.stdout.strip() else None
+    runs = sorted(
+        (int(p.name[4:]), p) for p in audits.iterdir() if p.is_dir() and re.fullmatch(r"run-\d+", p.name)
+    ) if audits.is_dir() else []
+    n = runs[-1][0] + 1 if runs else 1
+    out = audits / f"run-{n}"
+    out.mkdir(parents=True)
+    top = run_git(repo, "rev-parse", "--show-toplevel").stdout.strip() or str(repo)
+    try:
+        config = json.loads((Path(top) / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        config = {}
+    audit = config.get("security_audit") if isinstance(config, dict) else None
+    images = audit.get("images") if isinstance(audit, dict) else None
+    return {
+        "run": f"run-{n}",
+        "output": str(out),
+        "head": head_sha,
+        "first": first,
+        "profile": profile or ("quick" if first else "standard"),
+        "budget": budget if budget is not None else (100 if first else None),
+        "scope": "whole" if base is None else f"{base}..{head_sha}",
+        "base": base,
+        "prior_runs": [str(p) for _, p in runs],
+        "sandbox": {
+            "engine": docker_up(),
+            "images": images if isinstance(images, dict) else {},
+            "runner": str(Path(__file__).resolve().parent / "sandbox-run.py"),
+        },
+        "skill": str(skill_dir(harness, os.environ)),
+    }, 0
