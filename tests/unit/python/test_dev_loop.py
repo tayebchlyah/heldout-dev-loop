@@ -147,6 +147,7 @@ ReleaseCheckTests = test_release.ReleaseCheckTests
 ReleasePlanTests = test_release.ReleasePlanTests
 ReleaseRecordTests = test_release.ReleaseRecordTests
 ReleaseGuardTests = test_release.ReleaseGuardTests
+ReleaseSetupTests = test_release.ReleaseSetupTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
@@ -273,7 +274,7 @@ class BoardVaultCheckTests(unittest.TestCase):
         if git:
             subprocess.run(["git", "init", "-q", str(vault)], check=True)
             if ignore:
-                write(vault / ".gitignore", "dev-loop-board/\n")
+                write(vault / ".gitignore", "dev-loop-board/\nsecurity-audit/\n")
         return home, repo, vault
 
     def actions(self, **kw: bool) -> list[str]:
@@ -294,7 +295,7 @@ class BoardVaultCheckTests(unittest.TestCase):
 
     def test_vault_git_without_the_board_ignore_is_reported(self) -> None:
         lines = self.actions(dataview=True, js=True, git=True, ignore=False)
-        self.assertEqual(lines, [self.GITIGNORE_LINE])
+        self.assertEqual(lines[0], self.GITIGNORE_LINE)
 
     def test_ready_vault_has_no_lines(self) -> None:
         self.assertEqual(self.actions(dataview=True, js=True, git=True, ignore=True), [])
@@ -302,7 +303,7 @@ class BoardVaultCheckTests(unittest.TestCase):
     def test_opt_outs_in_dev_loop_local_json_skip_their_line(self) -> None:
         """B1: board_dataview false skips the Dataview line, board_vault_git shared skips the .gitignore line."""
         both = {"board_dataview": False, "board_vault_git": "shared"}
-        rows = [({}, 2), ({"board_dataview": False}, 1), ({"board_vault_git": "shared"}, 1), (both, 0)]
+        rows = [({}, 3), ({"board_dataview": False}, 2), ({"board_vault_git": "shared"}, 1), (both, 0)]
         for opts, count in rows:
             with self.subTest(opts=opts), tempfile.TemporaryDirectory() as tmp:
                 home, repo, _ = self.setup_vault(tmp, dataview=False, js=False, git=True, ignore=False)

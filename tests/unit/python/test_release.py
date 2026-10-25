@@ -17,6 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+import check_setup  # noqa: E402
 import release  # noqa: E402
 
 RECORD_RE_LINE = release.RECORD_RE
@@ -769,6 +770,88 @@ class ReleaseGuardTests(unittest.TestCase):
             self.assertEqual(got, decision, reason)
             self.assertIn('release-check failed: bad "quote" and \\ here', reason)
             self.assertNotIn("second line", reason)
+
+
+class ReleaseSetupTests(unittest.TestCase):
+    """Oracle 53 to 55 and D12: check_setup lines for security_audit, the Docker engine and image, the vault ignore."""
+
+    SHAPE = 'security_audit in dev-loop.json must be {"images": {<name>: <image>}}, names ^[a-z0-9][a-z0-9_-]*$'
+    ENGINE = "start a Docker engine for the release audit sandbox"
+
+    def repo(self, tmp: str, audit: object = None) -> Path:
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        config = {} if audit is None else {"security_audit": audit}
+        (repo / "dev-loop.json").write_text(json.dumps(config))
+        return repo
+
+    def docker(self, tmp: str, info: int, present: tuple[str, ...] = ()) -> dict[str, str]:
+        """A fake docker on PATH: `info` exits `info`, `image inspect X` exits 0 only for X in present."""
+        bin_dir = Path(tmp) / "bin"
+        bin_dir.mkdir()
+        script = bin_dir / "docker"
+        script.write_text(
+            '#!/bin/sh\n[ "$1" = info ] && exit %d\nfor i in %s; do [ "$3" = "$i" ] && exit 0; done\nexit 1\n'
+            % (info, " ".join(present) or "none")
+        )
+        script.chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    def vault(self, tmp: str, local: dict, ignore: str) -> tuple[Path, Path]:
+        repo = self.repo(tmp)
+        vault = Path(tmp) / "vault"
+        notes = vault / "Project"
+        notes.mkdir(parents=True)
+        (vault / ".obsidian").mkdir()
+        (repo / "dev-loop.local.json").write_text(json.dumps({"notes": str(notes), **local}))
+        subprocess.run(["git", "init", "-q", str(vault)], check=True)
+        (vault / ".gitignore").write_text(ignore)
+        return Path(tmp) / "home", repo
+
+    def test_vault_ignore_line(self) -> None:
+        line = "add security-audit/ to the vault .gitignore"
+        rows = [({}, "dev-loop-board/\n", [line]), ({"board_vault_git": "shared"}, "", []),
+                ({}, "dev-loop-board/\nsecurity-audit/\n", [])]
+        for local, ignore, want in rows:
+            with self.subTest(local=local, ignore=ignore), tempfile.TemporaryDirectory() as tmp:
+                home, repo = self.vault(tmp, local, ignore)
+                got = [x for x in check_setup.check_board_vault(home, repo, {}) if "security-audit" in x]
+                self.assertEqual(got, want)
+
+    def test_bad_shapes_fail_and_a_good_one_does_not(self) -> None:
+        bad = [{"images": {"T": "x"}}, {"images": {"t": ""}}, {"images": []}, {"other": 1}, "x",
+               {"images": {"t": "x"}, "other": 1}, {"images": {"t": 5}}]
+        for audit in bad:
+            with self.subTest(audit=audit), tempfile.TemporaryDirectory() as tmp:
+                repo = self.repo(tmp, audit)
+                self.assertIn(self.SHAPE, check_setup.check_project_config(repo))
+                self.assertEqual(check_setup.check_release_sandbox(repo), [])
+        for audit in [None, {"images": {}}, {"images": {"py-3_1": "img:1"}}]:
+            with self.subTest(audit=audit), tempfile.TemporaryDirectory() as tmp:
+                self.assertEqual(check_setup.check_project_config(self.repo(tmp, audit)), [])
+
+    def test_docker_engine_and_image_actions(self) -> None:
+        pull = "pull the release audit sandbox image img:2 (security_audit.images.b)"
+        rows = [(None, 1, (), []), ({"images": {}}, 1, (), []), ({"images": {"a": "img:1"}}, 1, (), [self.ENGINE]),
+                ({"images": {"a": "img:1", "b": "img:2"}}, 0, ("img:1",), [pull]),
+                ({"images": {"a": "img:1"}}, 0, ("img:1",), [])]
+        for audit, info, present, want in rows:
+            with self.subTest(audit=audit, info=info), tempfile.TemporaryDirectory() as tmp:
+                with unittest.mock.patch.dict(os.environ, self.docker(tmp, info, present)):
+                    self.assertEqual(check_setup.check_release_sandbox(self.repo(tmp, audit)), want)
+
+    def test_missing_docker_binary_is_an_engine_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.dict(os.environ, {"PATH": str(Path(tmp) / "none")}):
+            repo = self.repo(tmp, {"images": {"a": "img:1"}})
+            self.assertEqual(check_setup.check_release_sandbox(repo), [self.ENGINE])
+
+    def test_docker_calls_have_a_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.repo(tmp, {"images": {"a": "img:1"}})
+            with unittest.mock.patch.object(check_setup.subprocess, "run",
+                                            side_effect=subprocess.TimeoutExpired("docker", 10)) as run:
+                self.assertEqual(check_setup.check_release_sandbox(repo), [self.ENGINE])
+            self.assertEqual(run.call_args.kwargs["timeout"], 10)
 
 
 if __name__ == "__main__":
