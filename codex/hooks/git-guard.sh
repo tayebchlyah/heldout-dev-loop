@@ -116,10 +116,12 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # line the parser cannot read, an argument the shell would expand ($VAR, $(...),
 # globs), arguments fed by xargs or find, a push after a command in the same line that
 # moves HEAD or changes refs or config, or a parser crash, asks.
-# A release tag push and gh release create also carry the release-check verdict (D14).
-ask() { deny "Global rule: $1 needs explicit permission each time. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
+# A release tag push and gh release create also carry the release-check verdict (D14),
+# $2: "; release-check: ..." or empty. A subagent is denied without running the check.
+AGENT_ID=$(printf '%s' "$IN" | jq -r '.agent_id // empty')
+ask() { deny "Global rule: $1 needs explicit permission each time$2. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
 if has '(^|[^[:alnum:]_.-])(git|gh)([^[:alnum:]_.-]|$)'; then
-  REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" python3 - <<'PY'
+  REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" AGENT_ID="$AGENT_ID" python3 - <<'PY'
 import fnmatch, json, os, re, shlex, subprocess, sys
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
@@ -145,8 +147,9 @@ _r = subprocess.run(["git", "--list-cmds=builtins"], capture_output=True, text=T
 BUILTINS = set(_r.stdout.split()) if _r.returncode == 0 else set()
 
 
-def ask(reason):
-    print(reason)
+def ask(reason, suffix=""):
+    # The rule on the first line, the release-check text (one line) on the second.
+    print(reason + ("\n" + suffix if suffix else ""))
     sys.exit(0)
 
 
@@ -234,13 +237,15 @@ def unreliable(cmd, segs):
 
 def release_suffix(repo, args):
     # The release-check verdict of the main worktree's CLI, 3 s of the hook's 5.
+    if os.environ["AGENT_ID"]:
+        return ""
     main = git(repo, "worktree", "list", "--porcelain")[1].partition("\n")[0].removeprefix("worktree ")
     cli = os.path.join(main, ".agents", "skills", "dev-loop", "scripts", "devloop.py")
     if not main or not os.path.isfile(cli):
         return "; release-check failed: no CLI"
     try:
         r = subprocess.run(["python3", cli, "release-check", "--repo", repo, *args],
-                           capture_output=True, text=True, timeout=3)
+                           capture_output=True, text=True, errors="replace", timeout=3)
     except subprocess.TimeoutExpired:
         return "; release-check failed: timeout"
     out = None
@@ -270,18 +275,60 @@ def check_release(args, cwds):
             tag = a
         j += 1
     if None in cwds or any(EXPANDS & set(v) for v in (tag or "", target or "")):
-        ask("a release create; release-check failed: a folder or argument the guard cannot read")
+        ask("a release create", "; release-check failed: a folder or argument the guard cannot read")
     repo = min(cwds)
     rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}") if tag else (1, "")
     if rc and target is not None:
         rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
         if rc:
-            ask(f"a release create; release-check failed: target {target} does not resolve")
+            ask("a release create", f"; release-check failed: target {target} does not resolve")
     elif rc:
         rc, sha = git(repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
         if rc:
-            ask("a release create; release-check failed: refs/remotes/origin/main does not resolve")
-    ask(f"a release create at {sha}" + release_suffix(repo, ["--sha", sha]))
+            ask("a release create", "; release-check failed: refs/remotes/origin/main does not resolve")
+    ask(f"a release create at {sha}", release_suffix(repo, ["--sha", sha]))
+
+
+def gh_release(args, cwds):
+    # gh [flags] release [flags] create|new: gh flags may sit around release, -R and
+    # --repo take a value. A word the shell expands after release asks.
+    words, i = [], 0
+    while i < len(args) and len(words) < 2:
+        a = args[i]
+        if words and EXPANDS & set(a):
+            ask("a gh release command", "; release-check failed: a gh release command the guard cannot read")
+        if a in ("-R", "--repo"):
+            i += 1
+        elif not a.startswith("-"):
+            words.append(a)
+            if words[0] != "release":
+                return
+        i += 1
+    if words == ["release", "create"] or words == ["release", "new"]:
+        check_release(args[i:], cwds)
+
+
+def tag_names(repo, specs, branch):
+    # Every tag name the push writes on the remote: the destination of x:refs/tags/v1,
+    # a local tag pushed by name, tag <name>. A wildcard counts as many.
+    names, j = set(), 0
+    while j < len(specs):
+        spec = specs[j].lstrip("+")
+        if spec == "tag" and j + 1 < len(specs):
+            j += 1
+            spec = "refs/tags/" + specs[j]
+        if "*" in spec:
+            return {"*", "**"}
+        src, _, dst = spec.partition(":")
+        if src in ("HEAD", "@"):
+            src = branch
+        dst = dst or src
+        if dst.startswith("refs/tags/"):
+            names.add(dst.removeprefix("refs/tags/"))
+        elif src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src.removeprefix('refs/tags/')}")[0] == 0:
+            names.add(dst)
+        j += 1
+    return names
 
 
 def check_push(repo, args, drift):
@@ -330,11 +377,9 @@ def check_push(repo, args, drift):
         dst = dst or src
         if (src.startswith("refs/tags/") or dst.startswith("refs/tags/")
                 or (src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src}")[0] == 0)):
-            # One release tag pushed under its own name gets the release-check verdict.
-            name = src.removeprefix("refs/tags/")
-            named = specs[1:] if specs[0] == "tag" else specs
-            one = named == [spec] and name == dst.removeprefix("refs/tags/") and fnmatch.fnmatchcase(name, "v*")
-            ask("a tag push" + (release_suffix(repo, ["--tag", name]) if one else ""))
+            names = tag_names(repo, specs, branch)
+            one = len(names) == 1 and fnmatch.fnmatchcase(next(iter(names)), "v*")
+            ask("a tag push", release_suffix(repo, ["--tag", *names]) if one else "")
         if not dst:
             ask("a push from a detached HEAD" if git(repo, "rev-parse", "--git-dir")[0] == 0
                 else "a push from an unknown repository")
@@ -462,8 +507,8 @@ def check(cmd, cwds, drift, top=False):
                     # env -C or --chdir before git runs it in a folder the guard does not follow.
                     chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
                     check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
-                if os.path.basename(tok) == "gh" and seg[k + 1:k + 3] == ["release", "create"]:
-                    check_release(seg[k + 3:], cwds)
+                if os.path.basename(tok) == "gh":
+                    gh_release(seg[k + 1:], cwds)
         for c in sep:
             if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
                 # A union, not a swap: a ) that closes no subshell (a case pattern,
@@ -480,6 +525,10 @@ def check(cmd, cwds, drift, top=False):
 check(os.environ["CMD"], {os.environ["CWD"]}, set(), top=True)
 PY
 ) || REASON="a push the guard failed to check"
-  [ -n "$REASON" ] && ask "$REASON"
+  NL='
+'
+  WHAT=${REASON%%"$NL"*}
+  SUFFIX=${REASON#"$WHAT"}
+  [ -n "$REASON" ] && ask "$WHAT" "${SUFFIX#"$NL"}"
 fi
 exit 0
