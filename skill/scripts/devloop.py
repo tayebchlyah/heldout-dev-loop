@@ -26,6 +26,8 @@
                                                       record a finished release audit run in the project note
   devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
+  devloop.py metrics [--repo PATH] [--feature SLUG] [--write]
+                                                      the token cost of each stage of a feature, its row in Feature Metrics.md
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
                                                       append one row to the decision log
   devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
@@ -1147,6 +1149,54 @@ def cmd_release_record(args: argparse.Namespace) -> int:
     return emit(*record(repo, notes, Path(args.run_folder), args.base, args.harness, os.environ))
 
 
+def cmd_metrics(args: argparse.Namespace) -> int:
+    import metrics
+
+    repo = Path(args.repo).resolve()
+    slug = (args.feature or "").lower() or branch_slug(repo)
+    if slug is None:
+        return emit({"error": "no feature: run metrics on a feature branch or pass --feature"}, 1)
+    worktree, _ = feature_checkout(repo, slug)
+    if worktree is None:
+        return emit({"error": f"no worktree for {slug}"}, 1)
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    matches = [path for name, path in specs(notes) if name == slug]
+    fields = frontmatter(matches[-1]) if matches else {}
+    track = (fields.get("track") or "").upper() or "S"
+    paths: list[Path] = []
+    features: dict[str, Path] = {}
+    current: Path | None = None
+    for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree "):])
+            paths.append(current)
+        elif line.startswith("branch refs/heads/") and "/" in line[len("branch refs/heads/"):] and current:
+            features[line.rsplit("/", 1)[1].lower()] = current
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    items = metrics.attribute(metrics.load(metrics.project_folders(root, paths)), features)
+    if not any(c.feature == slug and not c.copy for c in items):
+        return emit({"error": f"no transcript records for {slug}"}, 1)
+    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir") or ""
+    bounds, present = metrics.boundaries(Path(common) / "dev-loop" / "board-state.json", slug, bool(matches))
+    ref = main_ref(repo)
+    payload = {"feature": slug, "track": track, "shipped": fields.get("shipped", ""),
+               **metrics.numbers(items, slug, bounds),
+               "tests": metrics.test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0}}
+    payload["row"] = metrics.row(slug, track, payload["shipped"], payload, present)
+    payload["file"] = None
+    if args.write:
+        file = notes / "Feature Metrics.md"
+        try:
+            metrics.write_row(file, slug, payload["row"])
+        except OSError as exc:
+            return emit({"error": f"cannot read or write {file}: {exc}"}, 1)
+        payload["file"] = str(file)
+    return emit(payload, 0)
+
+
 def finite_minutes(value: str) -> float:
     try:
         minutes = float(value)
@@ -1410,6 +1460,12 @@ def main() -> int:
     rec.add_argument("--base")
     rec.add_argument("--harness", choices=["claude", "codex"], default="claude")
     rec.set_defaults(run=cmd_release_record)
+
+    metrics = commands.add_parser("metrics")
+    metrics.add_argument("--repo", default=".")
+    metrics.add_argument("--feature")
+    metrics.add_argument("--write", action="store_true")
+    metrics.set_defaults(run=cmd_metrics)
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)

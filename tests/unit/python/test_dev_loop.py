@@ -158,6 +158,7 @@ test_metrics = importlib.util.module_from_spec(_metrics_spec)
 _metrics_spec.loader.exec_module(test_metrics)
 MetricsAttributionTests = test_metrics.MetricsAttributionTests
 MetricsNumbersTests = test_metrics.MetricsNumbersTests
+MetricsCommandTests = test_metrics.MetricsCommandTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
