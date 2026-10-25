@@ -24,7 +24,7 @@ class GardenSkillTests(unittest.TestCase):
             "| Date | Item | Verdict | Check | Proof |",
             "structure or type", "lint rule", "guard test", "`CODING_STANDARDS.md` line",
             "Proof: red at", "stacks:", "at most 3", "Track S",
-            "One commit holds the check", "never builds an item that has an open PR",
+            "One commit holds the check", "Proof: seen at", "never builds an item that has an open PR",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
@@ -68,6 +68,11 @@ class KitTextTests(unittest.TestCase):
         self.assertIn("coding-standards.md", text)
         self.assertIn("shortcut: <the limit>, <when to upgrade>", text)
         self.assertNotIn("Comment only the why the code cannot show", text)
+        self.assertIn(" A `CODING_STANDARDS.md` with no `## Comments` section counts as absent.", text)
+
+    def test_routes_name_garden(self) -> None:
+        self.assertIn("/garden", self.read("skill/references/claude.md"))
+        self.assertIn("$garden", self.read("skill/references/codex.md"))
 
     def test_codebase_design_guard(self) -> None:
         for rel in ["skill/references/claude.md", "skill/references/codex.md"]:

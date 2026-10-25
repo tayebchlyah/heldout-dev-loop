@@ -61,7 +61,7 @@ Take the first option that fully works:
 - Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests and fixtures your change breaks.
 - No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions.
 - The shortest working diff wins, once you know everything it must touch. A one-liner that needs decoding is not short.
-- Comments: only the kinds that the project `CODING_STANDARDS.md` allows, else the kinds in [coding-standards.md](coding-standards.md).
+- Comments: only the kinds that the project `CODING_STANDARDS.md` allows, else the kinds in [coding-standards.md](coding-standards.md). A `CODING_STANDARDS.md` with no `## Comments` section counts as absent.
 - Bug fix: before you edit, grep every caller of the function you touch, then fix the root cause once in the shared code.
 - Code you move or merge keeps its error handling and validation.
 - Between options of equal size, take the one that is correct on edge cases.
