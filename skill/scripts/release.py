@@ -5,7 +5,10 @@ Shared by `devloop.py` (`release-plan`, `release-record`, `release-check`).
 
 from __future__ import annotations
 
+import fnmatch
+import json
 import re
+import subprocess
 from pathlib import Path
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+)\): (.+)$")
@@ -93,3 +96,67 @@ def current_record(text: str) -> dict | None:
         if match:
             found = {"line": line.rstrip(), "run": match.group(2), "sha": match.group(3), "scope": match.group(4)}
     return found
+
+
+def run_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+
+
+def mismatch(notes: Path, record: dict) -> str | None:
+    """Why the run folder of the record does not back it, else None."""
+    path = notes / "security-audit" / record["run"] / "run-metadata.json"
+    try:
+        meta = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        return f"{path.parent.name}/run-metadata.json: {type(exc).__name__}"
+    source = meta.get("source_ref") if isinstance(meta, dict) else None
+    commit = source.get("commit") if isinstance(source, dict) else None
+    if commit != record["sha"]:
+        return f"source_ref.commit is {commit}, the record says {record['sha']}"
+    if meta.get("run_status") != "complete":
+        return f"run_status is {meta.get('run_status')}, not complete"
+    return None
+
+
+def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
+    """Code paths changed since the audited commit (all paths when it is not an ancestor), None when none."""
+    from devloop import is_test_or_doc  # lazy: devloop imports this module
+
+    ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
+    diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", record_sha, target)
+    if diff.returncode != 0:  # the record commit is unknown here
+        diff = run_git(repo, "ls-tree", "-r", "--name-only", "-z", target)
+    paths = [p for p in diff.stdout.split("\0") if p]
+    return paths if not ancestor else [p for p in paths if not is_test_or_doc(p)] or None
+
+
+def check(repo: Path, notes: Path, target: str, tag: str | None) -> tuple[dict, int]:
+    """The release gate: a current audit record and no open security item. Exit 0 when ok."""
+    resolved = run_git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
+    if resolved.returncode != 0:
+        return {"error": f"cannot resolve {target}"}, 1
+    sha = resolved.stdout.strip()
+    if tag is not None and not fnmatch.fnmatchcase(tag, "v*"):
+        return {"ok": True, "tag": tag, "target": sha, "record": None, "reasons": [], "skipped": "not-a-release-tag"}, 0
+    note = project_note(notes)
+    if note is None:
+        return {"error": "no-project-note"}, 1
+    try:
+        text = note.read_text()
+    except (OSError, ValueError) as exc:
+        return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
+    reasons: list[dict] = []
+    record = current_record(text)
+    if record is None:
+        reasons.append({"reason": "no-audit"})
+    elif (detail := mismatch(notes, record)) is not None:
+        reasons.append({"reason": "record-mismatch", "detail": detail})
+    elif record["sha"] != sha and (paths := stale_paths(repo, record["sha"], sha)):
+        reasons.append({"reason": "stale-audit", "paths": paths})
+    items, unparsed = security_items(text)
+    if items:
+        reasons.append({"reason": "open-security", "items": [i["line"] for i in items]})
+    if unparsed:
+        reasons.append({"reason": "unparsed-security", "lines": unparsed})
+    ok = not reasons
+    return {"ok": ok, "tag": tag, "target": sha, "record": record["line"] if record else None, "reasons": reasons}, 0 if ok else 1
