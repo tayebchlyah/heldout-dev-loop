@@ -261,6 +261,12 @@ class MetricsNumbersTests(TempDir):
         self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["denials"],
                          {"deny-path.sh": 2, "other": 1, "c.sh": 1})
 
+    def test_denials_bracket_in_command_and_no_close(self) -> None:
+        recs = [result("1", "2026-01-01T00:00:01Z", "t1", "PreToolUse:Bash hook error: [[ -x a ] && ~/h/deny-path.sh]: no",
+                       is_error=True),
+                result("2", "2026-01-01T00:00:02Z", "t2", "PreToolUse:Bash hook error: [x.sh\nmore y.sh", is_error=True)]
+        self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["denials"], {"deny-path.sh": 1, "x.sh": 1})
+
     def test_sessions_and_copies(self) -> None:
         first = self.main([usage_msg("1", "2026-01-01T00:00:01Z", "m1", input_tokens=10),
                            record("2", "2026-01-01T00:00:02Z", kind="user", content="go")])
