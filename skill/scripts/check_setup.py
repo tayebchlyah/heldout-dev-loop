@@ -107,17 +107,21 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
     if local.get("board_dataview") is not False and (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
     if local.get("board_vault_git") != "shared" and (root / ".git").exists():
-        try:
-            ignored = subprocess.run(
-                ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/dev-loop-board/"],
-                cwd=root,
-                capture_output=True,
-                check=False,
-            ).returncode
-        except OSError:
-            ignored = 0
-        if ignored == 1:
-            actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
+        for folder, line in (
+            ("dev-loop-board", "add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git"),
+            ("security-audit", "add security-audit/ to the vault .gitignore"),
+        ):
+            try:
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/{folder}/"],
+                    cwd=root,
+                    capture_output=True,
+                    check=False,
+                ).returncode
+            except OSError:
+                ignored = 0
+            if ignored == 1:
+                actions.append(line)
     # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
     note = Path(notes) / "dev-loop-board" / store.BOARD_NOTE
     kit = writer.kit_version(repo)
@@ -126,6 +130,43 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         if store.version_key(have) == store.version_key(kit) and note.read_text() != writer.board_text(kit):
             actions.append(f"{store.BOARD_NOTE} differs from the dev-loop template: delete it, the next board run writes it again")
     return actions
+
+
+AUDIT_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
+AUDIT_SHAPE = 'security_audit in dev-loop.json must be {"images": {<name>: <image>}}, names ^[a-z0-9][a-z0-9_-]*$'
+
+
+def audit_images(config: dict) -> dict[str, str] | None:
+    """D12: the security_audit images map, or None when the key is absent or its shape is wrong."""
+    audit = config.get("security_audit")
+    images = audit.get("images") if isinstance(audit, dict) and set(audit) == {"images"} else None
+    if isinstance(images, dict) and all(
+        AUDIT_NAME.fullmatch(name) and isinstance(image, str) and image for name, image in images.items()
+    ):
+        return images
+    return None
+
+
+def check_release_sandbox(repo: Path) -> list[str]:
+    """D12: user actions for the release audit sandbox. Only for a valid, non-empty images map."""
+    config = load_json(repo / "dev-loop.json", [])
+    images = audit_images(config) if isinstance(config, dict) else None
+    if not images:
+        return []
+
+    def docker(*args: str) -> bool:
+        try:
+            return subprocess.run(["docker", *args], capture_output=True, timeout=10, check=False).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    if not docker("info"):
+        return ["start a Docker engine for the release audit sandbox"]
+    return [
+        f"pull the release audit sandbox image {image} (security_audit.images.{name})"
+        for name, image in images.items()
+        if not docker("image", "inspect", image)
+    ]
 
 
 def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
@@ -185,6 +226,8 @@ def check_project_config(repo: Path) -> list[str]:
         and all(isinstance(item, str) and item.strip() and not item.endswith("/") for item in paths)
     ):
         failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
+    if "security_audit" in config and audit_images(config) is None:
+        failures.append(AUDIT_SHAPE)
     return failures
 
 
@@ -648,6 +691,7 @@ def main() -> int:
     failures += check_verify(args.repo)
     failures += gh_line(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
+    action_groups += [(line, []) for line in check_release_sandbox(args.repo)]
 
     if failures or action_groups:
         print(f"{args.harness}: FAIL")
