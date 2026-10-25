@@ -317,6 +317,8 @@ class MetricsNumbersTests(TempDir):
         run("add", ".")
         run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feat")
         self.assertEqual(metrics.test_counts(repo, "refs/heads/main"), {"unit": 3, "acceptance": 2})
+        run("config", "diff.noprefix", "true")
+        self.assertEqual(metrics.test_counts(repo, "refs/heads/main"), {"unit": 3, "acceptance": 2})
 
 
 def payload(**over) -> dict:
