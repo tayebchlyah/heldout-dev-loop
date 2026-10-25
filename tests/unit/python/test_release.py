@@ -854,5 +854,26 @@ class ReleaseSetupTests(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs["timeout"], 10)
 
 
+class ReleaseKitTests(unittest.TestCase):
+    SKILL = Path(__file__).resolve().parents[3] / "skills" / "release-audit"
+
+    def test_skill_is_user_invoked_only(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        head = text.split("---")[1]
+        self.assertIn("name: release-audit\n", head)
+        self.assertIn("disable-model-invocation: true", head)
+        self.assertIn("allow_implicit_invocation: false", (self.SKILL / "agents" / "openai.yaml").read_text())
+
+    def test_text_names_the_commands_and_the_rules(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        for name in ["release-plan", "release-record", "release-check", "sandbox-run.py", "sandbox.runner",
+                     "never push a tag", "never run the audit in a subagent", "run-incomplete", "incomplete_reason",
+                     "No approved sandbox: ", "Approved OS-enforced sandbox for every target-controlled execution",
+                     "30 min", "19 USD", "quick"]:
+            self.assertIn(name, text.replace("Never push a tag", "never push a tag")
+                          .replace("Never run the audit in a subagent", "never run the audit in a subagent"), name)
+        self.assertNotIn("\u2014", text)
+
+
 if __name__ == "__main__":
     unittest.main()
