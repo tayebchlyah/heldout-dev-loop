@@ -68,8 +68,8 @@ def _entry_ok(entry: object, reviewer: str) -> bool:
         return True
     if not isinstance(entry, dict) or set(entry) - {"model", "effort"}:
         return False
-    model = entry.get("model")
-    return ((model is None or (isinstance(model, str) and MODEL.fullmatch(model) is not None))
+    model = entry.get("model", "")
+    return (("model" not in entry or isinstance(model, str) and MODEL.fullmatch(model) is not None)
             and entry.get("effort", "high") in EFFORTS[reviewer])
 
 
