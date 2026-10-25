@@ -57,6 +57,7 @@ class ReviewDueTests(TempDir):
             ("columns moved", "| Verdict | Date | Item | Check | Proof |\n|---|---|---|---|---|\n"
              f"| run | {days_ago(7)} | 3 items | | |\n", due),
             ("escaped pipe", HEADER + f"| {days_ago(7)} | a \\| b | run | | |\n", due),
+            ("no closing pipe", HEADER + f"| {days_ago(7)} | x | run\n", due),
             ("bad dates", HEADER + "| 2026-13-40 | x | run | | |\n| yesterday | x | run | | |\n", nulls),
             ("header only", HEADER, nulls),
             ("newest of two", HEADER + f"| {days_ago(20)} | x | run | | |\n| {days_ago(3)} | x | run | | |\n", None),
@@ -75,6 +76,12 @@ class ReviewDueTests(TempDir):
         self.spec("done", shipped="2026-10-01")
         self.assertEqual(retro.review_due(self.tmp, self.notes, TODAY),
                          {"last": None, "days": None, "log": str(self.notes / "Gardener Log.md")})
+
+
+    def test_evicted_log_is_unknown(self) -> None:
+        self.spec("done", shipped="2026-10-01")
+        (self.notes / ".Gardener Log.md.icloud").write_text("")
+        self.assertIsNone(retro.review_due(self.tmp, self.notes, TODAY))
 
 
 class ReviewDueStatusTests(TempDir):
@@ -154,7 +161,7 @@ class SessionsTests(TempDir):
             "not json",
             claude("<command-name>/x</command-name>", 50),
             claude("hello", 49, isMeta=True),
-            claude([{"type": "text", "text": "x" * 300}], 48),
+            claude(["x", {"type": "text", "text": "x" * 300}], 48),
         ])
         sub = jsonl(self.folder(self.repo) / "s-main" / "subagents" / "agent-1.jsonl", [claude("sub", 48)])
         jsonl(self.folder(self.repo) / "s-old.jsonl", [claude("old", 240)])
@@ -166,7 +173,8 @@ class SessionsTests(TempDir):
         got = {s["session"]: s for s in self.listed()}
         self.assertEqual(sorted(got), ["s-feat", "s-main"])
         first = got["s-main"]
-        self.assertEqual(set(first), set(retro.FIELDS))
+        self.assertEqual(set(first), {"harness", "session", "path", "worktree", "feature", "start", "end", "bytes",
+                                      "subagents", "stage", "first_request"})
         self.assertEqual((first["harness"], first["worktree"], first["feature"], first["stage"]),
                          ("claude", str(self.repo), None, None))
         self.assertEqual((first["start"], first["end"]), (stamp(50), stamp(48)))
@@ -175,6 +183,14 @@ class SessionsTests(TempDir):
         feat = got["s-feat"]
         self.assertEqual((feat["worktree"], feat["feature"], feat["stage"], feat["first_request"]),
                          (str(self.wt), "demo", "3", "Continue demo"))
+
+    def test_two_worktrees_one_project_folder(self) -> None:
+        first, second = self.tmp / "a-b", self.tmp / "a" / "b"
+        folder = self.folder(first)
+        self.assertEqual(folder, self.folder(second))
+        jsonl(folder / "s-one.jsonl", [claude("hi", 5)])
+        got = retro.claude_sessions(self.claude_root, {first: "one", second: "two"}, 0)
+        self.assertEqual([(s["session"], s["feature"]) for s in got], [("s-one", "one")])
 
     def test_codex_sessions(self) -> None:
         main = jsonl(self.codex / "rollout-a.jsonl", [
@@ -191,6 +207,7 @@ class SessionsTests(TempDir):
         jsonl(self.codex / "rollout-e.jsonl", [meta("outside", self.tmp / "repo-other", "cli", 29)])
         jsonl(self.codex / "rollout-f.jsonl", [codex_user("no meta", 29)])
         jsonl(self.codex / "rollout-g.jsonl", [])
+        jsonl(self.codex / "rollout-h.jsonl", ["not json", meta("late-meta", self.wt, "cli", 29)])
         got = self.listed()
         self.assertEqual([s["session"] for s in got], ["main-1"])
         item = got[0]
@@ -222,6 +239,8 @@ class SessionsCommandTests(TempDir):
         self.assertEqual(out.returncode, 1)
         self.assertIn("error", json.loads(out.stdout))
         git(self.tmp, "init", "-q")
+        huge = self.run_cli("--since", "800000", cwd=self.tmp)
+        self.assertEqual((huge.returncode, json.loads(huge.stdout)), (2, {"error": "--since too large: 800000"}))
         out = self.run_cli("--since", "2", cwd=self.tmp)
         payload = json.loads(out.stdout)
         since = datetime.strptime(payload["since"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)

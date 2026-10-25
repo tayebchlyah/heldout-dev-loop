@@ -24,7 +24,10 @@ INJECTED = ("<", "# AGENTS.md instructions")
 
 
 def cells(line: str) -> list[str]:
-    return [c.strip() for c in CELL.split(line.strip())[1:-1]]
+    body = line.strip()
+    body = body[1:] if body.startswith("|") else body
+    body = body[:-1] if body.endswith("|") and not body.endswith("\\|") else body
+    return [c.strip() for c in CELL.split(body)]
 
 
 def run_dates(text: str) -> list[date]:
@@ -52,10 +55,12 @@ def run_dates(text: str) -> list[date]:
 
 def review_due(repo: Path, notes: Path, today: date) -> dict | None:
     """`{"last", "days", "log"}` when the weekly review is due, else None (D3, D4)."""
-    from devloop import frontmatter, specs  # lazy: devloop imports this module
+    from devloop import frontmatter, specs
 
     log = notes / LOG
     if not log.exists():
+        if (notes / f".{LOG}.icloud").exists():
+            return None
         if not any(frontmatter(path).get("shipped") for _, path in specs(notes)):
             return None
         dates = []
@@ -93,13 +98,19 @@ def claude_text(rec: dict) -> str | None:
     content = rec["message"].get("content")
     if isinstance(content, str):
         return content
-    return next((b["text"] for b in content if b.get("type") == "text" and isinstance(b.get("text"), str)), None)
+    return next((b["text"] for b in content
+                 if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)), None)
 
 
 def claude_sessions(root: Path, worktrees: dict[Path, str | None], start: float) -> list[dict]:
     found = []
+    scanned: set[Path] = set()
     for worktree, slug in worktrees.items():
-        folder = root / re.sub(r"[^A-Za-z0-9]", "-", str(worktree))
+        folders = [f for f in metrics.project_folders(root, [worktree]) if f not in scanned]
+        if not folders:
+            continue
+        folder = folders[0]
+        scanned.add(folder)
         for path in recent(list(folder.glob("*.jsonl")), start):
             records = metrics.read_records(path)
             first = next((claude_text(r) for r in records if metrics.typed(r)), None)
