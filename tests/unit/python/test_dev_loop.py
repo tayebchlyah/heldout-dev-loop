@@ -2272,7 +2272,6 @@ class MutationContractTests(unittest.TestCase):
                 self.assertIn(value, mutation)
 
     def test_no_route_uses_a_stryker_flag_that_does_not_exist(self) -> None:
-        # `--since` is a devloop.py drive and sessions option, never a Stryker one.
         for line in all_instructions().splitlines():
             if "--since" in line:
                 self.assertNotIn("stryker", line.lower())

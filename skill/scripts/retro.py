@@ -9,7 +9,7 @@ import json
 import os
 import re
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import metrics
@@ -18,8 +18,6 @@ LOG = "Gardener Log.md"
 DUE_DAYS = 7
 CELL = re.compile(r"(?<!\\)\|")
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-FIELDS = ("harness", "session", "path", "worktree", "feature", "start", "end", "bytes", "subagents", "stage",
-          "first_request")
 INJECTED = ("<", "# AGENTS.md instructions")
 
 
@@ -74,10 +72,6 @@ def review_due(repo: Path, notes: Path, today: date) -> dict | None:
     last = max(dates)
     days = (today - last).days
     return {"last": last.isoformat(), "days": days, "log": str(log)} if days >= DUE_DAYS else None
-
-
-def utc(seconds: float) -> str:
-    return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def recent(paths: list[Path], start: float) -> list[Path]:
@@ -140,12 +134,21 @@ def owner(cwd: str, worktrees: dict[Path, str | None]) -> Path | None:
     return max(matches, key=lambda w: len(str(w)), default=None)
 
 
+def first_record(path: Path) -> dict | None:
+    try:
+        with path.open(errors="replace") as handle:
+            value = json.loads(handle.readline())
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def codex_sessions(root: Path, worktrees: dict[Path, str | None], start: float) -> list[dict]:
     mains: dict[str, dict] = {}
     children: list[tuple[str, Path]] = []
     for path in recent(list(root.rglob("rollout-*.jsonl")), start):
-        records = metrics.read_records(path)
-        payload = records[0].get("payload") if records and records[0].get("type") == "session_meta" else None
+        head = first_record(path)
+        payload = head.get("payload") if head and head.get("type") == "session_meta" else None
         if not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
             continue
         source = payload.get("source")
@@ -158,6 +161,7 @@ def codex_sessions(root: Path, worktrees: dict[Path, str | None], start: float) 
         worktree = owner(payload["cwd"], worktrees) if isinstance(payload.get("cwd"), str) else None
         if not isinstance(source, str) or worktree is None:
             continue
+        records = metrics.read_records(path)
         first = next((t for t in map(codex_text, records) if t), None)
         listed = item("codex", payload["id"], path, records, worktree, worktrees[worktree], first)
         if listed is not None:
@@ -170,14 +174,11 @@ def codex_sessions(root: Path, worktrees: dict[Path, str | None], start: float) 
 
 
 def stage_times(repo: Path) -> dict:
+    from board import state
     from devloop import git
 
     common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    try:
-        features = json.loads((Path(common or ".") / "dev-loop" / "board-state.json").read_text()).get("features")
-    except (OSError, ValueError, AttributeError):
-        return {}
-    return features if isinstance(features, dict) else {}
+    return state.load(Path(common) / "dev-loop")["features"] if common else {}
 
 
 def stage_at(entry: object, when: float) -> str | None:
@@ -206,4 +207,4 @@ def sessions(repo: Path, since_days: int, env: Mapping[str, str], home: Path, no
         s["stage"] = stage_at(features.get(s["feature"]), s["start"]) if s["feature"] else None
         listed.append(s)
     listed.sort(key=lambda s: (-s["bytes"], s["start"], s["path"]))
-    return [{**s, "start": utc(s["start"]), "end": utc(s["end"])} for s in listed]
+    return [{**s, "start": writer.iso(s["start"]), "end": writer.iso(s["end"])} for s in listed]
