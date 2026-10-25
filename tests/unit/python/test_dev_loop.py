@@ -170,6 +170,14 @@ GardenSkillTests = test_gardener.GardenSkillTests
 KitTextTests = test_gardener.KitTextTests
 HarnessNameTests = test_gardener.HarnessNameTests
 
+_retro_spec = importlib.util.spec_from_file_location("test_retro", Path(__file__).resolve().parent / "test_retro.py")
+if _retro_spec is None or _retro_spec.loader is None:
+    raise ImportError("cannot load test_retro module")
+test_retro = importlib.util.module_from_spec(_retro_spec)
+_retro_spec.loader.exec_module(test_retro)
+ReviewDueTests = test_retro.ReviewDueTests
+ReviewDueStatusTests = test_retro.ReviewDueStatusTests
+
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
     raise ImportError("cannot load test_sandbox_run module")
