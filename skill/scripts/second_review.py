@@ -112,11 +112,12 @@ def sweep(tmp: Path, now: float) -> None:
 
 
 def left_out(path: str) -> bool:
-    """The D7 name rules, case-folded."""
+    """The D7 name rules, case-folded. Also a `HEAD` file at any depth (without it git never takes a folder of the
+    export for a repository) and a top-level `.second-review.diff`, file or folder (it would clash with the diff)."""
     parts = path.casefold().split("/")
     name = parts[-1]
     return (parts[:2] == ["tests", "acceptance"] or name in NAMES or bool(FOLDERS.intersection(parts[:-1]))
-            or name == ".env" or name.startswith(".env."))
+            or name == ".env" or name.startswith(".env.") or name == "head" or parts[0] == DIFF)
 
 
 def export(repo: Path, ref: str, sha: str, dest: Path) -> tuple[list[str], int]:
@@ -132,7 +133,11 @@ def export(repo: Path, ref: str, sha: str, dest: Path) -> tuple[list[str], int]:
             continue
         meta, raw = record.split(b"\t", 1)
         mode, _, obj, size = meta.split()
-        path = os.fsdecode(raw)
+        try:
+            path = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            left += 1
+            continue
         folded = path.casefold()
         prefixes = ["/".join(folded.split("/")[:i]) for i in range(1, folded.count("/") + 1)]
         # `.git` or `..` parts never reach the export: a `.git` folder there would make it a repo with branch config.

@@ -151,6 +151,8 @@ class SecondReviewExportTests(unittest.TestCase):
             ("tests/acceptance/x", True), ("Tests/Acceptance/x", True), ("AGENTS.md", True), ("a/AGENTS.override.md", True),
             ("CLAUDE.md", True), ("sub/Claude.md", True), ("CLAUDE.local.md", True), (".mcp.json", True),
             (".claude/x", True), (".Codex/x", True), ("a/.agents/x", True), (".env", True), ("config/.env.local", True),
+            ("HEAD", True), ("a/b/Head", True), (".second-review.diff", True), (".Second-Review.DIFF/x", True),
+            ("sub/.second-review.diff", False), ("headers.h", False),
             ("src/app.py", False), ("environment.py", False), ("tests/unit/x", False)]:
             with self.subTest(path=path):
                 self.assertEqual(second_review.left_out(path), out)
@@ -224,6 +226,33 @@ class SecondReviewExportTests(unittest.TestCase):
         self.assertNotIn("held", diff)
         self.assertNotIn("SECRET", diff)
         self.assertNotIn("\x1b[", diff)
+        self.assertFalse(marker.exists())
+
+    def test_export_never_forms_a_repo_and_skips_bad_paths(self) -> None:
+        import second_review
+        repo = self.tmp / "repo"
+        git(self.tmp, "init", "-q", "-b", "main", str(repo))
+        git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        base = git(repo, "rev-parse", "HEAD")
+        marker = self.tmp / "ran"
+        def blob(data: bytes) -> str:
+            return subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, input=data, capture_output=True,
+                                  check=True).stdout.decode().strip()
+
+        rows = [(b"HEAD", b"ref: refs/heads/main\n"), (b"config", f"[core]\n\tfsmonitor = touch {marker}\n".encode()),
+                (b"objects/info/x", b"x\n"), (b"refs/heads/x", b"x\n"), (b"bad\xff.txt", b"x\n"),
+                (b".second-review.diff/x", b"x\n"), (b"keep.txt", b"k\n")]
+        index = b"".join(b"100644 " + blob(data).encode() + b"\t" + path + b"\0" for path, data in rows)
+        subprocess.run(["git", "update-index", "-z", "--index-info"], cwd=repo, input=index, check=True)
+        git(repo, "commit", "-qm", "c")
+        sha = git(repo, "rev-parse", "HEAD")
+        dest = self.tmp / "out"
+        dest.mkdir()
+        files, left = second_review.export(repo, base, sha, dest)
+        self.assertEqual(sorted(files), ["config", "keep.txt", "objects/info/x", "refs/heads/x"])
+        self.assertEqual(left, 3)
+        self.assertTrue((dest / ".second-review.diff").is_file())
+        subprocess.run(["git", "status"], cwd=dest, capture_output=True, env={**os.environ, "GIT_CEILING_DIRECTORIES": str(self.tmp)})
         self.assertFalse(marker.exists())
 
     def test_export_inside_work_tree_raises(self) -> None:
