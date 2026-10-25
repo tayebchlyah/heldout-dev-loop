@@ -3,6 +3,7 @@
 
 The command is target code under audit: treat it as hostile. Exit: the command's own
 code, 124 on timeout, 125 with one `sandbox-run: <reason>` stderr line on a runner error.
+The image needs `env`, `mkdir`, `sleep`, `tar` and `sh`.
 """
 
 from __future__ import annotations
@@ -145,9 +146,11 @@ def failed(step: str, done: subprocess.CompletedProcess) -> RunnerError:
 def kill_leftovers(ctr: str) -> None:
     # A process the command left behind could stop tar or write into its stdout: none may survive.
     for _ in range(20):
-        docker("exec", "-u", "65534:65534", ctr, "kill", "-9", "-1")
+        killed = docker("exec", "-u", "65534:65534", ctr, "sh", "-c", "kill -9 -1")
+        if killed.returncode in (126, 127):  # no `sh` in the image; 1 only means nothing was left to kill
+            raise failed("kill in the container", killed)
         top = docker("top", ctr, "-o", "pid,stat")
-        alive = [line for line in top.stdout.splitlines()[1:] if line.split()[1:2] != ["Z"]]
+        alive = [line for line in top.stdout.splitlines()[1:] if not line.split()[1:2] or not line.split()[1].startswith("Z")]
         if top.returncode == 0 and len(alive) == 1:  # only PID 1, `sleep infinity`
             return
         time.sleep(0.1)
@@ -187,9 +190,13 @@ def read_scratch(ctr: str, cap: int, limit: float) -> bytes:
 def extract(data: bytes, scratch: Path, cap: int) -> None:
     # Only plain regular files; their folders are made as needed. Links, devices, fifos and sparse files are dropped.
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
-        members = [m for m in tar if m.type in (tarfile.REGTYPE, tarfile.AREGTYPE) and not m.issparse()]
-        if sum(m.size for m in members) > cap:
-            raise RunnerError(f"scratch over {cap} bytes")
+        members, total = [], 0
+        for m in tar:  # the sum is checked per header: a lying size refuses before tar reads past the stream
+            if m.type in (tarfile.REGTYPE, tarfile.AREGTYPE) and not m.issparse():
+                total += m.size
+                if total > cap:
+                    raise RunnerError(f"scratch over {cap} bytes")
+                members.append(m)
         for member in members:
             name = posixpath.normpath(member.name)
             parts = name.split("/")
