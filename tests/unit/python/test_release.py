@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 from datetime import date
@@ -623,6 +624,128 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertEqual([p.wait() for p in procs], [0, 0])
         text = self.note.read_text()
         self.assertEqual(len([l for l in text.splitlines() if RECORD_RE_LINE.match(l)]), 2)
+
+
+STUBS = {
+    "ok": 'print(json.dumps({"ok": True, "reasons": []}))',
+    "fail": 'print(json.dumps({"ok": False, "reasons": [{"reason": "no-audit"}, {"reason": "open-security", "items": []}]})); sys.exit(1)',
+    "slow": "time.sleep(10)",
+    "quote": 'sys.stderr.write("bad \\"quote\\" and \\\\ here\\nsecond line\\n"); sys.exit(1)',
+}
+
+
+class ReleaseGuardTests(unittest.TestCase):
+    """Both git-guard.sh copies, fed hook JSON on stdin, with a stub release-check CLI in the main worktree."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.a = self.commit("a")
+        self.git("tag", "-a", "v1.0.0", "-m", "v1.0.0")
+        self.git("tag", "release-1")
+        self.b = self.commit("b")
+        self.c = self.commit("c")
+        self.git("update-ref", "refs/remotes/origin/main", self.c)
+        self.git("checkout", "-q", "-b", "feat/x")
+        self.cli = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
+        self.calls = Path(tmp.name) / "calls.txt"
+
+    def git(self, *args: str) -> str:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+    def commit(self, name: str) -> str:
+        (self.repo / name).write_text(name)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "HEAD")
+
+    def stub(self, mode: str | None) -> None:
+        if mode is None:
+            self.cli.unlink(missing_ok=True)
+            return
+        self.cli.parent.mkdir(parents=True, exist_ok=True)
+        self.cli.write_text("import json, sys, time\n"
+                            f"open({str(self.calls)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n" + STUBS[mode] + "\n")
+
+    def guard(self, harness: str, command: str, **extra: str) -> tuple[str, str, float]:
+        """(decision, reason, seconds). Claude exit 2 is a deny with the stderr text."""
+        payload = json.dumps({"cwd": str(self.repo), "tool_name": "Bash", "tool_input": {"command": command}, **extra})
+        start = time.monotonic()
+        done = subprocess.run([shutil.which({"claude": "bash", "codex": "sh"}[harness]), str(HERE.parents[2] / harness / "hooks" / "git-guard.sh")],
+                              input=payload, capture_output=True, text=True, timeout=60)
+        seconds = time.monotonic() - start
+        if done.returncode == 2:
+            return "deny", done.stderr, seconds
+        if not done.stdout:
+            return "allow", "", seconds
+        out = json.loads(done.stdout)["hookSpecificOutput"]
+        return out["permissionDecision"], out["permissionDecisionReason"], seconds
+
+    def test_a_release_tag_push_carries_the_release_check_verdict(self) -> None:
+        # Oracle 46, 47, 49, 50, 51, 52.
+        for harness, mode, command, extra, decision, parts, absent in [
+            ("claude", "fail", "git push origin v1.0.0", {}, "ask", ["a tag push", "release-check: no-audit, open-security"], None),
+            ("claude", "ok", "git push origin v1.0.0", {}, "ask", ["a tag push", "release-check: ok"], None),
+            ("claude", "ok", "git push origin refs/tags/v1.0.0", {}, "ask", ["release-check: ok"], None),
+            ("claude", "ok", "git push origin tag v1.0.0", {}, "ask", ["release-check: ok"], None),
+            ("codex", "fail", "git push origin v1.0.0", {}, "deny", ["a tag push", "release-check: no-audit"], None),
+            ("claude", "fail", "git push origin v1.0.0", {"agent_id": "a1"}, "deny", ["subagent"], None),
+            ("claude", None, "git push origin v1.0.0", {}, "ask", ["release-check failed: no CLI"], None),
+            ("codex", None, "git push origin v1.0.0", {}, "deny", ["release-check failed"], None),
+            ("claude", "ok", "git push --tags", {}, "ask", ["tag push"], "release-check"),
+            ("claude", "ok", "git push --follow-tags origin feat/x", {}, "ask", ["tag push"], "release-check"),
+            ("claude", "ok", "git push origin release-1", {}, "ask", ["a tag push"], "release-check"),
+            ("claude", "ok", "git push origin 'refs/tags/*'", {}, "ask", [], "release-check"),
+        ]:
+            with self.subTest(harness=harness, mode=mode, command=command, extra=extra):
+                self.stub(mode)
+                got, reason, _ = self.guard(harness, command, **extra)
+                self.assertEqual(got, decision, reason)
+                for part in parts:
+                    self.assertIn(part, reason)
+                if absent:
+                    self.assertNotIn(absent, reason)
+        self.assertIn(f"release-check --repo {self.repo} --tag v1.0.0", self.calls.read_text())
+
+    def test_gh_release_create_checks_the_commit_it_tags(self) -> None:
+        # Oracle 48: a local tag, else --target, else refs/remotes/origin/main; any tag name asks.
+        self.stub("fail")
+        for command, sha in [("gh release create v1.0.0 --notes x", self.a), (f"gh release create v2.0.0 --target {self.b}", self.b),
+                             ("gh release create v2.0.0 --target=main --title 'v2 release'", self.c),
+                             ("gh release create v2.0.0", self.c), ("gh release create release-1", self.a),
+                             ("cd /tmp && command gh release create v2.0.0", None)]:
+            with self.subTest(command=command):
+                self.calls.unlink(missing_ok=True)
+                got, reason, _ = self.guard("claude", command)
+                self.assertEqual(got, "ask", reason)
+                if sha:
+                    self.assertIn(f"a release create at {sha}; release-check: no-audit", reason)
+                    self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} --sha {sha}\n")
+        got, reason, _ = self.guard("claude", "gh release create v2.0.0 --target nowhere")
+        self.assertIn("release-check failed: target nowhere does not resolve", reason)
+        got, reason, _ = self.guard("codex", "gh release create v1.0.0")
+        self.assertEqual((got, "release-check: no-audit" in reason), ("deny", True), reason)
+        got, reason, _ = self.guard("claude", "gh release create v1.0.0", agent_id="a1")
+        self.assertEqual(got, "deny", reason)
+        self.assertEqual(self.guard("claude", "gh pr create --title x")[0], "allow")
+
+    def test_a_slow_or_broken_release_check_still_asks(self) -> None:
+        # Oracle 48a and Review Focus 3: a timeout within the hook's 5 s, a stderr line with a quote stays valid JSON.
+        self.stub("slow")
+        got, reason, seconds = self.guard("claude", "git push origin v1.0.0")
+        self.assertEqual(got, "ask", reason)
+        self.assertIn("release-check failed: timeout", reason)
+        self.assertLess(seconds, 5)
+        self.stub("quote")
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            got, reason, _ = self.guard(harness, "gh release create v1.0.0")
+            self.assertEqual(got, decision, reason)
+            self.assertIn('release-check failed: bad "quote" and \\ here', reason)
+            self.assertNotIn("second line", reason)
 
 
 if __name__ == "__main__":
