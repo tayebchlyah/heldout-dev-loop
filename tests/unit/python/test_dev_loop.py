@@ -170,6 +170,7 @@ if _second_spec is None or _second_spec.loader is None:
 test_second_review = importlib.util.module_from_spec(_second_spec)
 _second_spec.loader.exec_module(test_second_review)
 SecondReviewDecisionTests = test_second_review.SecondReviewDecisionTests
+SecondReviewExportTests = test_second_review.SecondReviewExportTests
 
 
 def all_instructions() -> str:
