@@ -369,7 +369,8 @@ def write_row(file: Path, slug: str, line: str) -> None:
     if file.exists():
         lines = file.read_text().splitlines()
         rows = [i for i, x in enumerate(lines) if x.lstrip().startswith("|")]
-        mine = next((i for i in rows if cells(lines[i])[0] == slug), None)
+        data = [i for i in rows if cells(lines[i]) != cells(HEADER) and not all(set(c) <= set("-:") for c in cells(lines[i]))]
+        mine = next((i for i in data if cells(lines[i])[0] == slug), None)
         if mine is not None:
             escaped = cells(lines[mine])[-1]
             lines[mine] = line.rstrip().removesuffix("|").rsplit("|", 1)[0] + f"| {escaped} |"
