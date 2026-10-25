@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +16,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 import metrics  # noqa: E402
+
+DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
 
 
 def record(uid: str, ts: str | None, kind: str = "assistant", **message) -> dict:
@@ -297,6 +301,161 @@ class MetricsNumbersTests(TempDir):
         run("add", ".")
         run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feat")
         self.assertEqual(metrics.test_counts(repo, "refs/heads/main"), {"unit": 3, "acceptance": 2})
+
+
+def payload(**over) -> dict:
+    base = {"sessions": 2, "active_hours": 1.5, "user_messages": 4, "gate": {"runs": 3, "seconds": 61.6},
+            "tests": {"unit": 5, "acceptance": 1}, "denials": {"a.sh": 2, "other": 1}, "unattributed": False,
+            "stages": {"3": {"weighted": 1500}, "5": {"weighted": 12_499}, "6": {"weighted": 400}}, "total": 15_399}
+    return {**base, **over}
+
+
+ROW = "| a | M | 2026-10-25 | 2 | 1.5 | 4 | 3 | 62 | 5 | 1 | 3 | 0 | 2 | - | 12 | 0 | 0 | 15 |  |"
+
+
+class MetricsCommandTests(TempDir):
+    def test_row_cells(self) -> None:
+        self.assertEqual(metrics.row("a", "M", "2026-10-25", payload(), {"3", "5", "6", "7"}), ROW)
+
+    def test_row_unattributed(self) -> None:
+        line = metrics.row("a", "M", "", payload(unattributed=True, stages={}), {"5"})
+        self.assertEqual(line.split(" | ")[11:17], ["?"] * 6)
+
+    def test_write_new_file(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        metrics.write_row(file, "a", ROW)
+        lines = file.read_text().splitlines()
+        self.assertEqual(lines[:4], ["---", "type: note", "tags: [dev-loop, feature-metrics]", "---"])
+        self.assertIn("# Feature Metrics", lines)
+        self.assertIn(metrics.DATA_RULE, lines)
+        self.assertIn("5 features", metrics.DATA_RULE)
+        at = lines.index(metrics.HEADER)
+        self.assertEqual(lines[at + 1].replace(" ", "").strip("|").split("|"), ["---"] * 19)
+        self.assertEqual(lines[at + 2:], [ROW])
+
+    def test_write_replace_keeps_escaped(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        other = "| b | S | | 1 | 0.1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | - | - | 1 | 1 | 1 | 3 |  |"
+        file.write_text("intro\n\n" + metrics.HEADER + "\n|---|\n" + ROW.replace("|  |", "| yes: #12 |") + "\n"
+                        + other + "\n\ntail\n")
+        metrics.write_row(file, "a", ROW.replace("| 15 |", "| 99 |"))
+        text = file.read_text()
+        self.assertIn("| 99 | yes: #12 |", text)
+        self.assertIn(other + "\n", text)
+        self.assertTrue(text.startswith("intro\n") and text.endswith("\ntail\n"))
+        self.assertEqual(text.count("| a |"), 1)
+
+    def test_write_appends_after_last_table_line(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        file.write_text(metrics.HEADER + "\n|---|\n| b | x |\nnotes after\n")
+        metrics.write_row(file, "a", ROW)
+        self.assertEqual(file.read_text().splitlines()[3:], [ROW, "notes after"])
+
+    def test_write_no_table(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        file.write_text("just text\n")
+        metrics.write_row(file, "a", ROW)
+        lines = file.read_text().splitlines()
+        self.assertEqual(lines[0], "just text")
+        self.assertEqual(lines[-1], ROW)
+        self.assertIn(metrics.HEADER, lines)
+
+    # CLI
+
+    def git(self, cwd: Path, *args: str) -> str:
+        return subprocess.run(["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              check=True, capture_output=True, text=True).stdout
+
+    def fixture(self, slug: str = "feat-x", prefix: str = "feat", spec: bool = True) -> None:
+        self.root = self.tmp.resolve()
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.git(self.repo, "init", "-q", "-b", "main")
+        (self.repo / "README.md").write_text("x\n")
+        self.git(self.repo, "add", ".")
+        self.git(self.repo, "commit", "-qm", "base")
+        self.worktree = self.root / "wt"
+        self.git(self.repo, "worktree", "add", "-q", "-b", f"{prefix}/{slug}", str(self.worktree))
+        self.notes = self.root / "notes"
+        (self.notes / "specs").mkdir(parents=True)
+        if spec:
+            (self.notes / "specs" / "20260101 Feat X.md").write_text(
+                f"---\nfeature: {slug}\ntrack: M\nshipped: 2026-01-02\n---\n# X\n")
+        self.config = self.root / "claude"
+        self.project = self.config / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.repo))
+        state = self.repo / ".git" / "dev-loop" / "board-state.json"
+        state.parent.mkdir(parents=True)
+        state.write_text(json.dumps({"features": {slug: {"backfilled": not spec, "stage_times": {
+            "5": "2026-01-01T10:00:00Z", "6": "2026-01-01T11:00:00Z", "7": "2026-01-01T12:00:00Z"}}}}))
+        self.slug = slug
+
+    def transcript(self, records: list) -> None:
+        write_jsonl(self.project / "s1.jsonl", records)
+
+    def run_cli(self, *args: str, cwd: Path | None = None) -> tuple[int, dict]:
+        env = {**os.environ, "CLAUDE_CONFIG_DIR": str(self.config), "DEV_LOOP_NOTES": str(self.notes),
+               "HOME": str(self.root)}
+        done = subprocess.run([sys.executable, str(DEVLOOP), "metrics", *args], cwd=cwd or self.worktree, env=env,
+                              capture_output=True, text=True)
+        try:
+            return done.returncode, json.loads(done.stdout)
+        except ValueError:
+            return done.returncode, {"stderr": done.stderr}
+
+    def work(self) -> list:
+        return [tool_use("1", "2026-01-01T10:30:00Z", "Read", {"file_path": f"{self.worktree}/f.py"}),
+                usage_msg("2", "2026-01-01T10:31:00Z", "m1", "opus", output_tokens=1000)]
+
+    def test_cli_without_write(self) -> None:
+        self.fixture()
+        self.transcript(self.work())
+        before = sorted(self.notes.rglob("*"))
+        code, out = self.run_cli()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(self.notes.rglob("*")), before)
+        self.assertIsNone(out["file"])
+        self.assertEqual((out["feature"], out["track"], out["shipped"], out["total"]), ("feat-x", "M", "2026-01-02", 5000))
+        self.assertEqual(out["stages"]["5"]["weighted"], 5000)
+        self.assertEqual(set(out), {"feature", "track", "shipped", "sessions", "active_hours", "user_messages", "gate",
+                                    "tests", "denials", "unattributed", "stages", "total", "agents", "row", "file"})
+
+    def test_cli_write(self) -> None:
+        self.fixture()
+        self.transcript(self.work())
+        code, out = self.run_cli("--write", "--repo", str(self.repo), "--feature", "feat-x", cwd=self.root)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["file"], str(self.notes / "Feature Metrics.md"))
+        self.assertIn(out["row"], (self.notes / "Feature Metrics.md").read_text())
+
+    def test_cli_no_records(self) -> None:
+        self.fixture()
+        self.transcript([record("1", "2026-01-01T10:30:00Z")])
+        code, out = self.run_cli("--write")
+        self.assertEqual((code, out), (1, {"error": "no transcript records for feat-x"}))
+        self.assertFalse((self.notes / "Feature Metrics.md").exists())
+
+    def test_cli_no_feature_and_usage(self) -> None:
+        self.fixture()
+        code, out = self.run_cli(cwd=self.repo)
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+        self.assertEqual(self.run_cli("--bogus")[0], 2)
+
+    def test_cli_unwritable_notes(self) -> None:
+        self.fixture()
+        self.transcript(self.work())
+        (self.notes / "Feature Metrics.md").mkdir()
+        code, out = self.run_cli("--write")
+        self.assertEqual(code, 1)
+        self.assertIn("Feature Metrics.md", out["error"])
+
+    def test_cli_track_s(self) -> None:
+        self.fixture(slug="quick-fix", prefix="fix", spec=False)
+        self.transcript(self.work())
+        code, out = self.run_cli()
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["track"], out["unattributed"]), ("S", False))
+        self.assertEqual(out["row"].split(" | ")[12:14], ["-", "-"])
 
 
 if __name__ == "__main__":
