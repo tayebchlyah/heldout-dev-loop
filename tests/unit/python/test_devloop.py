@@ -1233,11 +1233,18 @@ class SkillStackContractTests(unittest.TestCase):
                 "Change or answer", "`$NOTES/answers/<YYYYMMDD> <title>.md`", "`kind: investigation|performance|question`",
                 "two of these four signals", "`$NOTES/maps/<effort>/handoff.md`", "chart the map from",
                 "references/maps.md", "`$NOTES/maps/*/map.md`",
+                "Change or answer, first", "no cap check, no grilling", "Done when the answer note is written",
+                "`<effort>`: lower case words joined by `-`", "docs/agents/issue-tracker.md",
+                "`$NOTES/framing/<YYYYMMDD> <slug>.md`",
             ]),
             (stage_text(2), ["`wc -w`", "1,500 words", "map decisions"]),
-            (stage_text(6), ["`## Non-goals`", "`dropped:non-goal`"]),
+            (stage_text(6), [
+                "`## Non-goals`", "`dropped:non-goal`",
+                "A non-defect that asks for what a spec `## Non-goals` line rules out", "A defect stays a defect",
+            ]),
             ((REFERENCES / "spec.md").read_text(), [
-                "## Non-goals", "Catches:", "Misses:", "benchmark.md", "Session B: a stop item",
+                "## Non-goals", "Catches:", "Misses:", "benchmark.md", "Session B runs no doubt review",
+                "the framing note (SKILL.md Stage 1)",
             ]),
             ((REFERENCES / "maps.md").read_text(), [
                 "Wayfinding operations", "maps/<effort>/map.md", "Blocked by:", "docs/agents/issue-tracker.md", "notes_path.py",
@@ -1250,6 +1257,9 @@ class SkillStackContractTests(unittest.TestCase):
             for value in values:
                 with self.subTest(value=value):
                     self.assertIn(value, text)
+        stage = stage_text(1)
+        self.assertLess(stage.index("Change or answer"), stage.index("cap check"))
+        self.assertLess(stage.index("cap check"), stage.index("`grilling` skill"))
 
     def test_spec_reference_holds_builder_check_and_notices(self) -> None:
         spec = (REFERENCES / "spec.md").read_text()

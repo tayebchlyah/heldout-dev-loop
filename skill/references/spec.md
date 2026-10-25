@@ -18,7 +18,7 @@ pr:
 # <Title>
 
 ## Sources
-Links only: the framing note with the grilling detail, the map decisions this spec relies on, research.
+Links only: the framing note (SKILL.md Stage 1), the map decisions this spec relies on, research.
 
 ## Goal
 One paragraph: what the user gets.
@@ -110,7 +110,7 @@ If you can't name the trust boundaries for a feature, you're not ready to secure
 
 ## One-way door: doubt review
 
-Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user. Session B: a stop item (SKILL.md autonomy grant), not a question.
+Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user. Session B runs no doubt review: Stage 2 ran it for each door the spec marks, and a one-way door the approved spec does not cover is a stop item (SKILL.md autonomy grant).
 
 Source: Addy Osmani agent-skills 0.6.12, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `1be8e34`), core reviewer prompt and its rule, copied verbatim:
 
