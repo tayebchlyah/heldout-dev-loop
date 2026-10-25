@@ -455,9 +455,9 @@ class SecondReviewRunTests(unittest.TestCase):
                 (self.bin / "codex").write_text(shebang)
                 (self.bin / "codex").chmod(0o755)
                 out, code, _ = self.review(self.tree())
-                self.assertEqual((out["state"], out["reason"], code), ("failed", reason, 1), out)
+                self.assertEqual((out["state"], out["reason"], out["record"], code), ("failed", reason, None, 1), out)
                 self.assertTrue(out["message"])
-                self.assertEqual(json.loads((Path(out["record"]) / "record.json").read_text()), out)
+                self.assertEqual(list((self.tmp / "main" / ".git" / "dev-loop" / "second-review").iterdir()), [])
 
     def test_record_failure_is_export(self) -> None:
         import second_review

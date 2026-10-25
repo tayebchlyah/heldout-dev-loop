@@ -316,9 +316,10 @@ def _child(repo: Path, reviewer: str, sha: str, entry: dict, timeout_minutes: fl
         except OSError as error:
             # The shell's codes: 127 for a missing file or interpreter, 126 for one that cannot run.
             code = 127 if isinstance(error, FileNotFoundError) else 126
-            result = {**out, "state": "failed", "reason": f"exit {code}", "message": str(error).splitlines()[0]}
-            (record / "record.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-            return result, 1
+            # D12: the CLI never started, so no record.
+            shutil.rmtree(record, ignore_errors=True)
+            return {**out, "state": "failed", "reason": f"exit {code}", "message": str(error).splitlines()[0],
+                    "record": None}, 1
         try:
             child.communicate(prompt.encode("utf-8"), timeout=timeout_minutes * 60)
         except subprocess.TimeoutExpired:
