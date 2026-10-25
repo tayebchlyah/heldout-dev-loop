@@ -119,7 +119,8 @@ def mismatch(notes: Path, record: dict) -> str | None:
 
 
 def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
-    """Code paths changed since the audited commit (all paths when it is not an ancestor), None when none."""
+    """Paths that make the audit stale: the code paths changed since the audited commit, all changed paths when it is
+    not an ancestor (possibly none). None when the audit is current."""
     from devloop import is_test_or_doc  # lazy: devloop imports this module
 
     ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
@@ -127,17 +128,27 @@ def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     if diff.returncode != 0:  # the record commit is unknown here
         diff = run_git(repo, "ls-tree", "-r", "--name-only", "-z", target)
     paths = [p for p in diff.stdout.split("\0") if p]
-    return paths if not ancestor else [p for p in paths if not is_test_or_doc(p)] or None
+    if not ancestor:
+        return paths
+    return [p for p in paths if not is_test_or_doc(p)] or None
 
 
-def check(repo: Path, notes: Path, target: str, tag: str | None) -> tuple[dict, int]:
-    """The release gate: a current audit record and no open security item. Exit 0 when ok."""
-    resolved = run_git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
+def is_release_tag(name: str) -> bool:
+    return fnmatch.fnmatchcase(name, "v*")
+
+
+def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple[dict, int]:
+    """The release gate: a current audit record and no open security item. Exit 0 when ok.
+
+    `notes` may be None only for a non-release tag, which is skipped before any note read."""
+    resolved = run_git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{target}^{{commit}}")
     if resolved.returncode != 0:
         return {"error": f"cannot resolve {target}"}, 1
     sha = resolved.stdout.strip()
-    if tag is not None and not fnmatch.fnmatchcase(tag, "v*"):
+    if tag is not None and not is_release_tag(tag):
         return {"ok": True, "tag": tag, "target": sha, "record": None, "reasons": [], "skipped": "not-a-release-tag"}, 0
+    if notes is None:
+        return {"error": "notes path unresolved"}, 1
     note = project_note(notes)
     if note is None:
         return {"error": "no-project-note"}, 1
@@ -151,7 +162,7 @@ def check(repo: Path, notes: Path, target: str, tag: str | None) -> tuple[dict, 
         reasons.append({"reason": "no-audit"})
     elif (detail := mismatch(notes, record)) is not None:
         reasons.append({"reason": "record-mismatch", "detail": detail})
-    elif record["sha"] != sha and (paths := stale_paths(repo, record["sha"], sha)):
+    elif record["sha"] != sha and (paths := stale_paths(repo, record["sha"], sha)) is not None:
         reasons.append({"reason": "stale-audit", "paths": paths})
     items, unparsed = security_items(text)
     if items:
