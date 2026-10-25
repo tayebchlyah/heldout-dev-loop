@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import http.server
+import io
 import json
 import os
 import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -53,25 +55,28 @@ class SandboxRunTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
+        for cid in cls.leftovers():
+            docker("rm", "-f", cid)
         docker("rmi", "-f", cls.probe)
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def leftovers(self) -> list[str]:
+    @classmethod
+    def leftovers(cls) -> list[str]:
         ids = docker("ps", "-a", "-q", "--filter", "label=devloop.sandbox=1").stdout.split()
         mine = []
         for cid in ids:
             mounts = docker("inspect", "--format", "{{range .Mounts}}{{.Source}}\n{{end}}", cid).stdout.split("\n")
-            if any(m and Path(m).resolve() == self.target for m in mounts):
+            if any(m and Path(m).resolve() == cls.target for m in mounts):
                 mine.append(cid)
         return mine
 
     def run_sandbox(self, *cmd: str, opts: tuple[str, ...] = (), image: str = "t", stdin: str = "",
-                    env: dict | None = None, target: Path | None = None) -> tuple[subprocess.CompletedProcess, Path]:
+                    env: dict | None = None, target: Path | None = None, limit: float = 90) -> tuple[subprocess.CompletedProcess, Path]:
         scratch = Path(tempfile.mkdtemp(dir=self.tmp))
         extra = ("--target", str(target)) if target else ()
         args = [sys.executable, str(RUNNER), "--image", image, "--scratch", str(scratch), *extra, *opts, "--", *cmd]
         done = subprocess.run(args, cwd=self.target, input=stdin, capture_output=True, text=True,
-                              env=env if env is not None else os.environ, timeout=90)
+                              env=env if env is not None else os.environ, timeout=limit)
         self.assertEqual(self.leftovers(), [], "container left behind")
         return done, scratch
 
@@ -205,12 +210,33 @@ class SandboxRunTests(unittest.TestCase):
         self.assertTrue(done.stderr.startswith("sandbox-run: "), done.stderr)
         self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
 
+    def test_leftover_processes_cannot_reach_the_copy(self) -> None:
+        info = tarfile.TarInfo("big")  # PAX sparse member: 10 bytes stored, 50 MB on extraction
+        info.size = 10
+        info.pax_headers = {"GNU.sparse.map": "52428800,10", "GNU.sparse.size": "52428810"}
+        evil = io.BytesIO()
+        with tarfile.open(fileobj=evil, mode="w", format=tarfile.PAX_FORMAT) as tar:
+            tar.addfile(info, io.BytesIO(b"x" * 10))
+        (self.target / "evil.tar").write_bytes(evil.getvalue())
+        inject = ("(until p=$(pidof tar); do :; done; kill -STOP $p; "
+                  "cat /target/evil.tar > /proc/$p/fd/1; kill -CONT $p) >/dev/null 2>&1 & echo real > /scratch/real")
+        done, scratch = self.run_sandbox("sh", "-c", inject, limit=60)
+        files = {p.name: p.stat().st_size for p in scratch.rglob("*") if p.is_file()}
+        self.assertTrue(done.returncode == 125 or files == {"real": 5}, (done.returncode, files, done.stderr))
+        self.assertLessEqual(sum(files.values()), 5)
+
+        stopper = "(while :; do p=$(pidof tar) && kill -STOP $p; done) >/dev/null 2>&1 & echo real > /scratch/real"
+        start = time.monotonic()
+        done, scratch = self.run_sandbox("sh", "-c", stopper, opts=("--timeout", "5"), limit=40)
+        self.assertLess(time.monotonic() - start, 30)
+        self.assertEqual([p.name for p in scratch.iterdir()], ["real"], done.stderr)
+
     def test_signal_removes_container(self) -> None:
         scratch = Path(tempfile.mkdtemp(dir=self.tmp))
+        cmd = [sys.executable, str(RUNNER), "--image", "t", "--scratch", str(scratch), "--", "sleep", "30"]
         for sig in (signal.SIGTERM, signal.SIGINT):
             with self.subTest(sig=sig):
-                proc = subprocess.Popen([sys.executable, str(RUNNER), "--image", "t", "--scratch", str(scratch),
-                                         "--", "sleep", "30"], cwd=self.target, stdin=subprocess.DEVNULL,
+                proc = subprocess.Popen(cmd, cwd=self.target, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 deadline = time.monotonic() + 20
                 while not self.leftovers() and time.monotonic() < deadline:
@@ -218,6 +244,15 @@ class SandboxRunTests(unittest.TestCase):
                 time.sleep(1)
                 proc.send_signal(sig)
                 proc.wait(timeout=20)
+                self.assertEqual(self.leftovers(), [])
+        for delay in (0.3, 0.5, 0.7, 0.9):  # a signal near `docker run -d` must not let the container outlive the runner
+            with self.subTest(delay=delay):
+                proc = subprocess.Popen(cmd, cwd=self.target, stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(delay)
+                proc.send_signal(signal.SIGTERM)
+                proc.wait(timeout=20)
+                time.sleep(1)
                 self.assertEqual(self.leftovers(), [])
 
 
