@@ -20,6 +20,8 @@
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
+  devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
+                                                      the release audit plan: run folder, scope, sandbox, skill
   devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
@@ -1121,6 +1123,17 @@ def cmd_release_check(args: argparse.Namespace) -> int:
     return emit(*check(repo, notes, args.tag or args.sha, args.tag))
 
 
+def cmd_release_plan(args: argparse.Namespace) -> int:
+    from release import plan
+
+    repo = Path(args.repo).resolve()
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    return emit(*plan(repo, notes, args.harness, args.profile, args.budget))
+
+
 def finite_minutes(value: str) -> float:
     try:
         minutes = float(value)
@@ -1370,6 +1383,13 @@ def main() -> int:
     target.add_argument("--tag")
     target.add_argument("--sha")
     release.set_defaults(run=cmd_release_check)
+
+    plan = commands.add_parser("release-plan")
+    plan.add_argument("--repo", default=".")
+    plan.add_argument("--harness", choices=["claude", "codex"], default="claude")
+    plan.add_argument("--profile", choices=["quick", "standard", "deep"])
+    plan.add_argument("--budget", type=positive_int)
+    plan.set_defaults(run=cmd_release_plan)
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
