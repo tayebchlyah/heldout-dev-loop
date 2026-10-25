@@ -51,7 +51,7 @@ The rungs come from `stacks:` and the lint configuration. No `stacks:` line: the
 
 ## Proof
 
-An `encode` check must fail on a real past mistake before its commit:
+An `encode` check of rungs 1 to 3 must fail on a real past mistake before its commit:
 
 1. `git worktree add --detach <scratch> <sha>`, at a commit that has the mistake (`HEAD` when it is still there).
 2. Put the new check in the scratch worktree, run it: it must fail. Keep the first failing line.
@@ -60,6 +60,8 @@ An `encode` check must fail on a real past mistake before its commit:
 One commit holds the check and the removal of each current instance of the mistake, so the commit is green: `main` gets no red commit. Its body has the line `Proof: red at <sha>: <first failing line>`, `<sha>` the commit of the scratch run.
 
 No red run: no `encode` commit, the item goes back to `keep`.
+
+Rung 4 runs nothing. Its proof is each quoted past instance, body line `Proof: seen at <sha>: <file>:<line>`.
 
 ## Log
 
@@ -72,7 +74,7 @@ No red run: no `encode` commit, the item goes back to `keep`.
 
 - Each triage run: one row, `Verdict` `run`, `Item` `<n> items: <e> encode, <f> fix, <k> keep, <d> drop`.
 - `drop`: its row at the triage, the item leaves `## Gardener`.
-- `encode`, `fix`: its row when its slice PR merges. `Check`: the test name, the lint rule or the standards line (`fix`: empty). `Proof`: `red at <sha>` (`fix`: the PR URL). The item leaves `## Gardener`.
+- `encode`, `fix`: its row when its slice PR merges. `Check`: the test name, the lint rule or the standards line (`fix`: empty). `Proof`: `red at <sha>` (rung 4: `seen at <sha>`; `fix`: the PR URL). The item leaves `## Gardener`.
 - `keep`: no row.
 
 ## Slices
