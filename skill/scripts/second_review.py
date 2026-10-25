@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """`devloop.py second-review`: the other model family's CLI as a read-only reviewer. The locks and the decision
-order (D2, D4, D6 rules 1 to 6), the export, sweep and CLI lookup (D7, D9) live here; `_review` is the seam for
-the CLI run."""
+order (D2, D4, D6 rules 1 to 11), the export, sweep and CLI lookup (D7, D9), the child run, its record and its output
+audit (D8, D10 to D12)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 
 import devloop
+from seal import audit, merge_base
 
 REVIEWER = {"claude": "codex", "codex": "claude"}
 EFFORTS = {"codex": ("minimal", "low", "medium", "high", "xhigh"), "claude": ("low", "medium", "high", "xhigh", "max")}
@@ -26,6 +30,10 @@ DIFF = ".second-review.diff"
 NAMES = {"agents.md", "agents.override.md", "claude.md", "claude.local.md", ".mcp.json"}
 FOLDERS = {".claude", ".codex", ".agents"}
 PROMPT = Path(__file__).resolve().parent.parent / "references" / "second-review.md"
+ENV_KEYS = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "CLAUDE_CONFIG_DIR", "CODEX_HOME")
+SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+CODEX_FILESYSTEM = ('permissions.devloop-review.filesystem={":minimal"="read", ":project_roots"="read", '
+                    '":tmpdir"="none", ":slash_tmp"="none"}')
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict:
@@ -187,12 +195,156 @@ def lookup(name: str, path_env: str, worktrees: list[Path]) -> Path | None:
     return None
 
 
+def child_env(env: Mapping[str, str], cli: Path, node: Path | None) -> dict[str, str]:
+    """D8: the allowlist of `env`, and a `PATH` of the CLI folder, the `node` folder, then the system folders."""
+    out = {key: env[key] for key in ENV_KEYS if key in env}
+    out["PATH"] = os.pathsep.join([str(cli.parent), *([str(node.parent)] if node else []), SYSTEM_PATH])
+    return out
+
+
+def command(reviewer: str, export: Path, entry: dict, output: Path) -> list[str]:
+    """D10. The CLI path itself is the caller's: argv[0] is the bare name."""
+    model = entry.get("model")
+    if reviewer == "codex":
+        return ["codex", "exec", "--ignore-user-config", "--ignore-rules", "--ephemeral", "--skip-git-repo-check",
+                "-C", str(export), "-c", 'default_permissions="devloop-review"', "-c", CODEX_FILESYSTEM,
+                "-c", f'model_reasoning_effort="{entry["effort"]}"', *(["-m", model] if model else []),
+                "-o", str(output), "-"]
+    return ["claude", "-p", "--restricted", "--strict-mcp-config", "--tools=Read,Grep,Glob", "--output-format", "json",
+            "--effort", entry["effort"], *(["--model", model] if model else [])]
+
+
+def record_dir(repo: Path, reviewer: str, now: datetime) -> Path:
+    """D12: a new `<git-common-dir>/dev-loop/second-review/<YYYYMMDDTHHMMSSZ>-<reviewer>[-<n>]/` folder."""
+    common = devloop.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    parent = Path(common or ".git") / "dev-loop" / "second-review"
+    parent.mkdir(parents=True, exist_ok=True)
+    name, n = f"{now.astimezone(timezone.utc):%Y%m%dT%H%M%SZ}-{reviewer}", 1
+    while True:
+        folder = parent / (name if n == 1 else f"{name}-{n}")
+        try:
+            folder.mkdir()
+            return folder
+        except FileExistsError:
+            n += 1
+
+
+def tokens(reviewer: str, stdout: str, stderr: str) -> int | None:
+    """Claude: `usage` input plus output tokens. Codex: the last `tokens used` number in stderr."""
+    if reviewer == "codex":
+        found = re.findall(r"tokens used[:\s]*(\d[\d,]*)", stderr)
+        return int(found[-1].replace(",", "")) if found else None
+    reply = _reply(stdout)
+    usage = reply.get("usage") if reply else None
+    if not isinstance(usage, dict):
+        return None
+    counts = [usage.get("input_tokens"), usage.get("output_tokens")]
+    return sum(counts) if all(isinstance(c, int) and not isinstance(c, bool) for c in counts) else None  # type: ignore[arg-type]
+
+
+def _reply(stdout: str) -> dict | None:
+    try:
+        reply = json.loads(stdout)
+    except ValueError:
+        return None
+    return reply if isinstance(reply, dict) else None
+
+
+def _stop(child: subprocess.Popen) -> None:
+    """SIGTERM to the process group, SIGKILL to what is left of it 5 seconds later."""
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic() + 5
+    try:
+        child.wait(5)
+    except subprocess.TimeoutExpired:
+        pass
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(child.pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    child.wait()
+
+
+def _taint(repo: Path, record: Path, sha: str, outputs: list[str]) -> bool:
+    """D11: 2 or more distinctive acceptance lines in the outputs append a taint record with no commits."""
+    top = Path(devloop.git(repo, "rev-parse", "--show-toplevel") or repo)
+    lines = audit.matched_lines(top, ("tests/acceptance/",), outputs)
+    if len(lines) < audit.MIN_MATCHES:
+        return False
+    audit.append(top, "records", {"agent_id": record.name, "agent_type": "second-review", "at": audit.now(),
+                                  "set": "acceptance", "lines": lines, "start": merge_base(top), "end": sha,
+                                  "commits": []})
+    return True
+
+
+def _child(repo: Path, reviewer: str, sha: str, entry: dict, timeout_minutes: float, env: Mapping[str, str],
+           cli: Path, node: Path | None, dest: Path, prompt: str, files: list[str], out: dict) -> tuple[dict, int]:
+    """Rules 9 to 11: the record, the CLI run, the audit."""
+    record = record_dir(repo, reviewer, datetime.now(timezone.utc))
+    out["record"] = str(record)
+    diff = hashlib.sha256((dest / DIFF).read_bytes()).hexdigest()
+    (record / "sent.txt").write_text("".join(f"{path}\n" for path in files) + diff + "\n", encoding="utf-8")
+    (record / "record.json").write_text(json.dumps({**out, "state": "running"}, indent=2) + "\n", encoding="utf-8")
+    output, errors = record / "output.md", record / "stderr.log"
+    argv = command(reviewer, dest, entry, output)
+    timed_out, started = False, time.monotonic()
+    with tempfile.TemporaryFile() as stdout, errors.open("wb") as stderr:
+        child = subprocess.Popen([str(cli), *argv[1:]], cwd=dest, env=child_env(env, cli, node), stdin=subprocess.PIPE,
+                                 stdout=stdout, stderr=stderr, start_new_session=True)
+        try:
+            child.communicate(prompt.encode("utf-8"), timeout=timeout_minutes * 60)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _stop(child)
+        out["seconds"] = round(time.monotonic() - started, 3)
+        stdout.seek(0)
+        text = stdout.read().decode("utf-8", errors="replace")
+    err = errors.read_text(encoding="utf-8", errors="replace")
+    if reviewer == "codex":
+        final = output.read_text(encoding="utf-8", errors="replace") if output.is_file() else ""
+    else:
+        reply = _reply(text)
+        final = reply.get("result") if reply and reply.get("is_error") is not True else None
+        final = final if isinstance(final, str) else ""
+    out["tokens"] = tokens(reviewer, text, err)
+    if _taint(repo, record, sha, [final, text, err]):
+        output.unlink(missing_ok=True)
+        errors.unlink(missing_ok=True)
+        result, code = {**out, "state": "tainted"}, 0
+    elif timed_out:
+        result, code = {**out, "state": "failed", "reason": "timeout",
+                        "message": f"the reviewer ran past {timeout_minutes:g} minutes"}, 1
+    elif child.returncode != 0:
+        tail = [line.strip() for line in err.splitlines() if line.strip()]
+        result, code = {**out, "state": "failed", "reason": f"exit {child.returncode}",
+                        "message": tail[-1] if tail else None}, 1
+    elif not final.strip():
+        result, code = {**out, "state": "failed", "reason": "no-output", "message": "the reviewer gave no output"}, 1
+    else:
+        if reviewer == "claude":
+            output.write_text(final, encoding="utf-8")
+        result, code = {**out, "state": "done", "output": final}, 0
+    (record / "record.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result, code
+
+
 def _review(repo: Path, reviewer: str, ref: str, sha: str, entry: dict, timeout_minutes: float,
             env: Mapping[str, str], out: dict) -> tuple[dict, int]:
     """Rules 7 to 11: lookup, export, CLI run, audit."""
-    cli = lookup(reviewer, env.get("PATH", ""), worktrees(repo))
+    trees = worktrees(repo)
+    cli = lookup(reviewer, env.get("PATH", ""), trees)
     if cli is None:
         return {**out, "state": "skipped", "reason": "no-cli"}, 0
+    node = lookup("node", env.get("PATH", ""), trees)
     try:
         dest = Path(tempfile.mkdtemp(prefix=PREFIX))
     except OSError as error:
@@ -200,13 +352,12 @@ def _review(repo: Path, reviewer: str, ref: str, sha: str, entry: dict, timeout_
     try:
         try:
             files, left = export(repo, ref, sha, dest)
-            prompt = PROMPT.read_text(encoding="utf-8")
+            prompt = PROMPT.read_text(encoding="utf-8").replace("<sha>", sha)
         except (OSError, RuntimeError, ValueError) as error:
             message = (str(error) or type(error).__name__).splitlines()[0]
             return {**out, "state": "failed", "reason": "export", "message": message}, 1
         out.update(files=len(files), left_out=left)
-        # Task 3 placeholder: rules 9 to 11 (record, CLI run, audit) replace this return, with `cli`, `dest`, `prompt`.
-        return {**out, "state": "failed", "reason": "export", "message": "not built"}, 1
+        return _child(repo, reviewer, sha, entry, timeout_minutes, env, cli, node, dest, prompt, files, out)
     finally:
         shutil.rmtree(dest, ignore_errors=True)
 
