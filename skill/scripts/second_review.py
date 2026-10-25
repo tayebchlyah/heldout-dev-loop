@@ -277,9 +277,10 @@ def _reply(stdout: str) -> dict | None:
 
 def _stop(child: subprocess.Popen) -> None:
     """SIGTERM to the process group, SIGKILL to what is left of it 5 seconds later."""
+    # macOS answers EPERM, not ESRCH, for a group of zombies only: treat it as gone.
     try:
         os.killpg(child.pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         pass
     deadline = time.monotonic() + 5
     try:
@@ -289,12 +290,12 @@ def _stop(child: subprocess.Popen) -> None:
     while time.monotonic() < deadline:
         try:
             os.killpg(child.pid, 0)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             break
         time.sleep(0.05)
     try:
         os.killpg(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         pass
     child.wait()
 
