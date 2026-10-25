@@ -146,6 +146,7 @@ ReleaseParseTests = test_release.ReleaseParseTests
 ReleaseCheckTests = test_release.ReleaseCheckTests
 ReleasePlanTests = test_release.ReleasePlanTests
 ReleaseRecordTests = test_release.ReleaseRecordTests
+ReleaseGuardTests = test_release.ReleaseGuardTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:

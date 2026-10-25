@@ -116,10 +116,11 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # line the parser cannot read, an argument the shell would expand ($VAR, $(...),
 # globs), arguments fed by xargs or find, a push after a command in the same line that
 # moves HEAD or changes refs or config, or a parser crash, asks.
+# A release tag push and gh release create also carry the release-check verdict (D14).
 ask() { deny "Global rule: $1 needs explicit permission each time. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
-if has '(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|$)'; then
+if has '(^|[^[:alnum:]_.-])(git|gh)([^[:alnum:]_.-]|$)'; then
   REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" python3 - <<'PY'
-import os, re, shlex, subprocess, sys
+import fnmatch, json, os, re, shlex, subprocess, sys
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
          "--all", "--branches", "--prune", "--tags", "--follow-tags"}
@@ -129,6 +130,9 @@ GLOBAL_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-e
 MOVES_HEAD = {"checkout", "switch", "reset", "rebase", "worktree", "init", "clone", "branch"}
 CHANGES_REFS = {"config", "remote", "tag", "update-ref", "symbolic-ref"}
 FEEDERS = {"xargs", "parallel", "find", "fd"}
+# gh release create options that take a value.
+GH_ARG = {"--target", "-t", "--title", "-n", "--notes", "-F", "--notes-file", "--discussion-category",
+          "--notes-start-tag", "-R", "--repo"}
 # Commands that run a string or a heredoc body as shell commands.
 RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
 # chr(96) is a backtick. A literal one breaks bash parsing the $( ) around this script.
@@ -228,6 +232,58 @@ def unreliable(cmd, segs):
     return sum(len(sep) for _, sep in segs) > sum(bare.count(c) for c in PUNCT)
 
 
+def release_suffix(repo, args):
+    # The release-check verdict of the main worktree's CLI, 3 s of the hook's 5.
+    main = git(repo, "worktree", "list", "--porcelain")[1].partition("\n")[0].removeprefix("worktree ")
+    cli = os.path.join(main, ".agents", "skills", "dev-loop", "scripts", "devloop.py")
+    if not main or not os.path.isfile(cli):
+        return "; release-check failed: no CLI"
+    try:
+        r = subprocess.run(["python3", cli, "release-check", "--repo", repo, *args],
+                           capture_output=True, text=True, timeout=3)
+    except subprocess.TimeoutExpired:
+        return "; release-check failed: timeout"
+    out = None
+    try:
+        out = json.loads(r.stdout)
+        if out["ok"] is True:
+            return "; release-check: ok"
+        if out["reasons"]:
+            return "; release-check: " + ", ".join(x["reason"] for x in out["reasons"])
+    except (ValueError, TypeError, KeyError):
+        pass
+    error = out.get("error") if isinstance(out, dict) else None
+    return "; release-check failed: " + (r.stderr.strip().splitlines() or [str(error or f"exit {r.returncode}")])[0]
+
+
+def check_release(args, cwds):
+    # gh release create tags a local tag of that name, else --target, else what
+    # origin/main points at. Any tag name asks: a release is always the user's.
+    tag, target, j = None, None, 0
+    while j < len(args):
+        a = args[j]
+        if a.split("=", 1)[0] == "--target":
+            target = a.split("=", 1)[1] if "=" in a else (args[j + 1] if j + 1 < len(args) else "")
+        if a in GH_ARG:
+            j += 1
+        elif not a.startswith("-") and tag is None:
+            tag = a
+        j += 1
+    if None in cwds or any(EXPANDS & set(v) for v in (tag or "", target or "")):
+        ask("a release create; release-check failed: a folder or argument the guard cannot read")
+    repo = min(cwds)
+    rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}") if tag else (1, "")
+    if rc and target is not None:
+        rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
+        if rc:
+            ask(f"a release create; release-check failed: target {target} does not resolve")
+    elif rc:
+        rc, sha = git(repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+        if rc:
+            ask("a release create; release-check failed: refs/remotes/origin/main does not resolve")
+    ask(f"a release create at {sha}" + release_suffix(repo, ["--sha", sha]))
+
+
 def check_push(repo, args, drift):
     if any(EXPANDS & set(a) for a in args):
         ask("a push with an argument the shell expands")
@@ -274,7 +330,11 @@ def check_push(repo, args, drift):
         dst = dst or src
         if (src.startswith("refs/tags/") or dst.startswith("refs/tags/")
                 or (src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src}")[0] == 0)):
-            ask("a tag push")
+            # One release tag pushed under its own name gets the release-check verdict.
+            name = src.removeprefix("refs/tags/")
+            named = specs[1:] if specs[0] == "tag" else specs
+            one = named == [spec] and name == dst.removeprefix("refs/tags/") and fnmatch.fnmatchcase(name, "v*")
+            ask("a tag push" + (release_suffix(repo, ["--tag", name]) if one else ""))
         if not dst:
             ask("a push from a detached HEAD" if git(repo, "rev-parse", "--git-dir")[0] == 0
                 else "a push from an unknown repository")
@@ -402,6 +462,8 @@ def check(cmd, cwds, drift, top=False):
                     # env -C or --chdir before git runs it in a folder the guard does not follow.
                     chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
                     check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
+                if os.path.basename(tok) == "gh" and seg[k + 1:k + 3] == ["release", "create"]:
+                    check_release(seg[k + 3:], cwds)
         for c in sep:
             if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
                 # A union, not a swap: a ) that closes no subshell (a case pattern,
