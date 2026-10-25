@@ -49,3 +49,7 @@ Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
 5. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. Runner lines when `commands.acceptance` is absent, from `stacks:`. Python: `pytest tests/acceptance -q --tb=no`. Go: `go test ./tests/acceptance/...`. UI: `npx playwright test tests/acceptance`. Failures only when `commands.acceptance_failed` is absent: `--lf` or `--last-failed`.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.
+
+## Release audit
+
+User-invoked only: `$release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Session B, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. It needs the Docker engine reachable from the `dev-workspace` profile: `release-plan` `sandbox.engine` false means a source-only run. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
