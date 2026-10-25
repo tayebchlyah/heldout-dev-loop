@@ -23,7 +23,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 ## Skill and agent names
 
 - Domain work: `mattpocock-skills:domain-modeling`, `mattpocock-skills:codebase-design`, `mattpocock-skills:code-review`.
-- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Track M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`, then `scripts/devloop.py capture` (`references/verify.md` section Stage 7).
+- Core loop: Stage 1 `mattpocock-skills:grilling`, `mattpocock-skills:prototype`; map trigger: read `mattpocock-skills:wayfinder` SKILL.md (user-invoked only). Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Track M), `superpowers:subagent-driven-development` (Track L), `mattpocock-skills:tdd`, `mattpocock-skills:diagnosing-bugs`. Stage 7 `mattpocock-skills:pr`, then `scripts/devloop.py capture` (`references/verify.md` section Stage 7).
 - Denied in the project, never invoke: `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
 - Acceptance author: `spec-tester`.
 - SDD implementers: `subagent_type: implementer`.

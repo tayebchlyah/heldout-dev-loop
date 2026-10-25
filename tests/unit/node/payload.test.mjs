@@ -14,6 +14,7 @@ const REQUIRED = [
   'skill/references/codex.md',
   'skill/references/mutation.md',
   'skill/references/benchmark.md',
+  'skill/references/maps.md',
   'skill/scripts/check_setup.py',
   'skill/scripts/select_mutants.py',
   'skill/scripts/notes_path.py',
