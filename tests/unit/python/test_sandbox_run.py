@@ -102,6 +102,7 @@ class SandboxRunTests(unittest.TestCase):
             (("echo", "hi"), "", 0, "hi\n"),
             (("sh", "-c", "exit 3"), "", 3, ""),
             (("cat",), "abc", 0, "abc"),
+            (("sh", "-c", "cp /bin/busybox /scratch/busybox && /scratch/busybox echo built"), "", 0, "built\n"),
         ]
         for cmd, stdin, code, out in cases:
             with self.subTest(cmd=cmd):
