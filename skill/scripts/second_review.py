@@ -27,6 +27,7 @@ MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/\[\]-]*")
 PREFIX = "devloop-second-review-"
 MAX_BLOB = 1_048_576
 DIFF = ".second-review.diff"
+LOCAL = "dev-loop.local.json"
 NAMES = {"agents.md", "agents.override.md", "claude.md", "claude.local.md", ".mcp.json"}
 FOLDERS = {".claude", ".codex", ".agents"}
 PROMPT = Path(__file__).resolve().parent.parent / "references" / "second-review.md"
@@ -85,6 +86,25 @@ def local_entry(value: object, reviewer: str) -> tuple[str, dict | None]:
     if entry is False:
         return "user-off", None
     return "ok", {"model": entry.get("model"), "effort": entry.get("effort", "high")}
+
+
+def read_local(repo: Path, reviewer: str) -> tuple[str, dict | None]:
+    """The main worktree `dev-loop.local.json`, for the command and `check_setup.py`: the `local_entry` status, or
+    `tracked` when git tracks the file (its consent would reach every clone)."""
+    main = main_worktree(repo)
+    path = main / LOCAL
+    tracked = subprocess.run(["git", "-C", str(main), "ls-files", "--error-unmatch", LOCAL], capture_output=True)
+    if tracked.returncode == 0:
+        return "tracked", None
+    if not path.is_file():
+        return "not-chosen", None
+    try:
+        config = load_unique(path.read_bytes())
+    except (ValueError, OSError):
+        return "bad-config", None
+    if not isinstance(config, dict):
+        return "bad-config", None
+    return local_entry(config["second_review"], reviewer) if "second_review" in config else ("not-chosen", None)
 
 
 def main_worktree(repo: Path) -> Path:
@@ -418,17 +438,9 @@ def _decide(repo: Path, harness: str, timeout_minutes: float, env: Mapping[str, 
         return fail("bad-config", "dev-loop.json second_review is not a boolean, or the file does not parse")
     if not lock:
         return skip("project-off")
-    local = main_worktree(repo) / "dev-loop.local.json"
-    state, entry = "not-chosen", None
-    if local.is_file():
-        try:
-            config = load_unique(local.read_bytes())
-        except (ValueError, OSError):
-            config = None
-        if not isinstance(config, dict):
-            state = "bad-config"
-        elif "second_review" in config:
-            state, entry = local_entry(config["second_review"], reviewer)
+    state, entry = read_local(repo, reviewer)
+    if state == "tracked":
+        return fail("bad-config", "dev-loop.local.json is tracked by git: run git rm --cached dev-loop.local.json")
     if state == "bad-config":
         return fail("bad-config", "dev-loop.local.json second_review has a bad shape")
     if entry is None:
