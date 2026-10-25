@@ -200,13 +200,13 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         text = note.read_text()
     except (OSError, ValueError) as exc:
         return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
-    status = run_git(repo, "status", "--porcelain", "-z", "--untracked-files=no")
+    status = run_git(repo, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=no")
     if status.returncode != 0:
         return {"error": "git status failed"}, 1
     dirty = [e[3:] for e in status.stdout.split("\0") if e]
     if dirty:
         return {"error": "dirty", "paths": dirty}, 1
-    audits = notes / "security-audit"
+    audits = notes.absolute() / "security-audit"
     placeholders = sorted(str(p) for p in audits.rglob(".*.icloud")) if audits.is_dir() else []
     if placeholders:
         return {"error": "placeholder", "files": placeholders}, 1
@@ -228,7 +228,10 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     ) if audits.is_dir() else []
     n = runs[-1][0] + 1 if runs else 1
     out = audits / f"run-{n}"
-    out.mkdir(parents=True)
+    try:
+        out.mkdir(parents=True)
+    except FileExistsError:
+        return {"error": "run-folder-exists", "output": str(out)}, 1
     top = run_git(repo, "rev-parse", "--show-toplevel").stdout.strip() or str(repo)
     try:
         config = json.loads((Path(top) / "dev-loop.json").read_text())
