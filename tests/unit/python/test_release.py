@@ -689,7 +689,11 @@ class ReleaseGuardTests(unittest.TestCase):
         # Oracle 46, 47, 49, 50, 51, 52.
         for harness, mode, command, extra, decision, parts, absent in [
             ("claude", "fail", "git push origin v1.0.0", {}, "ask", ["a tag push", "release-check: no-audit, open-security"], None),
-            ("claude", "ok", "git push origin v1.0.0", {}, "ask", ["a tag push", "release-check: ok"], None),
+            ("claude", "ok", "git push origin v1.0.0", {}, "ask",
+             ["Global rule: a tag push needs explicit permission each time; release-check: ok."], None),
+            ("claude", "ok", "git push origin feat/x v1.0.0", {}, "ask", ["release-check: ok"], None),
+            ("claude", "ok", "git push origin HEAD:refs/tags/v2.0.0", {}, "ask", ["release-check: ok"], None),
+            ("claude", "ok", "git push origin v1.0.0 release-1", {}, "ask", ["a tag push"], "release-check"),
             ("claude", "ok", "git push origin refs/tags/v1.0.0", {}, "ask", ["release-check: ok"], None),
             ("claude", "ok", "git push origin tag v1.0.0", {}, "ask", ["release-check: ok"], None),
             ("codex", "fail", "git push origin v1.0.0", {}, "deny", ["a tag push", "release-check: no-audit"], None),
@@ -710,6 +714,13 @@ class ReleaseGuardTests(unittest.TestCase):
                 if absent:
                     self.assertNotIn(absent, reason)
         self.assertIn(f"release-check --repo {self.repo} --tag v1.0.0", self.calls.read_text())
+        self.assertIn(f"release-check --repo {self.repo} --tag v2.0.0", self.calls.read_text())
+        # A subagent is denied before the CLI runs.
+        self.calls.unlink()
+        self.stub("slow")
+        got, reason, seconds = self.guard("claude", "git push origin v1.0.0", agent_id="a1")
+        self.assertEqual((got, self.calls.exists()), ("deny", False), reason)
+        self.assertLess(seconds, 3)
 
     def test_gh_release_create_checks_the_commit_it_tags(self) -> None:
         # Oracle 48: a local tag, else --target, else refs/remotes/origin/main; any tag name asks.
@@ -723,7 +734,7 @@ class ReleaseGuardTests(unittest.TestCase):
                 got, reason, _ = self.guard("claude", command)
                 self.assertEqual(got, "ask", reason)
                 if sha:
-                    self.assertIn(f"a release create at {sha}; release-check: no-audit", reason)
+                    self.assertIn(f"a release create at {sha} needs explicit permission each time; release-check: no-audit", reason)
                     self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} --sha {sha}\n")
         got, reason, _ = self.guard("claude", "gh release create v2.0.0 --target nowhere")
         self.assertIn("release-check failed: target nowhere does not resolve", reason)
@@ -731,7 +742,19 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertEqual((got, "release-check: no-audit" in reason), ("deny", True), reason)
         got, reason, _ = self.guard("claude", "gh release create v1.0.0", agent_id="a1")
         self.assertEqual(got, "deny", reason)
-        self.assertEqual(self.guard("claude", "gh pr create --title x")[0], "allow")
+        for command in ["gh pr create --title x", "gh release list", "gh -R o/r release view v1.0.0"]:
+            self.assertEqual(self.guard("claude", command)[0], "allow", command)
+        # gh flags around release, the new alias, and a word the parser cannot read.
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            for command, part in [("gh release new v1.0.0", f"at {self.a}"), ("gh -R o/r release create v1.0.0", f"at {self.a}"),
+                                  ("gh release -R o/r create v1.0.0", f"at {self.a}"),
+                                  ("gh --repo=o/r release --repo o/r new v1.0.0", f"at {self.a}"),
+                                  ("gh release $SUB v1.0.0", "release-check failed"),
+                                  ("gh release -R o/r 'cr'$X v1.0.0", "release-check failed")]:
+                with self.subTest(harness=harness, command=command):
+                    got, reason, _ = self.guard(harness, command)
+                    self.assertEqual(got, decision, reason)
+                    self.assertIn(part, reason)
 
     def test_a_slow_or_broken_release_check_still_asks(self) -> None:
         # Oracle 48a and Review Focus 3: a timeout within the hook's 5 s, a stderr line with a quote stays valid JSON.
