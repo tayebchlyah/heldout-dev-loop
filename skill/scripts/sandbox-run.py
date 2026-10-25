@@ -3,7 +3,7 @@
 
 The command is target code under audit: treat it as hostile. Exit: the command's own
 code, 124 on timeout, 125 with one `sandbox-run: <reason>` stderr line on a runner error.
-The image needs `env`, `mkdir`, `sleep`, `tar` and `sh`.
+The image needs `env`, `mkdir`, `sleep`, `tar`, `chmod` and `sh`.
 """
 
 from __future__ import annotations
@@ -158,8 +158,14 @@ def kill_leftovers(ctr: str) -> None:
 
 
 def read_scratch(ctr: str, cap: int, limit: float) -> bytes:
-    # tar runs as root (still no capabilities): a uid 65534 process cannot open its fds or signal it.
-    proc = subprocess.Popen(["docker", "exec", "-u", "0:0", ctr, "tar", "-C", "/scratch", "-cf", "-", "."],
+    # Root has no DAC override under --cap-drop ALL: open every file to its owner, 65534, then copy as it.
+    # Safe only after kill_leftovers: no other uid 65534 process is left to open tar's fds or signal it.
+    # /scratch itself is root's: chmod each top entry, never through a top symlink (-R skips deeper ones).
+    opened = docker("exec", "-u", "65534:65534", "-w", "/scratch", ctr, "sh", "-c",
+                    'for f in * .[!.]* ..?*; do [ -L "$f" ] || [ ! -e "$f" ] || chmod -R u+rwX -- "$f" || exit 1; done')
+    if opened.returncode != 0:
+        raise failed("chmod of /scratch", opened)
+    proc = subprocess.Popen(["docker", "exec", "-u", "65534:65534", ctr, "tar", "-C", "/scratch", "-cf", "-", "."],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     fd = proc.stdout.fileno()
     deadline = time.monotonic() + limit
