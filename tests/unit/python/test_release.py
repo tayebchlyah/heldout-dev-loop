@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -288,11 +289,6 @@ class ReleaseCheckTests(unittest.TestCase):
                               capture_output=True, text=True, env=env)
         self.assertEqual((done.returncode, "error" in json.loads(done.stdout)), (1, True))
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ReleasePlanTests(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -403,3 +399,33 @@ class ReleasePlanTests(unittest.TestCase):
         self.assertEqual(release.skill_dir("codex", {"DEVLOOP_TEST_SECURITY_AUDIT_DIR": "/x"}), Path("/x"))
         out, _ = self.plan("--harness", "codex")
         self.assertEqual(out["skill"], str(home / ".agents/skills/security-audit"))
+
+    def test_staged_rename_lists_both_paths(self) -> None:
+        self.git("mv", "a.txt", "c.txt")
+        out, code = self.plan()
+        self.assertEqual((code, out["error"], sorted(out["paths"])), (1, "dirty", ["a.txt", "c.txt"]))
+
+    def test_relative_notes_give_absolute_paths(self) -> None:
+        (self.notes / "security-audit" / "run-1").mkdir(parents=True)
+        old = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, old)
+        out, code = release.plan(self.repo, Path("Demo"), "claude")
+        self.assertEqual(code, 0)
+        self.assertTrue(Path(out["output"]).is_absolute())
+        self.assertTrue(all(Path(p).is_absolute() for p in out["prior_runs"]))
+
+    def test_run_folder_race_is_an_error(self) -> None:
+        real = Path.mkdir
+
+        def racing(path, *a, **kw):
+            real(path, *a, **kw)
+            raise FileExistsError(str(path))
+
+        with unittest.mock.patch.object(Path, "mkdir", racing):
+            out, code = release.plan(self.repo, self.notes, "claude")
+        self.assertEqual((code, out["error"]), (1, "run-folder-exists"))
+
+
+if __name__ == "__main__":
+    unittest.main()
