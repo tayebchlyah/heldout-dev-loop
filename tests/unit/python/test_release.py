@@ -991,7 +991,24 @@ class ReleaseTextTests(unittest.TestCase):
         self.assertIn("/release-audit", text)
         self.assertIn("release-check", text)
         self.assertNotIn("Never merge a release PR or push a tag while one is open", text)
-        self.assertIn("Never push a tag: a stop item", text)
+        grant = text.split("Stop and report only for:", 1)[1].split("\n", 1)[0]
+        self.assertIn("a tag push", grant)
+        self.assertIn("a release PR merge", grant)
+        self.assertNotIn("Never push a tag", text)
+        self.assertIn("Stage 7 release rule", text)
+
+    def test_canary_sandbox_keeps_the_project_permissions_and_exact_uid(self) -> None:
+        text = self.read("scripts/canary.sh")
+        box = text.split("sandbox_canary() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertNotIn("--sandbox", box)
+        self.assertIn("codex exec", box)
+        self.assertNotIn("grep -Eqw 65534", box)
+        self.assertIn("uid=${uid:-none}", box)
+
+    def test_repo_release_steps_are_plain_numbers(self) -> None:
+        steps = self.read("AGENTS.md").split("- Release:", 1)[1].split("\n- ", 1)[0]
+        self.assertNotRegex(steps, r"\d[a-z]\.")
+        self.assertRegex(steps, r"\n  6\. ")
 
     def test_routes_have_a_release_audit_section(self) -> None:
         for rel in ["skill/references/claude.md", "skill/references/codex.md"]:
