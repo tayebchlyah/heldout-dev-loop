@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Tests for the garden kit skill, the comment rule template and the harness-name check."""
-
 from __future__ import annotations
 
 import unittest
