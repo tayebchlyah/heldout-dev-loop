@@ -458,5 +458,20 @@ class MetricsCommandTests(TempDir):
         self.assertEqual(out["row"].split(" | ")[12:14], ["-", "-"])
 
 
+class MetricsTextTests(unittest.TestCase):
+    def test_kit_text(self) -> None:
+        root = HERE.parents[2]
+        skill = (root / "skill" / "SKILL.md").read_text()
+        ship = skill[skill.index("## 7 Ship"):]
+        self.assertIn("devloop.py metrics --write", ship)
+        self.assertIn("metrics: <file>", ship)
+        self.assertIn("metrics: failed: <error>", ship)
+        codex = (root / "skill" / "references" / "codex.md").read_text()
+        self.assertTrue(any("metrics" in line and "not counted" in line for line in codex.splitlines()))
+        agents = (root / "AGENTS.md").read_text().splitlines()
+        self.assertTrue(any(line.startswith("- `metrics") for line in agents))
+        self.assertTrue(any("5 features" in line and "cost" in line and "Feature Metrics.md" in line for line in agents))
+
+
 if __name__ == "__main__":
     unittest.main()
