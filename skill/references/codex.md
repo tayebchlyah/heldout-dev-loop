@@ -27,6 +27,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 - Matt Pocock skills from the local installation: `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr`, `prototype`.
 - Core loop: Stage 1 `grilling`, `prototype`. Stage 4 `superpowers:writing-plans`. Stage 5 `superpowers:executing-plans` (Track M), `superpowers:subagent-driven-development` (Track L), `tdd`, `diagnosing-bugs`. Stage 7 `pr`, then `scripts/devloop.py capture` (`references/verify.md` section Stage 7).
+- Stage 7 metrics: a Codex session is not counted (`devloop.py metrics` reads Claude transcripts only). Skip the SKILL.md Stage 7 metrics step.
 - Never invoke these Superpowers skills (Codex has no skill deny list): `superpowers:brainstorming`, `superpowers:test-driven-development`, `superpowers:systematic-debugging`, `superpowers:finishing-a-development-branch`.
 - Acceptance author: custom agent `spec_tester`.
 - SDD implementers: custom agent `implementer`.
