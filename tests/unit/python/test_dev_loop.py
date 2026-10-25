@@ -137,6 +137,13 @@ AutonomyHookTests = test_autonomy.AutonomyHookTests
 KitSkillTests = test_autonomy.KitSkillTests
 AutonomyContractTests = test_autonomy.AutonomyContractTests
 
+_release_spec = importlib.util.spec_from_file_location("test_release", Path(__file__).resolve().parent / "test_release.py")
+if _release_spec is None or _release_spec.loader is None:
+    raise ImportError("cannot load test_release module")
+test_release = importlib.util.module_from_spec(_release_spec)
+_release_spec.loader.exec_module(test_release)
+ReleaseParseTests = test_release.ReleaseParseTests
+
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
