@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """`devloop.py second-review`: the other model family's CLI as a read-only reviewer. The locks and the decision
-order (D2, D4, D6 rules 1 to 6) live here; `_review` is the seam for the CLI run."""
+order (D2, D4, D6 rules 1 to 6), the export, sweep and CLI lookup (D7, D9) live here; `_review` is the seam for
+the CLI run."""
 
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -16,6 +20,12 @@ import devloop
 REVIEWER = {"claude": "codex", "codex": "claude"}
 EFFORTS = {"codex": ("minimal", "low", "medium", "high", "xhigh"), "claude": ("low", "medium", "high", "xhigh", "max")}
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/\[\]-]*")
+PREFIX = "devloop-second-review-"
+MAX_BLOB = 1_048_576
+DIFF = ".second-review.diff"
+NAMES = {"agents.md", "agents.override.md", "claude.md", "claude.local.md", ".mcp.json"}
+FOLDERS = {".claude", ".codex", ".agents"}
+PROMPT = Path(__file__).resolve().parent.parent / "references" / "second-review.md"
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict:
@@ -83,10 +93,122 @@ def payload(**fields: object) -> dict:
     return out
 
 
+def sweep(tmp: Path, now: float) -> None:
+    """Removes `devloop-second-review-*` folders in `tmp` older than 24 hours."""
+    for folder in tmp.glob(PREFIX + "*"):
+        try:
+            if folder.is_dir() and not folder.is_symlink() and now - folder.lstat().st_mtime > 24 * 3600:
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def left_out(path: str) -> bool:
+    """The D7 name rules, case-folded."""
+    parts = path.casefold().split("/")
+    name = parts[-1]
+    return (parts[:2] == ["tests", "acceptance"] or name in NAMES or bool(FOLDERS.intersection(parts[:-1]))
+            or name == ".env" or name.startswith(".env."))
+
+
+def export(repo: Path, ref: str, sha: str, dest: Path) -> tuple[list[str], int]:
+    """The tree of `sha` into `dest`, less the D7 paths, then `.second-review.diff` of `ref...sha`. Raises on a failure."""
+    if subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=dest, capture_output=True).returncode == 0:
+        raise RuntimeError(f"export folder is inside a git work tree: {dest}")
+    listed = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "-z", "-l", "--full-tree", sha], capture_output=True)
+    if listed.returncode != 0:
+        raise RuntimeError(f"git ls-tree failed: {listed.stderr.decode(errors='replace').strip()}")
+    keep, left, seen, dirs = [], 0, set(), set()
+    for record in listed.stdout.split(b"\0"):
+        if not record:
+            continue
+        meta, raw = record.split(b"\t", 1)
+        mode, _, obj, size = meta.split()
+        path = os.fsdecode(raw)
+        folded = path.casefold()
+        prefixes = ["/".join(folded.split("/")[:i]) for i in range(1, folded.count("/") + 1)]
+        # `.git` or `..` parts never reach the export: a `.git` folder there would make it a repo with branch config.
+        unsafe = any(part in ("", ".", "..", ".git") for part in folded.split("/"))
+        if (mode in (b"120000", b"160000") or int(size) > MAX_BLOB or left_out(path) or unsafe
+                or folded in seen or folded in dirs or any(prefix in seen for prefix in prefixes)):
+            left += 1
+            continue
+        seen.add(folded)
+        dirs.update(prefixes)
+        keep.append((path, obj))
+    batch = subprocess.Popen(["git", "-C", str(repo), "cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    assert batch.stdin is not None and batch.stdout is not None
+    try:
+        for path, obj in keep:
+            batch.stdin.write(obj + b"\n")
+            batch.stdin.flush()
+            header = batch.stdout.readline().split()
+            if len(header) != 3 or header[1] != b"blob":
+                raise RuntimeError(f"git cat-file failed for {path}")
+            data = batch.stdout.read(int(header[2]) + 1)[:-1]
+            target = dest / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+    finally:
+        batch.stdin.close()
+        batch.stdout.close()
+        batch.wait()
+    diff = subprocess.run(["git", "-C", str(repo), "-c", "core.quotepath=off", "diff", "--no-ext-diff", "--no-textconv",
+                           "--no-color", "-a", f"{ref}...{sha}", "--", ".", ":(exclude,icase)tests/acceptance/**",
+                           ":(exclude,glob)**/.env", ":(exclude,glob)**/.env.*"], capture_output=True)
+    if diff.returncode != 0:
+        raise RuntimeError(f"git diff failed: {diff.stderr.decode(errors='replace').strip()}")
+    (dest / DIFF).write_bytes(diff.stdout)
+    return [path for path, _ in keep], left
+
+
+def _inside(path: Path, folders: list[Path]) -> bool:
+    # Case-folded: APFS resolves a path in any case to the same folder.
+    text = str(path).casefold()
+    return any(text == str(f).casefold() or text.startswith(str(f).casefold().rstrip(os.sep) + os.sep) for f in folders)
+
+
+def worktrees(repo: Path) -> list[Path]:
+    """Every worktree of the repo, resolved."""
+    listed = devloop.git(repo, "worktree", "list", "--porcelain") or ""
+    return [Path(line[len("worktree "):]).resolve() for line in listed.splitlines() if line.startswith("worktree ")]
+
+
+def lookup(name: str, path_env: str, worktrees: list[Path]) -> Path | None:
+    """D9: the first executable `name` in an absolute `PATH` entry outside every worktree, resolved."""
+    folders = [w.resolve() for w in worktrees]
+    for entry in path_env.split(os.pathsep):
+        if not os.path.isabs(entry) or _inside(Path(entry).resolve(), folders):
+            continue
+        found = Path(entry) / name
+        real = found.resolve()
+        if real.is_file() and os.access(real, os.X_OK) and not _inside(real, folders):
+            return real
+    return None
+
+
 def _review(repo: Path, reviewer: str, ref: str, sha: str, entry: dict, timeout_minutes: float,
             env: Mapping[str, str], out: dict) -> tuple[dict, int]:
-    """Rules 7 to 11: lookup, export, CLI run, audit. Filled by later tasks."""
-    return {**out, "state": "failed", "reason": "export"}, 1
+    """Rules 7 to 11: lookup, export, CLI run, audit."""
+    cli = lookup(reviewer, env.get("PATH", ""), worktrees(repo))
+    if cli is None:
+        return {**out, "state": "skipped", "reason": "no-cli"}, 0
+    try:
+        dest = Path(tempfile.mkdtemp(prefix=PREFIX))
+    except OSError as error:
+        return {**out, "state": "failed", "reason": "export", "message": f"cannot make the export folder: {error}"}, 1
+    try:
+        try:
+            files, left = export(repo, ref, sha, dest)
+            prompt = PROMPT.read_text(encoding="utf-8")
+        except (OSError, RuntimeError, ValueError) as error:
+            message = (str(error) or type(error).__name__).splitlines()[0]
+            return {**out, "state": "failed", "reason": "export", "message": message}, 1
+        out.update(files=len(files), left_out=left)
+        # Task 3 placeholder: rules 9 to 11 (record, CLI run, audit) replace this return, with `cli`, `dest`, `prompt`.
+        return {**out, "state": "failed", "reason": "export", "message": "not built"}, 1
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
 
 
 def run(repo: Path, harness: str, timeout_minutes: float, env: Mapping[str, str]) -> tuple[dict, int]:
@@ -94,6 +216,7 @@ def run(repo: Path, harness: str, timeout_minutes: float, env: Mapping[str, str]
     saved = os.environ.get("GIT_NO_REPLACE_OBJECTS")
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
+        sweep(Path(tempfile.gettempdir()), time.time())
         return _decide(repo, harness, timeout_minutes, env)
     finally:
         if saved is None:
