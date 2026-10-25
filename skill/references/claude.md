@@ -60,3 +60,5 @@ User-invoked only: `/release-audit` (kit skill `release-audit`), main session, a
 ## Garden
 
 User-invoked only: `/garden` (kit skill `garden`), the weekly `## Gardener` triage, main checkout on `main`. Steps: the skill's `SKILL.md`.
+
+Retro skill: `/retro` (Pocock, user-invoked only), the weekly review before `/garden` (SKILL.md Stage 1).
