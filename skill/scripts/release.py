@@ -5,12 +5,15 @@ Shared by `devloop.py` (`release-plan`, `release-record`, `release-check`).
 
 from __future__ import annotations
 
+import fcntl
 import fnmatch
 import json
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Mapping
+from datetime import date
 from pathlib import Path
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+)\): (.+)$")
@@ -256,3 +259,139 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         },
         "skill": str(skill_dir(harness, os.environ)),
     }, 0
+
+
+def one_line(value: object) -> str:
+    """A text value on one line: breaks and tabs become a space, backticks an apostrophe (a title cannot forge a
+    `Fingerprint` marker or a ruling sub-bullet)."""
+    return re.sub(r"[\r\n\t]+", " ", str(value)).replace("`", "'").strip()
+
+
+def hardening_count(report: Path) -> int:
+    """Top-level `- ` bullets under the first heading (any level) of `report` whose text starts with `Hardening`."""
+    try:
+        lines = report.read_text().splitlines()
+    except (OSError, ValueError):
+        return 0
+    count = 0
+    inside = False
+    for line in lines:
+        if line.startswith("#"):
+            if inside:
+                break
+            inside = line.lstrip("#").strip().startswith("Hardening")
+        elif inside and line.startswith("- "):
+            count += 1
+    return count
+
+
+def validate_run(skill: Path, run: Path) -> str | None:
+    """None when both validators pass, else the tail of what went wrong."""
+    for script, target in (("validate-findings.cjs", "findings.json"), ("validate-coverage-ledger.cjs", "coverage-ledger.json")):
+        try:
+            done = subprocess.run(["node", str(skill / script), str(run / target)], capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return f"{script}: {type(exc).__name__}"
+        if done.returncode != 0:
+            return (done.stderr or done.stdout)[-500:] or f"{script} exited {done.returncode}"
+    return None
+
+
+def add_lines(lines: list[str], heading: str, new: list[str], blank_before: bool = False) -> None:
+    """Insert `new` after the last non-blank line of `## <heading>`; a missing section is appended at the end."""
+    start = next((i for i, line in enumerate(lines) if line.startswith("## ") and line[3:].strip() == heading), None)
+    if start is None:
+        lines.extend(["", f"## {heading}", "", *new])
+        return
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    last = max((i for i in range(start + 1, end) if lines[i].strip()), default=start)
+    block = ["", *new] if blank_before else new
+    lines[last + 1:last + 1] = block
+    if end == last + 1 and end < len(lines):  # the section ended right at the next heading
+        lines.insert(last + 1 + len(block), "")
+
+
+def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, env: Mapping[str, str]) -> tuple[dict, int]:
+    """Validate a finished audit run, then write its Deferred lines, Gardener line and record line in one write of the
+    project note. Exit 0, else 1 with `error` and the note untouched."""
+    from autonomy import write_atomic  # lazy: keeps the import graph of the parsers flat
+
+    run = run.absolute()
+    audits = (notes / "security-audit").absolute()
+    if run.parent.resolve() != audits.resolve() or not re.fullmatch(r"run-\d+", run.name):
+        return {"error": "bad-run"}, 1
+    note = project_note(notes)
+    if note is None:
+        return {"error": "no-project-note"}, 1
+    if base is not None and not re.fullmatch(r"[0-9a-f]{40}", base):
+        return {"error": "bad-base"}, 1
+    try:
+        meta = json.loads((run / "run-metadata.json").read_text())
+        status = meta.get("run_status")
+        sha = meta["source_ref"]["commit"]
+        profile = meta["profile"]
+        if not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) and isinstance(profile, str) and re.fullmatch(r"\S+", profile)):
+            raise ValueError("bad commit or profile")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return {"error": "invalid-run", "tail": f"run-metadata.json: {type(exc).__name__}"}, 1
+    if status != "complete":
+        return {"error": "run-incomplete", "run_status": status}, 1
+    if (tail := validate_run(skill_dir(harness, env), run)) is not None:
+        return {"error": "invalid-run", "tail": tail}, 1
+    try:
+        data = json.loads((run / "findings.json").read_text())
+    except (OSError, ValueError):
+        return {"error": "invalid-run", "tail": "findings.json unreadable"}, 1
+    findings = [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+    verdicts = {"confirmed": "confirmed", "needs_validation": "needs-validation"}
+    today = date.today().isoformat()
+    name = run.name
+    scope = "whole" if base is None else f"{base}..{sha}"
+    common = run_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    lock = Path(common or repo) / "dev-loop" / "decide.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        try:
+            text = note.read_text()
+        except (OSError, ValueError) as exc:
+            return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
+        recorded = [line for line in section(text, "Release audits") if RECORD_RE.match(line.rstrip())]
+        if any(RECORD_RE.match(line.rstrip()).group(2) == name for line in recorded):
+            return {"error": "already-recorded"}, 1
+        open_prints = {i["fingerprint"] for i in security_items(text)[0] if i["fingerprint"]}
+        deferred: list[str] = []
+        skipped: list[str] = []
+        for item in findings:
+            verdict = verdicts.get(item.get("verdict"))
+            if verdict is None:
+                continue
+            fingerprint = one_line(item["fingerprint"]) if item.get("fingerprint") else ""
+            if fingerprint and fingerprint in open_prints:
+                skipped.append(fingerprint)
+                continue
+            open_prints.add(fingerprint)
+            detail = "FINDINGS-DETAIL.md" if verdict == "confirmed" else "NEEDS-VALIDATION.md"
+            blockers = item.get("blockers")
+            blocker = one_line(blockers[0]) if verdict == "needs-validation" and isinstance(blockers, list) and blockers and blockers[0] else ""
+            parts = [f"{one_line(item.get('title') or 'untitled')}."]
+            if fingerprint:
+                parts.append(f"Fingerprint `{fingerprint}`.")
+            if blocker:
+                parts.append(f"Blocker: {blocker}.")
+            parts.append(f"Details: security-audit/{name}/{detail}.")
+            deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
+        counts = {v: sum(1 for r in findings if r.get("verdict") == v) for v in verdicts}
+        hardening = hardening_count(run / "REPORT.md")
+        gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see security-audit/{name}/REPORT.md" if hardening else None
+        line = (f"- {today} {name} at {sha}: confirmed {counts['confirmed']}, needs validation {counts['needs_validation']}, "
+                f"hardening {hardening}, profile {profile}, scope {scope}")
+        lines = text.split("\n")
+        if deferred:
+            add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *deferred], blank_before=True)
+        if gardener:
+            add_lines(lines, "Gardener", [gardener])
+        add_lines(lines, "Release audits", [line])
+        out = "\n".join(lines)
+        write_atomic(note, out if out.endswith("\n") else out + "\n")
+    return {"record": line, "deferred": deferred, "skipped": skipped, "gardener": gardener}, 0
