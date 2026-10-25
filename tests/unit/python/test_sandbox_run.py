@@ -181,6 +181,11 @@ class SandboxRunTests(unittest.TestCase):
         self.assertEqual((scratch / "f").read_text(), "x\n")
         self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), sorted([*before, scratch.name]))
 
+        private = "mkdir -m 700 /scratch/d && echo s > /scratch/d/f && chmod 600 /scratch/d/f"
+        done, scratch = self.run_sandbox("sh", "-c", private)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual((scratch / "d" / "f").read_text(), "s\n")
+
     def test_environment_is_empty(self) -> None:
         env = {**os.environ, "DEVLOOP_PROBE": "secret"}
         expected = {f"PATH={IMAGE_PATH}", "HOME=/scratch/home", "TMPDIR=/scratch/tmp",
