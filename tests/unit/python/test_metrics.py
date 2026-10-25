@@ -198,6 +198,16 @@ class MetricsNumbersTests(TempDir):
                 usage_msg("2", "2026-01-01T00:00:02Z", "msg", input_tokens=100)]
         self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["total"], 100)
 
+    def test_message_counted_once_over_features(self) -> None:
+        recs = [tool_use("1", "2026-01-01T00:00:00Z", "Read", MENTION),
+                usage_msg("2", "2026-01-01T00:00:01Z", "msg", input_tokens=100),
+                tool_use("3", "2026-01-01T00:00:02Z", "Read", {"file_path": "/w/feat-b/f"}),
+                usage_msg("4", "2026-01-01T00:00:03Z", "msg", input_tokens=100)]
+        both = metrics.attribute([metrics.Transcript(self.tmp / "x.jsonl", recs, None)],
+                                 {"a": Path("/w/feat-a"), "b": Path("/w/feat-b")})
+        self.assertEqual(metrics.numbers(both, "a", [])["total"], 100)
+        self.assertEqual(metrics.numbers(both, "b", [])["total"], 0)
+
     def test_models_split(self) -> None:
         bounds = [(metrics.parse_time("2026-01-01T00:00:00Z"), "5")]
         recs = [usage_msg("1", "2026-01-01T00:00:01Z", "m1", "opus", input_tokens=10, output_tokens=2),
