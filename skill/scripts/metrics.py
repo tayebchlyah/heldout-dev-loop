@@ -16,7 +16,7 @@ from pathlib import Path
 WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_read": 0.1, "output": 5.0}
 STAGES = ("1-2", "3", "4", "5", "6", "7")
 GATE = "devloop.py gate --summary"
-DENIAL = re.compile(r"PreToolUse:\S+ hook error: \[([^\]]*)\]")
+DENIAL = re.compile(r"PreToolUse:\S+ hook error: \[(.*?)(?:\]:.*)?$")
 HOOK = re.compile(r"[^\s/\[\]\"'`]+\.sh")
 TESTS = (re.compile(r"^\s*def test_\w*\("), re.compile(r"^\s*(?:it|test)\("), re.compile(r"^func Test\w*\("))
 HEADER = ("| feature | track | shipped | sessions | active h | user msgs | gate runs | gate s | unit tests "
@@ -298,7 +298,7 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
                 if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
                     gate["runs"] += 1
                     gate["seconds"] += seconds
-            if block.get("is_error") is True and (m := DENIAL.match(text)):
+            if block.get("is_error") is True and (m := DENIAL.match(text.split("\n", 1)[0])):
                 names = HOOK.findall(m.group(1))
                 key = names[-1] if names else "other"
                 denials[key] = denials.get(key, 0) + 1
