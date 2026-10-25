@@ -6,6 +6,7 @@ D2 read, D3 feature of a record, D4 stage of a record, D5 weights, D6 numbers, D
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -18,6 +19,10 @@ GATE = "devloop.py gate --summary"
 DENIAL = re.compile(r"PreToolUse:\S+ hook error: \[([^\]]*)\]")
 HOOK = re.compile(r"[^\s/\[\]\"'`]+\.sh")
 TESTS = (re.compile(r"^\s*def test_\w*\("), re.compile(r"^\s*(?:it|test)\("), re.compile(r"^func Test\w*\("))
+HEADER = ("| feature | track | shipped | sessions | active h | user msgs | gate runs | gate s | unit tests "
+          "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | escaped |")
+DATA_RULE = ("Data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) "
+             "until 5 features have a row with stage cells that are not `?`.")
 CLAIM = re.compile(r"devloop\.py board\b.*--claim[ =]([a-z0-9]+(?:-[a-z0-9]+)*)")
 
 
@@ -336,3 +341,48 @@ def test_counts(worktree: Path, ref: str) -> dict[str, int]:
             tier = "acceptance" if path.startswith("tests/acceptance/") else "unit"
             counts[tier] += 1 if line[0] == "+" else -1
     return counts
+
+
+def row(slug: str, track: str, shipped: str, payload: dict, present: set[str]) -> str:
+    """The table row of the feature, `escaped` empty (D7)."""
+    def stage(key: str) -> str:
+        if payload["unattributed"]:
+            return "?"
+        if key != "1-2" and key not in present:
+            return "-"
+        return str(round(payload["stages"].get(key, {}).get("weighted", 0) / 1000))
+
+    cells = [slug, track, shipped, payload["sessions"], payload["active_hours"], payload["user_messages"],
+             payload["gate"]["runs"], round(payload["gate"]["seconds"]), payload["tests"]["unit"],
+             payload["tests"]["acceptance"], sum(payload["denials"].values()), *map(stage, STAGES),
+             round(payload["total"] / 1000), ""]
+    return "| " + " | ".join(map(str, cells)) + " |"
+
+
+def cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().removeprefix("|").removesuffix("|").split("|")]
+
+
+def write_row(file: Path, slug: str, line: str) -> None:
+    """Replace the feature's row (its `escaped` cell kept), else add it after the last table line. Raises OSError."""
+    table = [HEADER, "| " + " | ".join(["---"] * len(cells(HEADER))) + " |"]
+    if file.exists():
+        lines = file.read_text().splitlines()
+        rows = [i for i, x in enumerate(lines) if x.lstrip().startswith("|")]
+        mine = next((i for i in rows if cells(lines[i])[0] == slug), None)
+        if mine is not None:
+            escaped = cells(lines[mine])[-1]
+            lines[mine] = line.rstrip().removesuffix("|").rsplit("|", 1)[0] + f"| {escaped} |"
+        elif rows:
+            lines.insert(rows[-1] + 1, line)
+        else:
+            lines += ["", *table, line]
+    else:
+        lines = ["---", "type: note", "tags: [dev-loop, feature-metrics]", "---", "", "# Feature Metrics", "",
+                 DATA_RULE, "", *table, line]
+    temp = file.with_name(f".{file.name}.{os.getpid()}.tmp")
+    try:
+        temp.write_text("\n".join(lines) + "\n")
+        os.replace(temp, file)
+    finally:
+        temp.unlink(missing_ok=True)
