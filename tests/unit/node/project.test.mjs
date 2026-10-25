@@ -75,11 +75,12 @@ test('init --yes writes every path of the layout, and the manifest agrees with t
   ]) {
     assert.ok(existsSync(join(repo, path)), path)
   }
-  for (const name of ['dev-loop', 'pause', 'continue']) {
+  for (const name of ['dev-loop', 'pause', 'continue', 'release-audit']) {
     assert.equal(readlinkSync(join(repo, `.claude/skills/${name}`)), `../../.agents/skills/${name}`)
     assert.ok(existsSync(join(repo, `.claude/skills/${name}/SKILL.md`)), name)
   }
   assert.ok(existsSync(join(repo, '.agents/skills/pause/agents/openai.yaml')))
+  assert.ok(existsSync(join(repo, '.agents/skills/release-audit/agents/openai.yaml')))
   assert.equal(existsSync(join(repo, 'dev-loop.local.json')), false)
 
   const devLoop = readFileSync(join(repo, 'dev-loop.json'), 'utf8')
@@ -1101,4 +1102,22 @@ test('upgrade of a 2.1.1 Claude project keeps user groups in order and the empty
   const at = matchers.indexOf('Read|Edit|Write|NotebookEdit|Grep|Glob|Bash')
   assert.deepEqual(matchers.slice(at - 1, at + 3), ['MineBefore', 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash', 'X', 'MineAfter'])
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
+})
+
+test('upgrade from a kit without release-audit adds its files, link and MANIFEST entries', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes'])
+  const path = join(repo, '.dev-loop/MANIFEST.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8'))
+  rmSync(join(repo, '.agents/skills/release-audit'), { recursive: true })
+  unlinkSync(join(repo, '.claude/skills/release-audit'))
+  for (const key of Object.keys(manifest.files)) if (key.startsWith('.agents/skills/release-audit/') || key === '.claude/skills/release-audit') delete manifest.files[key]
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
+  upgrade(repo, home)
+  assert.equal(readlinkSync(join(repo, '.claude/skills/release-audit')), '../../.agents/skills/release-audit')
+  for (const file of ['SKILL.md', 'agents/openai.yaml']) assert.ok(existsSync(join(repo, `.agents/skills/release-audit/${file}`)), file)
+  const after = JSON.parse(readFileSync(path, 'utf8'))
+  assert.ok('.agents/skills/release-audit/SKILL.md' in after.files)
+  assert.ok('.agents/skills/release-audit/agents/openai.yaml' in after.files)
+  assert.ok('.claude/skills/release-audit' in after.files)
 })
