@@ -73,3 +73,30 @@ class KitTextTests(unittest.TestCase):
         for rel in ["skill/references/claude.md", "skill/references/codex.md"]:
             with self.subTest(rel=rel):
                 self.assertIn(GUARD, self.read(rel))
+
+
+CLAUDE_ONLY = [
+    "TaskCreate", "TaskUpdate", "subagent_type", "SendMessage", "TaskStop", "EnterWorktree",
+    "CLAUDE_CODE_SESSION_ID", "mattpocock-skills:",
+]
+CODEX_ONLY = [
+    "spawn_agent", "send_input", "followup_task", "resume_agent", "interrupt_agent", "close_agent",
+    "apply_patch", "CODEX_THREAD_ID",
+]
+
+
+def name_hits(route: str, folder: str, names: list[str]) -> list[str]:
+    files = [ROOT / route, *sorted(p for p in (ROOT / folder).rglob("*") if p.is_file())]
+    hits = []
+    for path in files:
+        for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+            hits += [f"{path.relative_to(ROOT)}:{n} {name}" for name in names if name in line]
+    return hits
+
+
+class HarnessNameTests(unittest.TestCase):
+    def test_codex_sources_have_no_claude_name(self) -> None:
+        self.assertEqual([], name_hits("skill/references/codex.md", "codex", CLAUDE_ONLY))
+
+    def test_claude_sources_have_no_codex_name(self) -> None:
+        self.assertEqual([], name_hits("skill/references/claude.md", "claude", CODEX_ONLY))
