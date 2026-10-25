@@ -177,6 +177,8 @@ test_retro = importlib.util.module_from_spec(_retro_spec)
 _retro_spec.loader.exec_module(test_retro)
 ReviewDueTests = test_retro.ReviewDueTests
 ReviewDueStatusTests = test_retro.ReviewDueStatusTests
+SessionsTests = test_retro.SessionsTests
+SessionsCommandTests = test_retro.SessionsCommandTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:

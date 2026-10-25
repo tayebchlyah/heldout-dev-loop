@@ -28,6 +28,7 @@
                                                       the release gate: a current audit record, no open security item
   devloop.py metrics [--repo PATH] [--feature SLUG] [--write]
                                                       the token cost of each stage of a feature, its row in Feature Metrics.md
+  devloop.py sessions --since DAYS [--repo PATH]       the Claude Code and Codex sessions of the repo, for retro
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
                                                       append one row to the decision log
   devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
@@ -49,7 +50,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
@@ -1198,6 +1199,17 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     return emit(payload, 0)
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    import retro
+
+    repo = Path(args.repo).resolve()
+    if git(repo, "rev-parse", "--show-toplevel") is None:
+        return emit({"error": f"not a git repo: {repo}"}, 1)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    found = retro.sessions(repo, args.since, os.environ, Path.home(), now)
+    return emit({"since": retro.utc((now - timedelta(days=args.since)).timestamp()), "sessions": found}, 0)
+
+
 def finite_minutes(value: str) -> float:
     try:
         minutes = float(value)
@@ -1467,6 +1479,11 @@ def main() -> int:
     metrics.add_argument("--feature")
     metrics.add_argument("--write", action="store_true")
     metrics.set_defaults(run=cmd_metrics)
+
+    sessions = commands.add_parser("sessions")
+    sessions.add_argument("--since", type=positive_int, required=True)
+    sessions.add_argument("--repo", default=".")
+    sessions.set_defaults(run=cmd_sessions)
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
