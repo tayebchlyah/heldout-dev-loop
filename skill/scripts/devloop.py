@@ -19,6 +19,7 @@
                                                       drive the feature map routes the branch changed, save the evidence
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
+  devloop.py second-review --harness claude|codex [--timeout MINUTES]
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
                                                       append one row to the decision log
   devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
@@ -32,6 +33,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import math
 import os
 import re
 import subprocess
@@ -1097,6 +1099,23 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return emit(payload, code)
 
 
+def cmd_second_review(args: argparse.Namespace) -> int:
+    from second_review import run
+
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    return emit(*run(Path(top or "."), args.harness, args.timeout, os.environ))
+
+
+def finite_minutes(value: str) -> float:
+    try:
+        minutes = float(value)
+    except ValueError:
+        minutes = float("nan")
+    if not math.isfinite(minutes) or minutes <= 0:
+        raise argparse.ArgumentTypeError(f"not a finite number above 0: {value}")
+    return minutes
+
+
 def positive_int(value: str) -> int:
     if not value.isdigit() or int(value) < 1:
         raise argparse.ArgumentTypeError(f"not a positive integer: {value}")
@@ -1324,6 +1343,11 @@ def main() -> int:
     capture.add_argument("--after")
     capture.add_argument("--write-after")
     capture.set_defaults(run=cmd_capture)
+
+    second = commands.add_parser("second-review")
+    second.add_argument("--harness", choices=["claude", "codex"], required=True)
+    second.add_argument("--timeout", type=finite_minutes, default=15)
+    second.set_defaults(run=cmd_second_review)
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
