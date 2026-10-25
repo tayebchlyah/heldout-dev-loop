@@ -482,6 +482,19 @@ class MetricsCommandTests(TempDir):
         self.assertEqual(code, 1, out)
         self.assertIn("Feature Metrics.md", out["error"])
 
+    def test_cli_rebasing_worktree_is_mapped(self) -> None:
+        self.fixture()
+        other = self.root / "wt2"
+        self.git(self.repo, "worktree", "add", "-q", "-b", "feat/b", str(other))
+        self.git(other, "checkout", "-q", "--detach")
+        state = self.repo / ".git" / "worktrees" / "wt2" / "rebase-merge"
+        state.mkdir()
+        (state / "head-name").write_text("refs/heads/feat/b\n")
+        self.transcript([tool_use("1", "2026-01-01T10:30:00Z", "Read", {"file_path": f"{other}/f.py"}),
+                         usage_msg("2", "2026-01-01T10:31:00Z", "m1", "opus", output_tokens=1000)])
+        code, out = self.run_cli("--feature", "b")
+        self.assertEqual((code, out.get("total")), (0, 5000), out)
+
     def test_cli_track_s(self) -> None:
         self.fixture(slug="quick-fix", prefix="fix", spec=False)
         self.transcript(self.work())

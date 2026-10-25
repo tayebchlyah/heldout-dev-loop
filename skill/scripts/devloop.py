@@ -1151,6 +1151,7 @@ def cmd_release_record(args: argparse.Namespace) -> int:
 
 def cmd_metrics(args: argparse.Namespace) -> int:
     import metrics
+    from board import writer
 
     repo = Path(args.repo).resolve()
     slug = (args.feature or "").lower() or branch_slug(repo)
@@ -1166,15 +1167,9 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     matches = [path for name, path in specs(notes) if name == slug]
     fields = frontmatter(matches[-1]) if matches else {}
     track = (fields.get("track") or "").upper() or "S"
-    paths: list[Path] = []
-    features: dict[str, Path] = {}
-    current: Path | None = None
-    for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
-        if line.startswith("worktree "):
-            current = Path(line[len("worktree "):])
-            paths.append(current)
-        elif line.startswith("branch refs/heads/") and "/" in line[len("branch refs/heads/"):] and current:
-            features[line.rsplit("/", 1)[1].lower()] = current
+    found = writer.worktrees(sys.modules[__name__], repo)  # a worktree in a rebase (detached) keeps its slug
+    paths = list(found)
+    features = {name: path for path, name in found.items() if name}
     root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
     items = metrics.attribute(metrics.load(metrics.project_folders(root, paths)), features)
     if not any(c.feature == slug and not c.copy for c in items):
