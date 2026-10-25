@@ -153,6 +153,7 @@ if _sandbox_spec is None or _sandbox_spec.loader is None:
 test_sandbox_run = importlib.util.module_from_spec(_sandbox_spec)
 _sandbox_spec.loader.exec_module(test_sandbox_run)
 SandboxRunTests = test_sandbox_run.SandboxRunTests
+SandboxExtractTests = test_sandbox_run.SandboxExtractTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
