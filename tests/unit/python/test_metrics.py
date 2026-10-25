@@ -147,6 +147,15 @@ class MetricsAttributionTests(TempDir):
         self.assertEqual([(c.transcript is sub, c.copy) for c in items],
                          [(False, False), (False, False), (True, False), (True, False)])
 
+    def test_subagents_reusing_each_others_uuids_are_not_copies(self) -> None:
+        main = self.main([tool_use("m1", "2026-01-01T00:00:00Z", "Agent", {"prompt": "work in /w/feat-a"}, tid="T1"),
+                          tool_use("m2", "2026-01-01T00:00:01Z", "Agent", {"prompt": "x"}, tid="T2")])
+        subs = [metrics.Transcript(path=self.tmp / f"agent-{n}.jsonl", meta={"toolUseId": f"T{n}"},
+                                   records=[record("s1", "2026-01-01T00:00:02Z"), record("s2", "2026-01-01T00:00:03Z")])
+                for n in (1, 2)]
+        items = metrics.attribute([main, *subs], {"a": self.WT_A})
+        self.assertEqual([c.copy for c in items if c.transcript is not main], [False] * 4)
+
     def test_bad_shapes_no_crash(self) -> None:
         recs = [{"uuid": "1", "type": "assistant", "message": "x"},
                 {"uuid": "2", "type": "assistant", "message": {"content": 3}},

@@ -126,15 +126,15 @@ def mention(rec: dict, patterns: dict[str, re.Pattern]) -> str | None:
 def attribute(transcripts: list[Transcript], worktrees: dict[str, Path]) -> list[Counted]:
     """Each record that belongs to a feature, in read order (D2, D3)."""
     patterns = {slug: re.compile(re.escape(str(path)) + r'(?=[/" ]|$)') for slug, path in worktrees.items()}
-    seen: dict[bool, set[str]] = {True: set(), False: set()}  # main and subagent transcripts apart
+    seen: set[str] = set()  # main transcripts only: a subagent record is never a copy
     copies: dict[int, list[bool]] = {}
     for t in transcripts:
         flags = []
         for rec in t.records:
             uid = rec.get("uuid")
-            flags.append(isinstance(uid, str) and uid in seen[t.main])
-            if isinstance(uid, str):
-                seen[t.main].add(uid)
+            flags.append(t.main and isinstance(uid, str) and uid in seen)
+            if t.main and isinstance(uid, str):
+                seen.add(uid)
         copies[id(t)] = flags
 
     features: dict[int, list[str | None]] = {}
