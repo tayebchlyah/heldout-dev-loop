@@ -249,6 +249,12 @@ class MetricsNumbersTests(TempDir):
                 result("8", "2026-01-01T00:00:08Z", "g4", json.dumps({"seconds": 5}))]
         self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["gate"], {"runs": 2, "seconds": 30.5})
 
+    def test_gate_red_result_counted(self) -> None:
+        gate = "python3 x/devloop.py gate --summary"
+        recs = [tool_use("1", "2026-01-01T00:00:01Z", "Bash", {"command": gate}, tid="g1"),
+                result("2", "2026-01-01T00:00:02Z", "g1", 'Exit code 1\n{"exit": 1, "seconds": 7}')]
+        self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["gate"], {"runs": 1, "seconds": 7})
+
     def test_denials(self) -> None:
         text = "PreToolUse:Bash hook error: [~/.claude/hooks/deny-path.sh]: denied"
         recs = [result("1", "2026-01-01T00:00:01Z", "t1", text, is_error=True),
