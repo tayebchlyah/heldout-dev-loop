@@ -90,6 +90,20 @@ def dataview_ready(root: Path) -> bool:
     return isinstance(plugins, list) and "dataview" in plugins and isinstance(data, dict) and data.get("enableDataviewJs") is True
 
 
+def vault_unignored(top: Path, notes: Path, folder: str) -> bool:
+    """True when git in `top` says `<notes>/<folder>/` is not ignored."""
+    try:
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "--no-index", f"{notes.resolve().relative_to(top.resolve())}/{folder}/"],
+            cwd=top,
+            capture_output=True,
+            check=False,
+        ).returncode
+    except (OSError, ValueError):
+        return False
+    return ignored == 1
+
+
 def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
     """D24, D34: user actions for the board note in an Obsidian vault. Nothing when the notes path does not resolve."""
     try:
@@ -106,22 +120,17 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         local = {}
     if local.get("board_dataview") is not False and (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
-    if local.get("board_vault_git") != "shared" and (root / ".git").exists():
-        for folder, line in (
-            ("dev-loop-board", "add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git"),
-            ("security-audit", "add security-audit/ to the vault .gitignore"),
-        ):
-            try:
-                ignored = subprocess.run(
-                    ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/{folder}/"],
-                    cwd=root,
-                    capture_output=True,
-                    check=False,
-                ).returncode
-            except OSError:
-                ignored = 0
-            if ignored == 1:
-                actions.append(line)
+    if local.get("board_vault_git") != "shared":
+        if (root / ".git").exists() and vault_unignored(root, Path(notes), "dev-loop-board"):
+            actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
+        # D13: the vault git repo is wherever git finds it, with or without an .obsidian folder.
+        try:
+            top = subprocess.run(["git", "-C", str(notes), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+        except OSError:
+            top = None
+        if top is not None and top.returncode == 0 and top.stdout.strip():
+            if vault_unignored(Path(top.stdout.strip()), Path(notes), "security-audit"):
+                actions.append("add security-audit/ to the vault .gitignore")
     # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
     note = Path(notes) / "dev-loop-board" / store.BOARD_NOTE
     kit = writer.kit_version(repo)
