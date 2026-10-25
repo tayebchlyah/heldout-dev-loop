@@ -411,6 +411,25 @@ class SecondReviewRunTests(unittest.TestCase):
                 if reason == "exit 3":
                     self.assertEqual(out["message"], "boom")
 
+    def test_exec_failure(self) -> None:
+        for shebang, reason in [("#!/nonexistent/interpreter\n", "exit 127"), ("not a script\n", "exit 126")]:
+            with self.subTest(shebang=shebang):
+                self.setUp()
+                (self.bin / "codex").write_text(shebang)
+                (self.bin / "codex").chmod(0o755)
+                out, code, _ = self.review(self.tree())
+                self.assertEqual((out["state"], out["reason"], code), ("failed", reason, 1), out)
+                self.assertTrue(out["message"])
+                self.assertEqual(json.loads((Path(out["record"]) / "record.json").read_text()), out)
+
+    def test_record_failure_is_export(self) -> None:
+        import second_review
+        self.stub("codex", "out('t')")
+        with mock.patch.object(second_review, "record_dir", side_effect=PermissionError("denied")):
+            out, code, seen = self.review(self.tree())
+        self.assertEqual((out["state"], out["reason"], out["record"], code), ("failed", "export", None, 1), out)
+        self.assertEqual(seen, {})
+
     def test_timeout_kills_the_group(self) -> None:
         pids = self.tmp / "pids"
         self.stub("codex", f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
