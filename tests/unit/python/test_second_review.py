@@ -598,6 +598,27 @@ class SecondReviewSetupTests(unittest.TestCase):
                 self.assertNotIn("D4", failures[0])
                 self.assertEqual(groups, [])
 
+    def test_command_and_setup_read_the_local_file_alike(self) -> None:
+        import check_setup
+        for case, state, reason in [("folder", "skipped", "not-chosen"), ("tracked", "failed", "bad-config")]:
+            with self.subTest(case=case):
+                self.setUp()
+                tree = SecondReviewDecisionTests.make(self, local=None if case == "folder" else '{"second_review": {"codex": {}}}')  # type: ignore[arg-type]
+                main = self.tmp / "main"
+                if case == "folder":
+                    (main / "dev-loop.local.json").mkdir()
+                else:
+                    git(main, "add", "-f", "dev-loop.local.json"), git(main, "commit", "-qm", "track")
+                out, _ = SecondReviewDecisionTests.result(self, tree)  # type: ignore[arg-type]
+                self.assertEqual((out["state"], out["reason"]), (state, reason), out)
+                failures, groups = check_setup.check_second_review(tree, "claude")
+                if case == "folder":
+                    self.assertEqual((failures, len(groups)), ([], 1))
+                else:
+                    self.assertEqual((len(failures), groups), (1, []), failures)
+                    self.assertIn("second_review", failures[0])
+                    self.assertIn("tracked", failures[0])
+
 
 def section(text: str, heading: str) -> str:
     start = text.index(f"\n## {heading}")
