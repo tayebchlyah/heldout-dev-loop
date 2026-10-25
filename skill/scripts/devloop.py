@@ -1201,13 +1201,18 @@ def cmd_metrics(args: argparse.Namespace) -> int:
 
 def cmd_sessions(args: argparse.Namespace) -> int:
     import retro
+    from board import writer
 
     repo = Path(args.repo).resolve()
     if git(repo, "rev-parse", "--show-toplevel") is None:
         return emit({"error": f"not a git repo: {repo}"}, 1)
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    found = retro.sessions(repo, args.since, os.environ, Path.home(), now)
-    return emit({"since": retro.utc((now - timedelta(days=args.since)).timestamp()), "sessions": found}, 0)
+    try:
+        found = retro.sessions(repo, args.since, os.environ, Path.home(), now)
+        since = writer.iso((now - timedelta(days=args.since)).timestamp())
+    except OverflowError:
+        return emit({"error": f"--since too large: {args.since}"}, 2)
+    return emit({"since": since, "sessions": found}, 0)
 
 
 def finite_minutes(value: str) -> float:
