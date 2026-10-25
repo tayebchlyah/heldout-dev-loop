@@ -32,7 +32,7 @@ test('a command with no hook path does not change', () => {
 test('a Claude-only kit has the link and no Codex path', () => {
   const kit = buildKit({ packageRoot, harnesses: ['claude'] })
   const paths = kit.files.map((file) => file.path)
-  assert.deepEqual(kit.links, ['dev-loop', 'pause', 'continue', 'release-audit'].map((name) => ({ path: `.claude/skills/${name}`, target: `../../.agents/skills/${name}` })))
+  assert.deepEqual(kit.links, ['dev-loop', 'pause', 'continue', 'release-audit', 'garden'].map((name) => ({ path: `.claude/skills/${name}`, target: `../../.agents/skills/${name}` })))
   assert.ok(!paths.some((path) => path.startsWith('.codex/') || path.includes('/codex/')))
   assert.ok(paths.includes('.agents/skills/dev-loop/SKILL.md'))
   assert.ok(paths.includes('.agents/skills/dev-loop/scripts/check_setup.py'))
@@ -50,7 +50,7 @@ test('a Codex-only kit has no link and no Claude path', () => {
   const kit = buildKit({ packageRoot, harnesses: ['codex'] })
   const paths = kit.files.map((file) => file.path)
   assert.deepEqual(kit.links, [])
-  for (const path of ['.agents/skills/pause/SKILL.md', '.agents/skills/pause/agents/openai.yaml', '.agents/skills/continue/SKILL.md', '.agents/skills/release-audit/SKILL.md', '.agents/skills/release-audit/agents/openai.yaml']) {
+  for (const path of ['.agents/skills/pause/SKILL.md', '.agents/skills/pause/agents/openai.yaml', '.agents/skills/continue/SKILL.md', '.agents/skills/release-audit/SKILL.md', '.agents/skills/release-audit/agents/openai.yaml', '.agents/skills/garden/SKILL.md', '.agents/skills/garden/agents/openai.yaml']) {
     assert.ok(paths.includes(path), path)
   }
   assert.ok(!paths.some((path) => path.startsWith('.claude/') || path.includes('/claude/')))
