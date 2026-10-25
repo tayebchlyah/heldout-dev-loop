@@ -252,7 +252,14 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
     mine = [c for c in items if c.feature == slug and not c.copy]
     stages: dict[str, dict] = {}
     per_transcript: dict[int, float] = {}
-    seen_messages: set[str] = set()
+    owners: dict[str, Counted] = {}  # a `message.id` counts for the first record that holds it, over all features
+    for c in items:
+        message = c.record.get("message")
+        if c.copy or c.record.get("type") != "assistant" or not isinstance(message, dict) \
+                or not isinstance(message.get("usage"), dict):
+            continue
+        if isinstance(message.get("id"), str):
+            owners.setdefault(message["id"], c)
     times: list[float] = []
     gate = {"runs": 0, "seconds": 0.0}
     denials: dict[str, int] = {}
@@ -266,9 +273,7 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
         message = rec.get("message")
         if rec.get("type") == "assistant" and isinstance(message, dict) and isinstance(message.get("usage"), dict):
             mid = message.get("id")
-            if not (isinstance(mid, str) and mid in seen_messages):
-                if isinstance(mid, str):
-                    seen_messages.add(mid)
+            if not (isinstance(mid, str) and owners[mid] is not c):
                 raw = raw_usage(message)
                 weight = weigh(raw)
                 total += weight
