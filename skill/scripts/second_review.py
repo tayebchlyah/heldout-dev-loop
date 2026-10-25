@@ -344,7 +344,8 @@ def _child(repo: Path, reviewer: str, sha: str, entry: dict, timeout_minutes: fl
             child.communicate(prompt.encode("utf-8"), timeout=timeout_minutes * 60)
         except subprocess.TimeoutExpired:
             timed_out = True
-            _stop(child)
+        # Also after a normal exit: the CLI's helpers stay in its group.
+        _stop(child)
         out["seconds"] = round(time.monotonic() - started, 3)
         stdout.seek(0)
         text = stdout.read().decode("utf-8", errors="replace")
