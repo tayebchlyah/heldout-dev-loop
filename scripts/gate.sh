@@ -17,7 +17,7 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
   while IFS= read -r path; do
     case "$path" in
-      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|AGENTS.md|package.json) py=1 ;;
+      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|AGENTS.md|CODING_STANDARDS.md|package.json) py=1 ;;
     esac
     node=1
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)
