@@ -235,11 +235,20 @@ def unreliable(cmd, segs):
     return sum(len(sep) for _, sep in segs) > sum(bare.count(c) for c in PUNCT)
 
 
+def other_repo(repo):
+    # The command targets a repository other than the hook's own project.
+    common = ("rev-parse", "--path-format=absolute", "--git-common-dir")
+    return git(repo, *common) != git(START, *common)
+
+
 def release_suffix(repo, args):
-    # The release-check verdict of the main worktree's CLI, 3 s of the hook's 5.
+    # The release-check verdict of the CLI in the main worktree of the hook's own
+    # project, 3 s of the hook's 5. Another repository's CLI never runs: it may be planted.
     if os.environ["AGENT_ID"]:
         return ""
-    main = git(repo, "worktree", "list", "--porcelain")[1].partition("\n")[0].removeprefix("worktree ")
+    if other_repo(repo):
+        return "; release-check failed: another repository"
+    main = git(START, "worktree", "list", "--porcelain")[1].partition("\n")[0].removeprefix("worktree ")
     cli = os.path.join(main, ".agents", "skills", "dev-loop", "scripts", "devloop.py")
     if not main or not os.path.isfile(cli):
         return "; release-check failed: no CLI"
@@ -310,23 +319,25 @@ def gh_release(args, cwds):
 
 def tag_names(repo, specs, branch):
     # Every tag name the push writes on the remote: the destination of x:refs/tags/v1,
-    # a local tag pushed by name, tag <name>. A wildcard counts as many.
-    names, j = set(), 0
+    # a local tag pushed by name, tag <name>. A wildcard counts as many. Each maps to
+    # the <src> of a <src>:<dst> refspec, else None (a tag pushed by name).
+    names, j = {}, 0
     while j < len(specs):
         spec = specs[j].lstrip("+")
         if spec == "tag" and j + 1 < len(specs):
             j += 1
             spec = "refs/tags/" + specs[j]
         if "*" in spec:
-            return {"*", "**"}
-        src, _, dst = spec.partition(":")
+            return {"*": None, "**": None}
+        src, colon, dst = spec.partition(":")
+        given = src if colon else None
         if src in ("HEAD", "@"):
             src = branch
         dst = dst or src
         if dst.startswith("refs/tags/"):
-            names.add(dst.removeprefix("refs/tags/"))
+            names[dst.removeprefix("refs/tags/")] = given
         elif src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src.removeprefix('refs/tags/')}")[0] == 0:
-            names.add(dst)
+            names[dst] = given
         j += 1
     return names
 
@@ -378,8 +389,16 @@ def check_push(repo, args, drift):
         if (src.startswith("refs/tags/") or dst.startswith("refs/tags/")
                 or (src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src}")[0] == 0)):
             names = tag_names(repo, specs, branch)
-            one = len(names) == 1 and fnmatch.fnmatchcase(next(iter(names)), "v*")
-            ask("a tag push", release_suffix(repo, ["--tag", *names]) if one else "")
+            if len(names) != 1 or not fnmatch.fnmatchcase(next(iter(names)), "v*"):
+                ask("a tag push")
+            (name, src), = names.items()
+            # x:refs/tags/v1 tags the commit of x, whatever a local v1 points at.
+            if src is None or os.environ["AGENT_ID"] or other_repo(repo):
+                ask("a tag push", release_suffix(repo, ["--tag", name]))
+            rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"{src}^{{commit}}")
+            if rc:
+                ask("a tag push", f"; release-check failed: {src} does not resolve")
+            ask(f"a tag push of {sha}", release_suffix(repo, ["--sha", sha]))
         if not dst:
             ask("a push from a detached HEAD" if git(repo, "rev-parse", "--git-dir")[0] == 0
                 else "a push from an unknown repository")

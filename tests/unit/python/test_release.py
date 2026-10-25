@@ -653,6 +653,7 @@ class ReleaseGuardTests(unittest.TestCase):
         self.git("checkout", "-q", "-b", "feat/x")
         self.cli = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
         self.calls = Path(tmp.name) / "calls.txt"
+        self.tmp = Path(tmp.name)
 
     def git(self, *args: str) -> str:
         env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
@@ -715,7 +716,7 @@ class ReleaseGuardTests(unittest.TestCase):
                 if absent:
                     self.assertNotIn(absent, reason)
         self.assertIn(f"release-check --repo {self.repo} --tag v1.0.0", self.calls.read_text())
-        self.assertIn(f"release-check --repo {self.repo} --tag v2.0.0", self.calls.read_text())
+        self.assertIn(f"release-check --repo {self.repo} --sha {self.c}", self.calls.read_text())
         # A subagent is denied before the CLI runs.
         self.calls.unlink()
         self.stub("slow")
@@ -770,6 +771,52 @@ class ReleaseGuardTests(unittest.TestCase):
             self.assertEqual(got, decision, reason)
             self.assertIn('release-check failed: bad "quote" and \\ here', reason)
             self.assertNotIn("second line", reason)
+
+    def test_a_refspec_tag_push_checks_the_commit_of_its_source(self) -> None:
+        # D14: <src>:refs/tags/v* checks the commit of <src>, not a stale local tag; a plain tag name keeps --tag.
+        self.git("tag", "v2.0.0", self.b)
+        self.stub("ok")
+        for command, want in [("git push origin main:refs/tags/v2.0.0", f"--sha {self.c}"),
+                              ("git push origin HEAD:refs/tags/v3.0.0", f"--sha {self.c}"),
+                              (f"git push origin {self.b}:refs/tags/v2.0.0", f"--sha {self.b}"),
+                              ("git push origin refs/tags/v2.0.0", "--tag v2.0.0"), ("git push origin v2.0.0", "--tag v2.0.0")]:
+            with self.subTest(command=command):
+                self.calls.unlink(missing_ok=True)
+                got, reason, _ = self.guard("claude", command)
+                self.assertEqual(got, "ask", reason)
+                self.assertIn("release-check: ok", reason)
+                self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} {want}\n")
+                if want.startswith("--sha"):
+                    self.assertIn(want.removeprefix("--sha "), reason)
+        self.calls.unlink()
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            got, reason, _ = self.guard(harness, "git push origin nowhere:refs/tags/v3.0.0")
+            self.assertEqual(got, decision, reason)
+            self.assertIn("release-check failed: nowhere does not resolve", reason)
+        self.assertFalse(self.calls.exists())
+
+    def test_the_cli_comes_from_the_hook_project_only(self) -> None:
+        # Security review: a planted devloop.py in another repository never runs inside the hook.
+        evil = self.tmp / "evil"
+        evil.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(evil)], check=True)
+        subprocess.run(["git", "-C", str(evil), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"],
+                       check=True)
+        subprocess.run(["git", "-C", str(evil), "tag", "v1.0.0"], check=True)
+        marker = self.tmp / "marker"
+        planted = evil / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
+        planted.parent.mkdir(parents=True)
+        planted.write_text(f"open({str(marker)!r}, 'w').write('ran')\n")
+        self.stub("ok")
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            for command in [f"git -C {evil} push o x:refs/tags/v1", f"cd {evil} && git push origin v1.0.0",
+                            f"cd {evil} && gh release create v1.0.0"]:
+                with self.subTest(harness=harness, command=command):
+                    got, reason, _ = self.guard(harness, command)
+                    self.assertEqual(got, decision, reason)
+                    self.assertIn("release-check failed: another repository", reason)
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.calls.exists())
 
 
 class ReleaseSetupTests(unittest.TestCase):
