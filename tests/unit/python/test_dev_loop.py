@@ -161,6 +161,13 @@ MetricsNumbersTests = test_metrics.MetricsNumbersTests
 MetricsCommandTests = test_metrics.MetricsCommandTests
 MetricsTextTests = test_metrics.MetricsTextTests
 
+_gardener_spec = importlib.util.spec_from_file_location("test_gardener", Path(__file__).resolve().parent / "test_gardener.py")
+if _gardener_spec is None or _gardener_spec.loader is None:
+    raise ImportError("cannot load test_gardener module")
+test_gardener = importlib.util.module_from_spec(_gardener_spec)
+_gardener_spec.loader.exec_module(test_gardener)
+GardenSkillTests = test_gardener.GardenSkillTests
+
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
     raise ImportError("cannot load test_sandbox_run module")
