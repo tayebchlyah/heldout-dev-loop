@@ -513,6 +513,25 @@ class CanaryScriptTests(unittest.TestCase):
                                          "spec-tester", token], capture_output=True, text=True)
                 self.assertEqual((result.returncode, result.stdout), (0, verdict + "\n"), result.stderr)
 
+    def test_second_review_canary_shows_a_reviewer_that_quotes_a_canary(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        table = "printf '| file | line | finding | class | verdict |\\n| --- | --- | --- | --- | --- |\\n'"
+        quote = "for f in $(grep -o '/[^ ,]*canary[^ ,]*' .second-review.diff | sort -u); do cat \"$f\"; done"
+        for name, body, line, code in [
+            ("clean", table, "second-review codex done canary=no", 0),
+            ("quotes", quote, "second-review codex tainted canary=yes", 1),
+        ]:
+            with self.subTest(name=name):
+                bins = work / name / "bin"
+                put(bins / "codex", "#!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do [ \"$1\" = -o ] && out=$2; shift; done\n"
+                                    f"cat >/dev/null\n{{ {body}; }} >\"$out\"\n")
+                (bins / "codex").chmod(0o755)
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-review", str(work / name / "repo"), "codex"],
+                                        capture_output=True, text=True,
+                                        env={**os.environ, "PATH": f"{bins}:{os.environ['PATH']}"})
+                self.assertEqual((result.returncode, result.stdout.strip().splitlines()[-1:]), (code, [line]), result.stderr)
+
     def test_main_session_denial_text_of_either_wall_reads_as_blocked(self):
         work = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, work, True)

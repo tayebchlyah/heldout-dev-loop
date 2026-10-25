@@ -37,11 +37,12 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
-1. **Review wave, once.** Three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `main...GATE_SHA`: whole branch, report only, and returns a table: file, line, finding, verdict or severity, reviewer.
+1. **Review wave, once.** First the second review (SKILL.md Stage 6), a background run watched to its end: `python3 .agents/skills/dev-loop/scripts/devloop.py logged --name second-review -- python3 .agents/skills/dev-loop/scripts/devloop.py second-review --harness codex` (reviewer `claude`). Then three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `main...GATE_SHA`: whole branch, report only, and returns a table: file, line, finding, verdict or severity, reviewer.
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
    - Invoke skill `code-review` with fixed point `main`.
    - Custom read-only agent `security_reviewer`.
    - Both custom reviewers run at `model_reasoning_effort = "high"` (their agent files).
+   - The Claude reviewer runs inside `dev-workspace` (network on). It cannot write its config folder and does not need to.
 2. **Triage, controller.** SKILL.md Stage 6. Read `seal` and `weakened` from the gate JSON. Security verifier: a fresh `security_reviewer` per security finding. Prompt: the candidate-verifier prompt from `~/.agents/skills/security-audit/VALIDATION-AND-REPORTING.md` (Phase 3, "Candidate-verifier prompt"), plus the finding.
 3. **Fix wave.** A new custom agent `implementer` per round, one file cluster at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`.
 4. **Drive.** SKILL.md Stage 6, `references/verify.md` section Stage 6. `scripts/devloop.py drive`, then the layout check: one fresh generic worker with the `drive.json` path. After the final full acceptance run: the closing drive (`references/verify.md` Stage 6 step 7).
