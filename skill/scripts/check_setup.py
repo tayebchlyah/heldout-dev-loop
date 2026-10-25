@@ -20,6 +20,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
+import devloop  # noqa: E402
+import second_review  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
 
 
@@ -124,6 +126,47 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         if store.version_key(have) == store.version_key(kit) and note.read_text() != writer.board_text(kit):
             actions.append(f"{store.BOARD_NOTE} differs from the dev-loop template: delete it, the next board run writes it again")
     return actions
+
+
+def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """D2 to D4: the project allows a second reviewer at the main ref, so the user must choose one or turn it off."""
+    ref = devloop.main_ref(repo)
+    if ref is None:
+        return [], []
+    # project_lock reads the ref with git: a replace ref must not change what it shows.
+    had = os.environ.get("GIT_NO_REPLACE_OBJECTS")
+    os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    try:
+        lock = second_review.project_lock(repo, ref)
+    finally:
+        if had is None:
+            del os.environ["GIT_NO_REPLACE_OBJECTS"]
+        else:
+            os.environ["GIT_NO_REPLACE_OBJECTS"] = had
+    if lock is None:
+        return [f"second_review in dev-loop.json at {ref} must be true or false"], []
+    if not lock:
+        return [], []
+    path = second_review.main_worktree(repo) / "dev-loop.local.json"
+    reviewer = second_review.REVIEWER[harness]
+    bad = [f"second_review in {path} is not valid: see D4 (false, or an object keyed by claude or codex)"]
+    value: object = {}
+    if path.exists():
+        try:
+            local = second_review.load_unique(path.read_bytes())
+        except (OSError, ValueError):
+            return bad, []
+        if not isinstance(local, dict):
+            return bad, []
+        value = local.get("second_review", {})
+    status, _ = second_review.local_entry(value, reviewer)
+    if status == "bad-config":
+        return bad, []
+    if status != "not-chosen":
+        return [], []
+    heading = (f'Choose the {reviewer} second reviewer: write "second_review": {{"{reviewer}": {{"model": "<model>"}}}} '
+               f'(or {{}} for the CLI default model) or "second_review": false to {path}')
+    return [], [(heading, [])]
 
 
 def check_project_config(repo: Path) -> list[str]:
@@ -604,6 +647,9 @@ def main() -> int:
     failures += check_version(args.harness)
     failures += check_notes(args.home, args.repo)
     failures += check_project_config(args.repo)
+    second_failures, second_groups = check_second_review(args.repo, args.harness)
+    failures += second_failures
+    action_groups += second_groups
     failures += check_mutation(args.repo)
     failures += check_verify(args.repo)
     failures += gh_line(args.repo)
