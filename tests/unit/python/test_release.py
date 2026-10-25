@@ -181,10 +181,32 @@ class ReleaseCheckTests(unittest.TestCase):
         self.assertNotEqual(child, doc)
 
     def test_last_record_is_current(self) -> None:
-        old = "- 2026-10-24 run-1 at {} : confirmed 0, needs validation 0, hardening 0, profile quick, scope whole".replace(" :", ":")
-        self.note(old.format(self.b) + "\n" + RECORD.format(sha=self.a).replace("run-1", "run-2"))
+        old = f"- 2026-10-24 run-1 at {self.b}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
+        self.note(old + "\n" + RECORD.format(sha=self.a).replace("run-1", "run-2"))
         self.run_folder("run-2", self.a)
         self.assertEqual(self.check("--sha", self.a)[0]["ok"], True)
+
+    def test_non_ancestor_with_an_empty_diff_is_stale(self) -> None:
+        self.git("checkout", "-q", "-b", "twin", self.a)
+        self.git("commit", "-q", "--allow-empty", "-m", "twin")
+        twin = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.audited(sha=twin)
+        self.assertEqual(self.check("--sha", self.a)[0]["reasons"], [{"reason": "stale-audit", "paths": []}])
+
+    def test_option_like_rev_is_not_an_option(self) -> None:
+        self.note(None)
+        out, code, _ = self.check("--sha=--foo")
+        self.assertEqual((code, "error" in out), (1, True))
+
+    def test_non_release_tag_needs_no_notes_path(self) -> None:
+        self.git("tag", "release-1", self.b)
+        env = {k: v for k, v in os.environ.items() if k != "DEV_LOOP_NOTES"}
+        env["HOME"] = str(self.root)
+        done = subprocess.run([sys.executable, str(DEVLOOP), "release-check", "--repo", str(self.repo), "--tag", "release-1"],
+                              capture_output=True, text=True, env=env)
+        out = json.loads(done.stdout)
+        self.assertEqual((done.returncode, out["ok"], out["skipped"]), (0, True, "not-a-release-tag"))
 
     def test_record_mismatch(self) -> None:
         for label, make in (
