@@ -241,7 +241,7 @@ def run(args: argparse.Namespace) -> int:
             "--user", "65534:65534", "--memory", args.memory, "--memory-swap", args.memory,
             "--pids-limit", str(args.pids), "--cpus", str(args.cpus),
             "--ulimit", f"fsize={args.file_size}", "--ulimit", "nofile=256:256", "--ulimit", "core=0",
-            "--tmpfs", f"/scratch:size={args.scratch_size},mode=1777",
+            "--tmpfs", f"/scratch:size={args.scratch_size},mode=1777,exec",  # the run may build and execute binaries
             "-v", f"{args.target}:/target:ro", "--entrypoint", "sleep", image, "infinity")
         signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
         if started.returncode != 0:
