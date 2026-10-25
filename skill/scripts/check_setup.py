@@ -147,22 +147,15 @@ def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple
         return [f"second_review in dev-loop.json at {ref} must be true or false"], []
     if not lock:
         return [], []
-    path = second_review.main_worktree(repo) / "dev-loop.local.json"
+    path = second_review.main_worktree(repo) / second_review.LOCAL
     reviewer = second_review.REVIEWER[harness]
-    bad = [f"second_review in {path} is not valid: write false, or an object keyed by claude or codex, "
-           "each value false or an object with optional model and effort"]
-    value: object = {}
-    if path.exists():
-        try:
-            local = second_review.load_unique(path.read_bytes())
-        except (OSError, ValueError):
-            return bad, []
-        if not isinstance(local, dict):
-            return bad, []
-        value = local.get("second_review", {})
-    status, _ = second_review.local_entry(value, reviewer)
+    status, _ = second_review.read_local(repo, reviewer)
+    if status == "tracked":
+        return [f"second_review in {path} is not used: the file is tracked by git, so its answer would reach every "
+                f"clone. Run git rm --cached {second_review.LOCAL} in {path.parent}"], []
     if status == "bad-config":
-        return bad, []
+        return [f"second_review in {path} is not valid: write false, or an object keyed by claude or codex, "
+                "each value false or an object with optional model and effort"], []
     if status != "not-chosen":
         return [], []
     heading = (f'Choose the {reviewer} second reviewer: write "second_review": {{"{reviewer}": {{"model": "<model>"}}}} '
