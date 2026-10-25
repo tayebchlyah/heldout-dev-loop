@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -290,3 +291,115 @@ class ReleaseCheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReleasePlanTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.notes = self.root / "Demo"
+        self.repo.mkdir()
+        self.notes.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.a = self.commit("a.txt", "a")
+        self.b = self.commit("b.txt", "b")
+        (self.notes / "Project Note.md").write_text("## Deferred\n")
+
+    def git(self, *args: str) -> str:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        done = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env)
+        return done.stdout.strip()
+
+    def commit(self, path: str, text: str) -> str:
+        (self.repo / path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", path)
+        return self.git("rev-parse", "HEAD")
+
+    def record(self, sha: str) -> None:
+        (self.notes / "Project Note.md").write_text(f"## Release audits\n{RECORD.format(sha=sha)}\n")
+
+    def plan(self, *args: str, path: str | None = None) -> tuple[dict, int]:
+        env = {**os.environ, "DEV_LOOP_NOTES": str(self.notes)}
+        if path is not None:
+            env["PATH"] = path
+        done = subprocess.run([sys.executable, str(DEVLOOP), "release-plan", "--repo", str(self.repo), *args],
+                              capture_output=True, text=True, env=env)
+        return json.loads(done.stdout or "{}"), done.returncode
+
+    def test_first_plan_creates_run_folder(self) -> None:
+        out, code = self.plan()
+        folder = self.notes / "security-audit" / "run-1"
+        self.assertEqual((code, out["run"], out["first"], out["profile"], out["budget"], out["scope"], out["base"], out["prior_runs"], out["head"]),
+                         (0, "run-1", True, "quick", 100, "whole", None, [], self.b))
+        self.assertEqual(out["output"], str(folder))
+        self.assertTrue(folder.is_dir())
+
+    def test_next_plan_scopes_from_record(self) -> None:
+        for n in (1, 3):
+            (self.notes / "security-audit" / f"run-{n}").mkdir(parents=True)
+        self.record(self.a)
+        out, code = self.plan()
+        base = self.notes / "security-audit"
+        self.assertEqual((code, out["run"], out["first"], out["profile"], out["budget"], out["scope"], out["base"]),
+                         (0, "run-4", False, "standard", None, f"{self.a}..{self.b}", self.a))
+        self.assertEqual(out["prior_runs"], [str(base / "run-1"), str(base / "run-3")])
+
+    def test_base_is_merge_base_when_record_not_ancestor(self) -> None:
+        self.git("checkout", "-q", "-b", "side", self.a)
+        side = self.commit("s.txt", "s")
+        self.git("checkout", "-q", "main")
+        self.record(side)
+        out, code = self.plan()
+        self.assertEqual((code, out["base"], out["scope"]), (0, self.a, f"{self.a}..{self.b}"))
+
+    def test_overrides_and_bad_budget(self) -> None:
+        out, code = self.plan("--profile", "deep", "--budget", "40")
+        self.assertEqual((code, out["profile"], out["budget"]), (0, "deep", 40))
+        self.assertEqual(self.plan("--budget", "0")[1], 2)
+
+    def test_placeholder_blocks_and_creates_nothing(self) -> None:
+        run = self.notes / "security-audit" / "run-1"
+        run.mkdir(parents=True)
+        (run / ".findings.json.icloud").write_text("")
+        out, code = self.plan()
+        self.assertEqual((code, out["error"], len(out["files"])), (1, "placeholder", 1))
+        self.assertIn(".findings.json.icloud", out["files"][0])
+        self.assertEqual([p.name for p in run.parent.iterdir()], ["run-1"])
+
+    def test_dirty_tracked_file_blocks_untracked_does_not(self) -> None:
+        (self.repo / "untracked.txt").write_text("u")
+        self.assertEqual(self.plan()[1], 0)
+        (self.notes / "security-audit" / "run-1").rmdir()
+        (self.repo / "a.txt").write_text("changed")
+        out, code = self.plan()
+        self.assertEqual((code, out["error"], out["paths"]), (1, "dirty", ["a.txt"]))
+        self.assertFalse((self.notes / "security-audit").exists() and any((self.notes / "security-audit").iterdir()))
+
+    def test_no_project_note(self) -> None:
+        (self.notes / "Project Note.md").unlink()
+        out, code = self.plan()
+        self.assertEqual((code, out["error"]), (1, "no-project-note"))
+
+    def test_sandbox_without_docker(self) -> None:
+        only = self.root / "bin"
+        only.mkdir()
+        for tool in ("git", Path(sys.executable).name):
+            (only / tool).symlink_to(shutil.which(tool) or sys.executable)
+        (self.repo / "dev-loop.json").write_text(json.dumps({"security_audit": {"images": {"node": "node:22"}}}))
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "cfg")
+        out, code = self.plan(path=str(only))
+        self.assertEqual((code, out["sandbox"]["engine"], out["sandbox"]["images"]), (0, False, {"node": "node:22"}))
+        self.assertTrue(Path(out["sandbox"]["runner"]).is_absolute())
+        self.assertTrue(out["sandbox"]["runner"].endswith("scripts/sandbox-run.py"))
+
+    def test_skill_folder_per_harness(self) -> None:
+        home = Path.home()
+        self.assertEqual(release.skill_dir("claude", {}), home / ".claude/skills/security-audit")
+        self.assertEqual(release.skill_dir("codex", {}), home / ".agents/skills/security-audit")
+        self.assertEqual(release.skill_dir("codex", {"DEVLOOP_TEST_SECURITY_AUDIT_DIR": "/x"}), Path("/x"))
+        out, _ = self.plan("--harness", "codex")
+        self.assertEqual(out["skill"], str(home / ".agents/skills/security-audit"))
