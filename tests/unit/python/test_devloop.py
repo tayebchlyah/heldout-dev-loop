@@ -1202,7 +1202,7 @@ class SkillStackContractTests(unittest.TestCase):
     def test_codex_skill_list(self) -> None:
         self.assertEqual(
             load_check_setup().CODEX_SKILLS,
-            ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"],
+            ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype", "wayfinder"],
         )
 
     def test_claude_project_check_requires_the_skill_denies(self) -> None:
@@ -1219,13 +1219,37 @@ class SkillStackContractTests(unittest.TestCase):
     def test_stage_1_uses_grilling_only(self) -> None:
         self.assert_only_denied("superpowers:brainstorming")
         stage = stage_text(1)
-        for value in ["grilling", "prototype", "/wayfinder", "Track S", "one-line reason"]:
+        for value in ["grilling", "prototype", "`wayfinder`", "Track S", "one-line reason"]:
             with self.subTest(value=value):
                 self.assertIn(value, stage)
         for value in ["mattpocock-skills:grilling", "mattpocock-skills:prototype"]:
             self.assertIn(value, self.claude)
         for value in ["`grilling`", "`prototype`"]:
             self.assertIn(value, self.codex)
+
+    def test_framing_and_spec_text(self) -> None:
+        cases = [
+            (stage_text(1), [
+                "Change or answer", "`$NOTES/answers/<YYYYMMDD> <title>.md`", "`kind: investigation|performance|question`",
+                "two of these four signals", "`$NOTES/maps/<effort>/handoff.md`", "chart the map from",
+                "references/maps.md", "`$NOTES/maps/*/map.md`",
+            ]),
+            (stage_text(2), ["`wc -w`", "1,500 words", "map decisions"]),
+            (stage_text(6), ["`## Non-goals`", "`dropped:non-goal`"]),
+            ((REFERENCES / "spec.md").read_text(), [
+                "## Non-goals", "Catches:", "Misses:", "benchmark.md", "Session B: a stop item",
+            ]),
+            ((REFERENCES / "maps.md").read_text(), [
+                "Wayfinding operations", "maps/<effort>/map.md", "Blocked by:", "docs/agents/issue-tracker.md", "notes_path.py",
+            ]),
+            ((REFERENCES / "benchmark.md").read_text(), ["sysctl -n hw.ncpu", "performance check"]),
+            (self.claude, ["`mattpocock-skills:wayfinder` SKILL.md"]),
+            (self.codex, ["`wayfinder`", "~/.agents/skills/wayfinder/SKILL.md"]),
+        ]
+        for text, values in cases:
+            for value in values:
+                with self.subTest(value=value):
+                    self.assertIn(value, text)
 
     def test_spec_reference_holds_builder_check_and_notices(self) -> None:
         spec = (REFERENCES / "spec.md").read_text()
