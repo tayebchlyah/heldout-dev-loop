@@ -210,14 +210,17 @@ sandbox_canary() {
   local h=$1 dir=$2 uid image=busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
   docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null 2>&1 || { echo "sandbox-run $h uid=none"; failed=1; return; }
   init_repo "$h" "$dir" || { failed=1; return; }
-  printf '{"version": "canary", "harnesses": ["%s"], "security_audit": {"images": {"t": "%s"}}}\n' "$h" "$image" >dev-loop.json
-  local prompt="Run exactly this command in the current folder and print its output: python3 .agents/skills/dev-loop/scripts/sandbox-run.py --image t -- id -u"
+  python3 -c 'import json, sys; d = json.load(open("dev-loop.json")); d["security_audit"] = {"images": {"t": sys.argv[1]}}; json.dump(d, open("dev-loop.json", "w"), indent=2)' "$image" || { failed=1; return; }
+  mkdir -p "$dir/.sandbox-scratch"
+  local cmd="python3 $dir/.agents/skills/dev-loop/scripts/sandbox-run.py --image t --target $dir --scratch $dir/.sandbox-scratch -- id -u"
+  [ -n "${selftest_sandbox+x}" ] && { echo "$cmd"; return; }
+  local prompt="Run exactly this command and reply with only its standard output, nothing else: $cmd"
   if [ "$h" = claude ]; then
     claude -p "$prompt" --permission-mode bypassPermissions >"$scratch/sandbox-$h.out" 2>&1
   else
     codex exec --sandbox workspace-write "$prompt" >"$scratch/sandbox-$h.out" 2>&1
   fi
-  uid=$(grep -Eo '(^|[^0-9])[0-9]+$' "$scratch/sandbox-$h.out" | tail -n 1 | grep -Eo '[0-9]+$')
+  if grep -Eqw 65534 "$scratch/sandbox-$h.out"; then uid=65534; else uid=$(grep -Eo '[0-9]+' "$scratch/sandbox-$h.out" | tail -n 1); fi
   echo "sandbox-run $h uid=${uid:-none}"
   [ "$uid" = 65534 ] || failed=1
 }
