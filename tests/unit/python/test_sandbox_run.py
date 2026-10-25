@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import http.server
+import importlib.util
 import io
 import json
 import os
@@ -23,6 +24,22 @@ HERE = Path(__file__).resolve().parent
 RUNNER = HERE.parents[2] / "skill" / "scripts" / "sandbox-run.py"
 IMAGE = "busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
 IMAGE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+_runner_spec = importlib.util.spec_from_file_location("sandbox_run", RUNNER)
+if _runner_spec is None or _runner_spec.loader is None:
+    raise ImportError("cannot load sandbox-run.py")
+sandbox_run = importlib.util.module_from_spec(_runner_spec)
+_runner_spec.loader.exec_module(sandbox_run)
+
+
+def sparse_tar() -> bytes:
+    info = tarfile.TarInfo("big")  # PAX sparse member: 10 bytes stored, 50 MB on extraction
+    info.size = 10
+    info.pax_headers = {"GNU.sparse.map": "52428800,10", "GNU.sparse.size": "52428810"}
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        tar.addfile(info, io.BytesIO(b"x" * 10))
+    return out.getvalue()
 
 
 def docker(*args: str) -> subprocess.CompletedProcess:
@@ -211,13 +228,7 @@ class SandboxRunTests(unittest.TestCase):
         self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
 
     def test_leftover_processes_cannot_reach_the_copy(self) -> None:
-        info = tarfile.TarInfo("big")  # PAX sparse member: 10 bytes stored, 50 MB on extraction
-        info.size = 10
-        info.pax_headers = {"GNU.sparse.map": "52428800,10", "GNU.sparse.size": "52428810"}
-        evil = io.BytesIO()
-        with tarfile.open(fileobj=evil, mode="w", format=tarfile.PAX_FORMAT) as tar:
-            tar.addfile(info, io.BytesIO(b"x" * 10))
-        (self.target / "evil.tar").write_bytes(evil.getvalue())
+        (self.target / "evil.tar").write_bytes(sparse_tar())
         inject = ("(until p=$(pidof tar); do :; done; kill -STOP $p; "
                   "cat /target/evil.tar > /proc/$p/fd/1; kill -CONT $p) >/dev/null 2>&1 & echo real > /scratch/real")
         done, scratch = self.run_sandbox("sh", "-c", inject, limit=60)
@@ -254,6 +265,54 @@ class SandboxRunTests(unittest.TestCase):
                 proc.wait(timeout=20)
                 time.sleep(1)
                 self.assertEqual(self.leftovers(), [])
+
+
+class SandboxExtractTests(unittest.TestCase):
+    """The copy-back filter alone, no Docker: in the CLI the earlier layers keep hostile tars from reaching it."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.scratch = self.tmp / "scratch"
+        self.scratch.mkdir()
+
+    def written(self) -> dict[str, bytes]:
+        return {str(p.relative_to(self.tmp)): p.read_bytes() for p in self.tmp.rglob("*") if p.is_file() or p.is_symlink()}
+
+    def test_only_safe_regular_files_are_written(self) -> None:
+        def member(name: str, kind: bytes = tarfile.REGTYPE, data: bytes = b"", link: str = "") -> tuple:
+            info = tarfile.TarInfo(name)
+            info.type, info.linkname, info.size = kind, link, len(data)
+            return info, io.BytesIO(data)
+
+        out = io.BytesIO()
+        with tarfile.open(fileobj=out, mode="w", format=tarfile.GNU_FORMAT) as tar:
+            for info, data in (member("ok/f", data=b"safe"), member("l", tarfile.SYMTYPE, link="/etc/passwd"),
+                               member("h", tarfile.LNKTYPE, link="ok/f"), member("../x", data=b"up"),
+                               member("/abs", data=b"abs"), member("p", tarfile.FIFOTYPE)):
+                tar.addfile(info, data)
+        cases = [
+            ("mixed", out.getvalue(), {"scratch/ok/f": b"safe"}),
+            ("sparse", sparse_tar(), {}),
+        ]
+        for label, data, expected in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.scratch)
+                self.scratch.mkdir()
+                sandbox_run.extract(data, self.scratch, 1 << 20)
+                self.assertEqual(self.written(), expected)
+
+    def test_size_headers_over_the_cap_write_nothing(self) -> None:
+        small = tarfile.TarInfo("a")
+        small.size = 3
+        huge = tarfile.TarInfo("b")
+        huge.size = 10 ** 9  # header claims 1 GB, the stream holds one block
+        data = (small.tobuf(tarfile.GNU_FORMAT) + b"abc".ljust(512, b"\0")
+                + huge.tobuf(tarfile.GNU_FORMAT) + b"\0" * 512)
+        with self.assertRaises(sandbox_run.RunnerError) as err:
+            sandbox_run.extract(data, self.scratch, 1 << 20)
+        self.assertEqual(str(err.exception), f"scratch over {1 << 20} bytes")
+        self.assertEqual(self.written(), {})
 
 
 if __name__ == "__main__":
