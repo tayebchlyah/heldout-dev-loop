@@ -7,11 +7,17 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_read": 0.1, "output": 5.0}
+STAGES = ("1-2", "3", "4", "5", "6", "7")
+GATE = "devloop.py gate --summary"
+DENIAL = re.compile(r"PreToolUse:\S+ hook error: \[([^\]]*)\]")
+HOOK = re.compile(r"[^\s/\[\]\"'`]+\.sh")
+TESTS = (re.compile(r"^\s*def test_\w*\("), re.compile(r"^\s*(?:it|test)\("), re.compile(r"^func Test\w*\("))
 CLAIM = re.compile(r"devloop\.py board\b.*--claim[ =]([a-z0-9]+(?:-[a-z0-9]+)*)")
 
 
@@ -180,3 +186,153 @@ def raw_usage(message: dict) -> dict[str, int]:
 
 def weigh(raw: dict[str, int]) -> float:
     return sum(raw[k] * w for k, w in WEIGHTS.items())
+
+
+def boundaries(state_file: Path, slug: str, has_spec: bool) -> tuple[list[tuple[float, str]] | None, set[str]]:
+    """Sorted (time, stage) of the keys 3 to 7 of the board `stage_times`, None when unattributed (D4); plus the
+    keys that hold a time."""
+    try:
+        state = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        return None, set()
+    features = state.get("features") if isinstance(state, dict) else None
+    entry = features.get(slug) if isinstance(features, dict) else None
+    times = entry.get("stage_times") if isinstance(entry, dict) else None
+    if not isinstance(times, dict):
+        return None, set()
+    present = {str(k) for k, v in times.items() if parse_time(v) is not None}
+    bounds = sorted((parse_time(v), str(k)) for k, v in times.items()
+                    if str(k) in STAGES[1:] and parse_time(v) is not None)
+    if (has_spec and entry.get("backfilled") is True) or not bounds:
+        return None, present
+    return bounds, present  # type: ignore[return-value]
+
+
+def stage_of(when: float | None, bounds: list[tuple[float, str]]) -> str:
+    stage = "1-2"
+    for at, key in bounds:
+        if when is not None and at <= when:
+            stage = key
+    return stage
+
+
+def text_of(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b["text"] for b in content if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return ""
+
+
+def typed(rec: dict) -> bool:
+    """A user message the user typed (D6)."""
+    message = rec.get("message")
+    if rec.get("type") != "user" or rec.get("isMeta") is True or not isinstance(message, dict):
+        return False
+    content = message.get("content")
+    if isinstance(content, str):
+        return not content.startswith("<")
+    if not isinstance(content, list):
+        return False
+    parts = [b for b in content if isinstance(b, dict)]
+    if any(b.get("type") == "tool_result" for b in parts):
+        return False
+    first = next((b.get("text") for b in parts if b.get("type") == "text"), None)
+    return not (isinstance(first, str) and first.startswith("<"))
+
+
+def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | None) -> dict:
+    """The JSON numbers of the feature, from its records that are not copies (D5, D6)."""
+    commands = {use["id"]: use for c in items for use in tool_uses(c.record) if isinstance(use.get("id"), str)}
+    mine = [c for c in items if c.feature == slug and not c.copy]
+    stages: dict[str, dict] = {}
+    per_transcript: dict[int, float] = {}
+    seen_messages: set[str] = set()
+    times: list[float] = []
+    gate = {"runs": 0, "seconds": 0.0}
+    denials: dict[str, int] = {}
+    total = 0.0
+    for c in mine:
+        rec = c.record
+        when = parse_time(rec.get("timestamp"))
+        if when is not None:
+            times.append(when)
+        stage = stages.setdefault(stage_of(when, bounds or []), {"weighted": 0.0, "models": {}})
+        message = rec.get("message")
+        if rec.get("type") == "assistant" and isinstance(message, dict) and isinstance(message.get("usage"), dict):
+            mid = message.get("id")
+            if not (isinstance(mid, str) and mid in seen_messages):
+                if isinstance(mid, str):
+                    seen_messages.add(mid)
+                raw = raw_usage(message)
+                weight = weigh(raw)
+                total += weight
+                stage["weighted"] += weight
+                model = message.get("model") if isinstance(message.get("model"), str) else "unknown"
+                kinds = stage["models"].setdefault(model, dict.fromkeys(WEIGHTS, 0))
+                for key, value in raw.items():
+                    kinds[key] += value
+                per_transcript[id(c.transcript)] = per_transcript.get(id(c.transcript), 0.0) + weight
+        for block in blocks(rec) if rec.get("type") == "user" else []:
+            if block.get("type") != "tool_result":
+                continue
+            text = text_of(block.get("content"))
+            use = commands.get(block.get("tool_use_id"), {})
+            inp = use.get("input") if isinstance(use.get("input"), dict) else {}
+            if use.get("name") == "Bash" and GATE in str(inp.get("command", "")):
+                try:
+                    payload = json.loads(text)
+                except ValueError:
+                    payload = None
+                seconds = payload.get("seconds") if isinstance(payload, dict) else None
+                if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                    gate["runs"] += 1
+                    gate["seconds"] += seconds
+            if block.get("is_error") is True and (m := DENIAL.match(text)):
+                names = HOOK.findall(m.group(1))
+                key = names[-1] if names else "other"
+                denials[key] = denials.get(key, 0) + 1
+
+    times.sort()
+    active = sum(b - a for a, b in zip(times, times[1:]) if b - a <= 300)
+    agents = []
+    for t in {id(c.transcript): c.transcript for c in mine if not c.transcript.main}.values():
+        stamps = [x for c in mine if c.transcript is t if (x := parse_time(c.record.get("timestamp"))) is not None]
+        meta = t.meta or {}
+        agents.append({"type": str(meta.get("agentType", "")), "description": str(meta.get("description", "")),
+                       "weighted": round(per_transcript.get(id(t), 0.0)),
+                       "seconds": float(max(stamps) - min(stamps)) if stamps else 0.0})
+    agents.sort(key=lambda a: -a["weighted"])
+    return {
+        "sessions": len({id(c.transcript) for c in mine if c.transcript.main}),
+        "active_hours": round(active / 3600, 1),
+        "user_messages": sum(1 for c in mine if c.transcript.main and typed(c.record)),
+        "gate": gate,
+        "denials": denials,
+        "unattributed": bounds is None,
+        "stages": {} if bounds is None else {
+            k: {"weighted": round(stages[k]["weighted"]), "models": stages[k]["models"]} for k in STAGES if k in stages},
+        "total": round(total),
+        "agents": agents,
+    }
+
+
+def test_counts(worktree: Path, ref: str) -> dict[str, int]:
+    """Test functions added minus removed on the branch, by tier (D6)."""
+    counts = {"unit": 0, "acceptance": 0}
+    git = ["git", "-C", str(worktree)]
+    base = subprocess.run([*git, "merge-base", "HEAD", ref], capture_output=True, text=True).stdout.strip()
+    if not base:
+        return counts
+    diff = subprocess.run([*git, "diff", "--no-color", "--no-ext-diff", "-U0", f"{base}...HEAD"],
+                          capture_output=True, text=True, errors="replace").stdout
+    path = ""
+    for line in diff.splitlines():
+        if line.startswith(("--- a/", "+++ b/")):
+            path = line[6:]  # a removed file keeps the `--- a/` path: its `+++` side is /dev/null
+        elif line.startswith(("--- ", "+++ ")):
+            continue
+        elif line[:1] in "+-" and line and any(p.match(line[1:]) for p in TESTS):
+            tier = "acceptance" if path.startswith("tests/acceptance/") else "unit"
+            counts[tier] += 1 if line[0] == "+" else -1
+    return counts

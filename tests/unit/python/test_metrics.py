@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -139,6 +140,163 @@ class MetricsAttributionTests(TempDir):
                 {"uuid": "3", "type": "assistant", "message": {"content": [3, {"type": "tool_use", "input": None}]}},
                 tool_use("4", "2026-01-01T00:00:00Z", "Read", {"file_path": "/w/feat-a/f"})]
         self.assertEqual(self.features([self.main(recs)]), ["a"] * 4)
+
+
+def usage_msg(uid: str, ts: str | None, mid: str, model: str = "m1", **usage) -> dict:
+    return record(uid, ts, id=mid, model=model, usage=usage)
+
+
+def result(uid: str, ts: str, tid: str, text, is_error: bool = False) -> dict:
+    return record(uid, ts, kind="user", content=[{"type": "tool_result", "tool_use_id": tid, "content": text,
+                                                   "is_error": is_error}])
+
+
+def items(transcripts: list) -> list:
+    return metrics.attribute(transcripts, {"a": Path("/w/feat-a")})
+
+
+MENTION = {"file_path": "/w/feat-a/f"}
+
+
+class MetricsNumbersTests(TempDir):
+    def main(self, records: list, name: str = "x") -> metrics.Transcript:
+        return metrics.Transcript(path=self.tmp / f"{name}.jsonl", meta=None,
+                                  records=[tool_use("m-" + name, "2026-01-01T00:00:00Z", "Read", MENTION), *records])
+
+    def state(self, entry: dict | None, raw: str | None = None) -> Path:
+        path = self.tmp / "board-state.json"
+        path.write_text(raw if raw is not None else json.dumps({"features": {"a": entry} if entry else {}}))
+        return path
+
+    def test_stage_boundaries(self) -> None:
+        bounds, present = metrics.boundaries(self.state({"backfilled": False, "stage_times": {
+            "2": "2026-01-01T09:00:00Z", "3": "2026-01-01T10:00:00Z", "5": "2026-01-01T12:00:00Z",
+            "6": "2026-01-01T13:00:00Z", "7": "2026-01-01T14:00:00Z"}}), "a", True)
+        self.assertEqual(present, {"2", "3", "5", "6", "7"})
+        at = metrics.parse_time
+        self.assertEqual(metrics.stage_of(at("2026-01-01T09:30:00Z"), bounds), "1-2")
+        self.assertEqual(metrics.stage_of(at("2026-01-01T12:30:00Z"), bounds), "5")
+        self.assertEqual(metrics.stage_of(at("2026-01-01T13:00:00Z"), bounds), "6")
+        self.assertEqual(metrics.stage_of(None, bounds), "1-2")
+
+    def test_unattributed_cases(self) -> None:
+        times = {"5": "2026-01-01T12:00:00Z", "6": "2026-01-01T13:00:00Z", "7": "2026-01-01T14:00:00Z"}
+        self.assertIsNone(metrics.boundaries(self.tmp / "none.json", "a", True)[0])
+        self.assertIsNone(metrics.boundaries(self.state(None, raw="{bad"), "a", True)[0])
+        self.assertIsNone(metrics.boundaries(self.state(None), "a", True)[0])
+        self.assertIsNone(metrics.boundaries(self.state({"backfilled": True, "stage_times": times}), "a", True)[0])
+        self.assertIsNone(metrics.boundaries(self.state({"stage_times": {"2": "2026-01-01T12:00:00Z"}}), "a", True)[0])
+        bounds, _ = metrics.boundaries(self.state({"backfilled": True, "stage_times": times}), "a", False)
+        self.assertEqual([k for _, k in bounds], ["5", "6", "7"])
+
+    def test_message_counted_once(self) -> None:
+        recs = [usage_msg("1", "2026-01-01T00:00:01Z", "msg", input_tokens=100),
+                usage_msg("2", "2026-01-01T00:00:02Z", "msg", input_tokens=100)]
+        self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["total"], 100)
+
+    def test_models_split(self) -> None:
+        bounds = [(metrics.parse_time("2026-01-01T00:00:00Z"), "5")]
+        recs = [usage_msg("1", "2026-01-01T00:00:01Z", "m1", "opus", input_tokens=10, output_tokens=2),
+                usage_msg("2", "2026-01-01T00:00:02Z", "m2", "haiku", cache_read_input_tokens=1000)]
+        got = metrics.numbers(items([self.main(recs)]), "a", bounds)["stages"]
+        self.assertEqual(got["5"]["weighted"], 120)
+        self.assertEqual(got["5"]["models"]["opus"], {"input": 10, "cache_write_5m": 0, "cache_write_1h": 0,
+                                                       "cache_read": 0, "output": 2})
+        self.assertEqual(got["5"]["models"]["haiku"]["cache_read"], 1000)
+
+    def test_active_hours(self) -> None:
+        recs = [record("1", "2026-01-01T00:01:00Z"), record("2", "2026-01-01T00:06:01Z"),
+                record("3", "2026-01-01T00:08:01Z")]
+        got = metrics.numbers(items([self.main(recs)]), "a", [])
+        self.assertEqual(got["active_hours"], round(180 / 3600, 1))
+        long = [record(str(i), f"2026-01-01T{i // 60:02d}:{i % 60:02d}:00Z") for i in range(1, 121)]
+        self.assertEqual(metrics.numbers(items([self.main(long)]), "a", [])["active_hours"], 2.0)
+
+    def test_user_messages(self) -> None:
+        recs = [record("1", "2026-01-01T00:00:01Z", kind="user", content="fix it"),
+                record("2", "2026-01-01T00:00:02Z", kind="user", content=[{"type": "text", "text": "also this"}]),
+                result("3", "2026-01-01T00:00:03Z", "t", "ok"),
+                {**record("4", "2026-01-01T00:00:04Z", kind="user", content="meta"), "isMeta": True},
+                record("5", "2026-01-01T00:00:05Z", kind="user", content="<command-name>/x</command-name>"),
+                record("6", "2026-01-01T00:00:06Z", kind="user", content=[{"type": "text", "text": "<system>"}])]
+        sub = metrics.Transcript(self.tmp / "agent-1.jsonl", meta={"toolUseId": "tu-m-x"},
+                                 records=[record("7", "2026-01-01T00:00:07Z", kind="user", content="brief")])
+        self.assertEqual(metrics.numbers(items([self.main(recs), sub]), "a", [])["user_messages"], 2)
+
+    def test_gate_runs(self) -> None:
+        gate = "python3 x/devloop.py gate --summary"
+        recs = [tool_use("1", "2026-01-01T00:00:01Z", "Bash", {"command": gate}, tid="g1"),
+                result("2", "2026-01-01T00:00:02Z", "g1", json.dumps({"seconds": 10, "exit": 0})),
+                tool_use("3", "2026-01-01T00:00:03Z", "Bash", {"command": gate}, tid="g2"),
+                result("4", "2026-01-01T00:00:04Z", "g2", [{"type": "text", "text": json.dumps({"seconds": 20.5})}]),
+                tool_use("5", "2026-01-01T00:00:05Z", "Bash", {"command": gate}, tid="g3"),
+                result("6", "2026-01-01T00:00:06Z", "g3", "not json"),
+                tool_use("7", "2026-01-01T00:00:07Z", "Bash", {"command": "ls"}, tid="g4"),
+                result("8", "2026-01-01T00:00:08Z", "g4", json.dumps({"seconds": 5}))]
+        self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["gate"], {"runs": 2, "seconds": 30.5})
+
+    def test_denials(self) -> None:
+        text = "PreToolUse:Bash hook error: [~/.claude/hooks/deny-path.sh]: denied"
+        recs = [result("1", "2026-01-01T00:00:01Z", "t1", text, is_error=True),
+                result("2", "2026-01-01T00:00:02Z", "t2", text),
+                result("3", "2026-01-01T00:00:03Z", "t3", [{"type": "text", "text": text}], is_error=True),
+                result("4", "2026-01-01T00:00:04Z", "t4", "PreToolUse:Edit hook error: [python3 x.py]: no",
+                       is_error=True),
+                result("5", "2026-01-01T00:00:05Z", "t5", 'PreToolUse:Read hook error: ["a.sh" b/c.sh x]: no',
+                       is_error=True)]
+        self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["denials"],
+                         {"deny-path.sh": 2, "other": 1, "c.sh": 1})
+
+    def test_sessions_and_copies(self) -> None:
+        first = self.main([usage_msg("1", "2026-01-01T00:00:01Z", "m1", input_tokens=10),
+                           record("2", "2026-01-01T00:00:02Z", kind="user", content="go")])
+        second = metrics.Transcript(self.tmp / "y.jsonl", meta=None, records=list(first.records))
+        got = metrics.numbers(items([first, second]), "a", [])
+        self.assertEqual((got["sessions"], got["total"], got["user_messages"]), (1, 10, 1))
+
+    def test_agents(self) -> None:
+        main = self.main([tool_use("1", "2026-01-01T00:00:01Z", "Agent", {"prompt": "x"}, tid="T1"),
+                          tool_use("2", "2026-01-01T00:00:02Z", "Agent", {"prompt": "y"}, tid="T2")])
+        small = metrics.Transcript(self.tmp / "agent-1.jsonl", meta={"toolUseId": "T1", "agentType": "implementer",
+                                                                "description": "Task 1"},
+                                   records=[usage_msg("3", "2026-01-01T00:00:10Z", "s1", input_tokens=10),
+                                    record("4", "2026-01-01T00:00:40Z")])
+        big = metrics.Transcript(self.tmp / "agent-2.jsonl", meta={"toolUseId": "T2", "agentType": "spec-tester"},
+                                 records=[usage_msg("5", "2026-01-01T00:00:10Z", "s2", output_tokens=10)])
+        got = metrics.numbers(items([main, small, big]), "a", [])["agents"]
+        self.assertEqual(got, [{"type": "spec-tester", "description": "", "weighted": 50, "seconds": 0.0},
+                               {"type": "implementer", "description": "Task 1", "weighted": 10, "seconds": 30.0}])
+
+    def test_unattributed_numbers(self) -> None:
+        got = metrics.numbers(items([self.main([usage_msg("1", "2026-01-01T00:00:01Z", "m", output_tokens=1)])]),
+                              "a", None)
+        self.assertEqual((got["unattributed"], got["stages"], got["total"]), (True, {}, 5))
+
+    def test_bad_timestamp(self) -> None:
+        recs = [usage_msg("1", "yesterday", "m", input_tokens=7), record("2", None)]
+        got = metrics.numbers(items([self.main(recs)]), "a", [(0.0, "3")])
+        self.assertEqual((got["total"], list(got["stages"]), got["active_hours"]), (7, ["1-2", "3"], 0.0))
+        self.assertEqual(got["stages"]["1-2"]["weighted"], 7)
+
+    def test_test_counts(self) -> None:
+        repo = self.tmp / "repo"
+        run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True)  # noqa: E731
+        repo.mkdir()
+        run("init", "-q", "-b", "main")
+        unit = repo / "tests" / "unit" / "test_x.py"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("def test_old():\n    pass\n")
+        run("add", ".")
+        run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+        run("switch", "-qc", "feat/a")
+        unit.write_text("".join(f"def test_{i}():\n    pass\n" for i in range(3)))
+        acc = repo / "tests" / "acceptance" / "x.test.mjs"
+        acc.parent.mkdir(parents=True)
+        acc.write_text("test('a', () => {});\n  it('b', () => {});\n")
+        (repo / "x_test.go").write_text("func TestX(t *testing.T) {}\n")
+        run("add", ".")
+        run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feat")
+        self.assertEqual(metrics.test_counts(repo, "refs/heads/main"), {"unit": 3, "acceptance": 2})
 
 
 if __name__ == "__main__":
