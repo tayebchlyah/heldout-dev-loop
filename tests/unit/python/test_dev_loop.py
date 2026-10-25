@@ -172,6 +172,7 @@ _second_spec.loader.exec_module(test_second_review)
 SecondReviewDecisionTests = test_second_review.SecondReviewDecisionTests
 SecondReviewExportTests = test_second_review.SecondReviewExportTests
 SecondReviewRunTests = test_second_review.SecondReviewRunTests
+SecondReviewSetupTests = test_second_review.SecondReviewSetupTests
 
 
 def all_instructions() -> str:

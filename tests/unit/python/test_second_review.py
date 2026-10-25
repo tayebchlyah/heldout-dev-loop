@@ -490,3 +490,75 @@ class SecondReviewRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SecondReviewSetupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def check(self, harness: str = "claude", **make: object) -> tuple[list[str], list[tuple[str, list[str]]], Path]:
+        import check_setup
+        self.setUp()  # a fresh tree per call
+        tree = SecondReviewDecisionTests.make(self, **make)  # type: ignore[arg-type]
+        failures, groups = check_setup.check_second_review(tree, harness)
+        return failures, groups, tree
+
+    def test_project_true_without_local_key_asks_for_the_other_family(self) -> None:
+        for harness, reviewer in (("claude", "codex"), ("codex", "claude")):
+            with self.subTest(harness=harness):
+                failures, groups, _ = self.check(harness, local=None)
+                self.assertEqual(failures, [])
+                self.assertEqual(len(groups), 1)
+                heading, items = groups[0]
+                self.assertEqual(items, [])
+                self.assertIn(f"Choose the {reviewer} second reviewer", heading)
+                self.assertIn(str(self.tmp / "main" / "dev-loop.local.json"), heading)
+                self.assertIn('"second_review": false', heading)
+                self.assertIn(f'"second_review": {{"{reviewer}": {{"model": "<model>"}}}}', heading)
+
+    def test_local_without_the_reviewer_entry_asks(self) -> None:
+        _, groups, _ = self.check(local='{"second_review": {"claude": {}}}')
+        self.assertEqual(len(groups), 1)
+        self.assertIn("codex", groups[0][0])
+
+    def test_no_line_when_the_user_chose(self) -> None:
+        for local in ('{"second_review": false}', '{"second_review": {"codex": false}}', '{"second_review": {"codex": {}}}',
+                      '{"second_review": {"codex": {"model": "gpt-5", "effort": "low"}}}'):
+            with self.subTest(local=local):
+                self.assertEqual(self.check(local=local)[:2], ([], []))
+
+    def test_no_line_when_the_project_does_not_allow_it(self) -> None:
+        for project in ("{}", '{"second_review": false}'):
+            for local in (None, '{"second_review": true}', "not json"):
+                with self.subTest(project=project, local=local):
+                    self.assertEqual(self.check(project=project, local=local)[:2], ([], []))
+
+    def test_no_main_ref_gives_no_line(self) -> None:
+        import check_setup
+        repo = self.tmp / "solo"
+        git(self.tmp, "init", "-q", "-b", "other", str(repo))
+        (repo / "dev-loop.json").write_text('{"second_review": true}')
+        self.assertEqual(check_setup.check_second_review(repo, "claude"), ([], []))
+
+    def test_working_tree_true_is_ignored_while_main_has_no_key(self) -> None:
+        import check_setup
+        tree = SecondReviewDecisionTests.make(self, project="{}", local=None)  # type: ignore[arg-type]
+        (tree / "dev-loop.json").write_text('{"second_review": true}')
+        self.assertEqual(check_setup.check_second_review(tree, "claude"), ([], []))
+
+    def test_bad_project_value_fails(self) -> None:
+        failures, groups, _ = self.check(project='{"second_review": "on"}')
+        self.assertEqual(len(failures), 1)
+        self.assertIn("second_review", failures[0])
+        self.assertEqual(groups, [])
+
+    def test_bad_local_shapes_fail(self) -> None:
+        for local in ("not json", "[]", '{"second_review": "yes"}', '{"second_review": {"gemini": {}}}',
+                      '{"second_review": {"codex": {"model": "-x"}}}', '{"second_review": {"codex": {"effort": "max"}}}',
+                      '{"second_review": {"codex": {}, "codex": {}}}', '{"second_review": null}'):
+            with self.subTest(local=local):
+                failures, groups, _ = self.check(local=local)
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("second_review", failures[0])
+                self.assertEqual(groups, [])
