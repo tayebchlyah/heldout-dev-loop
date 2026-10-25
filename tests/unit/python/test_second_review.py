@@ -97,6 +97,7 @@ class SecondReviewDecisionTests(unittest.TestCase):
             ('{"second_review": {"codex": {"model": "gpt\\n"}}}', "failed", "bad-config", 1),
             ('{"second_review": {"codex": {"effort": "max"}}}', "failed", "bad-config", 1),
             ('{"second_review": {"codex": {"temp": 1}}}', "failed", "bad-config", 1),
+            ('{"second_review": {"codex": {"model": null}}}', "failed", "bad-config", 1),
             ('{"second_review": {"codex": null}}', "failed", "bad-config", 1),
             ('{"second_review": {"gemini": {}}}', "failed", "bad-config", 1),
             ('{"second_review": true}', "failed", "bad-config", 1), ("not json", "failed", "bad-config", 1),
@@ -588,7 +589,8 @@ class SecondReviewSetupTests(unittest.TestCase):
     def test_bad_local_shapes_fail(self) -> None:
         for local in ("not json", "[]", '{"second_review": "yes"}', '{"second_review": {"gemini": {}}}',
                       '{"second_review": {"codex": {"model": "-x"}}}', '{"second_review": {"codex": {"effort": "max"}}}',
-                      '{"second_review": {"codex": {}, "codex": {}}}', '{"second_review": null}'):
+                      '{"second_review": {"codex": {}, "codex": {}}}', '{"second_review": null}',
+                      '{"second_review": {"codex": {"model": null}}}'):
             with self.subTest(local=local):
                 failures, groups, _ = self.check(local=local)
                 self.assertEqual(len(failures), 1, failures)
