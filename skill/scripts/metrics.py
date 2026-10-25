@@ -291,10 +291,13 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
             use = commands.get(block.get("tool_use_id"), {})
             inp = use.get("input") if isinstance(use.get("input"), dict) else {}
             if use.get("name") == "Bash" and GATE in str(inp.get("command", "")):
-                try:
-                    payload = json.loads(text)
-                except ValueError:
-                    payload = None
+                payload = None
+                for candidate in (text, *[x for x in text.splitlines() if x.startswith("{")][-1:]):
+                    try:
+                        payload = json.loads(candidate)
+                        break
+                    except ValueError:
+                        continue
                 seconds = payload.get("seconds") if isinstance(payload, dict) else None
                 if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
                     gate["runs"] += 1
