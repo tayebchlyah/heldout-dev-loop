@@ -14,11 +14,13 @@ import os
 import posixpath
 import re
 import secrets
+import select
 import shutil
 import signal
 import subprocess
 import sys
 import tarfile
+import time
 from pathlib import Path
 
 DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -140,18 +142,38 @@ def failed(step: str, done: subprocess.CompletedProcess) -> RunnerError:
     return RunnerError(f"{step} failed: {lines[-1] if lines else f'exit {done.returncode}'}")
 
 
-def read_scratch(ctr: str, cap: int) -> bytes:
-    proc = subprocess.Popen(["docker", "exec", ctr, "tar", "-C", "/scratch", "-cf", "-", "."],
+def kill_leftovers(ctr: str) -> None:
+    # A process the command left behind could stop tar or write into its stdout: none may survive.
+    for _ in range(20):
+        docker("exec", "-u", "65534:65534", ctr, "kill", "-9", "-1")
+        top = docker("top", ctr, "-o", "pid,stat")
+        alive = [line for line in top.stdout.splitlines()[1:] if line.split()[1:2] != ["Z"]]
+        if top.returncode == 0 and len(alive) == 1:  # only PID 1, `sleep infinity`
+            return
+        time.sleep(0.1)
+    raise RunnerError("leftover processes")
+
+
+def read_scratch(ctr: str, cap: int, limit: float) -> bytes:
+    # tar runs as root (still no capabilities): a uid 65534 process cannot open its fds or signal it.
+    proc = subprocess.Popen(["docker", "exec", "-u", "0:0", ctr, "tar", "-C", "/scratch", "-cf", "-", "."],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    fd = proc.stdout.fileno()
+    deadline = time.monotonic() + limit
     data = bytearray()
+    eof = False
     try:
         while len(data) <= cap:
-            chunk = proc.stdout.read(min(1 << 20, cap + 1 - len(data)))
+            left = deadline - time.monotonic()
+            if left <= 0 or not select.select([fd], [], [], left)[0]:
+                raise RunnerError("scratch copy timed out")
+            chunk = os.read(fd, min(1 << 20, cap + 1 - len(data)))
             if not chunk:
+                eof = True
                 break
             data += chunk
     finally:
-        if len(data) > cap:
+        if not eof:
             proc.kill()
         proc.stdout.close()
         code = proc.wait()
@@ -162,12 +184,13 @@ def read_scratch(ctr: str, cap: int) -> bytes:
     return bytes(data)
 
 
-def extract(data: bytes, scratch: Path) -> None:
-    # Only regular files; their folders are made as needed. Links, devices and fifos are dropped.
+def extract(data: bytes, scratch: Path, cap: int) -> None:
+    # Only plain regular files; their folders are made as needed. Links, devices, fifos and sparse files are dropped.
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
-        for member in tar:
-            if not member.isreg():
-                continue
+        members = [m for m in tar if m.type in (tarfile.REGTYPE, tarfile.AREGTYPE) and not m.issparse()]
+        if sum(m.size for m in members) > cap:
+            raise RunnerError(f"scratch over {cap} bytes")
+        for member in members:
             name = posixpath.normpath(member.name)
             parts = name.split("/")
             if name.startswith("/") or ".." in parts or name == ".":
@@ -197,6 +220,8 @@ def run(args: argparse.Namespace) -> int:
     path = image_path(image)
     ctr = f"devloop-sandbox-{secrets.token_hex(6)}"
     try:
+        # Signals wait until the daemon has answered, so `docker rm -f` below always sees the container.
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
         started = docker(
             "run", "-d", "--rm", "--pull", "never", "--name", ctr, "--label", "devloop.sandbox=1",
             "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
@@ -205,6 +230,7 @@ def run(args: argparse.Namespace) -> int:
             "--ulimit", f"fsize={args.file_size}", "--ulimit", "nofile=256:256", "--ulimit", "core=0",
             "--tmpfs", f"/scratch:size={args.scratch_size},mode=1777",
             "-v", f"{args.target}:/target:ro", "--entrypoint", "sleep", image, "infinity")
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
         if started.returncode != 0:
             raise failed("docker run", started)
         made = docker("exec", ctr, "mkdir", "-p", "/scratch/home", "/scratch/tmp", "/scratch/cache")
@@ -217,14 +243,17 @@ def run(args: argparse.Namespace) -> int:
             code = subprocess.run(exec_cmd, timeout=args.timeout).returncode
         except subprocess.TimeoutExpired:
             return 124
+        kill_leftovers(ctr)
         try:
-            extract(read_scratch(ctr, args.scratch_max_bytes), args.scratch)
+            # shortcut: the copy gets a fresh --timeout; a full 64 MB tmpfs copies in about a second.
+            extract(read_scratch(ctr, args.scratch_max_bytes, args.timeout), args.scratch, args.scratch_max_bytes)
         except (tarfile.TarError, OSError) as err:
             raise RunnerError(f"scratch copy failed: {err}") from None
         return code
     finally:
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, signal.SIG_IGN)
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
         subprocess.run(["docker", "rm", "-f", ctr], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
