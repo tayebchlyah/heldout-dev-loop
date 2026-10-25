@@ -145,6 +145,7 @@ _release_spec.loader.exec_module(test_release)
 ReleaseParseTests = test_release.ReleaseParseTests
 ReleaseCheckTests = test_release.ReleaseCheckTests
 ReleasePlanTests = test_release.ReleasePlanTests
+ReleaseRecordTests = test_release.ReleaseRecordTests
 
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
