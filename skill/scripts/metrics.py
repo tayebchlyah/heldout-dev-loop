@@ -233,18 +233,19 @@ def text_of(content: object) -> str:
 def typed(rec: dict) -> bool:
     """A user message the user typed (D6)."""
     message = rec.get("message")
-    if rec.get("type") != "user" or rec.get("isMeta") is True or not isinstance(message, dict):
+    if rec.get("type") != "user" or rec.get("isMeta") is True or rec.get("isCompactSummary") is True \
+            or not isinstance(message, dict):
         return False
     content = message.get("content")
     if isinstance(content, str):
-        return not content.startswith("<")
+        return not content.startswith(("<", "[Request interrupted"))
     if not isinstance(content, list):
         return False
     parts = [b for b in content if isinstance(b, dict)]
     if any(b.get("type") == "tool_result" for b in parts):
         return False
     first = next((b.get("text") for b in parts if b.get("type") == "text"), None)
-    return not (isinstance(first, str) and first.startswith("<"))
+    return not (isinstance(first, str) and first.startswith(("<", "[Request interrupted")))
 
 
 def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | None) -> dict:

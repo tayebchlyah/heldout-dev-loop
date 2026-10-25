@@ -237,6 +237,14 @@ class MetricsNumbersTests(TempDir):
                                  records=[record("7", "2026-01-01T00:00:07Z", kind="user", content="brief")])
         self.assertEqual(metrics.numbers(items([self.main(recs), sub]), "a", [])["user_messages"], 2)
 
+    def test_user_messages_skip_summary_and_interrupt(self) -> None:
+        recs = [{**record("1", "2026-01-01T00:00:01Z", kind="user", content="summary"), "isCompactSummary": True},
+                record("2", "2026-01-01T00:00:02Z", kind="user", content="[Request interrupted by user]"),
+                record("3", "2026-01-01T00:00:03Z", kind="user",
+                       content=[{"type": "text", "text": "[Request interrupted by user for tool use]"}]),
+                record("4", "2026-01-01T00:00:04Z", kind="user", content="real")]
+        self.assertEqual(metrics.numbers(items([self.main(recs)]), "a", [])["user_messages"], 1)
+
     def test_gate_runs(self) -> None:
         gate = "python3 x/devloop.py gate --summary"
         recs = [tool_use("1", "2026-01-01T00:00:01Z", "Bash", {"command": gate}, tid="g1"),
