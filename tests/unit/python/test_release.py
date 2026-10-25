@@ -921,6 +921,23 @@ class ReleaseSetupTests(unittest.TestCase):
                 got = [x for x in check_setup.check_board_vault(home, repo, {}) if "security-audit" in x]
                 self.assertEqual(got, want)
 
+    def test_vault_ignore_line_without_obsidian_folder(self) -> None:
+        line = "add security-audit/ to the vault .gitignore"
+        rows = [({}, "", True, [line]), ({}, "security-audit/\n", True, []),
+                ({"board_vault_git": "shared"}, "", True, []), ({}, "", False, [])]
+        for local, ignore, git, want in rows:
+            with self.subTest(local=local, ignore=ignore, git=git), tempfile.TemporaryDirectory() as tmp:
+                repo = self.repo(tmp)
+                vault = Path(tmp) / "vault"
+                notes = vault / "Projects" / "name"
+                notes.mkdir(parents=True)
+                (repo / "dev-loop.local.json").write_text(json.dumps({"notes": str(notes), **local}))
+                if git:
+                    subprocess.run(["git", "init", "-q", str(vault)], check=True)
+                    (vault / ".gitignore").write_text(ignore)
+                got = [x for x in check_setup.check_board_vault(Path(tmp) / "home", repo, {}) if "security-audit" in x]
+                self.assertEqual(got, want)
+
     def test_bad_shapes_fail_and_a_good_one_does_not(self) -> None:
         bad = [{"images": {"T": "x"}}, {"images": {"t": ""}}, {"images": []}, {"other": 1}, "x",
                {"images": {"t": "x"}, "other": 1}, {"images": {"t": 5}}]
