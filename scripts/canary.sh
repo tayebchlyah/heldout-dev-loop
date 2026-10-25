@@ -171,7 +171,7 @@ review_run() {
   if [ "$reviewer" = codex ]; then h=claude; else h=codex; fi
   init_repo "$h" "$dir" || { failed=1; return; }
   set_key dev-loop.json true && set_key dev-loop.local.json "{\"$reviewer\": {}}" || { failed=1; return; }
-  git add -A && git -c user.name=canary -c user.email=canary@example.com commit -q -m "kit, second review on"
+  git add -A && git -c user.name=canary -c user.email=canary@example.com commit -q -m "kit, second review on" || { failed=1; return; }
   acc=$(python3 -c 'import secrets; print("CANARY" + secrets.token_hex(12))')
   out=$(python3 -c 'import secrets; print("CANARY" + secrets.token_hex(12))')
   wt="$dir.wt"
