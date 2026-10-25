@@ -149,7 +149,8 @@ def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple
         return [], []
     path = second_review.main_worktree(repo) / "dev-loop.local.json"
     reviewer = second_review.REVIEWER[harness]
-    bad = [f"second_review in {path} is not valid: see D4 (false, or an object keyed by claude or codex)"]
+    bad = [f"second_review in {path} is not valid: write false, or an object keyed by claude or codex, "
+           "each value false or an object with optional model and effort"]
     value: object = {}
     if path.exists():
         try:

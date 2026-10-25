@@ -488,10 +488,6 @@ class SecondReviewRunTests(unittest.TestCase):
                 self.assertEqual(second_review.tokens(reviewer, stdout, stderr), tokens)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SecondReviewSetupTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
@@ -561,4 +557,63 @@ class SecondReviewSetupTests(unittest.TestCase):
                 failures, groups, _ = self.check(local=local)
                 self.assertEqual(len(failures), 1, failures)
                 self.assertIn("second_review", failures[0])
+                self.assertNotIn("D4", failures[0])
                 self.assertEqual(groups, [])
+
+
+def section(text: str, heading: str) -> str:
+    start = text.index(f"\n## {heading}")
+    end = text.find("\n## ", start + 1)
+    return text[start:end if end != -1 else None]
+
+
+class SecondReviewTextTests(unittest.TestCase):
+    """The kit text that wires the command into Session A and the Stage 6 review wave, AGENTS.md, the canary."""
+
+    ROOT = SCRIPTS.parents[1]
+
+    def test_skill_runs_the_second_review_and_asks_only_in_session_a(self) -> None:
+        skill = (SCRIPTS.parent / "SKILL.md").read_text()
+        stage6 = section(skill, "6 Feature gate")
+        for value in ("devloop.py second-review", "logged --name second-review", "Monitor", "second-review:<reviewer>",
+                      "second review:", "`skipped: <reason>`", "`failed: <reason>`", "`tainted`", "Only `fail` fails"):
+            with self.subTest(value=value):
+                self.assertIn(value, stage6)
+        for value in ("second_review", "dev-loop.local.json", "Session B never asks", "no default answer"):
+            with self.subTest(value=value):
+                self.assertIn(value, skill)
+
+    def test_routes_name_their_harness_and_the_sandbox_gap(self) -> None:
+        refs = SCRIPTS.parent / "references"
+        for route, needles in (("claude.md", [("second-review", "--harness claude"), ("sandbox", "Codex")]),
+                               ("codex.md", [("second-review", "--harness codex"), ("dev-workspace", "Claude reviewer")])):
+            lines = section((refs / route).read_text(), "Feature gate").splitlines()
+            for a, b in needles:
+                with self.subTest(route=route, needles=(a, b)):
+                    self.assertTrue(any(a in line and b in line for line in lines))
+
+    def test_init_installs_the_prompt(self) -> None:
+        repo = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, repo, True)
+        git(repo, "init", "-q", "-b", "main")
+        (repo / "notes").mkdir()
+        subprocess.run(["node", str(self.ROOT / "bin" / "install.mjs"), "init", "--yes", "--harness=claude",
+                        f"--notes={repo / 'notes'}"], cwd=repo, check=True, capture_output=True)
+        path = ".agents/skills/dev-loop/references/second-review.md"
+        self.assertTrue((repo / path).is_file())
+        self.assertIn(path, json.loads((repo / ".dev-loop" / "MANIFEST.json").read_text())["files"])
+
+    def test_agents_md_and_the_canary_name_the_second_review(self) -> None:
+        agents = (self.ROOT / "AGENTS.md").read_text()
+        for value in ("`second-review --harness claude|codex [--timeout <minutes>]`", "skill/scripts/second_review.py",
+                      "skill/references/second-review.md", "test_second_review.py", "SecondReviewTextTests",
+                      "`not-chosen`", "`tainted`", "`second_review`"):
+            with self.subTest(value=value):
+                self.assertIn(value, agents)
+        help_text = subprocess.run(["bash", str(self.ROOT / "scripts" / "canary.sh"), "--help"],
+                                   capture_output=True, text=True).stdout
+        self.assertIn("second-review", help_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

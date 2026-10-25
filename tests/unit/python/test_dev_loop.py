@@ -173,6 +173,7 @@ SecondReviewDecisionTests = test_second_review.SecondReviewDecisionTests
 SecondReviewExportTests = test_second_review.SecondReviewExportTests
 SecondReviewRunTests = test_second_review.SecondReviewRunTests
 SecondReviewSetupTests = test_second_review.SecondReviewSetupTests
+SecondReviewTextTests = test_second_review.SecondReviewTextTests
 
 
 def all_instructions() -> str:

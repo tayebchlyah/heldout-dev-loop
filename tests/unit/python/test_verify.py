@@ -618,7 +618,7 @@ class VerifyTextTests(unittest.TestCase):
         stage6 = section(skill, "6 Feature gate")
         self.assertIn("devloop.py drive", stage6)
         self.assertIn("drive:", stage6)
-        self.assertIn("Report five lines", stage6)
+        self.assertIn("Report six lines", stage6)
         refs = SCRIPTS.parent / "references"
         verify_md = (refs / "verify.md").read_text()
         for needle in ("## Licenses", "9580c23", "Lauren Tan", "devloop.py verify-init", "drive --all",
