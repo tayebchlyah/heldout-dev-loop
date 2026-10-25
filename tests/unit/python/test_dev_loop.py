@@ -149,6 +149,7 @@ ReleaseRecordTests = test_release.ReleaseRecordTests
 ReleaseGuardTests = test_release.ReleaseGuardTests
 ReleaseSetupTests = test_release.ReleaseSetupTests
 ReleaseKitTests = test_release.ReleaseKitTests
+ReleaseTextTests = test_release.ReleaseTextTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
@@ -296,7 +297,7 @@ class BoardVaultCheckTests(unittest.TestCase):
 
     def test_vault_git_without_the_board_ignore_is_reported(self) -> None:
         lines = self.actions(dataview=True, js=True, git=True, ignore=False)
-        self.assertEqual(lines[0], self.GITIGNORE_LINE)
+        self.assertEqual(lines, [self.GITIGNORE_LINE, "add security-audit/ to the vault .gitignore"])
 
     def test_ready_vault_has_no_lines(self) -> None:
         self.assertEqual(self.actions(dataview=True, js=True, git=True, ignore=True), [])
