@@ -5,11 +5,11 @@ Work larger than one feature gets a map: the Stage 1 map trigger, then the route
 Root: `<notes>/maps/<effort>/`, `<notes>` the output of `scripts/notes_path.py`. Never inside the repo. `<effort>`: lower case words joined by `-`.
 
 - `handoff.md`: the grilling state Stage 1 hands over. Read it first when the user says "chart the map from" its path.
-- Destination: the list of dev-loop features, by slug, each with the map decisions it relies on. Stage 1 of each feature reads it.
+- Destination (the map's first section): when you chart, write it as the list of dev-loop features, by slug, each with the map decisions it relies on. Stage 1 of each feature reads it to find its map.
 
 ## Wayfinding operations
 
-Source: Pocock skills v1.3.1 `skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md`, section "Wayfinding operations" (https://github.com/mattpocock/skills, commit `24fe0ef`). Changed: the root is the notes folder, not `.scratch/`. MIT License, Copyright (c) 2026 Matt Pocock: full notice in [spec.md](spec.md#licenses).
+Source: Pocock skills v1.3.1 `skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md`, section "Wayfinding operations" (https://github.com/mattpocock/skills, commit `24fe0ef`). Changed: the root is the notes folder, not `.scratch/`; the opening line "Used by `/wayfinder`. ..." is dropped. MIT License, Copyright (c) 2026 Matt Pocock: full notice in [spec.md](spec.md#licenses).
 
 - **Map**: `<notes>/maps/<effort>/map.md` (the Notes / Decisions-so-far / Fog body).
 - **Child ticket**: `<notes>/maps/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.

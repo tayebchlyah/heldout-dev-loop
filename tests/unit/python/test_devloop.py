@@ -1247,10 +1247,10 @@ class SkillStackContractTests(unittest.TestCase):
                 "the framing note (SKILL.md Stage 1)",
             ]),
             ((REFERENCES / "maps.md").read_text(), [
-                "Wayfinding operations", "maps/<effort>/map.md", "Blocked by:", "docs/agents/issue-tracker.md", "notes_path.py",
+                "Wayfinding operations", "Destination (the map's first section)", "is dropped", "maps/<effort>/map.md", "Blocked by:", "docs/agents/issue-tracker.md", "notes_path.py",
             ]),
-            ((REFERENCES / "benchmark.md").read_text(), ["sysctl -n hw.ncpu", "performance check"]),
-            (self.claude, ["`mattpocock-skills:wayfinder` SKILL.md"]),
+            ((REFERENCES / "benchmark.md").read_text(), ["sysctl -n hw.ncpu", "performance check", "the Stage 1 answer line added"]),
+            (self.claude, ["`mattpocock-skills:wayfinder` SKILL.md", "plugins/cache/"]),
             (self.codex, ["`wayfinder`", "~/.agents/skills/wayfinder/SKILL.md"]),
         ]
         for text, values in cases:
