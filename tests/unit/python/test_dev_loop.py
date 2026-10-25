@@ -147,6 +147,13 @@ ReleaseCheckTests = test_release.ReleaseCheckTests
 ReleasePlanTests = test_release.ReleasePlanTests
 ReleaseRecordTests = test_release.ReleaseRecordTests
 
+_sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
+if _sandbox_spec is None or _sandbox_spec.loader is None:
+    raise ImportError("cannot load test_sandbox_run module")
+test_sandbox_run = importlib.util.module_from_spec(_sandbox_spec)
+_sandbox_spec.loader.exec_module(test_sandbox_run)
+SandboxRunTests = test_sandbox_run.SandboxRunTests
+
 _board_robust_spec = importlib.util.spec_from_file_location("test_board_robust", Path(__file__).resolve().parent / "test_board_robust.py")
 if _board_robust_spec is None or _board_robust_spec.loader is None:
     raise ImportError("cannot load test_board_robust module")
