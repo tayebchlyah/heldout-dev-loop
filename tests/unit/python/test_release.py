@@ -875,5 +875,41 @@ class ReleaseKitTests(unittest.TestCase):
         self.assertNotIn("\u2014", text)
 
 
+class ReleaseTextTests(unittest.TestCase):
+    """Oracle 58 and 59: the kit text and this repo's release steps."""
+    ROOT = Path(__file__).resolve().parents[3]
+
+    def read(self, rel: str) -> str:
+        return (self.ROOT / rel).read_text()
+
+    def test_skill_stages_name_the_audit(self) -> None:
+        text = self.read("skill/SKILL.md")
+        self.assertIn("(security, needs-validation, <slug>)", text)
+        self.assertIn("/release-audit", text)
+        self.assertIn("release-check", text)
+        self.assertNotIn("Never merge a release PR or push a tag while one is open", text)
+        self.assertIn("Never push a tag: a stop item", text)
+
+    def test_routes_have_a_release_audit_section(self) -> None:
+        for rel in ["skill/references/claude.md", "skill/references/codex.md"]:
+            with self.subTest(rel=rel):
+                text = self.read(rel)
+                self.assertIn("## Release audit", text)
+                section = text.split("## Release audit", 1)[1]
+                self.assertIn("release-audit", section)
+                self.assertIn("sandbox-run.py", section)
+
+    def test_repo_release_steps_run_the_audit_before_the_tag(self) -> None:
+        text = self.read("AGENTS.md")
+        steps = text.split("- Release:", 1)[1].split("\n- ", 1)[0]
+        self.assertIn("/release-audit", steps)
+        self.assertLess(steps.index("/release-audit"), steps.index("git tag"))
+
+    def test_kit_text_has_no_em_dash(self) -> None:
+        for rel in ["skill/SKILL.md", "skill/references/claude.md", "skill/references/codex.md", "AGENTS.md",
+                    "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md"]:
+            self.assertNotIn("\u2014", self.read(rel), rel)
+
+
 if __name__ == "__main__":
     unittest.main()
