@@ -458,6 +458,14 @@ class MetricsCommandTests(TempDir):
         self.assertEqual(code, 1)
         self.assertIn("Feature Metrics.md", out["error"])
 
+    def test_cli_notes_not_utf8(self) -> None:
+        self.fixture()
+        self.transcript(self.work())
+        (self.notes / "Feature Metrics.md").write_bytes(b"\xff\xfe\x00bad\n")
+        code, out = self.run_cli("--write")
+        self.assertEqual(code, 1, out)
+        self.assertIn("Feature Metrics.md", out["error"])
+
     def test_cli_track_s(self) -> None:
         self.fixture(slug="quick-fix", prefix="fix", spec=False)
         self.transcript(self.work())
