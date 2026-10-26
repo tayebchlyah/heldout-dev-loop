@@ -51,6 +51,8 @@ A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<
 - `capture --pr <n>`: puts a before and an after screenshot of each driven route (a WebM for a journey) in the PR body, uploaded with `gh pr edit --attach` (gh 2.99.0 or later).
 - `release-plan`, `release-record`, `release-check`: the release security audit. Before a `v*` tag, run `/release-audit` (Codex `$release-audit`) in the main session on `main`: it runs the Cloudflare `security-audit` skill, then `release-record` writes the confirmed and needs-validation findings into `## Deferred` of the project note and one line into `## Release audits`. `release-check --sha HEAD` says whether the commit may get the tag; the git guard runs it on a tag push and `gh release create`. A run takes hours and costs tens of dollars. Target code runs only in the container sandbox `sandbox-run.py` (Docker).
 - `sessions --since <days>`: lists the Claude Code and Codex sessions of every worktree of the repo, largest first, for the weekly `/retro` review. `status` on the default branch gives `review_due` when the last `/garden` run is 7 days old or older, and Stage 1 then refuses new work until the review is done.
+- `review-merge <reviewer>=<file> ...`: merges the Stage 6 reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) into one row per file and line, and lists the rows with a security finding.
+- `acceptance [--failed]`: runs `commands.acceptance` (or `commands.acceptance_failed`) with `DEVLOOP_REPORT_DIR` set, reads the failing tests from the JUnit XML there, checks that no compose build container is older than the newest code commit, records the run, and gives the progress guard verdict (`continue`, `stop`, `green` or `unknown`).
 - `ci wait`: waits for the checks of the current branch's pull request, and on a failure names the failed job and its first error.
 
 ## Before the first `init` on a machine
@@ -115,7 +117,7 @@ To try a change in a project, run `node ~/Projects/tchlyah/dev-loop/bin/install.
 npm ci && npx playwright install chromium   # once per clone or worktree
 npm test                                    # node suite: installer, board render and drive tests
 python3 tests/unit/python/test_dev_loop.py  # skill suite
-python3 -m unittest discover -s tests/acceptance -p 'test_*.py' && node --test tests/acceptance/*.test.mjs  # held-out acceptance suite (CI job `acceptance`)
+scripts/acceptance.sh                       # held-out acceptance suite (CI job `acceptance`), JUnit with DEVLOOP_REPORT_DIR
 ```
 
 ## Verify

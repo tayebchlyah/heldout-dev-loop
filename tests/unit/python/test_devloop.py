@@ -1360,7 +1360,7 @@ class ReviewWaveContractTests(unittest.TestCase):
 
     def test_gate_uses_devloop_and_commands_map(self) -> None:
         for value in [
-            "git fetch origin", "`commands.stack_reset`", "docker compose --profile test up -d --build --wait",
+            "git fetch origin", "`commands.stack_reset`", "docker compose --profile test up -d --build --force-recreate --wait",
             "`GATE_SHA`", "scripts/devloop.py gate --summary", "`commands.acceptance`", "`commands.acceptance_failed`",
             "product, test or environment", "Never rerun to green", "Progress guard", "Stale image rule",
             "## Gardener", "at most 20 open items", "lint candidate", "at most 5",
