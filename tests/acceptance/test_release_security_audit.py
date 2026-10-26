@@ -1480,11 +1480,8 @@ class KitTests(unittest.TestCase):
                 body = self.heading_section(ref.read_text(), "Release audit")
                 self.assertIn("release-audit", body)
                 self.assertIn("sandbox-run.py", body)
-        agents = AGENTS.read_text()
-        start = agents.find("- Release:")
-        self.assertGreaterEqual(start, 0, "no release steps in AGENTS.md")
-        steps = agents[start:]
-        steps = steps[:steps.find("\n- ", 1)] if steps.find("\n- ", 1) > 0 else steps
+        self.assertTrue("reference/release.md" in AGENTS.read_text(), "AGENTS.md names no reference/release.md")
+        steps = (REPO_ROOT / "reference" / "release.md").read_text()
         self.assertIn("/release-audit", steps)
         tag = steps.find("git tag")
         self.assertGreaterEqual(tag, 0, steps)
