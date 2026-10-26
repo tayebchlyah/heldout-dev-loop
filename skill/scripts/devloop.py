@@ -22,6 +22,7 @@
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
   devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
                                                       merge the reviewer tables by file and line
+  devloop.py acceptance [--failed]                    run the acceptance command, read its JUnit, record the run
   devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
                                                       the release audit plan: run folder, scope, sandbox, skill
   devloop.py release-record --run PATH [--base SHA] [--harness claude|codex] [--repo PATH]
@@ -1129,6 +1130,12 @@ def cmd_review_merge(args: argparse.Namespace) -> int:
     return emit(*review_merge(args.pairs, git(Path.cwd(), "rev-parse", "--show-toplevel")))
 
 
+def cmd_acceptance(args: argparse.Namespace) -> int:
+    from feature_gate import acceptance
+
+    return emit(*acceptance(Path.cwd(), args.failed, os.environ))
+
+
 def cmd_release_check(args: argparse.Namespace) -> int:
     from release import check, is_release_tag
 
@@ -1469,6 +1476,10 @@ def main() -> int:
     review = commands.add_parser("review-merge")
     review.add_argument("pairs", nargs="+")
     review.set_defaults(run=cmd_review_merge)
+
+    accept = commands.add_parser("acceptance")
+    accept.add_argument("--failed", action="store_true")
+    accept.set_defaults(run=cmd_acceptance)
 
     release = commands.add_parser("release-check")
     release.add_argument("--repo", default=".")
