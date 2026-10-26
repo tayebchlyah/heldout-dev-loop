@@ -1437,16 +1437,19 @@ class ReviewYieldContractTests(unittest.TestCase):
 
     def test_agents_md_documents_merge_check_and_the_data_rule(self) -> None:
         agents = (REPO_ROOT / "AGENTS.md").read_text()
+        merge_check = (REPO_ROOT / "reference" / "cli" / "merge-check.md").read_text()
+        self.assertIn("merge-check [--repo <path>] [--feature <slug>]", agents)
         for value in [
             "merge-check [--repo <path>] [--feature <slug>]", "merge_human_paths", "`config-unreadable`",
             "`merge-human`", "`track-l`", "`human-path`", "`config-changed`", "`no-review`", "`unreviewed`",
             "`unreviewed_minor`", "--verbatim",
-            "no smaller wave, no removal of the Track L threat model and no second review pass until 5 features "
-            "have a complete section in Review Yield.md",
         ]:
             with self.subTest(value=value):
-                self.assertIn(value, agents)
-        r10 = agents[agents.index("Ruling R10"):agents.index("These are expected manual steps")]
+                self.assertIn(value, merge_check)
+        self.assertIn("no smaller wave, no removal of the Track L threat model and no second review pass until 5 "
+                      "features have a complete section in Review Yield.md", agents)
+        kit = (REPO_ROOT / "reference" / "kit.md").read_text()
+        r10 = kit[kit.index("Ruling R10"):kit.index("These are expected manual steps")]
         self.assertIn("3. ", r10)
         self.assertIn("security-audit", r10)
 
@@ -1470,11 +1473,17 @@ class SpecGapContractTests(unittest.TestCase):
 
     def test_agents_md_documents_the_cli_as_built(self) -> None:
         agents = (REPO_ROOT / "AGENTS.md").read_text()
-        for value in ["`status [--repo <path>] [--feature <slug>]`", "`logged [--name <name>] -- <cmd>`",
-                      "`error` with `message`", "`features`: each spec not shipped",
-                      "An approved spec with neither is left out", "`shipped: <YYYY-MM-DD>`", "`pr: <url>`"]:
+        cli = REPO_ROOT / "reference" / "cli"
+        for value in ["`status [--repo <path>] [--feature <slug>]`", "`logged [--name <name>] -- <cmd>`"]:
             with self.subTest(value=value):
                 self.assertIn(value, agents)
+        for name, value in [("status", "`status [--repo <path>] [--feature <slug>]`"),
+                            ("logged", "`logged [--name <name>] -- <cmd>`"), ("board", "`error` with `message`"),
+                            ("status", "`features`: each spec not shipped"),
+                            ("status", "An approved spec with neither is left out"),
+                            ("status", "`shipped: <YYYY-MM-DD>`"), ("status", "`pr: <url>`")]:
+            with self.subTest(value=value):
+                self.assertIn(value, (cli / f"{name}.md").read_text())
 
 
 D16_SENTENCE = ("When `## Supersedes` is not none, or a flow in `## Acceptance flows` names an earlier feature, "

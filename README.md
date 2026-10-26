@@ -66,6 +66,8 @@ Remove the 1.4 global install first: `npx github:tchlyah/dev-loop#<tag> uninstal
 - **Rollback of a project:** `git revert` the upgrade commit.
 - **Rollback of a machine to 1.4:** `npx github:tchlyah/dev-loop#v1.4.0` reinstalls the global install. Do not keep it on a machine whose projects use the kit.
 
+Upgrade notes per version (board, seal, 2.0.0): [`reference/kit.md`](reference/kit.md) `## Upgrade`.
+
 ## Upgrade to 2.0.0
 
 2.0.0 breaks these:
