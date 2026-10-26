@@ -252,6 +252,7 @@ class BranchRatchetTests(RatchetCase):
 
         with self.subTest(oracle=5):
             project = self.project({"data/big.txt": filler(50000)})
+            (project.wt / "moved").mkdir()
             project.git(project.wt, "mv", "data/big.txt", "moved/big.txt")
             project.commit(project.wt, {}, "Move the big file")
             code, out = self.size_check(project)
