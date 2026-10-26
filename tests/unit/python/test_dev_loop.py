@@ -1201,7 +1201,7 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
         for name, steps in (("repo", (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "i"],
-                                      ["tag", "v1.0"], ["checkout", "-q", "-b", "feat"])),
+                                      ["tag", "v1.0"], ["branch", "topic/x"], ["checkout", "-q", "-b", "feat"])),
                             ("main", (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "i"])),
                             ("feature", (["init", "-q", "-b", "feat"], ["commit", "-q", "--allow-empty", "-m", "i"]))):
             os.makedirs(os.path.join(cls.templates, name))
@@ -1260,6 +1260,26 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
     def test_plain_feature_branch_push_runs(self) -> None:
         for command, got in self.decisions(("git push", "git push origin feat", "git push -u origin feat", "git push origin HEAD")):
             self.assertEqual(got, "allow", command)
+
+    def test_lease_push_to_the_current_feature_branch_runs(self) -> None:
+        rows = [(command, "allow") for command in (
+            "git push --force-with-lease", "git push --force-with-lease --force-if-includes",
+            "git push --force-with-lease --force-if-includes origin HEAD", "git push --force-with-lease origin topic/x",
+            "git push --force-with-lease origin HEAD:topic/x", "git push --force-with-lease origin @",
+            "git push origin topic/x --force-with-lease")]
+        rows += [(command, "ask") for command in (
+            "git push --force", "git push -f", "git push -uf origin topic/x", "git push --force-if-includes",
+            "git push --force-with-lease=topic/x:abc origin topic/x", "git push --force-with-lease origin +topic/x",
+            "git push --force-with-lease --tags", "git push --force-with-lease --delete origin topic/x",
+            "git push --force-with-lease --all", "git push --force-with-lease origin main",
+            "git push --force-with-lease origin HEAD:main", "git push --force-with-lease origin topic/other",
+            "git push --force-with-lease origin HEAD:topic/other", "git rebase main && git push --force-with-lease")]
+        commands = [command for command, _ in rows]
+        for (command, got), (_, want) in zip(self.decisions(commands, "topic/x"), rows):
+            self.assertEqual(got, want, command)
+        # A branch without a `/` and main are not feature branches.
+        for branch in ("feat", "main"):
+            self.assertEqual(self.decision("git push --force-with-lease", branch), "ask", branch)
 
     def test_rewriting_deleting_tag_or_main_push_asks(self) -> None:
         for command, got in self.decisions(("git push --force origin feat", "git push --force-with-lease origin feat",
@@ -1619,6 +1639,15 @@ class ClaudeGitGuardSubagentTests(unittest.TestCase):
             self.assertEqual(json.loads(main.stdout)["hookSpecificOutput"]["permissionDecision"], "ask")
             feature = self.run_guard({"cwd": repo, "agent_id": "a1", "tool_input": {"command": "git push origin feat"}})
             self.assertEqual((feature.returncode, feature.stdout), (0, ""))
+
+    def test_a_subagent_lease_push_is_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            subprocess.run(["git", "-C", repo, "init", "-q", "-b", "topic/x"], check=True)
+            command = {"command": "git push --force-with-lease"}
+            sub = self.run_guard({"cwd": repo, "agent_id": "a1", "tool_input": command})
+            self.assertEqual((sub.returncode, sub.stdout), (2, ""))
+            main = self.run_guard({"cwd": repo, "tool_input": command})
+            self.assertEqual((main.returncode, main.stdout), (0, ""))
 
 
 class CodexGitGuardPushTests(ClaudeGitGuardPushTests):
