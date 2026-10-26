@@ -108,6 +108,9 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # beyond one feature branch asks: force, a + refspec, delete, mirror, all, prune, tags,
 # main or master as target, a bare push while main, master or a detached HEAD is
 # checked out, or a bare push whose remote config can reach other branches.
+# Exception: a bare --force-with-lease (with or without --force-if-includes) to the
+# checked-out branch, when that branch has a / and the main session pushes: Stage 7
+# pushes a rebased feature branch this way.
 # Parsed with shlex, not regex, so quotes, combined short flags (-uf), global options
 # (-c, -C, --git-dir), cd and git aliases do not walk past the rule. A git anywhere in
 # a segment counts (if, timeout, xargs). Only what the shell runs is checked: a heredoc
@@ -126,6 +129,7 @@ import fnmatch, json, os, re, shlex, subprocess, sys
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
          "--all", "--branches", "--prune", "--tags", "--follow-tags"}
+LEASE = {"--force-with-lease", "--force-if-includes"}
 PUSH_ARG = {"--push-option", "--repo", "--receive-pack", "--exec"}
 GLOBAL_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 # Earlier commands in the same line that change what a later push resolves to.
@@ -347,7 +351,7 @@ def check_push(repo, args, drift):
         ask("a push with an argument the shell expands")
     if "refs" in drift:
         ask("a push after a command that changes refs or config")
-    pos, j = [], 0
+    pos, lease, j = [], set(), 0
     while j < len(args):
         a = args[j]
         if a == "--":
@@ -355,7 +359,9 @@ def check_push(repo, args, drift):
             break
         if a.startswith("--"):
             name = a.split("=", 1)[0]
-            if name in FORCE:
+            if a in LEASE:
+                lease.add(a)
+            elif name in FORCE:
                 ask("a force, delete, mirror, all, prune or tag push")
             if name in PUSH_ARG and "=" not in a:
                 j += 1
@@ -379,6 +385,9 @@ def check_push(repo, args, drift):
                 or git(repo, "config", f"branch.{branch}.merge")[1].removeprefix("refs/heads/") in ("main", "master")):
             ask("a bare push whose remote config can reach other branches")
         specs = ["HEAD"]
+    if lease and ("--force-with-lease" not in lease or "/" not in branch or os.environ["AGENT_ID"]
+                  or any(s not in ("HEAD", "@", branch, f"HEAD:{branch}") for s in specs)):
+        ask("a force, delete, mirror, all, prune or tag push")
     for spec in specs:
         if spec.startswith(("+", ":")) or "*" in spec:
             ask("a forced, deleting or wildcard refspec")
