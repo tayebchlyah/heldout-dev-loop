@@ -227,6 +227,15 @@ _upstream_spec.loader.exec_module(test_upstream_watch)
 UpstreamWatchTests = test_upstream_watch.UpstreamWatchTests
 UpstreamListTests = test_upstream_watch.UpstreamListTests
 
+_repo_rules_spec = importlib.util.spec_from_file_location("test_repo_rules", Path(__file__).resolve().parent / "test_repo_rules.py")
+if _repo_rules_spec is None or _repo_rules_spec.loader is None:
+    raise ImportError("cannot load test_repo_rules module")
+test_repo_rules = importlib.util.module_from_spec(_repo_rules_spec)
+_repo_rules_spec.loader.exec_module(test_repo_rules)
+SubjectRuleTests = test_repo_rules.SubjectRuleTests
+SubjectCommandTests = test_repo_rules.SubjectCommandTests
+RepoSubjectsTests = test_repo_rules.RepoSubjectsTests
+
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
     raise ImportError("cannot load test_sandbox_run module")
