@@ -201,7 +201,8 @@ def read_record(path: Path) -> list[dict] | None:
         return None
     if not isinstance(data, dict) or not isinstance(data.get("runs"), list):
         return None
-    return data["runs"] if all(isinstance(r, dict) for r in data["runs"]) else None
+    keys = {"at", "head", "mode", "exit", "failing", "ids", "stale", "counted", "log"}
+    return data["runs"] if all(isinstance(r, dict) and keys <= r.keys() for r in data["runs"]) else None
 
 
 def write_record(path: Path, runs: list[dict]) -> None:
