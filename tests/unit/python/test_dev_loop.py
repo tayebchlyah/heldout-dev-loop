@@ -239,6 +239,7 @@ CommentRuleTests = test_repo_rules.CommentRuleTests
 CommentCommandTests = test_repo_rules.CommentCommandTests
 RepoCommentsTests = test_repo_rules.RepoCommentsTests
 RepoDocsTests = test_repo_rules.RepoDocsTests
+GateScopeTests = test_repo_rules.GateScopeTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
