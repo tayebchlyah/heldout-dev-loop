@@ -191,6 +191,7 @@ ProgressGuardTests = test_feature_gate.ProgressGuardTests
 AcceptanceCommandTests = test_feature_gate.AcceptanceCommandTests
 StaleCheckTests = test_feature_gate.StaleCheckTests
 AcceptanceScriptTests = test_feature_gate.AcceptanceScriptTests
+FeatureGateTextTests = test_feature_gate.FeatureGateTextTests
 
 _upstream_spec = importlib.util.spec_from_file_location("test_upstream_watch", Path(__file__).resolve().parent / "test_upstream_watch.py")
 if _upstream_spec is None or _upstream_spec.loader is None:
