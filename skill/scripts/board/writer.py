@@ -14,6 +14,7 @@ from types import ModuleType
 from typing import Callable
 
 import autonomy  # the scripts folder, on sys.path wherever the board package loads
+from status import cherry, detect_feature, rebasing
 
 from . import sources, state, store
 
@@ -61,8 +62,8 @@ def worktrees(dl: ModuleType, repo: Path) -> dict[Path, str | None]:
             continue
         elif line.startswith("branch refs/heads/") and "/" in line[len("branch refs/heads/"):]:
             found[path] = line.rsplit("/", 1)[1].lower()
-        elif line == "detached" and "/" in (dl.rebasing(path) or ""):
-            found[path] = (dl.rebasing(path) or "").rsplit("/", 1)[1].lower()
+        elif line == "detached" and "/" in (rebasing(path) or ""):
+            found[path] = (rebasing(path) or "").rsplit("/", 1)[1].lower()
     return found
 
 
@@ -286,7 +287,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
 
         def detect(slug: str) -> dict:
             if slug not in found:
-                found[slug] = dl.detect_feature(repo, slug, notes)
+                found[slug] = detect_feature(repo, slug, notes)
             return found[slug]
 
         claims_file = state_dir / "board-claims.json"
@@ -348,7 +349,7 @@ def merged_head(ctx: Context, fields: dict, found: dict) -> bool:
     head = fields.get("head")
     if found["stage"] != 1 or not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head):
         return False
-    lines = ctx.dl.cherry(ctx.repo, head)
+    lines = cherry(ctx.repo, head)
     return lines is not None and not any(line.startswith("+") for line in lines)
 
 
