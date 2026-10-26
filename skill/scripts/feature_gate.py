@@ -18,6 +18,7 @@ from pathlib import Path
 
 import autonomy
 import devloop
+import gate
 import merge_check
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
@@ -261,20 +262,20 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
         return {"error": "not a git repository"}, 1
     top = Path(top_out)
     key = "acceptance_failed" if failed else "acceptance"
-    command = devloop.mapped_command(top, key)
+    command = gate.mapped_command(top, key)
     if command is None:
         return {"error": f"no commands.{key} in dev-loop.json"}, 1
     record = Path(git_dir) / "dev-loop" / "acceptance.json"
     runs = read_record(record)
     if runs is None:
         return {"error": f"bad record: {record}"}, 1
-    log = devloop.log_path(top, "acceptance")
+    log = gate.log_path(top, "acceptance")
     if log is None:
         return {"error": "not a git repository"}, 1
     reports = log.parent / f"{log.stem}-reports"
     reports.mkdir()
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
-    payload = devloop.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
+    payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
     failing, ids = junit_failures(reports)
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
