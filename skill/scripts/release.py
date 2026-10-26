@@ -5,6 +5,7 @@ Shared by `devloop.py` (`release-plan`, `release-record`, `release-check`).
 
 from __future__ import annotations
 
+import argparse
 import fcntl
 import fnmatch
 import json
@@ -15,7 +16,9 @@ from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
+from devloop import emit
 from merge_check import is_test_or_doc
+from notes_path import NotesPathError, resolve
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+)\): (.+)$")
 RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) ")
@@ -404,3 +407,32 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         out = "\n".join(lines)
         write_atomic(note, out if out.endswith("\n") else out + "\n")
     return {"record": line, "deferred": deferred, "skipped": skipped, "gardener": gardener}, 0
+
+
+def cmd_release_check(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    notes = None  # a non-release tag is skipped before any note read, so it needs no notes path
+    if args.tag is None or is_release_tag(args.tag):
+        try:
+            notes = resolve(repo, os.environ, Path.home())
+        except NotesPathError as exc:
+            return emit({"error": str(exc)}, 1)
+    return emit(*check(repo, notes, args.tag or args.sha, args.tag))
+
+
+def cmd_release_plan(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    return emit(*plan(repo, notes, args.harness, args.profile, args.budget))
+
+
+def cmd_release_record(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    return emit(*record(repo, notes, Path(args.run_folder), args.base, args.harness, os.environ))

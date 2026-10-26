@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import os
 import re
 import subprocess
 from pathlib import Path
 
-import size
+from devloop import emit
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
+import size
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
@@ -153,3 +155,14 @@ def rebase_continue(repo: Path) -> dict:
         return {"error": f"git rebase --continue failed: {(result.stderr or result.stdout).strip()}"}
     unmerged = run_git(repo, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")
     return {"seal": value, "files": files, "rebase": "stopped", "conflicts": [p for p in unmerged if p]}
+
+
+def cmd_seal(args: argparse.Namespace) -> int:
+    if args.rebase_continue == bool(args.feature or args.message or args.reverts) or (
+            not args.rebase_continue and not (args.feature and args.message)):
+        return emit({"error": "seal needs --feature and --message, or --rebase-continue alone"}, 2)
+
+    repo = Path.cwd()
+    out = rebase_continue(repo) if args.rebase_continue else seal(
+        repo, args.feature, args.message, args.reverts or [])
+    return emit(out, 1 if "error" in out else 0)

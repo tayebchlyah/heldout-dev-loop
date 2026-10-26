@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
 import fcntl
 import json
 import os
@@ -12,6 +14,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
+from devloop import emit
 from seal import ACCEPTANCE_DIR, git_dir, merge_base, run_git
 
 SOURCE_DIRS = ("src/", "app/", "backend/", "frontend/")
@@ -235,3 +238,13 @@ def taint_state(repo: Path) -> dict:
         is_open = any(c["patch_id"] and counts[c["patch_id"]] > counts[c["inverse_patch_id"]] for c in record["commits"])
         state["open" if is_open else "closed"].append(record)
     return state
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    try:
+        hook = json.loads(sys.stdin.read())
+    except ValueError:
+        hook = None
+    if not isinstance(hook, dict):  # An audit error is a warning: exit 0, as on every skip.
+        return emit(unparsed(Path.cwd()), 0)
+    return emit(audit(hook), 0)

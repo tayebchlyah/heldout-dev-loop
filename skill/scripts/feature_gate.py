@@ -7,6 +7,8 @@ records the run and gives the progress guard verdict.
 
 from __future__ import annotations
 
+import argparse
+import os
 import json
 import re
 import subprocess
@@ -18,6 +20,7 @@ from pathlib import Path
 
 import autonomy
 import devloop
+from devloop import emit, git
 import gate
 import merge_check
 
@@ -289,3 +292,11 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     if failing is None:
         payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
     return payload, 0 if payload["exit"] == 0 and counted else 1
+
+
+def cmd_review_merge(args: argparse.Namespace) -> int:
+    return emit(*review_merge(args.pairs, git(Path.cwd(), "rev-parse", "--show-toplevel")))
+
+
+def cmd_acceptance(args: argparse.Namespace) -> int:
+    return emit(*acceptance(Path.cwd(), args.failed, os.environ))
