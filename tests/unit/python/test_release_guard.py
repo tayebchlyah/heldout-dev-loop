@@ -1,0 +1,383 @@
+"""The release guards, the release audit setup, the kit files and the release text."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+import unittest
+import unittest.mock
+from pathlib import Path
+
+from test_release import HERE
+
+import check_setup  # noqa: E402  (test_release puts skill/scripts on sys.path)
+
+
+STUBS = {
+    "ok": 'print(json.dumps({"ok": True, "reasons": []}))',
+    "fail": 'print(json.dumps({"ok": False, "reasons": [{"reason": "no-audit"}, {"reason": "open-security", "items": []}]})); sys.exit(1)',
+    "slow": "time.sleep(10)",
+    "quote": 'sys.stderr.write("bad \\"quote\\" and \\\\ here\\nsecond line\\n"); sys.exit(1)',
+}
+
+
+class ReleaseGuardTests(unittest.TestCase):
+    """Both git-guard.sh copies, fed hook JSON on stdin, with a stub release-check CLI in the main worktree."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.a = self.commit("a")
+        self.git("tag", "-a", "v1.0.0", "-m", "v1.0.0")
+        self.git("tag", "release-1")
+        self.b = self.commit("b")
+        self.c = self.commit("c")
+        self.git("update-ref", "refs/remotes/origin/main", self.c)
+        self.git("checkout", "-q", "-b", "feat/x")
+        self.cli = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
+        self.calls = Path(tmp.name) / "calls.txt"
+        self.tmp = Path(tmp.name)
+
+    def git(self, *args: str) -> str:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+    def commit(self, name: str) -> str:
+        (self.repo / name).write_text(name)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "HEAD")
+
+    def stub(self, mode: str | None) -> None:
+        if mode is None:
+            self.cli.unlink(missing_ok=True)
+            return
+        self.cli.parent.mkdir(parents=True, exist_ok=True)
+        self.cli.write_text("import json, sys, time\n"
+                            f"open({str(self.calls)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n" + STUBS[mode] + "\n")
+
+    def guard(self, harness: str, command: str, **extra: str) -> tuple[str, str, float]:
+        """(decision, reason, seconds). Claude exit 2 is a deny with the stderr text."""
+        payload = json.dumps({"cwd": str(self.repo), "tool_name": "Bash", "tool_input": {"command": command}, **extra})
+        start = time.monotonic()
+        done = subprocess.run([shutil.which({"claude": "bash", "codex": "sh"}[harness]), str(HERE.parents[2] / harness / "hooks" / "git-guard.sh")],
+                              input=payload, capture_output=True, text=True, timeout=60)
+        seconds = time.monotonic() - start
+        if done.returncode == 2:
+            return "deny", done.stderr, seconds
+        if not done.stdout:
+            return "allow", "", seconds
+        out = json.loads(done.stdout)["hookSpecificOutput"]
+        return out["permissionDecision"], out["permissionDecisionReason"], seconds
+
+    def test_a_release_tag_push_carries_the_release_check_verdict(self) -> None:
+        # Oracle 46, 47, 49, 50, 51, 52.
+        for harness, mode, command, extra, decision, parts, absent in [
+            ("claude", "fail", "git push origin v1.0.0", {}, "ask", ["a tag push", "release-check: no-audit, open-security"], None),
+            ("claude", "ok", "git push origin v1.0.0", {}, "ask",
+             ["Global rule: a tag push needs explicit permission each time; release-check: ok."], None),
+            ("claude", "ok", "git push origin feat/x v1.0.0", {}, "ask", ["release-check: ok"], None),
+            ("claude", "ok", "git push origin HEAD:refs/tags/v2.0.0", {}, "ask", ["release-check: ok"], None),
+            ("claude", "ok", "git push origin v1.0.0 release-1", {}, "ask", ["a tag push"], "release-check"),
+            ("claude", "ok", "git push origin refs/tags/v1.0.0", {}, "ask", ["release-check: ok"], None),
+            ("claude", "ok", "git push origin tag v1.0.0", {}, "ask", ["release-check: ok"], None),
+            ("codex", "fail", "git push origin v1.0.0", {}, "deny", ["a tag push", "release-check: no-audit"], None),
+            ("claude", "fail", "git push origin v1.0.0", {"agent_id": "a1"}, "deny", ["subagent"], None),
+            ("claude", None, "git push origin v1.0.0", {}, "ask", ["release-check failed: no CLI"], None),
+            ("codex", None, "git push origin v1.0.0", {}, "deny", ["release-check failed"], None),
+            ("claude", "ok", "git push --tags", {}, "ask", ["tag push"], "release-check"),
+            ("claude", "ok", "git push --follow-tags origin feat/x", {}, "ask", ["tag push"], "release-check"),
+            ("claude", "ok", "git push origin release-1", {}, "ask", ["a tag push"], "release-check"),
+            ("claude", "ok", "git push origin 'refs/tags/*'", {}, "ask", [], "release-check"),
+        ]:
+            with self.subTest(harness=harness, mode=mode, command=command, extra=extra):
+                self.stub(mode)
+                got, reason, _ = self.guard(harness, command, **extra)
+                self.assertEqual(got, decision, reason)
+                for part in parts:
+                    self.assertIn(part, reason)
+                if absent:
+                    self.assertNotIn(absent, reason)
+        self.assertIn(f"release-check --repo {self.repo} --tag v1.0.0", self.calls.read_text())
+        self.assertIn(f"release-check --repo {self.repo} --sha {self.c}", self.calls.read_text())
+        # A subagent is denied before the CLI runs.
+        self.calls.unlink()
+        self.stub("slow")
+        got, reason, seconds = self.guard("claude", "git push origin v1.0.0", agent_id="a1")
+        self.assertEqual((got, self.calls.exists()), ("deny", False), reason)
+        self.assertLess(seconds, 3)
+
+    def test_gh_release_create_checks_the_commit_it_tags(self) -> None:
+        # Oracle 48: a local tag, else --target, else refs/remotes/origin/main; any tag name asks.
+        self.stub("fail")
+        for command, sha in [("gh release create v1.0.0 --notes x", self.a), (f"gh release create v2.0.0 --target {self.b}", self.b),
+                             ("gh release create v2.0.0 --target=main --title 'v2 release'", self.c),
+                             ("gh release create v2.0.0", self.c), ("gh release create release-1", self.a),
+                             ("cd /tmp && command gh release create v2.0.0", None)]:
+            with self.subTest(command=command):
+                self.calls.unlink(missing_ok=True)
+                got, reason, _ = self.guard("claude", command)
+                self.assertEqual(got, "ask", reason)
+                if sha:
+                    self.assertIn(f"a release create at {sha} needs explicit permission each time; release-check: no-audit", reason)
+                    self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} --sha {sha}\n")
+        got, reason, _ = self.guard("claude", "gh release create v2.0.0 --target nowhere")
+        self.assertIn("release-check failed: target nowhere does not resolve", reason)
+        got, reason, _ = self.guard("codex", "gh release create v1.0.0")
+        self.assertEqual((got, "release-check: no-audit" in reason), ("deny", True), reason)
+        got, reason, _ = self.guard("claude", "gh release create v1.0.0", agent_id="a1")
+        self.assertEqual(got, "deny", reason)
+        for command in ["gh pr create --title x", "gh release list", "gh -R o/r release view v1.0.0"]:
+            self.assertEqual(self.guard("claude", command)[0], "allow", command)
+        # gh flags around release, the new alias, and a word the parser cannot read.
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            for command, part in [("gh release new v1.0.0", f"at {self.a}"), ("gh -R o/r release create v1.0.0", f"at {self.a}"),
+                                  ("gh release -R o/r create v1.0.0", f"at {self.a}"),
+                                  ("gh --repo=o/r release --repo o/r new v1.0.0", f"at {self.a}"),
+                                  ("gh release $SUB v1.0.0", "release-check failed"),
+                                  ("gh release -R o/r 'cr'$X v1.0.0", "release-check failed")]:
+                with self.subTest(harness=harness, command=command):
+                    got, reason, _ = self.guard(harness, command)
+                    self.assertEqual(got, decision, reason)
+                    self.assertIn(part, reason)
+
+    def test_a_slow_or_broken_release_check_still_asks(self) -> None:
+        # Oracle 48a and Review Focus 3: a timeout within the hook's 5 s, a stderr line with a quote stays valid JSON.
+        self.stub("slow")
+        got, reason, seconds = self.guard("claude", "git push origin v1.0.0")
+        self.assertEqual(got, "ask", reason)
+        self.assertIn("release-check failed: timeout", reason)
+        self.assertLess(seconds, 5)
+        self.stub("quote")
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            got, reason, _ = self.guard(harness, "gh release create v1.0.0")
+            self.assertEqual(got, decision, reason)
+            self.assertIn('release-check failed: bad "quote" and \\ here', reason)
+            self.assertNotIn("second line", reason)
+
+    def test_a_refspec_tag_push_checks_the_commit_of_its_source(self) -> None:
+        # D14: <src>:refs/tags/v* checks the commit of <src>, not a stale local tag; a plain tag name keeps --tag.
+        self.git("tag", "v2.0.0", self.b)
+        self.stub("ok")
+        for command, want in [("git push origin main:refs/tags/v2.0.0", f"--sha {self.c}"),
+                              ("git push origin HEAD:refs/tags/v3.0.0", f"--sha {self.c}"),
+                              (f"git push origin {self.b}:refs/tags/v2.0.0", f"--sha {self.b}"),
+                              ("git push origin refs/tags/v2.0.0", "--tag v2.0.0"), ("git push origin v2.0.0", "--tag v2.0.0")]:
+            with self.subTest(command=command):
+                self.calls.unlink(missing_ok=True)
+                got, reason, _ = self.guard("claude", command)
+                self.assertEqual(got, "ask", reason)
+                self.assertIn("release-check: ok", reason)
+                self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} {want}\n")
+                if want.startswith("--sha"):
+                    self.assertIn(want.removeprefix("--sha "), reason)
+        self.calls.unlink()
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            got, reason, _ = self.guard(harness, "git push origin nowhere:refs/tags/v3.0.0")
+            self.assertEqual(got, decision, reason)
+            self.assertIn("release-check failed: nowhere does not resolve", reason)
+        self.assertFalse(self.calls.exists())
+
+    def test_the_cli_comes_from_the_hook_project_only(self) -> None:
+        # Security review: a planted devloop.py in another repository never runs inside the hook.
+        evil = self.tmp / "evil"
+        evil.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(evil)], check=True)
+        subprocess.run(["git", "-C", str(evil), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"],
+                       check=True)
+        subprocess.run(["git", "-C", str(evil), "tag", "v1.0.0"], check=True)
+        marker = self.tmp / "marker"
+        planted = evil / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
+        planted.parent.mkdir(parents=True)
+        planted.write_text(f"open({str(marker)!r}, 'w').write('ran')\n")
+        self.stub("ok")
+        for harness, decision in [("claude", "ask"), ("codex", "deny")]:
+            for command in [f"git -C {evil} push o x:refs/tags/v1", f"cd {evil} && git push origin v1.0.0",
+                            f"cd {evil} && gh release create v1.0.0"]:
+                with self.subTest(harness=harness, command=command):
+                    got, reason, _ = self.guard(harness, command)
+                    self.assertEqual(got, decision, reason)
+                    self.assertIn("release-check failed: another repository", reason)
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.calls.exists())
+
+
+class ReleaseSetupTests(unittest.TestCase):
+    """Oracle 53 to 55 and D12: check_setup lines for security_audit, the Docker engine and image, the vault ignore."""
+
+    SHAPE = 'security_audit in dev-loop.json must be {"images": {<name>: <image>}}, names ^[a-z0-9][a-z0-9_-]*$'
+    ENGINE = "start a Docker engine for the release audit sandbox"
+
+    def repo(self, tmp: str, audit: object = None) -> Path:
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        config = {} if audit is None else {"security_audit": audit}
+        (repo / "dev-loop.json").write_text(json.dumps(config))
+        return repo
+
+    def docker(self, tmp: str, info: int, present: tuple[str, ...] = ()) -> dict[str, str]:
+        """A fake docker on PATH: `info` exits `info`, `image inspect X` exits 0 only for X in present."""
+        bin_dir = Path(tmp) / "bin"
+        bin_dir.mkdir()
+        script = bin_dir / "docker"
+        script.write_text(
+            '#!/bin/sh\n[ "$1" = info ] && exit %d\nfor i in %s; do [ "$3" = "$i" ] && exit 0; done\nexit 1\n'
+            % (info, " ".join(present) or "none")
+        )
+        script.chmod(0o755)
+        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    def vault(self, tmp: str, local: dict, ignore: str) -> tuple[Path, Path]:
+        repo = self.repo(tmp)
+        vault = Path(tmp) / "vault"
+        notes = vault / "Project"
+        notes.mkdir(parents=True)
+        (vault / ".obsidian").mkdir()
+        (repo / "dev-loop.local.json").write_text(json.dumps({"notes": str(notes), **local}))
+        subprocess.run(["git", "init", "-q", str(vault)], check=True)
+        (vault / ".gitignore").write_text(ignore)
+        return Path(tmp) / "home", repo
+
+    def test_vault_ignore_line(self) -> None:
+        line = "add security-audit/ to the vault .gitignore"
+        rows = [({}, "dev-loop-board/\n", [line]), ({"board_vault_git": "shared"}, "", []),
+                ({}, "dev-loop-board/\nsecurity-audit/\n", [])]
+        for local, ignore, want in rows:
+            with self.subTest(local=local, ignore=ignore), tempfile.TemporaryDirectory() as tmp:
+                home, repo = self.vault(tmp, local, ignore)
+                got = [x for x in check_setup.check_board_vault(home, repo, {}) if "security-audit" in x]
+                self.assertEqual(got, want)
+
+    def test_vault_ignore_line_without_obsidian_folder(self) -> None:
+        line = "add security-audit/ to the vault .gitignore"
+        rows = [({}, "", True, [line]), ({}, "security-audit/\n", True, []),
+                ({"board_vault_git": "shared"}, "", True, []), ({}, "", False, [])]
+        for local, ignore, git, want in rows:
+            with self.subTest(local=local, ignore=ignore, git=git), tempfile.TemporaryDirectory() as tmp:
+                repo = self.repo(tmp)
+                vault = Path(tmp) / "vault"
+                notes = vault / "Projects" / "name"
+                notes.mkdir(parents=True)
+                (repo / "dev-loop.local.json").write_text(json.dumps({"notes": str(notes), **local}))
+                if git:
+                    subprocess.run(["git", "init", "-q", str(vault)], check=True)
+                    (vault / ".gitignore").write_text(ignore)
+                got = [x for x in check_setup.check_board_vault(Path(tmp) / "home", repo, {}) if "security-audit" in x]
+                self.assertEqual(got, want)
+
+    def test_bad_shapes_fail_and_a_good_one_does_not(self) -> None:
+        bad = [{"images": {"T": "x"}}, {"images": {"t": ""}}, {"images": []}, {"other": 1}, "x",
+               {"images": {"t": "x"}, "other": 1}, {"images": {"t": 5}}]
+        for audit in bad:
+            with self.subTest(audit=audit), tempfile.TemporaryDirectory() as tmp:
+                repo = self.repo(tmp, audit)
+                self.assertIn(self.SHAPE, check_setup.check_project_config(repo))
+                self.assertEqual(check_setup.check_release_sandbox(repo), [])
+        for audit in [None, {"images": {}}, {"images": {"py-3_1": "img:1"}}]:
+            with self.subTest(audit=audit), tempfile.TemporaryDirectory() as tmp:
+                self.assertEqual(check_setup.check_project_config(self.repo(tmp, audit)), [])
+
+    def test_docker_engine_and_image_actions(self) -> None:
+        pull = "pull the release audit sandbox image img:2 (security_audit.images.b)"
+        rows = [(None, 1, (), []), ({"images": {}}, 1, (), []), ({"images": {"a": "img:1"}}, 1, (), [self.ENGINE]),
+                ({"images": {"a": "img:1", "b": "img:2"}}, 0, ("img:1",), [pull]),
+                ({"images": {"a": "img:1"}}, 0, ("img:1",), [])]
+        for audit, info, present, want in rows:
+            with self.subTest(audit=audit, info=info), tempfile.TemporaryDirectory() as tmp:
+                with unittest.mock.patch.dict(os.environ, self.docker(tmp, info, present)):
+                    self.assertEqual(check_setup.check_release_sandbox(self.repo(tmp, audit)), want)
+
+    def test_missing_docker_binary_is_an_engine_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.dict(os.environ, {"PATH": str(Path(tmp) / "none")}):
+            repo = self.repo(tmp, {"images": {"a": "img:1"}})
+            self.assertEqual(check_setup.check_release_sandbox(repo), [self.ENGINE])
+
+    def test_docker_calls_have_a_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.repo(tmp, {"images": {"a": "img:1"}})
+            with unittest.mock.patch.object(check_setup.subprocess, "run",
+                                            side_effect=subprocess.TimeoutExpired("docker", 10)) as run:
+                self.assertEqual(check_setup.check_release_sandbox(repo), [self.ENGINE])
+            self.assertEqual(run.call_args.kwargs["timeout"], 10)
+
+
+class ReleaseKitTests(unittest.TestCase):
+    SKILL = Path(__file__).resolve().parents[3] / "skills" / "release-audit"
+
+    def test_skill_is_user_invoked_only(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        head = text.split("---")[1]
+        self.assertIn("name: release-audit\n", head)
+        self.assertIn("disable-model-invocation: true", head)
+        self.assertIn("allow_implicit_invocation: false", (self.SKILL / "agents" / "openai.yaml").read_text())
+
+    def test_text_names_the_commands_and_the_rules(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        for name in ["release-plan", "release-record", "release-check", "sandbox-run.py", "sandbox.runner",
+                     "never push a tag", "never run the audit in a subagent", "run-incomplete", "incomplete_reason",
+                     "No approved sandbox: ", "Approved OS-enforced sandbox for every target-controlled execution",
+                     "30 min", "19 USD", "quick"]:
+            self.assertIn(name, text.replace("Never push a tag", "never push a tag")
+                          .replace("Never run the audit in a subagent", "never run the audit in a subagent"), name)
+        self.assertNotIn("\u2014", text)
+
+
+class ReleaseTextTests(unittest.TestCase):
+    """Oracle 58 and 59: the kit text and this repo's release steps."""
+    ROOT = Path(__file__).resolve().parents[3]
+
+    def read(self, rel: str) -> str:
+        return (self.ROOT / rel).read_text()
+
+    def test_skill_stages_name_the_audit(self) -> None:
+        text = self.read("skill/SKILL.md")
+        self.assertIn("(security, needs-validation, <slug>)", text)
+        self.assertIn("/release-audit", text)
+        self.assertIn("release-check", text)
+        self.assertNotIn("Never merge a release PR or push a tag while one is open", text)
+        grant = text.split("Stop and report only for:", 1)[1].split("\n", 1)[0]
+        self.assertIn("a tag push", grant)
+        self.assertIn("a release PR merge", grant)
+        self.assertNotIn("Never push a tag", text)
+        self.assertIn("Stage 7 release rule", text)
+
+    def test_canary_sandbox_keeps_the_project_permissions_and_exact_uid(self) -> None:
+        text = self.read("scripts/canary.sh")
+        box = text.split("sandbox_canary() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertNotIn("--sandbox", box)
+        self.assertIn("codex exec", box)
+        self.assertNotIn("grep -Eqw 65534", box)
+        self.assertIn("uid=${uid:-none}", box)
+
+    def test_repo_release_steps_are_plain_numbers(self) -> None:
+        steps = self.read("reference/release.md")
+        self.assertNotRegex(steps, r"\d[a-z]\.")
+        self.assertRegex(steps, r"(?m)^6\. ")
+
+    def test_routes_have_a_release_audit_section(self) -> None:
+        for rel in ["skill/references/claude.md", "skill/references/codex.md"]:
+            with self.subTest(rel=rel):
+                text = self.read(rel)
+                self.assertIn("## Release audit", text)
+                section = text.split("## Release audit", 1)[1]
+                self.assertIn("release-audit", section)
+                self.assertIn("sandbox-run.py", section)
+
+    def test_repo_release_steps_run_the_audit_before_the_tag(self) -> None:
+        self.assertIn("`reference/release.md`", self.read("AGENTS.md"))
+        steps = self.read("reference/release.md")
+        self.assertIn("/release-audit", steps)
+        self.assertLess(steps.index("/release-audit"), steps.index("git tag"))
+
+    def test_kit_text_has_no_em_dash(self) -> None:
+        for rel in ["skill/SKILL.md", "skill/references/claude.md", "skill/references/codex.md", "AGENTS.md",
+                    "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "reference/kit.md",
+                    "reference/release.md", "reference/upstream.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
+            self.assertNotIn("\u2014", self.read(rel), rel)
