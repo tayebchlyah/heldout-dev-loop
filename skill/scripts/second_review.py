@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import devloop
+import merge_check
 from seal import audit, merge_base
 
 REVIEWER = {"claude": "codex", "codex": "claude"}
@@ -431,7 +432,7 @@ def _decide(repo: Path, harness: str, timeout_minutes: float, env: Mapping[str, 
     sha = devloop.git(repo, "rev-parse", "--verify", "-q", "HEAD^{commit}")
     if devloop.git(repo, "rev-parse", "--is-inside-work-tree") != "true" or not sha:
         return fail("git", "not a git worktree or HEAD does not resolve")
-    ref = devloop.main_ref(repo)
+    ref = merge_check.main_ref(repo)
     if ref is None:
         return skip("no-main-ref")
     out["base"] = devloop.git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")

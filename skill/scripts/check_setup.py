@@ -22,6 +22,7 @@ from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
 import ci  # noqa: E402
 import devloop  # noqa: E402
+import merge_check  # noqa: E402
 import second_review  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
@@ -182,7 +183,7 @@ def check_release_sandbox(repo: Path) -> list[str]:
 
 def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
     """D2 to D4: the project allows a second reviewer at the main ref, so the user must choose one or turn it off."""
-    ref = devloop.main_ref(repo)
+    ref = merge_check.main_ref(repo)
     if ref is None:
         return [], []
     # project_lock reads the ref with git: a replace ref must not change what it shows.
