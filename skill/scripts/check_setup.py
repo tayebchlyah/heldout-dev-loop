@@ -20,6 +20,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
+import ci  # noqa: E402
 import devloop  # noqa: E402
 import second_review  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
@@ -701,6 +702,7 @@ def main() -> int:
     failures += gh_line(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
     action_groups += [(line, []) for line in check_release_sandbox(args.repo)]
+    action_groups += [(line, []) for line in ci.check_github(args.repo)]
 
     if failures or action_groups:
         print(f"{args.harness}: FAIL")
