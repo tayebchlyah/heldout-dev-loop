@@ -864,7 +864,7 @@ class LoggedTests(Sandbox):
         self.assertIsInstance(out["seconds"], float)
 
     def test_log_names_within_one_second_are_unique(self) -> None:
-        module = load_devloop()
+        module = load_script("gate")
         first, second = module.log_path(self.repo, "same"), module.log_path(self.repo, "same")
         self.assertNotEqual(first, second)
         self.assertTrue(first.is_file() and second.is_file())
@@ -928,7 +928,7 @@ class GateTests(Sandbox):
 
     def test_slowest_skips_a_non_numeric_time(self) -> None:
         put(self.root / "r" / "a.xml", "<testsuite><testcase name='bad' time='n/a'/><testcase name='ok' time='0.5'/></testsuite>")
-        self.assertEqual(load_devloop().slowest(self.root / "r"), [{"name": "ok", "seconds": 0.5}])
+        self.assertEqual(load_script("gate").slowest(self.root / "r"), [{"name": "ok", "seconds": 0.5}])
 
     def test_no_xml_gives_empty_slowest_and_a_hint(self) -> None:
         self.gate("#!/bin/sh\necho ok\n")
