@@ -166,6 +166,13 @@ MetricsNumbersTests = test_metrics.MetricsNumbersTests
 MetricsCommandTests = test_metrics.MetricsCommandTests
 MetricsTextTests = test_metrics.MetricsTextTests
 
+_ci_spec = importlib.util.spec_from_file_location("test_ci", Path(__file__).resolve().parent / "test_ci.py")
+if _ci_spec is None or _ci_spec.loader is None:
+    raise ImportError("cannot load test_ci module")
+test_ci = importlib.util.module_from_spec(_ci_spec)
+_ci_spec.loader.exec_module(test_ci)
+CiVerdictTests = test_ci.CiVerdictTests
+
 _gardener_spec = importlib.util.spec_from_file_location("test_gardener", Path(__file__).resolve().parent / "test_gardener.py")
 if _gardener_spec is None or _gardener_spec.loader is None:
     raise ImportError("cannot load test_gardener module")
