@@ -5,11 +5,18 @@ Stdlib only: a map entry's frontmatter holds one line of JSON per key (valid YAM
 
 from __future__ import annotations
 
+import argparse
+import fnmatch
 import json
+import os
 import re
 import subprocess
+import time
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
+
+from devloop import emit, git
 
 FILL = "<!-- dev-loop: fill -->"
 SECTIONS = ("Launch", "Doctor", "Drive", "Evidence", "Cleanup")
@@ -205,3 +212,250 @@ def gh_line(repo: Path) -> list[str]:
         return []
     found = gh_version()
     return [GH_LINE.format(found or "none")] if gh_too_old(found) else []
+
+
+SKILL_TEMPLATE = """---
+name: {skill}
+description: Launch, check, drive and clean up this project's app, as a user does. {fill}
+---
+
+# {skill}
+
+## Launch
+The exact command that starts the app for verification, and how to tell it is ready (usable, not only up). {fill}
+
+## Doctor
+One read-only check that this instance is worth driving: process up, right build, port ours, auth valid. {fill}
+
+## Drive
+`python3 .agents/skills/dev-loop/scripts/devloop.py drive`, and the project CLI commands an agent uses to reach a state. {fill}
+
+## Evidence
+What a proof captures and where it stays: `drive` writes `<git-dir>/dev-loop/evidence/<run>/`. {fill}
+
+## Cleanup
+How to stop what Launch started, never by process name. Cleanup keeps the evidence. {fill}
+"""
+
+FEATURES_TEMPLATE = """# Feature map
+
+One file per user-facing feature: frontmatter `routes`, `paths`, optional `script` (one line of JSON each), then
+`## Sub-features`, `## How to get to it (user POV)`, `## Driving it with <harness>`, `## Gotchas`. The dev-loop skill's
+`references/verify.md` has the contract.
+
+{fill}
+"""
+
+
+def cmd_verify_init(args: argparse.Namespace) -> int:
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 1)
+    repo = Path(top)
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        return emit({"error": f"no readable dev-loop.json in {repo}"}, 1)
+    if not isinstance(config, dict):
+        return emit({"error": "dev-loop.json must hold a JSON object"}, 1)
+    if "verify" in config:
+        return emit({"error": "dev-loop.json already has a verify key"}, 1)
+    skill = args.name
+    if skill is None:
+        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        main = Path(common).parent if common else repo
+        skill = "verify-" + re.sub(r"[^a-z0-9]+", "-", main.name.lower()).strip("-")
+    if not SKILL_NAME.match(skill):
+        return emit({"error": f"skill name must be lower case words joined by -: {skill}"}, 1)
+    if not url_ok(args.base_url):
+        return emit({"error": f"base URL must be http:// or https://: {args.base_url}"}, 1)
+    folder = f".agents/skills/{skill}"
+    if os.path.lexists(repo / folder):
+        return emit({"error": f"{folder} already exists"}, 1)
+    harnesses = config.get("harnesses", [])
+    link = f".claude/skills/{skill}" if isinstance(harnesses, list) and "claude" in harnesses else None
+    if link and os.path.lexists(repo / link):
+        return emit({"error": f"{link} already exists"}, 1)
+    if link and os.path.lexists(repo / ".claude/skills") and not (repo / ".claude/skills").is_dir():
+        return emit({"error": ".claude/skills exists and is not a folder"}, 1)
+
+    (repo / folder / "features").mkdir(parents=True)
+    (repo / folder / "SKILL.md").write_text(SKILL_TEMPLATE.format(skill=skill, fill=FILL))
+    (repo / folder / "features" / "README.md").write_text(FEATURES_TEMPLATE.format(fill=FILL))
+    files = [f"{folder}/SKILL.md", f"{folder}/features/README.md"]
+    if link:
+        (repo / link).parent.mkdir(parents=True, exist_ok=True)
+        (repo / link).symlink_to(f"../../{folder}")
+        files.append(link)
+    verify = {"skill": skill, "base_url": args.base_url}
+    config["verify"] = verify
+    (repo / "dev-loop.json").write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
+    files.append("dev-loop.json")
+    return emit({"skill": skill, "files": files, "config": verify}, 0)
+
+
+PLAYWRIGHT_DIRS = ("node_modules/playwright", "node_modules/@playwright/test",
+                   "frontend/node_modules/playwright", "frontend/node_modules/@playwright/test")
+READY_SECONDS = 30
+TAIL_LINES = 20
+
+
+def tail(text: str) -> str:
+    return "\n".join(text.splitlines()[-TAIL_LINES:])
+
+
+def reachable(url: str, seconds: float) -> bool:
+    """Any HTTP answer counts, an error status too. Direct: a proxy setting never answers for the app."""
+    import urllib.error
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            opener.open(url, timeout=2).close()
+            return True
+        except urllib.error.HTTPError:
+            return True
+        except (urllib.error.URLError, OSError):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.5)
+
+
+def clean_video(value: object, folder: Path) -> str | None:
+    """A runner's `video` path, kept only when it is a file inside the entry's video folder."""
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        return None
+    path = Path(value).resolve()
+    return str(path) if path.is_file() and path.is_relative_to(folder.resolve()) else None
+
+
+def before_jobs(repo: Path, base: str, source: str, kit_runner: str) -> list[tuple[str, list, str]] | str:
+    """The before run of `--routes-from`: per entry of the after `drive.json` with an `ok` route, its `ok` route
+    paths (no names) and its runner. Only those map entries are read; a missing or bad one counts as absent."""
+    from capture import read_drive
+
+    after = read_drive(Path(source))
+    if after is None:
+        return f"--routes-from {source} is not a JSON object with a routes list"
+    wanted: dict[str, list[dict]] = {}
+    journeys = set()
+    for route in after["routes"]:
+        if route.get("video"):
+            journeys.add(route["entry"])
+        if route.get("ok") is True:
+            wanted.setdefault(route["entry"], []).append({"path": route["path"], "names": []})
+    jobs = []
+    for stem, routes in wanted.items():
+        path = repo / base / "features" / f"{stem}.md"
+        entry = None
+        if Path(stem).name == stem and not stem.startswith(".") and path.is_file():
+            entry, _ = load_entry(repo, path)
+        if stem in journeys:
+            if entry and entry["script"]:
+                jobs.append((stem, routes, str(repo / entry["script"])))
+        else:
+            jobs.append((stem, routes, kit_runner))
+    return jobs
+
+
+def cmd_drive(args: argparse.Namespace) -> int:
+    from seal import git_dir, merge_base
+
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 1)
+    repo = Path(top)
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        return emit({"error": f"no readable dev-loop.json in {repo}"}, 1)
+    verify = config.get("verify", False) if isinstance(config, dict) else False
+    if verify is False:
+        return emit({"ok": True, "skipped": "no-verify", "routes": []}, 0)
+    if errors := config_errors(verify):
+        return emit({"error": "; ".join(errors)}, 1)
+    base = skill_dir(verify["skill"])
+    if not (repo / base / "SKILL.md").is_file():
+        return emit({"error": f"missing {base}/SKILL.md (verify.skill)"}, 1)
+    kit_runner = str(Path(__file__).parent / "drive.mjs")
+    if args.routes_from:
+        mode = "before"
+        jobs = before_jobs(repo, base, args.routes_from, kit_runner)
+        if isinstance(jobs, str):
+            return emit({"error": jobs}, 1)
+    else:
+        loaded = {}
+        for path in entries(repo, verify["skill"]):
+            entry, reason = load_entry(repo, path)
+            if reason:
+                return emit({"error": f"bad feature map entry {path.relative_to(repo).as_posix()}: {reason}"}, 1)
+            loaded[path.stem] = (path.relative_to(repo).as_posix(), entry)
+
+        if args.since and not git(repo, "rev-parse", "--verify", "-q", f"{args.since}^{{commit}}"):
+            return emit({"error": f"--since is not a commit: {args.since}"}, 1)
+        if args.all:
+            selected = sorted(loaded)
+        else:
+            base = merge_base(repo)
+            revs = f"{args.since}..HEAD" if args.since else f"{base}...HEAD" if base else None
+            if revs is None:
+                return emit({"error": "no base branch: run drive --all or --since <sha>"}, 1)
+            diff = git(repo, "-c", "core.quotepath=off", "diff", "--name-only", "-z", "--no-renames", revs)
+            if diff is None:
+                return emit({"error": f"git diff failed: {revs}"}, 1)
+            changed = set(diff.split("\0")) - {""}
+            selected = sorted(stem for stem, (rel, entry) in loaded.items() if rel in changed or any(
+                fnmatch.fnmatchcase(path, pattern) for path in changed for pattern in entry["paths"]))
+        mode = "all" if args.all else "since" if args.since else "diff"
+        jobs = [(stem, loaded[stem][1]["routes"],
+                 str(repo / loaded[stem][1]["script"]) if loaded[stem][1]["script"] else kit_runner)
+                for stem in selected]
+    selected = [stem for stem, _, _ in jobs]
+    head = git(repo, "rev-parse", "HEAD")
+    if not selected:
+        return emit({"ok": True, "selected": [], "routes": [], "evidence": None, "mode": mode, "head": head}, 0)
+
+    if not any((repo / d).exists() for d in PLAYWRIGHT_DIRS):
+        return emit({"error": f"playwright not found in {', '.join(PLAYWRIGHT_DIRS)}: run npm i -D playwright "
+                              "&& npx playwright install chromium in the repo root"}, 1)
+    url = verify["base_url"]
+    if not reachable(url, float(os.environ.get("DEVLOOP_TEST_READY_WAIT", READY_SECONDS))):
+        return emit({"error": f"base_url not reachable: {url}"}, 1)
+    for command in verify.get("setup", []):
+        done = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True)
+        if done.returncode != 0:
+            return emit({"error": f"setup command failed: {command}", "tail": tail(done.stdout + done.stderr)}, 1)
+    state = None
+    if "storage_state" in verify:
+        state = repo / verify["storage_state"]
+        if not state.is_file():
+            return emit({"error": f"storage_state not found after setup: {verify['storage_state']}"}, 1)
+        state = str(state.resolve())
+
+    evidence = git_dir(repo) / "dev-loop" / "evidence" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    evidence.mkdir(parents=True, exist_ok=True)
+    routes = []
+    for stem, entry_routes, runner in jobs:
+        video = evidence / "video" / stem
+        video.mkdir(parents=True, exist_ok=True)
+        payload = {"base_url": url, "storage_state": state, "routes": entry_routes, "evidence": str(evidence),
+                   "entry": stem, "video": str(video)}
+        done = subprocess.run(["node", runner], cwd=repo, input=json.dumps(payload), capture_output=True, text=True)
+        try:
+            result = json.loads(done.stdout)
+            if done.returncode != 0 or not isinstance(result.get("routes"), list):
+                raise ValueError
+        except (ValueError, AttributeError):
+            if mode == "before":
+                routes += [{"entry": stem, "path": r["path"], "ok": False, "status": None, "missing": [],
+                            "console_errors": [], "error": "runner failed", "screenshot": None, "video": None,
+                            "seconds": 0} for r in entry_routes]
+                continue
+            return emit({"error": f"runner failed for {stem}", "tail": tail(done.stdout + done.stderr)}, 1)
+        routes += [{**r, "video": clean_video(r.get("video"), video)} for r in result["routes"]]
+    out = {"ok": all(r.get("ok") is True for r in routes), "selected": selected, "routes": routes,
+           "evidence": str(evidence), "mode": mode, "head": head}
+    (evidence / "drive.json").write_text(json.dumps(out, indent=2) + "\n")
+    return emit(out, 0 if out["ok"] or mode == "before" else 1)
