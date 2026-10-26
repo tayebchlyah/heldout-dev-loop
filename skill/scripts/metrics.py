@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from autonomy import branch_slug
 import devloop
-from devloop import branch_slug, emit, frontmatter, git, specs
+from devloop import emit, frontmatter, git, specs
 from merge_check import main_ref
 from notes_path import NotesPathError, resolve
 from status import feature_checkout
