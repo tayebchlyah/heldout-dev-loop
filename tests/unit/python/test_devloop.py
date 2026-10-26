@@ -45,6 +45,16 @@ def load_devloop():
     spec.loader.exec_module(module)
     return module
 
+
+def load_script(name: str):
+    path = DEVLOOP.parent / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {name} module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false"]
 
@@ -355,7 +365,7 @@ class StatusTests(Sandbox):
         self.assertEqual(self.status("--feature", "widget")["stage"], 3)
 
     def test_slug_matches_a_whole_token_only(self) -> None:
-        holds = load_devloop().holds_slug
+        holds = load_script("status").holds_slug
         self.assertTrue(holds("api/test_add_widget.py", "add-widget"))
         self.assertTrue(holds("e2e/add-widget.spec.ts", "add-widget"))
         self.assertFalse(holds("api/test_oauth_login.py", "auth"))
