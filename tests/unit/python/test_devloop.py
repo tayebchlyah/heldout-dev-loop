@@ -682,7 +682,7 @@ class MergeCheckTests(Sandbox):
                                           {"reason": "unreviewed", "commit": self.head(wt), "paths": ["sub"]}])
 
     def test_is_test_or_doc(self) -> None:
-        devloop = load_devloop()
+        merge_check = load_script("merge_check")
         rows = {
             "tests/a.py": True, "a/test/b.go": True, "docs/x.md": True, "test_a.py": True, "pkg/a_test.py": True,
             "a_test.go": True, "x.test.ts": True, "x.spec.js": True, "README.md": True, "sub/CHANGELOG.md": True,
@@ -690,7 +690,7 @@ class MergeCheckTests(Sandbox):
         }
         for path, expected in rows.items():
             with self.subTest(path=path):
-                self.assertEqual(devloop.is_test_or_doc(path), expected)
+                self.assertEqual(merge_check.is_test_or_doc(path), expected)
 
     def test_empty_commit_is_not_listed(self) -> None:
         wt, _ = self.reviewed_feature()
