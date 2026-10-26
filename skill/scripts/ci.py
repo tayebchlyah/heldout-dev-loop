@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 import subprocess
 import time
 from pathlib import Path
+
+from devloop import emit
 
 POLL_SECONDS = 30
 GH_TIMEOUT = 60
@@ -183,3 +186,8 @@ def check_github(repo: Path) -> list[str]:
     if allowed.returncode == 0 and allowed.stdout.strip() == "false":
         return [f"allow rebase merging in the GitHub settings of {slug} (Stage 7 runs gh pr merge --rebase)"]
     return []
+
+
+def cmd_ci_wait(args: argparse.Namespace) -> int:
+    code, payload = wait(args.pr, args.timeout)
+    return emit(payload, code)

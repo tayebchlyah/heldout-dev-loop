@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
+from devloop import emit, git
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, merge_base, run_git
 from seal.audit import taint_file, taint_state
 from seal.value import commit_entries, commit_patch_value, seal_value
@@ -154,3 +156,11 @@ def check(repo: Path, uncommitted: bool) -> dict:
         violations.append(violation("taint-unreadable", path=str(taint_file(repo))))
         taint, warnings = [], []
     return {"ok": not violations and not taint, "violations": violations, "taint": taint, "warnings": warnings}
+
+
+def cmd_seal_check(args: argparse.Namespace) -> int:
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 2)
+    out = check(Path(top), args.uncommitted)
+    return emit(out, 0 if out["ok"] else 1)

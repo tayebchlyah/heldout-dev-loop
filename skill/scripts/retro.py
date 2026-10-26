@@ -5,11 +5,12 @@ D3 log rows, D4 due rule, D8 to D11 the session list.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import metrics
@@ -208,3 +209,19 @@ def sessions(repo: Path, since_days: int, env: Mapping[str, str], home: Path, no
         listed.append(s)
     listed.sort(key=lambda s: (-s["bytes"], s["start"], s["path"]))
     return [{**s, "start": writer.iso(s["start"]), "end": writer.iso(s["end"])} for s in listed]
+
+
+def cmd_sessions(args: argparse.Namespace) -> int:
+    from board import writer
+    from devloop import emit, git
+
+    repo = Path(args.repo).resolve()
+    if git(repo, "rev-parse", "--show-toplevel") is None:
+        return emit({"error": f"not a git repo: {repo}"}, 1)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    try:
+        found = sessions(repo, args.since, os.environ, Path.home(), now)
+        since = writer.iso((now - timedelta(days=args.since)).timestamp())
+    except OverflowError:
+        return emit({"error": f"--since too large: {args.since}"}, 2)
+    return emit({"since": since, "sessions": found}, 0)
