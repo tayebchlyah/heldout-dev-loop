@@ -356,5 +356,20 @@ class CiGithubTests(StubGh):
                 self.assertEqual(self.calls(), calls)
 
 
+class CiTextTests(unittest.TestCase):
+    def test_stage_7_and_grant(self) -> None:
+        skill = (HERE.parents[2] / "skill" / "SKILL.md").read_text()
+        start = skill.index("\n## 7 ")
+        stage = skill[start:skill.find("\n## ", start + 1)]
+        grant = next(line for line in skill.splitlines() if line.startswith("- Stop and report only for:"))
+        for needle in ("`conflicts`", "`threads`", "`blocked`", "`stale_base`", "`behind`", "`gh run rerun`",
+                       "--force-with-lease --force-if-includes", "resolve"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, stage)
+        for needle in ("`threads`", "`blocked`", "lease push"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, grant)
+
+
 if __name__ == "__main__":
     unittest.main()

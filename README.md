@@ -53,7 +53,7 @@ A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<
 - `sessions --since <days>`: lists the Claude Code and Codex sessions of every worktree of the repo, largest first, for the weekly `/retro` review. `status` on the default branch gives `review_due` when the last `/garden` run is 7 days old or older, and Stage 1 then refuses new work until the review is done.
 - `review-merge <reviewer>=<file> ...`: merges the Stage 6 reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) into one row per file and line, and lists the rows with a security finding.
 - `acceptance [--failed]`: runs `commands.acceptance` (or `commands.acceptance_failed`) with `DEVLOOP_REPORT_DIR` set, reads the failing tests from the JUnit XML there, checks that no compose build container is older than the newest code commit, records the run, and gives the progress guard verdict (`continue`, `stop`, `green` or `unknown`).
-- `ci wait`: waits for the checks of the current branch's pull request, and on a failure names the failed job and its first error.
+- `ci wait`: gives one verdict for the pull request of the current branch: conflicts, open review threads, a change request, failed checks (with the failed job and its first error), a merge block, or pass.
 
 ## Before the first `init` on a machine
 
