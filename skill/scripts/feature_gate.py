@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
@@ -211,12 +212,56 @@ def write_record(path: Path, runs: list[dict]) -> None:
     os.replace(tmp, path)
 
 
+def created_seconds(text: str) -> int:
+    """An RFC 3339 time (up to 9 fraction digits, `Z` or an offset) in whole seconds since the epoch."""
+    match = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d{1,9})?(Z|[+-]\d\d:\d\d)", text)
+    if match is None:
+        raise ValueError(f"bad time: {text}")
+    zone = "+00:00" if match.group(3) == "Z" else match.group(3)
+    return int(datetime.fromisoformat(match.group(1) + zone).timestamp())
+
+
+def reference_commit(top: Path) -> tuple[str | None, int]:
+    """The sha and committer time of the newest commit of HEAD that changes a code path. None: (None, 0)."""
+    out = subprocess.run(["git", "-C", str(top), "log", "--format=%x00%H %ct", "--name-only", "--no-renames",
+                          "--diff-merges=first-parent", "HEAD"], capture_output=True, text=True, check=True).stdout
+    for block in out.split("\0")[1:]:
+        head, *paths = block.strip().splitlines()
+        sha, ct = head.split()
+        if any(path and not devloop.is_test_or_doc(path) for path in paths):
+            return sha, int(ct)
+    return None, 0
+
+
+def docker(top: Path, env: Mapping[str, str], *args: str) -> str:
+    result = subprocess.run(["docker", *args], cwd=top, env=dict(env), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"docker {' '.join(args[:3])} failed: {result.stderr.strip()[-300:]}")
+    return result.stdout
+
+
 def stale_check(top: Path, env: Mapping[str, str]) -> dict:
     """Is a container of a compose build service older than the newest commit that changes code."""
     names = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
     if not any((top / name).exists() for name in names) and not env.get("COMPOSE_FILE"):
         return {"state": "skipped", "reason": "no-compose"}
-    return {"state": "skipped", "reason": "no-build-service"}
+    try:
+        config = json.loads(docker(top, env, "compose", "--profile", "test", "config", "--format", "json"))
+        build = sorted(name for name, service in config["services"].items() if "build" in service)
+        if not build:
+            return {"state": "skipped", "reason": "no-build-service"}
+        ids = {svc: docker(top, env, "compose", "--profile", "test", "ps", "-a", "-q", svc).split() for svc in build}
+        if not any(ids.values()):
+            return {"state": "skipped", "reason": "no-container"}
+        inspected = json.loads(docker(top, env, "inspect", *(i for found in ids.values() for i in found)))
+        created = {svc: [created_seconds(c["Created"]) for c in inspected
+                         if any(c["Id"].startswith(i) for i in found)] for svc, found in ids.items() if found}
+        sha, reference = reference_commit(top)
+    except (RuntimeError, OSError, ValueError, KeyError, TypeError, AttributeError,
+            subprocess.CalledProcessError) as exc:
+        return {"state": "error", "message": str(exc) or type(exc).__name__}
+    stale = [svc for svc, times in created.items() if any(t < reference for t in times)]
+    return {"state": "stale" if stale else "fresh", "checked": sorted(created), "services": stale, "reference": sha}
 
 
 def mapped(top: Path, key: str) -> str | None:
