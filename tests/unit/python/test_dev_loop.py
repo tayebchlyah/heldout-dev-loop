@@ -114,6 +114,15 @@ KitChangedTests = test_seal.KitChangedTests
 GateSealTests = test_seal.GateSealTests
 WeakenedTests = test_seal.WeakenedTests
 
+_size_tests_spec = importlib.util.spec_from_file_location("test_size", Path(__file__).resolve().parent / "test_size.py")
+if _size_tests_spec is None or _size_tests_spec.loader is None:
+    raise ImportError("cannot load test_size module")
+test_size = importlib.util.module_from_spec(_size_tests_spec)
+_size_tests_spec.loader.exec_module(test_size)
+SizeRuleTests = test_size.SizeRuleTests
+SizeCommandTests = test_size.SizeCommandTests
+SeamTests = test_size.SeamTests
+
 _seal_hooks_spec = importlib.util.spec_from_file_location("test_seal_hooks", Path(__file__).resolve().parent / "test_seal_hooks.py")
 if _seal_hooks_spec is None or _seal_hooks_spec.loader is None:
     raise ImportError("cannot load test_seal_hooks module")

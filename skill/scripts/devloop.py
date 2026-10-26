@@ -806,6 +806,17 @@ def cmd_seal_check(args: argparse.Namespace) -> int:
     return emit(out, 0 if out["ok"] else 1)
 
 
+
+def cmd_size_check(args: argparse.Namespace) -> int:
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 2)
+    sys.path.insert(0, str(Path(__file__).parent))
+    import size
+
+    out = size.check(Path(top), "all" if args.all else "uncommitted" if args.uncommitted else "committed")
+    return emit(out, 0 if out["ok"] else 1)
+
 SKILL_TEMPLATE = """---
 name: {skill}
 description: Launch, check, drive and clean up this project's app, as a user does. {fill}
@@ -1400,6 +1411,12 @@ def main() -> int:
     seal_check = commands.add_parser("seal-check")
     seal_check.add_argument("--uncommitted", action="store_true")
     seal_check.set_defaults(run=cmd_seal_check)
+
+    size_check = commands.add_parser("size-check")
+    size_mode = size_check.add_mutually_exclusive_group()
+    size_mode.add_argument("--uncommitted", action="store_true")
+    size_mode.add_argument("--all", action="store_true")
+    size_check.set_defaults(run=cmd_size_check)
 
     verify_init = commands.add_parser("verify-init")
     verify_init.add_argument("--base-url", required=True)
