@@ -1023,9 +1023,9 @@ class ReleaseTextTests(unittest.TestCase):
         self.assertIn("uid=${uid:-none}", box)
 
     def test_repo_release_steps_are_plain_numbers(self) -> None:
-        steps = self.read("AGENTS.md").split("- Release:", 1)[1].split("\n- ", 1)[0]
+        steps = self.read("reference/release.md")
         self.assertNotRegex(steps, r"\d[a-z]\.")
-        self.assertRegex(steps, r"\n  6\. ")
+        self.assertRegex(steps, r"(?m)^6\. ")
 
     def test_routes_have_a_release_audit_section(self) -> None:
         for rel in ["skill/references/claude.md", "skill/references/codex.md"]:
@@ -1037,14 +1037,15 @@ class ReleaseTextTests(unittest.TestCase):
                 self.assertIn("sandbox-run.py", section)
 
     def test_repo_release_steps_run_the_audit_before_the_tag(self) -> None:
-        text = self.read("AGENTS.md")
-        steps = text.split("- Release:", 1)[1].split("\n- ", 1)[0]
+        self.assertIn("`reference/release.md`", self.read("AGENTS.md"))
+        steps = self.read("reference/release.md")
         self.assertIn("/release-audit", steps)
         self.assertLess(steps.index("/release-audit"), steps.index("git tag"))
 
     def test_kit_text_has_no_em_dash(self) -> None:
         for rel in ["skill/SKILL.md", "skill/references/claude.md", "skill/references/codex.md", "AGENTS.md",
-                    "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md"]:
+                    "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "reference/kit.md",
+                    "reference/release.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
             self.assertNotIn("\u2014", self.read(rel), rel)
 
 

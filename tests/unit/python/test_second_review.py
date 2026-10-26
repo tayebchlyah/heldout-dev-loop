@@ -687,10 +687,14 @@ class SecondReviewTextTests(unittest.TestCase):
     def test_agents_md_and_the_canary_name_the_second_review(self) -> None:
         agents = (self.ROOT / "AGENTS.md").read_text()
         for value in ("`second-review --harness claude|codex [--timeout <minutes>]`", "skill/scripts/second_review.py",
-                      "skill/references/second-review.md", "test_second_review.py", "SecondReviewTextTests",
-                      "`not-chosen`", "`tainted`", "`second_review`"):
+                      "skill/references/second-review.md", "test_second_review.py"):
             with self.subTest(value=value):
                 self.assertIn(value, agents)
+        contract = (self.ROOT / "reference" / "cli" / "second-review.md").read_text()
+        for value in ("`second-review --harness claude|codex [--timeout <minutes>]`", "`not-chosen`", "`tainted`",
+                      "`second_review`"):
+            with self.subTest(value=value):
+                self.assertIn(value, contract)
         help_text = subprocess.run(["bash", str(self.ROOT / "scripts" / "canary.sh"), "--help"],
                                    capture_output=True, text=True).stdout
         self.assertIn("second-review", help_text)
