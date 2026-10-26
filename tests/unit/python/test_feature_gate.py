@@ -393,6 +393,15 @@ class StaleCheckTests(RepoCase):
         self.assertEqual(stale_check(self.repo, self.env)["state"], "fresh")
         self.assertEqual(stale_check(self.repo, self.env)["reference"], self.code_sha)
 
+    def test_non_ascii_test_path_not_reference(self) -> None:
+        (self.repo / "tests" / "acceptance").mkdir(parents=True)
+        (self.repo / "tests" / "acceptance" / "café_test.py").write_text("")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "tests", when=T2)
+        self.docker(api="2026-10-02T11:00:00Z")
+        out = stale_check(self.repo, self.env)
+        self.assertEqual((out["state"], out["reference"]), ("fresh", self.code_sha))
+
     def test_docker_fails_error(self) -> None:
         for step in ("config", "ps", "inspect"):
             self.docker(api="2026-10-02T11:00:00Z", fail=step)
