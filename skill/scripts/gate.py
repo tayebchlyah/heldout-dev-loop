@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -118,7 +117,6 @@ def cmd_gate(args: argparse.Namespace) -> int:
     payload["slowest"] = slowest(reports)
     if not any(reports.glob("*.xml")):
         payload["hint"] = JUNIT_HINT
-    sys.path.insert(0, str(Path(__file__).parent))
     import size
     from seal.check import check
     from seal.weakened import weakened
