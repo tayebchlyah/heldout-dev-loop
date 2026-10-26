@@ -1,18 +1,25 @@
 """Session B autonomy: the decision log table, the pause note, the session id and the feature worktree test.
 
-Shared by `devloop.py` (`decide`, `pause`, `status`) and the board writer.
+The `decide` and `pause` commands. Shared by `status` and the board writer.
 """
 
 from __future__ import annotations
 
+import argparse
 import fcntl
 import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
+
+import devloop
+from devloop import emit, find_plan, specs
+from notes_path import NotesPathError, resolve
 
 LOG_HEADING = "## Decision log"
 LOG_COLUMNS = ("time", "stage", "session", "kind", "risk", "decision", "why", "evidence", "result")
@@ -141,3 +148,147 @@ def find_transcript(session: str, harness: str, env: Mapping[str, str], home: Pa
         root = Path(env.get("CODEX_HOME") or home / ".codex") / "sessions"
         found = sorted(root.glob(f"**/rollout-*-{session}.jsonl"))
     return str(found[0]) if found else None
+
+
+def branch_slug(repo: Path) -> str | None:
+    """The slug of the checked-out branch `<prefix>/<slug>`, or None."""
+    branch = devloop.git(repo, "symbolic-ref", "--short", "-q", "HEAD")
+    return branch.rsplit("/", 1)[1].lower() if branch and "/" in branch else None
+
+
+def log_target(repo: Path, slug: str, notes: Path) -> Path | None:
+    """The decision log of a feature: its spec, else (Track S) `decisions.md` in its worktree git dir."""
+    from status import feature_checkout
+    matches = [path for name, path in specs(notes) if name == slug]
+    if matches:
+        return matches[-1]
+    worktree, _ = feature_checkout(repo, slug)
+    git_dir = devloop.git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
+    return Path(git_dir) / "dev-loop" / "decisions.md" if git_dir else None
+
+
+def cmd_decide(args: argparse.Namespace) -> int:
+    from status import detect_feature
+    repo = Path(args.repo).resolve()
+    for name in ("what", "why", "evidence"):
+        if not getattr(args, name).strip():
+            return emit({"error": f"--{name} is empty"}, 1)
+    slug = (args.feature or "").lower() or branch_slug(repo)
+    if slug is None:
+        return emit({"error": "no feature: pass --feature or run on a branch <prefix>/<slug>"}, 1)
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    try:  # A spec that cannot be read (an iCloud placeholder, a mode change) fails before any write.
+        target = log_target(repo, slug, notes)
+        common = devloop.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if target is None or common is None:
+            return emit({"error": f"no spec and no branch worktree for {slug}"}, 1)
+        session, _ = session_id(os.environ)
+        stage = detect_feature(repo, slug, notes)["stage"]
+        values = [datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), str(stage), (session or "")[:8], args.kind,
+                  "risk" if args.risk else "", args.what, args.why, args.evidence, args.result or ""]
+        row = "| " + " | ".join(cell(v) for v in values) + " |"
+        append_row(target, row, Path(common) / "dev-loop" / "decide.lock")
+    except OSError as exc:
+        return emit({"error": f"cannot read or write the decision log: {exc}"}, 1)
+    return emit({"file": str(target), "row": row}, 0)
+
+
+INTENT_FIELDS = ("intent", "verified", "open", "next")
+
+
+def cmd_pause(args: argparse.Namespace) -> int:
+    from status import detect
+    given = [name for name in (*INTENT_FIELDS, "agent", "runs") if getattr(args, name)]
+    if args.clear and (given or args.event):
+        return emit({"error": "--clear takes no other option"}, 2)
+    if args.event and given:
+        return emit({"error": "--event takes no intent, agent or run option"}, 2)
+    agents = []
+    for value in args.agent or []:
+        agent_id, sep, task = value.partition("=")
+        if not sep or not agent_id:
+            return emit({"error": f"--agent takes <id>=<task>: {value}"}, 2)
+        agents.append({"id": agent_id, "task": task})
+    event: dict = {}
+    if args.event:
+        try:
+            event = json.loads(sys.stdin.read())
+        except ValueError:
+            event = None  # type: ignore[assignment]
+        if not isinstance(event, dict):
+            return emit({"skipped": "bad-input"}, 0)
+        if not isinstance(event.get("cwd"), str) or not is_feature_worktree(Path(event["cwd"])):
+            return emit({"skipped": "not-a-feature-worktree"}, 0)
+        repo = Path(event["cwd"]).resolve()
+    else:
+        repo = Path(args.repo).resolve()
+    git_dir = devloop.git(repo, "rev-parse", "--absolute-git-dir")
+    if git_dir is None:
+        return emit({"error": f"not a git repository: {repo}"}, 1)
+    path = note_path(Path(git_dir))
+    if args.clear:
+        found = path.is_file()
+        if found:
+            path.unlink()
+        return emit({"cleared": found}, 0)
+
+    if args.event:
+        session, harness = event.get("session_id"), "claude"
+        transcript = event.get("transcript_path")
+        reason = event.get("error") or "unknown"
+        message = event.get("last_assistant_message") or event.get("error_details")
+    else:
+        session, harness = session_id(os.environ)
+        transcript = find_transcript(session, harness, os.environ, Path.home()) if session and harness else None
+        reason, message = "manual", None
+    slug = branch_slug(repo)
+    stage = ledger_last = last_decision = None
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError:
+        notes = None
+    try:  # An unreadable spec, plan or ledger (an iCloud placeholder) must not cost the note.
+        if notes is not None:
+            stage = detect(repo, None, notes)["stage"]
+            target = log_target(repo, slug, notes) if slug else None
+            if target is not None and target.is_file():
+                rows = log_rows(target.read_text())
+                last_decision = rows[-1]["row"] if rows else None
+                plan = find_plan(notes, target) if target.suffix == ".md" and target.parent == notes / "specs" else None
+                top = devloop.git(repo, "rev-parse", "--show-toplevel")
+                ledger = Path(top) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and top else None
+                if ledger is not None and ledger.is_file():
+                    ledger_last = next((line for line in reversed(ledger.read_text().splitlines()) if line.strip()),
+                                       None)
+    except OSError:
+        stage = ledger_last = last_decision = None
+    # Not git(): its strip() eats the leading space of a first ` M <path>` line.
+    status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "-z"], capture_output=True, text=True)
+    entries = iter(status.stdout.split("\0") if status.returncode == 0 else [])
+    dirty = []
+    for entry in entries:
+        if len(entry) > 3:
+            dirty.append(entry[3:])
+            if entry[0] in "RC":
+                next(entries, None)  # a rename or copy: the source path follows, keep the destination
+    note = {
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "reason": reason,
+        "message": message,
+        "harness": harness,
+        "session": session,
+        "transcript": transcript,
+        "feature": slug,
+        "stage": stage,
+        "ledger_last": ledger_last,
+        "dirty": dirty,
+        "last_decision": last_decision,
+        "agents": agents,
+        "runs": list(args.runs or []),
+        **{name: getattr(args, name) for name in INTENT_FIELDS},
+    }
+    write_atomic(path, json.dumps(note, indent=2) + "\n")
+    return emit({"file": str(path), "note": note}, 0)

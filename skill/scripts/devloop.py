@@ -43,25 +43,17 @@ Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import importlib
 import json
 import math
-import os
 import re
 import subprocess
 import sys
-import time
-import xml.etree.ElementTree as ET
-from collections.abc import Mapping
-from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
-import autonomy  # noqa: E402
-from notes_path import NotesPathError, resolve  # noqa: E402
 
 
 def emit(payload: dict, code: int) -> int:
@@ -136,155 +128,6 @@ def positive_int(value: str) -> int:
     return int(value)
 
 
-# decide
-
-
-def branch_slug(repo: Path) -> str | None:
-    """The slug of the checked-out branch `<prefix>/<slug>`, or None."""
-    branch = git(repo, "symbolic-ref", "--short", "-q", "HEAD")
-    return branch.rsplit("/", 1)[1].lower() if branch and "/" in branch else None
-
-
-def log_target(repo: Path, slug: str, notes: Path) -> Path | None:
-    """The decision log of a feature: its spec, else (Track S) `decisions.md` in its worktree git dir."""
-    from status import feature_checkout
-    matches = [path for name, path in specs(notes) if name == slug]
-    if matches:
-        return matches[-1]
-    worktree, _ = feature_checkout(repo, slug)
-    git_dir = git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
-    return Path(git_dir) / "dev-loop" / "decisions.md" if git_dir else None
-
-
-def cmd_decide(args: argparse.Namespace) -> int:
-    from status import detect_feature
-    repo = Path(args.repo).resolve()
-    for name in ("what", "why", "evidence"):
-        if not getattr(args, name).strip():
-            return emit({"error": f"--{name} is empty"}, 1)
-    slug = (args.feature or "").lower() or branch_slug(repo)
-    if slug is None:
-        return emit({"error": "no feature: pass --feature or run on a branch <prefix>/<slug>"}, 1)
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
-    try:  # A spec that cannot be read (an iCloud placeholder, a mode change) fails before any write.
-        target = log_target(repo, slug, notes)
-        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-        if target is None or common is None:
-            return emit({"error": f"no spec and no branch worktree for {slug}"}, 1)
-        session, _ = autonomy.session_id(os.environ)
-        stage = detect_feature(repo, slug, notes)["stage"]
-        values = [datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), str(stage), (session or "")[:8], args.kind,
-                  "risk" if args.risk else "", args.what, args.why, args.evidence, args.result or ""]
-        row = "| " + " | ".join(autonomy.cell(v) for v in values) + " |"
-        autonomy.append_row(target, row, Path(common) / "dev-loop" / "decide.lock")
-    except OSError as exc:
-        return emit({"error": f"cannot read or write the decision log: {exc}"}, 1)
-    return emit({"file": str(target), "row": row}, 0)
-
-
-# pause
-
-INTENT_FIELDS = ("intent", "verified", "open", "next")
-
-
-def cmd_pause(args: argparse.Namespace) -> int:
-    from status import detect
-    given = [name for name in (*INTENT_FIELDS, "agent", "runs") if getattr(args, name)]
-    if args.clear and (given or args.event):
-        return emit({"error": "--clear takes no other option"}, 2)
-    if args.event and given:
-        return emit({"error": "--event takes no intent, agent or run option"}, 2)
-    agents = []
-    for value in args.agent or []:
-        agent_id, sep, task = value.partition("=")
-        if not sep or not agent_id:
-            return emit({"error": f"--agent takes <id>=<task>: {value}"}, 2)
-        agents.append({"id": agent_id, "task": task})
-    event: dict = {}
-    if args.event:
-        try:
-            event = json.loads(sys.stdin.read())
-        except ValueError:
-            event = None  # type: ignore[assignment]
-        if not isinstance(event, dict):
-            return emit({"skipped": "bad-input"}, 0)
-        if not isinstance(event.get("cwd"), str) or not autonomy.is_feature_worktree(Path(event["cwd"])):
-            return emit({"skipped": "not-a-feature-worktree"}, 0)
-        repo = Path(event["cwd"]).resolve()
-    else:
-        repo = Path(args.repo).resolve()
-    git_dir = git(repo, "rev-parse", "--absolute-git-dir")
-    if git_dir is None:
-        return emit({"error": f"not a git repository: {repo}"}, 1)
-    path = autonomy.note_path(Path(git_dir))
-    if args.clear:
-        found = path.is_file()
-        if found:
-            path.unlink()
-        return emit({"cleared": found}, 0)
-
-    if args.event:
-        session, harness = event.get("session_id"), "claude"
-        transcript = event.get("transcript_path")
-        reason = event.get("error") or "unknown"
-        message = event.get("last_assistant_message") or event.get("error_details")
-    else:
-        session, harness = autonomy.session_id(os.environ)
-        transcript = autonomy.find_transcript(session, harness, os.environ, Path.home()) if session and harness else None
-        reason, message = "manual", None
-    slug = branch_slug(repo)
-    stage = ledger_last = last_decision = None
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError:
-        notes = None
-    try:  # An unreadable spec, plan or ledger (an iCloud placeholder) must not cost the note.
-        if notes is not None:
-            stage = detect(repo, None, notes)["stage"]
-            target = log_target(repo, slug, notes) if slug else None
-            if target is not None and target.is_file():
-                rows = autonomy.log_rows(target.read_text())
-                last_decision = rows[-1]["row"] if rows else None
-                plan = find_plan(notes, target) if target.suffix == ".md" and target.parent == notes / "specs" else None
-                top = git(repo, "rev-parse", "--show-toplevel")
-                ledger = Path(top) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and top else None
-                if ledger is not None and ledger.is_file():
-                    ledger_last = next((line for line in reversed(ledger.read_text().splitlines()) if line.strip()),
-                                       None)
-    except OSError:
-        stage = ledger_last = last_decision = None
-    # Not git(): its strip() eats the leading space of a first ` M <path>` line.
-    status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "-z"], capture_output=True, text=True)
-    entries = iter(status.stdout.split("\0") if status.returncode == 0 else [])
-    dirty = []
-    for entry in entries:
-        if len(entry) > 3:
-            dirty.append(entry[3:])
-            if entry[0] in "RC":
-                next(entries, None)  # a rename or copy: the source path follows, keep the destination
-    note = {
-        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "reason": reason,
-        "message": message,
-        "harness": harness,
-        "session": session,
-        "transcript": transcript,
-        "feature": slug,
-        "stage": stage,
-        "ledger_last": ledger_last,
-        "dirty": dirty,
-        "last_decision": last_decision,
-        "agents": agents,
-        "runs": list(args.runs or []),
-        **{name: getattr(args, name) for name in INTENT_FIELDS},
-    }
-    autonomy.write_atomic(path, json.dumps(note, indent=2) + "\n")
-    return emit({"file": str(path), "note": note}, 0)
-
-
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         print(json.dumps({"error": message}))
@@ -293,6 +136,8 @@ class Parser(argparse.ArgumentParser):
 
 def main() -> int:
     sys.modules.setdefault("devloop", sys.modules["__main__"])
+    from autonomy import INTENT_FIELDS
+
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -422,7 +267,7 @@ def main() -> int:
     decide.add_argument("--risk", action="store_true")
     decide.add_argument("--feature")
     decide.add_argument("--repo", default=".")
-    decide.set_defaults(run=("devloop", "cmd_decide"))
+    decide.set_defaults(run=("autonomy", "cmd_decide"))
 
     pause = commands.add_parser("pause")
     pause.add_argument("--event", action="store_true")
@@ -432,7 +277,7 @@ def main() -> int:
     pause.add_argument("--agent", action="append")
     pause.add_argument("--run", action="append", dest="runs")
     pause.add_argument("--repo", default=".")
-    pause.set_defaults(run=("devloop", "cmd_pause"))
+    pause.set_defaults(run=("autonomy", "cmd_pause"))
 
     args = parser.parse_args()
     if args.command == "capture":

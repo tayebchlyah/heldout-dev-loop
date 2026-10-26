@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
 import ci  # noqa: E402
-import devloop  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
