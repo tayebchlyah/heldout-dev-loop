@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
+from merge_check import is_test_or_doc
+
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+)\): (.+)$")
 RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) ")
 RECORD_RE = re.compile(
@@ -125,8 +127,6 @@ def mismatch(notes: Path, record: dict) -> str | None:
 def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     """Paths that make the audit stale: the code paths changed since the audited commit, all changed paths when it is
     not an ancestor (possibly none). None when the audit is current."""
-    from devloop import is_test_or_doc  # lazy: devloop imports this module
-
     ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", record_sha, target)
     if diff.returncode != 0:  # the record commit is unknown here

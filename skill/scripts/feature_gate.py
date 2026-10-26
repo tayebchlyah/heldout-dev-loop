@@ -18,6 +18,7 @@ from pathlib import Path
 
 import autonomy
 import devloop
+import merge_check
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
 CLASSES = {"correctness", "security", "spec", "standards"}
@@ -217,7 +218,7 @@ def reference_commit(top: Path) -> tuple[str | None, int]:
     for block in out.split("\x01")[1:]:
         head, _, rest = block.partition("\0")
         sha, ct = head.split()
-        if any(path and not devloop.is_test_or_doc(path) for path in rest.removeprefix("\n").split("\0")):
+        if any(path and not merge_check.is_test_or_doc(path) for path in rest.removeprefix("\n").split("\0")):
             return sha, int(ct)
     return None, 0
 
