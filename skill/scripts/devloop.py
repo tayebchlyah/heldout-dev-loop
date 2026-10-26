@@ -810,7 +810,6 @@ def cmd_seal_check(args: argparse.Namespace) -> int:
     return emit(out, 0 if out["ok"] else 1)
 
 
-
 def cmd_size_check(args: argparse.Namespace) -> int:
     top = git(Path.cwd(), "rev-parse", "--show-toplevel")
     if top is None:
@@ -820,6 +819,7 @@ def cmd_size_check(args: argparse.Namespace) -> int:
 
     out = size.check(Path(top), "all" if args.all else "uncommitted" if args.uncommitted else "committed")
     return emit(out, 0 if out["ok"] else 1)
+
 
 SKILL_TEMPLATE = """---
 name: {skill}
