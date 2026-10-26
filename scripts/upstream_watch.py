@@ -3,7 +3,7 @@
 
 Signal per source: `release` (the latest GitHub release tag), `plugin-version` (the `version` of a
 plugin.json at the last commit that changed it), `tree` (the tree id of a folder at the head of the
-default branch), `none` (not watched). One JSON object on stdout. Exit 1 with `error` when gh fails.
+default branch). One JSON object on stdout. Exit 1 with `error` when gh fails or a source fails.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from pathlib import Path
 
 LABEL = "upstream-watch"
 BODY_LIMIT = 65536  # GitHub refuses a longer issue body
-COMPARE_FILES = 300
 
 
 class GhError(Exception):
@@ -37,7 +36,6 @@ def api(path: str):
 
 
 def latest(src: dict) -> tuple[str, str, str]:
-    """The pinned marker, the latest marker and the compare head of a watched source."""
     repo = src["repo"]
     if src["signal"] == "release":
         tag = api(f"repos/{repo}/releases/latest")["tag_name"]
@@ -54,21 +52,34 @@ def latest(src: dict) -> tuple[str, str, str]:
     return src["tree"], tree, sha
 
 
+def blobs(repo: str, ref: str) -> dict[str, str]:
+    data = api(f"repos/{repo}/git/trees/{ref}?recursive=1")
+    if data["truncated"]:
+        raise GhError(f"tree of {ref} is truncated")
+    return {e["path"]: e["sha"] for e in data["tree"] if e["type"] == "blob"}
+
+
+def changed(src: dict, head: str) -> list[tuple[str, str]]:
+    before, after = blobs(src["repo"], src["pin"]), blobs(src["repo"], head)
+    return [(path, "added" if path not in before else "removed" if path not in after else "modified")
+            for path in sorted(before.keys() | after.keys())
+            if watched(path, src["paths"]) and before.get(path) != after.get(path)]
+
+
 def watched(path: str | None, paths: list[str]) -> bool:
     return path is not None and any(path == p or (p.endswith("/") and path.startswith(p)) for p in paths)
 
 
-def section(src: dict, old: str, new: str, cmp: dict, patches: bool) -> str:
+def section(src: dict, old: str, new: str, cmp: dict, files: list[tuple[str, str]], patches: bool) -> str:
     lines = [f"## {src['name']}: {old} to {new}", "", f"`{src['repo']}`, compare: {cmp['html_url']}", ""]
-    files = [f for f in cmp["files"] if watched(f["filename"], src["paths"]) or watched(f.get("previous_filename"), src["paths"])]
-    # shortcut: the compare API lists at most 300 files, page through `files` when a release goes past it.
-    if len(cmp["files"]) >= COMPARE_FILES:
-        lines += [f"The compare API listed only the first {COMPARE_FILES} files: check the compare page.", ""]
+    if not patches:
+        lines += ["Diffs left out: the issue body went over the GitHub limit, see the compare page.", ""]
     if not files:
         lines += ["No watched file changed.", ""]
-    for f in files:
-        patch = f.get("patch")
-        lines.append(f"- `{f['filename']}` ({f['status']})" + ("" if patch else ", diff on the compare page"))
+    patch_of = {f["filename"]: f.get("patch") for f in cmp["files"]}
+    for path, status in files:
+        patch = patch_of.get(path)
+        lines.append(f"- `{path}` ({status})" + ("" if patch else ", diff on the compare page"))
         if patches and patch:
             fence = "`" * max([3] + [len(run) + 1 for run in re.findall(r"`+", patch)])
             lines += ["", f"{fence}diff", patch, fence]
@@ -76,7 +87,7 @@ def section(src: dict, old: str, new: str, cmp: dict, patches: bool) -> str:
     return "\n".join(lines)
 
 
-def render(news: list[tuple[dict, str, str, dict]], patches: bool) -> str:
+def render(news: list[tuple], patches: bool) -> str:
     head = ("Sources with a new release since their pin in `upstream.json`. For each: upgrade, re-copy, "
             "or ignore (set `ignored` to the new value).\n\n")
     return head + "\n".join(section(*item, patches) for item in news)
@@ -90,7 +101,10 @@ def write_issue(title: str, body: str) -> tuple[str, int]:
         return "edited", number
     gh("label", "create", LABEL, "--force", "--color", "c5def5", "--description", "A new upstream release to review")
     url = gh("issue", "create", "--title", title, "--label", LABEL, "--body-file", "-", stdin=body)
-    return "created", int(url.strip().rsplit("/", 1)[1])
+    number = re.search(r"/(\d+)\s*$", url)
+    if number is None:
+        raise GhError(f"gh issue create: no issue number in {url.strip()!r}")
+    return "created", int(number.group(1))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -98,23 +112,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sources", type=Path, default=Path(__file__).resolve().parents[1] / "upstream.json")
     parser.add_argument("--dry-run", action="store_true", help="print the issue body, write no issue")
     args = parser.parse_args(argv)
-    rows, news = [], []
+    rows, news, errors = [], [], []
     for src in json.loads(args.sources.read_text())["sources"]:
-        row = {"name": src["name"], "state": "unwatched", "from": None, "to": None}
+        row = {"name": src["name"], "state": "current", "from": None, "to": None}
         rows.append(row)
-        if src["signal"] == "none":
-            continue
         try:
             old, new, head = latest(src)
             row.update({"from": old, "to": new})
             row["state"] = "current" if new == old else "ignored" if new == src.get("ignored") else "new"
             if row["state"] == "new":
                 cmp = api(f"repos/{src['repo']}/compare/{src['pin']}...{head}")
+                files = changed(src, head)
                 row["compare"] = cmp["html_url"]
-                news.append((src, old, new, cmp))
-        except (GhError, KeyError, IndexError, ValueError) as exc:
-            print(json.dumps({"error": f"{src['name']}: {exc}", "sources": rows}))
-            return 1
+                news.append((src, old, new, cmp, files))
+        except (GhError, KeyError, IndexError, ValueError, TypeError) as exc:
+            row.update({"state": "error", "error": str(exc)})
+            errors.append(f"{src['name']}: {exc}")
     body = render(news, True)
     if len(body) >= BODY_LIMIT:
         body = render(news, False)
@@ -125,10 +138,11 @@ def main(argv: list[str] | None = None) -> int:
         try:
             out["action"], out["issue"] = write_issue(f"Upstream watch: {', '.join(s['name'] for s, *_ in news)}", body)
         except GhError as exc:
-            print(json.dumps({"error": str(exc), "sources": rows}))
-            return 1
+            errors.append(str(exc))
+    if errors:
+        out["error"] = "; ".join(errors)
     print(json.dumps(out))
-    return 0
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
