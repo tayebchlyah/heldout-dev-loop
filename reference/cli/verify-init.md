@@ -1,0 +1,3 @@
+# verify-init
+
+- `verify-init --base-url <url> [--name <skill>]`: writes `.agents/skills/<skill>/SKILL.md` (frontmatter `name`, H2s `Launch`, `Doctor`, `Drive`, `Evidence`, `Cleanup`), `features/README.md`, the link `.claude/skills/<skill>` to `../../.agents/skills/<skill>` (`claude` in `harnesses`), and `verify` `{skill, base_url}` last in `dev-loop.json` (2-space indent). `<skill>` default `verify-<main worktree basename>`, lower case, runs of other than `a-z0-9` to `-`. Each part to fill holds `<!-- dev-loop: fill -->`. JSON `skill`, `files`, `config`. Exit 1 with `error`, nothing written: no `dev-loop.json`, `verify` present, skill folder or link present, bad name, URL not `http(s)://`. Exit 2 usage.

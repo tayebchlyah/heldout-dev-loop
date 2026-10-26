@@ -574,7 +574,9 @@ class MetricsTextTests(unittest.TestCase):
         codex = (root / "skill" / "references" / "codex.md").read_text()
         self.assertTrue(any("metrics" in line and "not counted" in line for line in codex.splitlines()))
         agents = (root / "AGENTS.md").read_text().splitlines()
-        self.assertTrue(any(line.startswith("- `metrics") for line in agents))
+        self.assertTrue(any(line.startswith("- `metrics") and "reference/cli/metrics.md" in line for line in agents))
+        self.assertIn("- `metrics [--repo <path>] [--feature <slug>] [--write]`: token cost of each stage",
+                      (root / "reference" / "cli" / "metrics.md").read_text())
         self.assertTrue(any("5 features" in line and "cost" in line and "Feature Metrics.md" in line for line in agents))
 
 

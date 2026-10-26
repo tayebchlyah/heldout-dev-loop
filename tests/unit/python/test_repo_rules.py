@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -249,6 +250,48 @@ class RepoCommentsTests(unittest.TestCase):
         code, out = run_rules(ROOT, "comments")
         self.assertEqual(code, 0, out)
         self.assertTrue(out["ok"])
+
+
+def help_commands() -> set[str]:
+    text = subprocess.run([sys.executable, str(ROOT / "skill" / "scripts" / "devloop.py"), "--help"],
+                          capture_output=True, text=True, check=True).stdout
+    return set(re.search(r"\{([a-z,-]+)\}", text).group(1).split(","))
+
+
+class RepoDocsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.agents = (ROOT / "AGENTS.md").read_text()
+        self.cli = self.agents.split("## devloop CLI", 1)[1].split("\n## ", 1)[0]
+
+    def test_budget(self) -> None:
+        self.assertLessEqual(len((ROOT / "AGENTS.md").read_bytes()), 16000)
+
+    def test_cli_files_index_and_help_agree(self) -> None:
+        commands = help_commands()
+        files = {p.name for p in (ROOT / "reference" / "cli").iterdir()}
+        self.assertEqual(files, {f"{c}.md" for c in commands})
+        index = [m for line in self.cli.splitlines() if line.startswith("- `")
+                 for m in re.findall(r"`reference/cli/([a-z-]+)\.md`", line)]
+        self.assertEqual(sorted(index), sorted(commands))
+        for command in commands:
+            with self.subTest(command=command):
+                first = (ROOT / "reference" / "cli" / f"{command}.md").read_text().split("\n", 1)[0]
+                self.assertEqual(first, f"# {command}")
+
+    def test_read_line(self) -> None:
+        self.assertIn("Read `reference/cli/<command>.md` before you change, test or debug a command", self.cli)
+
+    def test_kit_and_release_files(self) -> None:
+        kit = (ROOT / "reference" / "kit.md").read_text()
+        for value in ("`.dev-loop/MANIFEST.json`", "Ruling R10", "\n## Upgrade\n"):
+            with self.subTest(value=value):
+                self.assertIn(value, kit)
+        for value in ("`reference/kit.md`", "`kit-changed`", "`reference/release.md`"):
+            with self.subTest(value=value):
+                self.assertIn(value, self.agents)
+        release = (ROOT / "reference" / "release.md").read_text()
+        self.assertEqual(re.findall(r"(?m)^(\d)\. ", release), list("123456"))
+        self.assertLess(release.index("/release-audit"), release.index("git tag"))
 
 
 if __name__ == "__main__":
