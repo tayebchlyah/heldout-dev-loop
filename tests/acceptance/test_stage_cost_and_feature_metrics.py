@@ -476,15 +476,19 @@ class ErrorTests(MetricsCase):
 class KitTextTests(unittest.TestCase):
     def test_o27_kit_text(self) -> None:
         """O27: `skill/SKILL.md` Stage 7 names `devloop.py metrics --write` and the report line `metrics:`;
-        `skill/references/codex.md` names the gap; AGENTS.md holds the `metrics` CLI entry and the data rule."""
+        `skill/references/codex.md` names the gap; `reference/cli/metrics.md` holds the `metrics` CLI entry;
+        AGENTS.md holds the `metrics` index line and the cost data rule."""
         skill = (REPO_ROOT / "skill" / "SKILL.md").read_text()
         self.assertIn("devloop.py metrics --write", skill)
         self.assertIn("metrics:", skill)
         codex = (REPO_ROOT / "skill" / "references" / "codex.md").read_text()
         self.assertTrue(any("metrics" in line.lower() and re.search(r"(?i)not counted|skip", line)
                             for line in codex.splitlines()), "codex.md names no metrics gap")
+        self.assertRegex((REPO_ROOT / "reference" / "cli" / "metrics.md").read_text(), r"(?m)^- `metrics[ `]")
         agents = (REPO_ROOT / "AGENTS.md").read_text()
-        self.assertRegex(agents, r"(?m)^- `metrics[ `]")
+        self.assertTrue([line for line in agents.splitlines()
+                         if line.startswith("- `metrics") and "reference/cli/metrics.md" in line],
+                        "AGENTS.md holds no metrics index line")
         self.assertTrue(any("5 features" in line and "cost" in line for line in agents.splitlines()),
                         "AGENTS.md holds no cost data rule")
 
