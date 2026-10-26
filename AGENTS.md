@@ -60,7 +60,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
 - `scripts/canary.sh`: live canary, run by hand before a release (this repo only).
 - `scripts/repo_rules.py`: repo checks `comments` (allowed comment kinds) and `subjects` (gitmoji subjects), this repo only.
-- `scripts/upstream_watch.py`, `upstream.json`: weekly upstream watch of the outside sources dev-loop copies or invokes (this repo only).
+- `scripts/upstream_watch.py`, `upstream.json`: weekly upstream watch of the outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
 - `reference/cli/<command>.md`: the full contract of each `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
 - `reference/release.md`: the release steps.
@@ -82,7 +82,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a seam to split at. `reference/cli/size-check.md`
 - `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, the feature map README and the `verify` key. `reference/cli/verify-init.md`
 - `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save screenshots and evidence. `reference/cli/drive.md`
-- `capture --write-after <file>`: Put the before and after screenshots and videos in the PR body; `capture --write-after` saves the after set. `reference/cli/capture.md`
+- `capture --write-after <file>`: Save the evidence after set to a file, no gh; `capture --pr <n>` puts the before and after shots and videos in the PR. `reference/cli/capture.md`
 - `audit`: SubagentStop hook: record a taint when a subagent read files it must not read. `reference/cli/audit.md`
 - `board [--repo <path>] [--event session-start|prompt|stop|subagent-start|subagent-stop|post-tool] [--claim <slug>] [--no-serve] [--stop-server]`: Write the progress board notes and run the local board server. `reference/cli/board.md`
 - `decide --kind decision|discovery --what <text> --why <text> --evidence <text> [--result <text>] [--risk] [--feature <slug>] [--repo <path>]`: Append one row to the decision log of the feature. `reference/cli/decide.md`
@@ -127,6 +127,7 @@ Skill suite runs test ids in chunks of 5 per `test_dev_loop.py --chunk` process,
 - Commits: gitmoji, format `<emoji>(<scope>) <message>`, scope required (e.g. `🐛(install) Back up a replaced skill outside its skills folder`).
 - Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Workflow fails when tag and `package.json` version differ.
 - Release: follow `reference/release.md`.
+- Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` does not allow; mark one about behaviour an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). Its `warnings` (older commits) are reworded in the Stage 7 rebase, before the push.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
 - The three merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) are always merged, never copied wholesale.

@@ -1045,7 +1045,7 @@ class ReleaseTextTests(unittest.TestCase):
     def test_kit_text_has_no_em_dash(self) -> None:
         for rel in ["skill/SKILL.md", "skill/references/claude.md", "skill/references/codex.md", "AGENTS.md",
                     "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "reference/kit.md",
-                    "reference/release.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
+                    "reference/release.md", "reference/upstream.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
             self.assertNotIn("\u2014", self.read(rel), rel)
 
 
