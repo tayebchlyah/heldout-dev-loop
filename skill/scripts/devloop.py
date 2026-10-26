@@ -135,7 +135,8 @@ class Parser(argparse.ArgumentParser):
 
 
 def main() -> int:
-    sys.modules.setdefault("devloop", sys.modules["__main__"])
+    if __name__ in sys.modules:
+        sys.modules.setdefault("devloop", sys.modules[__name__])
     from autonomy import INTENT_FIELDS
 
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
