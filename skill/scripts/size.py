@@ -140,3 +140,22 @@ def check(top: Path, mode: str) -> dict:
             out["violations"].append(violation(path, data, None if mode == "all" else base_bytes, why))
     out["ok"] = not out["violations"]
     return out
+
+
+def staged(repo: Path, entries: list[tuple[str, str]]) -> list[dict]:
+    """The `seal` rule: each staged `(path, blob)` against its blob at the base; no MANIFEST or exempt skip."""
+    base = merge_base(repo)
+    before = tree(repo, base) if base else {}
+    found = []
+    for path, obj in entries:
+        if obj == "deleted":
+            continue
+        mode = run_git(repo, "ls-files", "-s", "-z", "--", path).stdout.split(" ", 1)[0]
+        if mode in ("120000", "160000"):
+            continue
+        size = int(run_git(repo, "cat-file", "-s", obj).stdout)
+        base_bytes = before[path][2] if path in before else None
+        why = reason(size, base_bytes, "committed")
+        if why is not None and not binary(data := cat(repo, obj)):
+            found.append(violation(path, data, base_bytes, why))
+    return found
