@@ -224,12 +224,12 @@ def created_seconds(text: str) -> int:
 
 def reference_commit(top: Path) -> tuple[str | None, int]:
     """The sha and committer time of the newest commit of HEAD that changes a code path. None: (None, 0)."""
-    out = subprocess.run(["git", "-C", str(top), "log", "--format=%x00%H %ct", "--name-only", "--no-renames",
+    out = subprocess.run(["git", "-C", str(top), "log", "--format=%x01%H %ct", "--name-only", "-z", "--no-renames",
                           "--diff-merges=first-parent", "HEAD"], capture_output=True, text=True, check=True).stdout
-    for block in out.split("\0")[1:]:
-        head, *paths = block.strip().splitlines()
+    for block in out.split("\x01")[1:]:
+        head, _, rest = block.partition("\0")
         sha, ct = head.split()
-        if any(path and not devloop.is_test_or_doc(path) for path in paths):
+        if any(path and not devloop.is_test_or_doc(path) for path in rest.removeprefix("\n").split("\0")):
             return sha, int(ct)
     return None, 0
 
