@@ -2,7 +2,7 @@
 # dev-loop gate for this repo: the installer suite (node) and the skill suite (python), side by side.
 # GATE_SCOPE=changed (the Stop hook): any change reaches the node suite (it scans every tracked file),
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
-# README.md, package.json, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py. No change: neither. Else both.
+# README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh. No change: neither. Else both.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
 set -u
 cd "$(dirname "$0")/.."
@@ -18,7 +18,7 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
   while IFS= read -r path; do
     case "$path" in
-      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py) py=1 ;;
+      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|cliff.toml) py=1 ;;
     esac
     node=1
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)
