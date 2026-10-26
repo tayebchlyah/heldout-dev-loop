@@ -657,9 +657,9 @@ def cmd_logged(args: argparse.Namespace) -> int:
     return emit(payload, 0 if payload["exit"] == 0 else 1)
 
 
-def mapped_gate(top: Path) -> str | None:
+def mapped_command(top: Path, key: str) -> str | None:
     try:
-        command = json.loads((top / "dev-loop.json").read_text()).get("commands", {}).get("gate")
+        command = json.loads((top / "dev-loop.json").read_text()).get("commands", {}).get(key)
     except (OSError, ValueError, AttributeError):
         return None
     return command if isinstance(command, str) and command else None
@@ -671,7 +671,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     if top_out is None or log is None:
         return emit({"error": "not a git repository"}, 2)
     top = Path(top_out)
-    command = mapped_gate(top)
+    command = mapped_command(top, "gate")
     cmd = ["sh", "-c", command] if command else [str(top / "scripts" / "gate.sh")]
     reports = log.parent / f"{log.stem}-reports"
     reports.mkdir()

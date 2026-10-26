@@ -8,16 +8,15 @@ records the run and gives the progress guard verdict.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
-import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
+import autonomy
 import devloop
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
@@ -33,7 +32,6 @@ class TableError(Exception):
 
 
 def cells(line: str) -> list[str]:
-    """The cells of one table line: `\\|` is a pipe, each cell stripped of spaces and of one pair of backticks."""
     line = line.strip()
     line = line[1:] if line.startswith("|") else line
     line = line[:-1] if line.endswith("|") and not line.endswith("\\|") else line
@@ -139,11 +137,7 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
     return merge(tables), 0
 
 
-# acceptance
-
-
 def junit_failures(folder: Path) -> tuple[int | None, list[str] | None]:
-    """The failing test ids of every JUnit file in `folder`. No file, or one that does not parse: (None, None)."""
     files = sorted(folder.glob("*.xml"))
     if not files:
         return None, None
@@ -192,7 +186,6 @@ def guard(runs: list[dict]) -> dict | None:
 
 
 def read_record(path: Path) -> list[dict] | None:
-    """The runs of the record. No file: no run. None: not the record shape."""
     try:
         data = json.loads(path.read_text())
     except FileNotFoundError:
@@ -206,11 +199,7 @@ def read_record(path: Path) -> list[dict] | None:
 
 
 def write_record(path: Path, runs: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".acceptance-")
-    with os.fdopen(fd, "w") as out:
-        json.dump({"runs": runs}, out, indent=2)
-    os.replace(tmp, path)
+    autonomy.write_atomic(path, json.dumps({"runs": runs}, indent=2))
 
 
 def created_seconds(text: str) -> int:
@@ -223,7 +212,6 @@ def created_seconds(text: str) -> int:
 
 
 def reference_commit(top: Path) -> tuple[str | None, int]:
-    """The sha and committer time of the newest commit of HEAD that changes a code path. None: (None, 0)."""
     out = subprocess.run(["git", "-C", str(top), "log", "--format=%x01%H %ct", "--name-only", "-z", "--no-renames",
                           "--diff-merges=first-parent", "HEAD"], capture_output=True, text=True, check=True).stdout
     for block in out.split("\x01")[1:]:
@@ -265,14 +253,6 @@ def stale_check(top: Path, env: Mapping[str, str]) -> dict:
     return {"state": "stale" if stale else "fresh", "checked": sorted(created), "services": stale, "reference": sha}
 
 
-def mapped(top: Path, key: str) -> str | None:
-    try:
-        command = json.loads((top / "dev-loop.json").read_text()).get("commands", {}).get(key)
-    except (OSError, ValueError, AttributeError):
-        return None
-    return command if isinstance(command, str) and command else None
-
-
 def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, int]:
     top_out = devloop.git(cwd, "rev-parse", "--show-toplevel")
     git_dir = devloop.git(cwd, "rev-parse", "--absolute-git-dir")
@@ -280,7 +260,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
         return {"error": "not a git repository"}, 1
     top = Path(top_out)
     key = "acceptance_failed" if failed else "acceptance"
-    command = mapped(top, key)
+    command = devloop.mapped_command(top, key)
     if command is None:
         return {"error": f"no commands.{key} in dev-loop.json"}, 1
     record = Path(git_dir) / "dev-loop" / "acceptance.json"
