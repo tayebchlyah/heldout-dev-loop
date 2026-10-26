@@ -93,7 +93,10 @@ def seal(repo: Path, slug: str, message: str, reverts: list[str]) -> dict:
         return {"error": error}
     if not entries:
         return {"error": f"no staged change under {ACCEPTANCE_DIR}/"}
-    over = size.staged(repo, entries)
+    try:
+        over = size.staged(repo, entries)
+    except size.GitError as error:
+        return {"error": str(error)}
     if over:
         return {"error": "file over the size limit", "size": over}
     full = []
