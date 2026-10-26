@@ -235,6 +235,9 @@ _repo_rules_spec.loader.exec_module(test_repo_rules)
 SubjectRuleTests = test_repo_rules.SubjectRuleTests
 SubjectCommandTests = test_repo_rules.SubjectCommandTests
 RepoSubjectsTests = test_repo_rules.RepoSubjectsTests
+CommentRuleTests = test_repo_rules.CommentRuleTests
+CommentCommandTests = test_repo_rules.CommentCommandTests
+RepoCommentsTests = test_repo_rules.RepoCommentsTests
 
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:

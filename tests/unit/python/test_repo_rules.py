@@ -126,7 +126,7 @@ class SubjectCommandTests(RulesRepo):
     def test_no_base(self) -> None:
         git(self.repo, "remote", "remove", "origin")
         git(self.repo, "branch", "-q", "-m", "main", "trunk")
-        for command in ("subjects",):
+        for command in ("subjects", "comments"):
             with self.subTest(command=command):
                 code, out = run_rules(self.repo, command)
                 self.assertEqual(code, 0, out)
@@ -146,6 +146,107 @@ class SubjectCommandTests(RulesRepo):
 class RepoSubjectsTests(unittest.TestCase):
     def test_this_repo(self) -> None:
         code, out = run_rules(ROOT, "subjects")
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out["ok"])
+
+
+SINCE = "# `--since` is a devloop.py drive and sessions option, never a Stryker one."
+EXCEPTION = "# Exception: a bare --force-with-lease (with or without --force-if-includes) to the"
+ALLOWED = ["# shortcut: no lock, add one when two writers exist", "# see https://example.invalid/x", "# noqa: E501",
+           "// eslint-disable-next-line no-console", "# allow-comment: dependency, git 2.40 drops the flag",
+           "# fixes #123", "# RFC 3339 time", "# SPDX-License-Identifier: MIT", "# Copyright 2026",
+           "# shellcheck disable=SC2086", "// @ts-expect-error", "# type: ignore", "# pragma: no cover"]
+
+
+class CommentRuleTests(unittest.TestCase):
+    def test_kind_table(self) -> None:
+        for text in ALLOWED:
+            with self.subTest(text=text):
+                self.assertTrue(repo_rules.kind_ok(text))
+        for text in [SINCE, EXCEPTION, "# shortcut: no reason", "# plain words", "# 3. A plain push asks."]:
+            with self.subTest(text=text):
+                self.assertFalse(repo_rules.kind_ok(text))
+
+    def test_comment_lines_table(self) -> None:
+        for path, text, expected in [
+            ("a.py", 'def f():\n    """Doc.\n    # not a comment\n    """\n    # real\n    x = 1  # trailing\n',
+             {5: "# real"}),
+            ("a.py", "def f(:\n    # x\n", {2: "# x"}),
+            ("a.sh", "#!/bin/sh\n  # x\necho '# no'\n", {1: "#!/bin/sh", 2: "# x"}),
+            ("a.mjs", "// x\n# y\nconst a = 1 // z\n", {1: "// x"}),
+            ("a.ts", "x = 1 // y\n  // z\n", {2: "// z"}),
+        ]:
+            with self.subTest(path=path, text=text):
+                self.assertEqual(repo_rules.comment_lines(path, text), expected)
+
+    def test_allowed_lines(self) -> None:
+        text = "#!/bin/sh\n# head one\n\n# head two\nset -u\n# plain\n# more\n# shortcut: x, y\n# next\n# after\necho\n# z\n"
+        self.assertEqual(repo_rules.allowed_lines("a.sh", text), {1, 2, 4, 8, 9, 10})
+        self.assertEqual(repo_rules.allowed_lines("a.py", '"""Doc."""\n# x\n'), set())
+
+
+class CommentCommandTests(RulesRepo):
+    def base_files(self) -> None:
+        put(self.repo / "a.sh", "#!/bin/bash\n# head\nset -u\n\n# 3. A plain push asks.\nhas x\n")
+        put(self.repo / "m.py", '"""Mod."""\n\n\ndef f():\n    return 1\n')
+        put(self.repo / "old.py", '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 2\n')
+
+    def comments(self) -> tuple[int, dict]:
+        return run_rules(self.repo, "comments")
+
+    def assert_violations(self, expected: list[tuple[str, int, str]]) -> None:
+        code, out = self.comments()
+        self.assertEqual([(v["path"], v["line"], v["text"]) for v in out["violations"]], expected, out)
+        self.assertEqual(code, 1 if expected else 0)
+        self.assertEqual(out["ok"], not expected)
+
+    def test_mid_file_shell_comment(self) -> None:
+        self.commit("✨(x) Add", "a.sh", "#!/bin/bash\n# head\nset -u\n# plain words\n\n# 3. A plain push asks.\nhas x\n")
+        self.assert_violations([("a.sh", 4, "# plain words")])
+
+    def test_since_comment_in_a_function(self) -> None:
+        self.commit("✨(x) Add", "m.py", f'"""Mod."""\n\n\ndef f():\n    {SINCE}\n    return 1\n')
+        self.assert_violations([("m.py", 5, SINCE)])
+
+    def test_continuation_of_a_base_line_still_fails(self) -> None:
+        self.commit("✨(x) Add", "a.sh",
+                    f"#!/bin/bash\n# head\nset -u\n\n# 3. A plain push asks.\n{EXCEPTION}\nhas x\n")
+        self.assert_violations([("a.sh", 6, EXCEPTION)])
+
+    def test_allowed_kinds_mid_file(self) -> None:
+        body = "".join(f"x{i}=1\n{line}\n" for i, line in enumerate(ALLOWED) if line.startswith("#"))
+        self.commit("✨(x) Add", "n.sh", "#!/bin/sh\n# lead\n\n# lead two\nset -u\n" + body + "# shortcut: a, b\n# next line\n")
+        put(self.repo / "n.mjs", "const a = 1\n// eslint-disable-next-line no-console\n// @ts-expect-error\n")
+        self.assert_violations([])
+
+    def test_uncommitted_untracked_and_ignored(self) -> None:
+        put(self.repo / "m.py", f'"""Mod."""\n\n\ndef f():\n    # uncommitted\n    return 1\n')
+        put(self.repo / "new dir" / "u.sh", "set -u\n# untracked\n")
+        put(self.repo / "ign" / "i.sh", "set -u\n# ignored\n")
+        put(self.repo / ".gitignore", "ign/\n")
+        self.assert_violations([("m.py", 5, "# uncommitted"), ("new dir/u.sh", 2, "# untracked")])
+
+    def test_skipped_paths_and_types(self) -> None:
+        for path in ["tests/acceptance/t.py", ".agents/a.sh", ".claude/c.sh", ".codex/c.sh", ".dev-loop/d.sh",
+                     "node_modules/x/i.js", "x.md", "x.toml"]:
+            put(self.repo / path, "x = 1\n# plain words\n")
+        self.assert_violations([])
+
+    def test_base_lines_unchanged(self) -> None:
+        self.commit("✨(x) Add", "b.txt", "b\n")
+        self.assert_violations([])
+
+    def test_moved_comment_is_not_new(self) -> None:
+        self.commit("♻️(x) Move", "new.py", '"""New."""\n\n\ndef g():\n    # moved words stay the same\n    return 2\n')
+        (self.repo / "old.py").unlink()
+        self.assert_violations([])
+        put(self.repo / "new.py", '"""New."""\n\n\ndef g():\n    # moved words changed\n    return 2\n')
+        self.assert_violations([("new.py", 5, "# moved words changed")])
+
+
+class RepoCommentsTests(unittest.TestCase):
+    def test_this_repo(self) -> None:
+        code, out = run_rules(ROOT, "comments")
         self.assertEqual(code, 0, out)
         self.assertTrue(out["ok"])
 
