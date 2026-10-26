@@ -58,6 +58,7 @@ Take the first option that fully works:
 5. Can it be one line a reader gets at a glance? One line.
 6. Otherwise: the minimum code that works.
 
+- File size: a file above 40,000 bytes never grows, and a new file stays at or under 40,000 bytes. `gate --summary` reports a break in its `size` key: split the file at its `seam`, or by responsibility.
 - Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests and fixtures your change breaks.
 - No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions.
 - The shortest working diff wins, once you know everything it must touch. A one-liner that needs decoding is not short.
