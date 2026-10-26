@@ -146,6 +146,7 @@ Skill suite runs test ids in chunks of 5 per `test_dev_loop.py --chunk` process,
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` does not allow; mark one about behaviour an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). Its `warnings` (older commits) are reworded in the Stage 7 rebase, before the push.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
+- No tracked file may name an internal client or project (employer, its customers, private projects). The node test in `tests/unit/node/payload.test.mjs` holds only `sha256` of the lowercased name words joined by one space, first 16 hex chars. New name: add its hash to `INTERNAL_NAME_HASHES`, never the name.
 - The three merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) are always merged, never copied wholesale.
 
 ## Gotchas
