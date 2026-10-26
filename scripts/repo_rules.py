@@ -9,10 +9,12 @@ subjects: the subject of each commit in <base>..HEAD follows the gitmoji convent
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import subprocess
 import sys
+import tokenize
 import tomllib
 from pathlib import Path
 
@@ -67,7 +69,109 @@ def subjects(repo: Path, base: str) -> tuple[dict, int]:
     return {"ok": not violations, "base": base, "violations": violations, "warnings": warnings}, int(bool(violations))
 
 
-COMMANDS = {"subjects": subjects}
+CHECKED_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
+SKIPPED_PREFIXES = ("tests/acceptance/", ".agents/", ".claude/", ".codex/", ".dev-loop/", "node_modules/")
+KINDS = re.compile(
+    r"shortcut: [^,]+, \S|https?://|#\d+\b|\bRFC \d+|SPDX-License-Identifier|Copyright|License"
+    r"|allow-comment: dependency|noqa|type:|pyright:|pylint:|pragma|fmt:|eslint-|biome-ignore|@ts-|shellcheck"
+)
+CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
+
+
+def checked(path: str) -> bool:
+    return path.endswith(CHECKED_SUFFIXES) and not path.startswith(SKIPPED_PREFIXES)
+
+
+def kind_ok(text: str) -> bool:
+    return KINDS.search(text) is not None
+
+
+def comment_lines(path: str, text: str) -> dict[int, str]:
+    lines = text.splitlines()
+    if path.endswith(".py"):
+        try:
+            tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+        except (tokenize.TokenError, SyntaxError):
+            tokens = None
+        if tokens is not None:
+            code = {row for tok in tokens if tok.type not in CODE_TOKENS for row in range(tok.start[0], tok.end[0] + 1)}
+            return {tok.start[0]: lines[tok.start[0] - 1].strip() for tok in tokens
+                    if tok.type == tokenize.COMMENT and tok.start[0] not in code}
+    marker = "//" if path.endswith((".mjs", ".js", ".ts")) else "#"
+    return {n: line.strip() for n, line in enumerate(lines, 1) if line.strip().startswith(marker)}
+
+
+def allowed_lines(path: str, text: str) -> set[int]:
+    lines = text.splitlines()
+    comments = comment_lines(path, text)
+    allowed: set[int] = set()
+    n = 2 if lines and lines[0].startswith("#!") else 1
+    if n == 2 and 1 in comments:
+        allowed.add(1)
+    while n <= len(lines) and (n in comments or not lines[n - 1].strip()):
+        if n in comments:
+            allowed.add(n)
+        n += 1
+    for n in sorted(comments):
+        if kind_ok(comments[n]) or (n - 1 in allowed and n - 1 in comments):
+            allowed.add(n)
+    return allowed
+
+
+def base_comments(repo: Path, base: str) -> set[str]:
+    listing = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", base], cwd=repo, capture_output=True)
+    paths = [p for p in listing.stdout.decode("utf-8", "replace").split("\0") if p and "\n" not in p and checked(p)]
+    batch = subprocess.run(["git", "cat-file", "--batch"], cwd=repo, capture_output=True,
+                           input="".join(f"{base}:{p}\n" for p in paths).encode())
+    out, pos, texts = batch.stdout, 0, set()
+    for path in paths:
+        end = out.index(b"\n", pos)
+        header = out[pos:end].split()
+        pos = end + 1
+        if len(header) != 3 or header[1] != b"blob":
+            continue
+        size = int(header[2])
+        blob, pos = out[pos:pos + size], pos + size + 1
+        try:
+            texts.update(comment_lines(path, blob.decode()).values())
+        except UnicodeDecodeError:
+            continue
+    return texts
+
+
+def added_lines(repo: Path, base: str) -> dict[str, set[int] | None]:
+    changed = run_git(repo, "diff", "--name-only", "-z", "--no-renames", base)
+    untracked = run_git(repo, "ls-files", "--others", "--exclude-standard", "-z")
+    added: dict[str, set[int] | None] = {p: None for p in untracked.stdout.split("\0") if p and checked(p)}
+    for path in changed.stdout.split("\0"):
+        if not path or not checked(path) or path in added:
+            continue
+        diff = run_git(repo, "diff", "-U0", "--no-renames", "--no-ext-diff", "--no-color", base, "--", path)
+        rows: set[int] = set()
+        for match in re.finditer(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", diff.stdout, re.M):
+            start, count = int(match.group(1)), int(match.group(2) or 1)
+            rows.update(range(start, start + count))
+        added[path] = rows
+    return added
+
+
+def comments(repo: Path, base: str) -> tuple[dict, int]:
+    old = base_comments(repo, base)
+    violations = []
+    for path, rows in added_lines(repo, base).items():
+        try:
+            text = (repo / path).read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        allowed = allowed_lines(path, text)
+        for n, line in comment_lines(path, text).items():
+            if (rows is None or n in rows) and n not in allowed and line not in old:
+                violations.append({"path": path, "line": n, "text": line})
+    violations.sort(key=lambda v: (v["path"], v["line"]))
+    return {"ok": not violations, "base": base, "violations": violations}, int(bool(violations))
+
+
+COMMANDS = {"comments": comments, "subjects": subjects}
 
 
 def main(argv: list[str] | None = None) -> int:
