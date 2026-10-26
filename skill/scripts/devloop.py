@@ -679,12 +679,15 @@ def cmd_gate(args: argparse.Namespace) -> int:
     if not any(reports.glob("*.xml")):
         payload["hint"] = JUNIT_HINT
     sys.path.insert(0, str(Path(__file__).parent))
+    import size
     from seal.check import check
     from seal.weakened import weakened
 
     payload["seal"] = check(top, True)
     payload["weakened"] = weakened(top)
-    return emit(payload, 0 if payload["exit"] == 0 and payload["seal"]["ok"] else 1)
+    payload["size"] = size.check(top, "uncommitted")
+    ok = payload["exit"] == 0 and payload["seal"]["ok"] and payload["size"]["ok"]
+    return emit(payload, 0 if ok else 1)
 
 
 # ci wait

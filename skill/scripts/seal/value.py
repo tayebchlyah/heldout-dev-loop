@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import size
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
@@ -92,6 +93,9 @@ def seal(repo: Path, slug: str, message: str, reverts: list[str]) -> dict:
         return {"error": error}
     if not entries:
         return {"error": f"no staged change under {ACCEPTANCE_DIR}/"}
+    over = size.staged(repo, entries)
+    if over:
+        return {"error": "file over the size limit", "size": over}
     full = []
     for sha in reverts:
         result = run_git(repo, "rev-parse", "--verify", "-q", f"{sha}^{{commit}}")
