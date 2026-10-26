@@ -6,5 +6,9 @@
   ],
   "commands": {
     "acceptance": "scripts/acceptance.sh"
-  }
+  },
+  "file_size_exempt": [
+    "CHANGELOG.md",
+    "tests/unit/python/fixtures/git-guard-asks.json"
+  ]
 }
