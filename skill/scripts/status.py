@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import sys
 from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
@@ -254,8 +253,6 @@ def cmd_status(args: argparse.Namespace) -> int:
         due = retro.review_due(repo, notes, date.today())
         if due is not None:
             out["review_due"] = due
-    # Lazy, as in cmd_board: the old tests load this file with importlib and must not need the board package.
-    sys.path.insert(0, str(Path(__file__).parent))
     from board import state, store, writer
 
     common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")

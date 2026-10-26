@@ -14,6 +14,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
+import devloop
 from devloop import emit
 from seal import ACCEPTANCE_DIR, git_dir, merge_base, run_git
 
@@ -85,7 +86,6 @@ def feature_docs(repo: Path) -> list[str]:
         if "/" not in branch:
             return []
         slug = branch.split("/", 1)[1].lower()
-        import devloop  # Lazy: devloop.py imports this package lazily too.
         from notes_path import resolve
         notes = resolve(repo, os.environ, Path.home())
         docs = []
