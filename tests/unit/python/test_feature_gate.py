@@ -466,5 +466,45 @@ class AcceptanceScriptTests(TempDir):
         self.assertNotIn("unittest discover -s tests/acceptance", ci)
 
 
+
+def section(text: str, start: str, end: str) -> str:
+    return text[text.index(start):text.index(end, text.index(start))]
+
+
+class FeatureGateTextTests(unittest.TestCase):
+    def test_skill_stage_6(self) -> None:
+        stage6 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 6 Feature gate", "## 7 Ship")
+        for needle in ("devloop.py review-merge", "devloop.py acceptance", "--force-recreate", "`file`", "`line`",
+                       "`finding`", "`class`", "`verdict`", "`guard`", "`stale`", "`counted`"):
+            self.assertIn(needle, stage6)
+        self.assertNotIn("Merge the tables, dedupe by file and line", stage6)
+        self.assertNotIn("docker compose ps --format", stage6)
+        self.assertNotIn("up -d --build --wait", stage6)
+
+    def test_skill_stage_0(self) -> None:
+        stage0 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 0 Bootstrap", "## 1 Frame")
+        self.assertIn("DEVLOOP_REPORT_DIR", stage0)
+        self.assertIn("commands.stack_reset", stage0)
+        self.assertIn("recreate", stage0)
+
+    def test_routes(self) -> None:
+        claude = (ROOT / "skill" / "references" / "claude.md").read_text()
+        codex = (ROOT / "skill" / "references" / "codex.md").read_text()
+        for needle in ("review-merge", "dev-loop/review/", "devloop.py acceptance", "run_in_background"):
+            self.assertIn(needle, claude)
+        for needle in ("review-merge", "dev-loop/review/", "devloop.py acceptance"):
+            self.assertIn(needle, codex)
+        self.assertNotIn("Monitor", codex)
+        self.assertNotIn("verdict or severity", claude + codex)
+
+    def test_repo_docs(self) -> None:
+        agents, readme = (ROOT / "AGENTS.md").read_text(), (ROOT / "README.md").read_text()
+        for needle in ("review-merge", "acceptance [--failed]", "scripts/acceptance.sh"):
+            self.assertIn(needle, agents)
+            self.assertIn(needle, readme)
+        for needle in ("feature_gate.py", "test_feature_gate.py"):
+            self.assertIn(needle, agents)
+
+
 if __name__ == "__main__":
     unittest.main()
