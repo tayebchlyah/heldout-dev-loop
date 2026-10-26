@@ -62,8 +62,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 import autonomy  # noqa: E402
 from notes_path import NotesPathError, resolve  # noqa: E402
 
-CHECKS_RETRY_SECONDS = 15
-FAILED_CHECK_STATES = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 JUNIT_HINT = (
     "No JUnit XML in $DEVLOOP_REPORT_DIR. Make the gate write it there: "
     'pytest --junitxml="$DEVLOOP_REPORT_DIR/pytest.xml", '
@@ -692,57 +690,11 @@ def cmd_gate(args: argparse.Namespace) -> int:
 # ci wait
 
 
-def first_error(log: str) -> str | None:
-    lines = log.splitlines()
-    for i, line in enumerate(lines):
-        if "error" in line.lower() or "FAIL" in line:
-            return "\n".join(lines[i:i + 30])
-    return None
-
-
-def gh(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
-
-
 def cmd_ci_wait(args: argparse.Namespace) -> int:
-    payload: dict = {"state": "no-pr", "failed_job": None, "first_error": None, "url": None}
-    view = gh("pr", "view", *([str(args.pr)] if args.pr else []), "--json", "number,url")
-    if view.returncode != 0:
-        if "no pull requests found" not in view.stderr:
-            payload.update(state="error", message=view.stderr.strip())
-        return emit(payload, 1)
-    pr = json.loads(view.stdout)
-    number, payload["url"] = str(pr["number"]), pr["url"]
-    deadline = time.monotonic() + args.timeout * 60
-    while True:
-        try:
-            watch = gh("pr", "checks", number, "--watch", "--interval", "30", timeout=max(deadline - time.monotonic(), 0))
-        except subprocess.TimeoutExpired:
-            watch = None
-        # Right after a push no check is registered yet: gh exits 1 with "no checks reported".
-        if watch is not None and "no checks reported" in watch.stderr and time.monotonic() + CHECKS_RETRY_SECONDS < deadline:
-            time.sleep(CHECKS_RETRY_SECONDS)
-            continue
-        if watch is None or "no checks reported" in watch.stderr:
-            payload["state"] = "timeout"
-            return emit(payload, 1)
-        break
-    if watch.returncode == 0:
-        payload["state"] = "pass"
-        return emit(payload, 0)
-    payload["state"] = "fail"
-    try:
-        checks = json.loads(gh("pr", "checks", number, "--json", "name,state,link").stdout)
-    except ValueError:
-        checks = []
-    failed = next((c for c in checks if c.get("state") in FAILED_CHECK_STATES), None)
-    if failed:
-        payload["failed_job"] = failed.get("name")
-        payload["url"] = failed.get("link") or payload["url"]
-        run = re.search(r"/runs/(\d+)", failed.get("link") or "")
-        if run:
-            payload["first_error"] = first_error(gh("run", "view", run.group(1), "--log-failed").stdout)
-    return emit(payload, 1)
+    import ci
+
+    code, payload = ci.wait(args.pr, args.timeout)
+    return emit(payload, code)
 
 
 # board
