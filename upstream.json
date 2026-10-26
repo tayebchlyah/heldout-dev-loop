@@ -30,6 +30,7 @@
       "paths": [
         "skills/brainstorming/builder-check-prompt.md",
         "skills/executing-plans/",
+        "skills/requesting-code-review/",
         "skills/subagent-driven-development/",
         "skills/using-git-worktrees/",
         "skills/writing-plans/"
