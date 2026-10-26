@@ -14,7 +14,10 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `skill/SKILL.md`: the dev-loop skill payload.
 - `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template: the comment rule), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`.
 - `skill/references/second-review.md`: the second reviewer's prompt.
-- `skill/scripts/devloop.py`: the `devloop` CLI (parser and dispatch).
+- `skill/scripts/devloop.py`: the `devloop` CLI: parser, dispatch, shared git helpers. Each command's code lives in the module of its line below.
+- `skill/scripts/status.py`: `status`.
+- `skill/scripts/merge_check.py`: `merge-check`.
+- `skill/scripts/gate.py`: `logged`, `gate`.
 - `skill/scripts/check_setup.py`: post-install verifier.
 - `skill/scripts/notes_path.py`: notes path resolver.
 - `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`.
@@ -28,20 +31,32 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal.
 - `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, the `gate` `weakened` report.
-- `skill/scripts/board/`: progress board writer, server and page.
+- `skill/scripts/board/`: progress board writer, server and page; `board/cli.py`: `board`.
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
 - `tests/unit/python/`: skill suite, one file per subject:
-  - `test_dev_loop.py`: the entry, imports each test file below; runs in parallel chunks.
-  - `test_devloop.py`: `status`, `merge-check`, `logged`, `gate`, kit text contracts.
-  - `test_seal.py`: `seal`, `audit`, `seal-check`, `kit-changed`, `weakened`.
+  - `test_dev_loop.py`: the entry, loads every test class of each test file below; runs in parallel chunks.
+  - `test_devloop.py`: `logged`, `gate`, the project config shape, CLI test helpers.
+  - `test_status.py`, `test_merge_check.py`: `status`, `merge-check`.
+  - `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: kit text contracts.
+  - `test_check_setup.py`, `test_setup_checks.py`: `check_setup.py`.
+  - `test_notes_path.py`: `notes_path.py`.
+  - `test_mutation.py`: `select_mutants.py`, mutation setup and contract.
+  - `test_hooks.py`: board hook launch, Claude gate hook.
+  - `test_seal.py`: `seal`, `audit`.
+  - `test_seal_check.py`: `seal-check`, `kit-changed`, `weakened`.
   - `test_size.py`: `size-check`, seams, size in `gate` and `seal`.
-  - `test_seal_hooks.py`: seal hooks, git guard, the walls, the canary script.
+  - `test_seal_hooks.py`: seal hooks, guard, spec-tester and Codex walls.
+  - `test_kit_walls.py`: absolute path, kit and `cd` walls, canary script, Codex trust warning.
+  - `test_walls.py`, `test_git_guard.py`: deny walls, Codex hooks, git guard.
   - `test_board_robust.py`: board robustness.
+  - `test_board_tasks.py`: board task state, subagents, hook filter.
   - `test_verify.py`: `verify-init`, `drive`, verify checks.
   - `test_capture.py`: `capture`.
   - `test_second_review.py`: `second-review`.
-  - `test_release.py`: `release-check`, `release-plan`, `release-record`, release guards.
+  - `test_release.py`: `release-check`, `release-plan`.
+  - `test_release_record.py`: `release-record`.
+  - `test_release_guard.py`: release guards, setup, kit, text.
   - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; skipped without it, a failure with `DEVLOOP_REQUIRE_DOCKER=1`, set in CI).
   - `test_metrics.py`: `metrics`.
   - `test_ci.py`: `ci wait` (stub `gh` on `PATH`).
@@ -53,8 +68,9 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
   - `test_repo_rules.py`: `scripts/repo_rules.py`, the `AGENTS.md` budget and CLI index, the gate scope.
   - `junit_report.py`: the one JUnit writer.
   - `board_fixtures.py`: board fixtures shared with the held-out board oracle.
+  - `support.py`: shared constants and helpers of the skill suite.
   - `fixtures/`: test data. No test file under `skill/`.
-- `tests/unit/node/`: installer suite, board render and `drive.mjs` tests (Node test runner, real Chromium).
+- `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests (Node test runner, real Chromium).
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never by the gate. Never read, list or run it as an implementer.
 - `scripts/gate.sh`: repo gate, node and skill suites side by side; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
