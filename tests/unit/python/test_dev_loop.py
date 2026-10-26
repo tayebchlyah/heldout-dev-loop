@@ -172,6 +172,7 @@ test_ci = importlib.util.module_from_spec(_ci_spec)
 _ci_spec.loader.exec_module(test_ci)
 CiVerdictTests = test_ci.CiVerdictTests
 CiWaitTests = test_ci.CiWaitTests
+CiGithubTests = test_ci.CiGithubTests
 
 _gardener_spec = importlib.util.spec_from_file_location("test_gardener", Path(__file__).resolve().parent / "test_gardener.py")
 if _gardener_spec is None or _gardener_spec.loader is None:
@@ -1844,6 +1845,20 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("claude: PASS", result.stdout)
+
+    def test_a_disabled_rebase_merge_is_a_user_action(self) -> None:
+        self.init()
+        subprocess.run(["git", "remote", "add", "origin", "git@github.com:o/r.git"], cwd=self.repo, check=True)
+        gh = Path(self._tmp.name) / "bin" / "gh"
+        write(gh, f"#!{sys.executable}\nimport sys\nprint('false' if sys.argv[1:3] == ['api', 'repos/o/r'] else '')\n")
+        gh.chmod(0o755)
+        for harness in ("claude", "codex"):
+            with self.subTest(harness=harness):
+                result = self.run_checker(harness)
+                self.assertEqual(result.returncode, 1)
+                actions = result.stdout.split("User actions required", 1)[-1]
+                self.assertIn("allow rebase merging in the GitHub settings of o/r (Stage 7 runs gh pr merge --rebase)",
+                              actions)
 
     def test_the_checker_writes_no_python_cache(self) -> None:
         with tempfile.TemporaryDirectory() as root:

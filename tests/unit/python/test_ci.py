@@ -331,5 +331,30 @@ class CiWaitTests(StubGh):
         self.assertEqual((code, got["state"]), (1, "error"))
 
 
+class CiGithubTests(StubGh):
+    LINE = "allow rebase merging in the GitHub settings of o/r (Stage 7 runs gh pr merge --rebase)"
+
+    def check(self, origin: str | None, answer: dict) -> list[str]:
+        subprocess.run(["git", "remote", "remove", "origin"], cwd=self.repo, capture_output=True)
+        if origin:
+            subprocess.run(["git", "remote", "add", "origin", origin], cwd=self.repo, check=True)
+        with mock.patch.dict(os.environ, self.env({"repo": [answer]})):
+            return ci.check_github(self.repo)
+
+    def test_check_github(self) -> None:
+        rows = [(url, out("false"), [self.LINE], True) for url in
+                ("git@github.com:o/r.git", "https://github.com/o/r", "https://github.com/o/r.git",
+                 "ssh://git@github.com/o/r.git")]
+        rows += [("git@github.com:o/r.git", out("true"), [], True),
+                 ("git@github.com:o/r.git", BUSY, [], True),
+                 ("https://gitlab.com/o/r.git", out("false"), [], False),
+                 (None, out("false"), [], False)]
+        for origin, answer, want, called in rows:
+            with self.subTest(origin=origin, answer=answer):
+                self.assertEqual(self.check(origin, answer), want)
+                calls = [["api", "repos/o/r", "--jq", ".allow_rebase_merge"]] if called else []
+                self.assertEqual(self.calls(), calls)
+
+
 if __name__ == "__main__":
     unittest.main()
