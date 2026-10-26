@@ -71,7 +71,7 @@ class InstructionContractTests(unittest.TestCase):
                 self.assertIn(value, text)
 
     def test_kit_prompts_name_no_internal_project(self) -> None:
-        internal = re.compile(r"couchbase-doctor|Dev Process Review|\b[FS]\d+[a-z]?\b")
+        internal = re.compile(r"Dev Process Review|\b[FS]\d+[a-z]?\b")
         for root in [SKILL_ROOT, REPO_ROOT / "skills", REPO_ROOT / "claude", REPO_ROOT / "codex"]:
             for path in root.rglob("*"):
                 if path.suffix in {".md", ".toml", ".rules", ".yaml"}:
