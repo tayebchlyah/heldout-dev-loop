@@ -138,7 +138,6 @@ RUN_TAGS = itertools.count()
 
 def run(failing: int | None, ids: list[str] | None = None, exit: int | None = None, mode: str = "full",
         counted: bool = True) -> dict:
-    """A record run. Default ids differ from those of every other run: no id stays red by accident."""
     tag = next(RUN_TAGS)
     ids = ids if ids is not None else ([f"t::{tag}-{i}" for i in range(failing)] if failing is not None else None)
     return {"failing": failing, "ids": ids, "exit": exit if exit is not None else int(bool(failing)), "mode": mode,
@@ -282,7 +281,7 @@ class AcceptanceCommandTests(RepoCase):
 
     def test_bad_record_runs_nothing(self) -> None:
         repo = self.make_repo({"acceptance": "./run.sh"})
-        for text in ("not json", '{"runs": 3}', "[]", '{"runs": [1]}'):
+        for text in ("not json", '{"runs": 3}', "[]", '{"runs": [1]}', '{"runs": [{}]}'):
             self.record(repo).parent.mkdir(parents=True, exist_ok=True)
             self.record(repo).write_text(text)
             code, out, _ = self.devloop("acceptance", cwd=repo)
