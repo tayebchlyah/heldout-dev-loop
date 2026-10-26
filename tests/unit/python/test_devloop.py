@@ -809,7 +809,6 @@ class MergeCheckTests(Sandbox):
                 out = self.ok(wt)
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [])
 
-
     def test_file_size_exempt_change(self) -> None:
         rows = [
             ("branch adds a pattern", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": ["x/*"]}, True),
