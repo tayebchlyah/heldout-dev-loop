@@ -95,7 +95,6 @@ StatusTests = test_devloop.StatusTests
 MergeCheckTests = test_devloop.MergeCheckTests
 LoggedTests = test_devloop.LoggedTests
 GateTests = test_devloop.GateTests
-CiWaitTests = test_devloop.CiWaitTests
 InstructionContractTests = test_devloop.InstructionContractTests
 SkillStackContractTests = test_devloop.SkillStackContractTests
 ReviewWaveContractTests = test_devloop.ReviewWaveContractTests
@@ -172,6 +171,7 @@ if _ci_spec is None or _ci_spec.loader is None:
 test_ci = importlib.util.module_from_spec(_ci_spec)
 _ci_spec.loader.exec_module(test_ci)
 CiVerdictTests = test_ci.CiVerdictTests
+CiWaitTests = test_ci.CiWaitTests
 
 _gardener_spec = importlib.util.spec_from_file_location("test_gardener", Path(__file__).resolve().parent / "test_gardener.py")
 if _gardener_spec is None or _gardener_spec.loader is None:
