@@ -47,7 +47,6 @@ from junit_report import TimedResult, case_outcomes, write_junit  # noqa: E402
 
 
 def wire(name: str) -> None:
-    """Load the test file `name` beside this file and take every test class it defines: one command for the suite."""
     spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / f"{name}.py")
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load {name} module")
