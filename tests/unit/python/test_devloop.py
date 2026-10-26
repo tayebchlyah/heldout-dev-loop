@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for devloop.py: status, logged, gate --summary."""
+"""Tests for devloop.py: `logged`, `gate --summary`, the project config shape and the CLI test helpers."""
 
 from __future__ import annotations
 

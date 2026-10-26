@@ -14,7 +14,7 @@ from pathlib import Path
 
 from test_release import HERE
 
-import check_setup  # noqa: E402  (test_release puts skill/scripts on sys.path)
+import check_setup  # noqa: E402
 
 
 STUBS = {
