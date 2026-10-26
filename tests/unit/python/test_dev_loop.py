@@ -181,6 +181,13 @@ SessionsTests = test_retro.SessionsTests
 SessionsCommandTests = test_retro.SessionsCommandTests
 RetroTextTests = test_retro.RetroTextTests
 
+_feature_gate_spec = importlib.util.spec_from_file_location("test_feature_gate", Path(__file__).resolve().parent / "test_feature_gate.py")
+if _feature_gate_spec is None or _feature_gate_spec.loader is None:
+    raise ImportError("cannot load test_feature_gate module")
+test_feature_gate = importlib.util.module_from_spec(_feature_gate_spec)
+_feature_gate_spec.loader.exec_module(test_feature_gate)
+ReviewMergeTests = test_feature_gate.ReviewMergeTests
+
 _upstream_spec = importlib.util.spec_from_file_location("test_upstream_watch", Path(__file__).resolve().parent / "test_upstream_watch.py")
 if _upstream_spec is None or _upstream_spec.loader is None:
     raise ImportError("cannot load test_upstream_watch module")

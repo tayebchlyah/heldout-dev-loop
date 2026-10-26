@@ -20,6 +20,8 @@
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
+  devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
+                                                      merge the reviewer tables by file and line
   devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
                                                       the release audit plan: run folder, scope, sandbox, skill
   devloop.py release-record --run PATH [--base SHA] [--harness claude|codex] [--repo PATH]
@@ -1121,6 +1123,12 @@ def cmd_second_review(args: argparse.Namespace) -> int:
     return emit(*run(Path(top or "."), args.harness, args.timeout, os.environ))
 
 
+def cmd_review_merge(args: argparse.Namespace) -> int:
+    from feature_gate import review_merge
+
+    return emit(*review_merge(args.pairs, git(Path.cwd(), "rev-parse", "--show-toplevel")))
+
+
 def cmd_release_check(args: argparse.Namespace) -> int:
     from release import check, is_release_tag
 
@@ -1457,6 +1465,10 @@ def main() -> int:
     second.add_argument("--harness", choices=["claude", "codex"], required=True)
     second.add_argument("--timeout", type=finite_minutes, default=15)
     second.set_defaults(run=cmd_second_review)
+
+    review = commands.add_parser("review-merge")
+    review.add_argument("pairs", nargs="+")
+    review.set_defaults(run=cmd_review_merge)
 
     release = commands.add_parser("release-check")
     release.add_argument("--repo", default=".")
