@@ -62,31 +62,48 @@ def reason(size: int, base_bytes: int | None, mode: str) -> str | None:
     return "grown" if size > base_bytes else None
 
 
+class GitError(Exception):
+    pass
+
+
+def git(top: Path, *args: str) -> bytes:
+    result = subprocess.run(["git", "-C", str(top), *args], capture_output=True)
+    if result.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed: {os.fsdecode(result.stderr).strip()}")
+    return result.stdout
+
+
 def tree(top: Path, rev: str) -> dict[str, tuple[str, str, int]]:
-    out = run_git(top, "ls-tree", "-r", "-z", "-l", rev).stdout
+    out = os.fsdecode(git(top, "ls-tree", "-r", "-z", "-l", rev))
     entries = {}
     for record in filter(None, out.split("\0")):
         meta, path = record.split("\t", 1)
         mode, _, obj, size = meta.split()
+        if size != "-" and not size.isdigit():
+            raise GitError(f"git ls-tree -r -z -l {rev} failed: unreadable object {obj} for {path}")
         entries[path] = (mode, obj, int(size) if size != "-" else -1)
     return entries
 
 
 def names(top: Path, *args: str) -> list[str]:
-    return [p for p in run_git(top, *args, "-z").stdout.split("\0") if p]
+    return [p for p in os.fsdecode(git(top, *args, "-z")).split("\0") if p]
 
 
 def cat(top: Path, obj: str) -> bytes:
-    return subprocess.run(["git", "-C", str(top), "cat-file", "blob", obj], capture_output=True, check=True).stdout
+    return git(top, "cat-file", "blob", obj)
 
 
 def binary(data: bytes) -> bool:
     return b"\0" in data[:8000]
 
 
-def skipped_paths(top: Path) -> tuple[set[str], list[str] | None]:
+def skipped_paths(top: Path, before: dict[str, tuple[str, str, int]] | None) -> tuple[set[str], list[str] | None]:
     try:
-        files = json.loads((top / ".dev-loop" / "MANIFEST.json").read_text()).get("files", {})
+        if before is None:
+            raw = (top / ".dev-loop" / "MANIFEST.json").read_bytes()
+        else:
+            raw = cat(top, before[".dev-loop/MANIFEST.json"][1]) if ".dev-loop/MANIFEST.json" in before else b"{}"
+        files = json.loads(raw).get("files", {})
         kit = set(files) if isinstance(files, dict) else set()
     except (OSError, ValueError, AttributeError):
         kit = set()
@@ -100,14 +117,22 @@ def skipped_paths(top: Path) -> tuple[set[str], list[str] | None]:
 
 def check(top: Path, mode: str) -> dict:
     """`size-check` in mode `committed`, `uncommitted` or `all`."""
+    try:
+        return run_check(top, mode)
+    except GitError as error:
+        return {"ok": False, "mode": mode, "limit": LIMIT, "violations": [], "error": str(error)}
+
+
+def run_check(top: Path, mode: str) -> dict:
     base = None if mode == "all" else merge_base(top)
     out: dict = {"ok": True, "mode": mode, "base": base, "limit": LIMIT, "violations": []}
-    if base is None and mode != "all":
-        return {**out, "skipped": "no-base"}
-    kit, patterns = skipped_paths(top)
+    _, patterns = skipped_paths(top, None)
     if patterns is None:
         return {**out, "ok": False, "error": EXEMPT_ERROR}
+    if base is None and mode != "all":
+        return {**out, "skipped": "no-base"}
     before = tree(top, base) if base else {}
+    kit, _ = skipped_paths(top, before if base else None)
     head = tree(top, "HEAD") if mode == "committed" else {}
     if base is None:
         paths = names(top, "ls-files")
@@ -144,16 +169,17 @@ def check(top: Path, mode: str) -> dict:
 
 def staged(repo: Path, entries: list[tuple[str, str]]) -> list[dict]:
     """The `seal` rule: each staged `(path, blob)` against its blob at the base; no MANIFEST or exempt skip."""
+    repo = Path(os.fsdecode(git(repo, "rev-parse", "--show-toplevel")).strip())
     base = merge_base(repo)
     before = tree(repo, base) if base else {}
     found = []
     for path, obj in entries:
         if obj == "deleted":
             continue
-        mode = run_git(repo, "ls-files", "-s", "-z", "--", path).stdout.split(" ", 1)[0]
+        mode = os.fsdecode(git(repo, "--literal-pathspecs", "ls-files", "-s", "-z", "--", path)).split(" ", 1)[0]
         if mode in ("120000", "160000"):
             continue
-        size = int(run_git(repo, "cat-file", "-s", obj).stdout)
+        size = int(git(repo, "cat-file", "-s", obj))
         base_bytes = before[path][2] if path in before else None
         why = reason(size, base_bytes, "committed")
         if why is not None and not binary(data := cat(repo, obj)):
