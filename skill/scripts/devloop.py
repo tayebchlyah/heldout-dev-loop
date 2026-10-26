@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib
 import json
 import math
 import os
@@ -1366,33 +1367,34 @@ class Parser(argparse.ArgumentParser):
 
 
 def main() -> int:
+    sys.modules.setdefault("devloop", sys.modules["__main__"])
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
     status = commands.add_parser("status")
     status.add_argument("--repo", default=".")
     status.add_argument("--feature")
-    status.set_defaults(run=cmd_status)
+    status.set_defaults(run=("devloop", "cmd_status"))
 
     merge_check = commands.add_parser("merge-check")
     merge_check.add_argument("--repo", default=".")
     merge_check.add_argument("--feature")
-    merge_check.set_defaults(run=cmd_merge_check)
+    merge_check.set_defaults(run=("devloop", "cmd_merge_check"))
 
     logged = commands.add_parser("logged")
     logged.add_argument("--name")
     logged.add_argument("cmd", nargs=argparse.REMAINDER)
-    logged.set_defaults(run=cmd_logged)
+    logged.set_defaults(run=("devloop", "cmd_logged"))
 
     gate = commands.add_parser("gate")
     gate.add_argument("--summary", action="store_true", required=True)
-    gate.set_defaults(run=cmd_gate)
+    gate.set_defaults(run=("devloop", "cmd_gate"))
 
     ci = commands.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     wait = ci.add_parser("wait")
     wait.add_argument("--pr", type=int)
     wait.add_argument("--timeout", type=finite_minutes, default=30, help="minutes")
-    wait.set_defaults(run=cmd_ci_wait)
+    wait.set_defaults(run=("devloop", "cmd_ci_wait"))
 
     board = commands.add_parser("board")
     board.add_argument("--repo", default=".")
@@ -1400,91 +1402,91 @@ def main() -> int:
     board.add_argument("--claim")
     board.add_argument("--no-serve", action="store_true")
     board.add_argument("--stop-server", action="store_true")
-    board.set_defaults(run=cmd_board)
+    board.set_defaults(run=("devloop", "cmd_board"))
 
     seal = commands.add_parser("seal")
     seal.add_argument("--feature")
     seal.add_argument("--message")
     seal.add_argument("--reverts", action="extend", nargs="+")
     seal.add_argument("--rebase-continue", action="store_true")
-    seal.set_defaults(run=cmd_seal)
+    seal.set_defaults(run=("devloop", "cmd_seal"))
 
     audit = commands.add_parser("audit")
-    audit.set_defaults(run=cmd_audit)
+    audit.set_defaults(run=("devloop", "cmd_audit"))
 
     seal_check = commands.add_parser("seal-check")
     seal_check.add_argument("--uncommitted", action="store_true")
-    seal_check.set_defaults(run=cmd_seal_check)
+    seal_check.set_defaults(run=("devloop", "cmd_seal_check"))
 
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()
     size_mode.add_argument("--uncommitted", action="store_true")
     size_mode.add_argument("--all", action="store_true")
-    size_check.set_defaults(run=cmd_size_check)
+    size_check.set_defaults(run=("devloop", "cmd_size_check"))
 
     verify_init = commands.add_parser("verify-init")
     verify_init.add_argument("--base-url", required=True)
     verify_init.add_argument("--name")
-    verify_init.set_defaults(run=cmd_verify_init)
+    verify_init.set_defaults(run=("devloop", "cmd_verify_init"))
 
     drive = commands.add_parser("drive")
     scope = drive.add_mutually_exclusive_group()
     scope.add_argument("--all", action="store_true")
     scope.add_argument("--since")
     scope.add_argument("--routes-from")
-    drive.set_defaults(run=cmd_drive)
+    drive.set_defaults(run=("devloop", "cmd_drive"))
 
     capture = commands.add_parser("capture")
     capture.add_argument("--pr", type=positive_int)
     capture.add_argument("--before")
     capture.add_argument("--after")
     capture.add_argument("--write-after")
-    capture.set_defaults(run=cmd_capture)
+    capture.set_defaults(run=("devloop", "cmd_capture"))
 
     second = commands.add_parser("second-review")
     second.add_argument("--harness", choices=["claude", "codex"], required=True)
     second.add_argument("--timeout", type=finite_minutes, default=15)
-    second.set_defaults(run=cmd_second_review)
+    second.set_defaults(run=("devloop", "cmd_second_review"))
 
     review = commands.add_parser("review-merge")
     review.add_argument("pairs", nargs="+")
-    review.set_defaults(run=cmd_review_merge)
+    review.set_defaults(run=("devloop", "cmd_review_merge"))
 
     accept = commands.add_parser("acceptance")
     accept.add_argument("--failed", action="store_true")
-    accept.set_defaults(run=cmd_acceptance)
+    accept.set_defaults(run=("devloop", "cmd_acceptance"))
 
     release = commands.add_parser("release-check")
     release.add_argument("--repo", default=".")
     target = release.add_mutually_exclusive_group(required=True)
     target.add_argument("--tag")
     target.add_argument("--sha")
-    release.set_defaults(run=cmd_release_check)
+    release.set_defaults(run=("devloop", "cmd_release_check"))
 
     plan = commands.add_parser("release-plan")
     plan.add_argument("--repo", default=".")
     plan.add_argument("--harness", choices=["claude", "codex"], default="claude")
     plan.add_argument("--profile", choices=["quick", "standard", "deep"])
     plan.add_argument("--budget", type=positive_int)
-    plan.set_defaults(run=cmd_release_plan)
+    plan.set_defaults(run=("devloop", "cmd_release_plan"))
 
     rec = commands.add_parser("release-record")
     rec.add_argument("--repo", default=".")
     rec.add_argument("--run", dest="run_folder", required=True)
     rec.add_argument("--base")
     rec.add_argument("--harness", choices=["claude", "codex"], default="claude")
-    rec.set_defaults(run=cmd_release_record)
+    rec.set_defaults(run=("devloop", "cmd_release_record"))
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
     metrics.add_argument("--feature")
     metrics.add_argument("--write", action="store_true")
-    metrics.set_defaults(run=cmd_metrics)
+    metrics.set_defaults(run=("devloop", "cmd_metrics"))
 
     sessions = commands.add_parser("sessions")
     sessions.add_argument("--since", type=positive_int, required=True)
     sessions.add_argument("--repo", default=".")
-    sessions.set_defaults(run=cmd_sessions)
+    sessions.set_defaults(run=("devloop", "cmd_sessions"))
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
@@ -1495,7 +1497,7 @@ def main() -> int:
     decide.add_argument("--risk", action="store_true")
     decide.add_argument("--feature")
     decide.add_argument("--repo", default=".")
-    decide.set_defaults(run=cmd_decide)
+    decide.set_defaults(run=("devloop", "cmd_decide"))
 
     pause = commands.add_parser("pause")
     pause.add_argument("--event", action="store_true")
@@ -1505,7 +1507,7 @@ def main() -> int:
     pause.add_argument("--agent", action="append")
     pause.add_argument("--run", action="append", dest="runs")
     pause.add_argument("--repo", default=".")
-    pause.set_defaults(run=cmd_pause)
+    pause.set_defaults(run=("devloop", "cmd_pause"))
 
     args = parser.parse_args()
     if args.command == "capture":
@@ -1513,7 +1515,8 @@ def main() -> int:
             parser.error("--write-after takes no --pr, --before or --after")
         if not args.write_after and not args.pr:
             parser.error("--pr is required unless --write-after is given")
-    return args.run(args)
+    module, name = args.run
+    return getattr(importlib.import_module(module), name)(args)
 
 
 if __name__ == "__main__":
