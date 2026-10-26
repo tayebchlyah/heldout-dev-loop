@@ -553,6 +553,12 @@ class ProjectConfigTests(unittest.TestCase):
             self.assertEqual(self.check({"merge_human_paths": value}), [message], value)
         self.assertEqual(self.check({"merge_human_paths": ["src/auth/*"]}), [])
 
+    def test_file_size_exempt_shape(self) -> None:
+        message = "file_size_exempt in dev-loop.json must be a list of non-empty strings"
+        for value in ("docs", [""], [" "], [1], {}, ["docs/"]):
+            self.assertEqual(self.check({"file_size_exempt": value}), [message], value)
+        self.assertEqual(self.check({"file_size_exempt": ["docs/*"]}), [])
+
     def test_valid_commands_and_merge_pass(self) -> None:
         commands = {key: f"run {key}" for key in check_setup.COMMAND_KEYS}
         self.assertEqual(self.check({"commands": commands, "merge": "human"}), [])

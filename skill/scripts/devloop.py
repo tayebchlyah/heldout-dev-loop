@@ -529,12 +529,13 @@ def merge_check(args: argparse.Namespace) -> int:
             pattern = next((p for p in patterns if fnmatch.fnmatchcase(path, p)), None)
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
-        trusted = (config.get("merge"), config.get("merge_human_paths"))
+        trusted = (config.get("merge"), config.get("merge_human_paths"), config.get("file_size_exempt", []))
         branch_config = read_config(repo, head)
         if branch_config is None:
-            changed = trusted != (None, None)
+            changed = trusted != (None, None, [])
         else:
-            changed = (branch_config.get("merge"), branch_config.get("merge_human_paths")) != trusted
+            changed = (branch_config.get("merge"), branch_config.get("merge_human_paths"),
+                       branch_config.get("file_size_exempt", [])) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
 
