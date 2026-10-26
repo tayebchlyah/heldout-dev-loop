@@ -358,7 +358,7 @@ def check_push(repo, args, drift):
             name = a.split("=", 1)[0]
             if a in LEASE:
                 lease.add(a)
-            elif name in FORCE:
+            elif name in FORCE or (len(name) > 4 and any(m.startswith(name) for m in FORCE)):
                 ask("a force, delete, mirror, all, prune or tag push")
             if name in PUSH_ARG and "=" not in a:
                 j += 1
@@ -385,6 +385,15 @@ def check_push(repo, args, drift):
     if lease and ("--force-with-lease" not in lease or "/" not in branch or os.environ["AGENT_ID"]
                   or any(s not in ("HEAD", "@", branch, f"HEAD:{branch}") for s in specs)):
         ask("a force, delete, mirror, all, prune or tag push")
+    if lease:
+        r = (git(repo, "config", f"branch.{branch}.pushRemote")[1] or git(repo, "config", "remote.pushDefault")[1]
+             or git(repo, "config", f"branch.{branch}.remote")[1] or "origin")
+        merge = git(repo, "config", f"branch.{branch}.merge")[1]
+        if (len(specs) > 1 or remote not in ("", r)
+                or git(repo, "config", "--get-all", f"remote.{r}.push")[1]
+                or git(repo, "config", f"remote.{r}.mirror")[1] == "true"
+                or (merge and merge != f"refs/heads/{branch}")):
+            ask("a force, delete, mirror, all, prune or tag push")
     for spec in specs:
         if spec.startswith(("+", ":")) or "*" in spec:
             ask("a forced, deleting or wildcard refspec")
