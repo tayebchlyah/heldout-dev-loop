@@ -14,18 +14,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
-from test_devloop import git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
+from test_devloop import git, put, run_cli  # noqa: E402
 import size  # noqa: E402
 
 
 def blob(n: int, line: bytes = b"x" * 79 + b"\n") -> bytes:
-    """`n` bytes of text lines."""
     return (line * (n // len(line) + 1))[:n]
 
 
 class SizeRepo(unittest.TestCase):
-    """A repo whose `main` holds a README, checked out on `feat/x`."""
-
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self._tmp.name).resolve() / "repo"
@@ -128,11 +125,12 @@ class SizeRuleTests(SizeRepo):
 
     def test_manifest_keys(self) -> None:
         manifest = {"version": "1", "files": {"kit/big.py": "sha256:0"}}
-        self.commit(".dev-loop/MANIFEST.json", json.dumps(manifest).encode())
+        self.on_main(".dev-loop/MANIFEST.json", json.dumps(manifest).encode())
         self.commit("kit/big.py", blob(50000))
         self.assertEqual(self.reasons(), [])
         self.commit(".dev-loop/MANIFEST.json", b"{not json")
-        self.assertEqual(self.reasons("--uncommitted"), [("kit/big.py", "new")])
+        self.assertEqual(self.reasons("--uncommitted"), [])
+        self.assertEqual(self.reasons("--all"), [("kit/big.py", "over")])
 
     def test_exempt_list(self) -> None:
         self.commit("dev-loop.json", json.dumps({"file_size_exempt": ["docs/*"]}).encode())
@@ -144,6 +142,38 @@ class SizeRuleTests(SizeRepo):
                 code, out = self.check("--uncommitted")
                 self.assertEqual((code, out["ok"], out["error"]),
                                  (1, False, "file_size_exempt in dev-loop.json must be a list of non-empty strings"))
+
+    def test_manifest_is_read_at_the_base(self) -> None:
+        manifest = {"version": "1", "files": {"kit/big.py": "sha256:0"}}
+        self.on_main(".dev-loop/MANIFEST.json", json.dumps(manifest).encode())
+        self.commit("kit/big.py", blob(50000))
+        self.assertEqual(self.reasons(), [])
+        self.commit("kit/big.py", blob(60000))
+        self.assertEqual(self.reasons(), [])
+        self.commit("kit/other.py", blob(50000))
+        manifest["files"]["kit/other.py"] = "sha256:0"
+        self.commit(".dev-loop/MANIFEST.json", json.dumps(manifest).encode())
+        self.assertEqual(self.reasons(), [("kit/other.py", "new")])
+        self.assertEqual(self.reasons("--uncommitted"), [("kit/other.py", "new")])
+
+    def test_git_failure_is_an_error(self) -> None:
+        self.commit("a.txt", blob(41000))
+        obj = git(self.repo, "rev-parse", "HEAD:a.txt").strip()
+        path = self.repo / ".git" / "objects" / obj[:2] / obj[2:]
+        path.chmod(0o644)
+        path.unlink()
+        code, out = self.check()
+        self.assertEqual((code, out["ok"]), (1, False))
+        self.assertTrue(out["error"].startswith("git "), out)
+
+    def test_name_that_is_not_utf8(self) -> None:
+        try:
+            self.write("x/placeholder", b"")
+            (self.repo / os.fsdecode(b"big\xff.txt")).write_bytes(blob(41000))
+        except OSError:
+            self.skipTest("the file system refuses a name that is not UTF-8")
+        self.assertEqual(len(self.check("--uncommitted")[1]["violations"]), 1)
+        self.assertEqual(len(self.check("--all")[1]["violations"]), 1)
 
     def test_all_lists_unchanged_big_file(self) -> None:
         self.on_main("big.txt", blob(45000))
@@ -167,6 +197,13 @@ class SizeCommandTests(SizeRepo):
         self.commit("a.txt", blob(41000))
         self.assertEqual(self.check(), (0, {"ok": True, "mode": "committed", "base": None, "limit": 40000,
                                             "violations": [], "skipped": "no-base"}))
+
+    def test_no_base_still_checks_the_exempt_shape(self) -> None:
+        git(self.repo, "branch", "-q", "-m", "main", "trunk")
+        self.commit("dev-loop.json", json.dumps({"file_size_exempt": "docs"}).encode())
+        code, out = self.check()
+        self.assertEqual((code, out["ok"]), (1, False))
+        self.assertIn("file_size_exempt", out["error"])
 
     def test_usage(self) -> None:
         result = subprocess.run([sys.executable, str(HERE.parents[2] / "skill" / "scripts" / "devloop.py"),
@@ -238,6 +275,32 @@ class SealSizeTests(SizeRepo):
         git(self.repo, "add", self.SUITE)
         code, out = run_cli("seal", "--rebase-continue", cwd=self.repo)
         self.assertEqual((code, out["rebase"]), (0, "continued"), out)
+
+    def test_from_a_subfolder(self) -> None:
+        self.on_main(self.SUITE, blob(50000))
+        self.write(self.SUITE, blob(49000))
+        git(self.repo, "add", self.SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "shrink", cwd=self.repo / "tests" / "acceptance")
+        self.assertEqual((code, out.get("commit")), (0, self.head()), out)
+
+    def test_glob_name_is_literal(self) -> None:
+        os.makedirs(self.repo / "tests" / "acceptance")
+        os.symlink("elsewhere", self.repo / "tests" / "acceptance" / "0.py")
+        self.write("tests/acceptance/?.py", blob(41000))
+        git(self.repo, "add", "tests/acceptance")
+        code, out = self.seal()
+        self.assertEqual((code, [v["path"] for v in out["size"]]), (1, ["tests/acceptance/?.py"]), out)
+
+    def test_git_failure_is_an_error(self) -> None:
+        self.write(self.SUITE, blob(41000))
+        git(self.repo, "add", self.SUITE)
+        obj = git(self.repo, "rev-parse", f":{self.SUITE}").strip()
+        path = self.repo / ".git" / "objects" / obj[:2] / obj[2:]
+        path.chmod(0o644)
+        path.unlink()
+        code, out = self.seal()
+        self.assertEqual(code, 1)
+        self.assertTrue(out["error"].startswith("git "), out)
 
 
 class SeamTests(unittest.TestCase):
