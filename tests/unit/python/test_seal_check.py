@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_seal import SUITE, sha  # also puts skill/scripts on sys.path
+from test_seal import SUITE, sha
 
 from seal import ACCEPTANCE_DIR  # noqa: E402
 from seal import audit as audit_module  # noqa: E402
