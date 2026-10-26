@@ -92,24 +92,29 @@ test('codex default.rules ships only dev-loop git/rm safety rules', () => {
   )
 })
 
+function trackedTexts(keep = () => true) {
+  const tracked = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.length > 0 && keep(line))
+  return tracked.map((relative) => {
+    const path = join(repoRoot, relative)
+    return [relative, lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')]
+  })
+}
+
 test('no tracked file holds an absolute home path or a personal name', () => {
   // Built from parts so this check's own source text never contains the
   // forbidden substrings verbatim, which would otherwise make this test
   // fail against itself once it is a tracked file.
   const forbiddenPathPrefix = '/' + 'Users/'
   const forbiddenName = 'Tay' + 'eb'
-  const tracked = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' })
-    .split('\n')
-    .filter((line) => line.length > 0)
-  for (const relative of tracked) {
-    // A tracked symlink's content is its target text, not the file it points to.
-    const path = join(repoRoot, relative)
-    const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')
+  for (const [relative, text] of trackedTexts()) {
     assert.ok(!text.includes(forbiddenPathPrefix), `absolute path in ${relative}`)
     assert.ok(!text.includes(forbiddenName), `personal name in ${relative}`)
   }
 })
 
+// shortcut: a guessed name can be confirmed against this unsalted hash list, upgrade to a keyed HMAC with the key in a CI secret before the repository goes public
 const INTERNAL_NAME_HASHES = new Set([
   'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
   'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
@@ -134,8 +139,8 @@ function internalNames(text, hashes) {
   const found = new Set()
   for (let i = 0; i < words.length; i++) {
     for (let n = 1; n <= 3 && i + n <= words.length; n++) {
-      const hash = nameHash(words.slice(i, i + n).join(' '))
-      if (hashes.has(hash)) found.add(hash)
+      const name = words.slice(i, i + n).join(' ')
+      if (hashes.has(nameHash(name))) found.add(name)
     }
   }
   return [...found]
@@ -143,19 +148,14 @@ function internalNames(text, hashes) {
 
 test('internalNames finds a hashed name of one to three words in any case', () => {
   const hashes = new Set([nameHash('acme'), nameHash('big shop co')])
-  assert.deepEqual(internalNames('Run the ACME suite', hashes), [nameHash('acme')])
-  assert.deepEqual(internalNames('/x/big-shop_co/y', hashes), [nameHash('big shop co')])
+  assert.deepEqual(internalNames('Run the ACME suite', hashes), ['acme'])
+  assert.deepEqual(internalNames('/x/big-shop_co/y', hashes), ['big shop co'])
   assert.deepEqual(internalNames('acmeshop and big shop', hashes), [])
 })
 
 test('no tracked file names an internal client or project', () => {
-  const tracked = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' })
-    .split('\n')
-    // shortcut: the installed kit under .agents/ is a copy of the guarded source, cleared by the next upgrade; drop this filter after it
-    .filter((line) => line.length > 0 && !line.startsWith('.agents/'))
-  for (const relative of tracked) {
-    const path = join(repoRoot, relative)
-    const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')
+  // shortcut: the installed dev-loop kit under .agents/skills/dev-loop/ is a copy of the guarded source, cleared by the next upgrade; drop this filter after it
+  for (const [relative, text] of trackedTexts((line) => !line.startsWith('.agents/skills/dev-loop/'))) {
     assert.deepEqual(internalNames(text, INTERNAL_NAME_HASHES), [], `internal name in ${relative}`)
   }
 })
