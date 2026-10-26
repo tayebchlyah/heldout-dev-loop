@@ -528,7 +528,8 @@ class MergeBlockTests(CiCase):
 
 class SetupTests(unittest.TestCase):
     """An installed project (`init`, both harnesses) where `check_setup.py --harness claude` passes,
-    a stub `gh` on `PATH`, and an `origin` remote."""
+    a stub `gh` and fake `claude` and `codex` CLIs (a version above the minimums) on `PATH`, and an
+    `origin` remote."""
 
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -546,6 +547,10 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
         self.env["DEVLOOP_TEST_SECURITY_AUDIT_TREE"] = self.install_security_audit()
         self.stub = StubGh(self.root / "stub-bin")
+        for name, version in (("claude", "2.1.309 (Claude Code)"), ("codex", "codex-cli 0.162.1")):
+            fake = self.stub.folder / name
+            fake.write_text(f"#!/bin/sh\n[ \"$1\" = --version ] || exit 2\necho '{version}'\n")
+            fake.chmod(0o755)
 
     def install_security_audit(self) -> str:
         """A test security-audit skill at both harness paths (Claude through a link). Returns its tree id."""
