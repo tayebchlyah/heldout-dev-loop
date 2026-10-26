@@ -312,12 +312,12 @@ class GateScopeTests(unittest.TestCase):
             put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
             (repo / "node_modules" / "playwright").mkdir(parents=True)
             put(repo / ".gitignore", "node_modules/\n")
-            for path in ("reference/cli/status.md", "README.md", "scripts/repo_rules.py", "x.txt"):
+            for path in ("reference/cli/status.md", "README.md", "scripts/repo_rules.py", "cliff.toml", "x.txt"):
                 put(repo / path, "a\n")
             git(repo, "add", "-A")
             git(repo, "commit", "-q", "-m", "base")
             for path, runs in (("reference/cli/status.md", True), ("README.md", True),
-                               ("scripts/repo_rules.py", True), ("x.txt", False)):
+                               ("scripts/repo_rules.py", True), ("cliff.toml", True), ("x.txt", False)):
                 with self.subTest(path=path):
                     put(repo / path, "b\n")
                     out = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
