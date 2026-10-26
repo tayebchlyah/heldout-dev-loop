@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -292,6 +293,30 @@ class RepoDocsTests(unittest.TestCase):
         release = (ROOT / "reference" / "release.md").read_text()
         self.assertEqual(re.findall(r"(?m)^(\d)\. ", release), list("123456"))
         self.assertLess(release.index("/release-audit"), release.index("git tag"))
+
+
+class GateScopeTests(unittest.TestCase):
+    def test_changed_scope_runs_the_skill_suite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp).resolve()
+            git(repo, "init", "-q")
+            put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
+            put(repo / "tests" / "unit" / "python" / "test_dev_loop.py", "print('SKILL-RAN')\n")
+            put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
+            (repo / "node_modules" / "playwright").mkdir(parents=True)
+            put(repo / ".gitignore", "node_modules/\n")
+            for path in ("reference/cli/status.md", "README.md", "scripts/repo_rules.py", "x.txt"):
+                put(repo / path, "a\n")
+            git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", "base")
+            for path, runs in (("reference/cli/status.md", True), ("README.md", True),
+                               ("scripts/repo_rules.py", True), ("x.txt", False)):
+                with self.subTest(path=path):
+                    put(repo / path, "b\n")
+                    out = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
+                                         env={**os.environ, "GATE_SCOPE": "changed"}, timeout=60).stdout
+                    self.assertEqual("SKILL-RAN" in out, runs, out)
+                    git(repo, "checkout", "-q", "--", path)
 
 
 if __name__ == "__main__":
