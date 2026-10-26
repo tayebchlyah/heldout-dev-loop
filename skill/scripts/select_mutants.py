@@ -3,7 +3,7 @@
 
 Python (mutmut 3): every top-level function and every method of a top-level
 class that the diff touches, inside the critical modules `only_mutate` lists.
-Output: mutmut name patterns such as `doctor.api.app.x_create_app__mutmut_*`.
+Output: mutmut name patterns such as `shop.api.app.x_create_app__mutmut_*`.
 
 UI (Stryker): every changed line range inside the critical files the `mutate`
 list of stryker.config.json names. Output: Stryker mutation ranges such as
