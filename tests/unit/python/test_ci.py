@@ -20,8 +20,6 @@ import ci  # noqa: E402
 DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main"]
 
-# A stub gh: records each argv, answers by kind (pr view, api graphql, compare, run view, api repos) from
-# script.json; the n-th call of a kind gets the n-th answer, the last one repeats; no answer: exit 1.
 STUB_GH = """#!{python}
 import json, os, sys, time
 args = sys.argv[1:]
@@ -55,8 +53,6 @@ sys.exit(a.get("code", 0))
 
 
 class StubGh(unittest.TestCase):
-    """A temp folder with a git repo (one commit, `self.head`) and the stub gh first on PATH."""
-
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
@@ -110,12 +106,12 @@ CHANGES = [{"state": "CHANGES_REQUESTED"}]
 class CiVerdictTests(unittest.TestCase):
     def test_check_state(self) -> None:
         rows = [(run(c), "pass") for c in ("SUCCESS", "NEUTRAL", "SKIPPED")]
-        rows += [(run(c), "fail") for c in sorted(ci.FAILED_CHECK_STATES)]
+        rows += [(run(c), "fail") for c in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE",
+                                             "ACTION_REQUIRED")]
         rows += [(PENDING, "pending"), (run("SUCCESS", "QUEUED"), "pending"),
                  (context("SUCCESS"), "pass"), (context("FAILURE"), "fail"), (context("ERROR"), "fail"),
                  (context("PENDING"), "pending"), (context("EXPECTED"), "pending"),
                  ({"name": "x", "state": "SUCCESS"}, "pending")]
-        self.assertEqual(len(ci.FAILED_CHECK_STATES), 6)
         for item, want in rows:
             with self.subTest(item=item):
                 self.assertEqual(ci.check_state(item), want)
@@ -148,25 +144,21 @@ class CiVerdictTests(unittest.TestCase):
             ("approved and commented reviews", view(latestReviews=[{"state": "APPROVED"}, {"state": "COMMENTED"}]), [],
              ("pass", None, None)),
             ("neutral and skipped", view(statusCheckRollup=[run("NEUTRAL"), run("SKIPPED")]), [], ("pass", None, None)),
+            ("pending check", view(statusCheckRollup=[run(), PENDING]), [], None),
+            ("no check registered yet", view(statusCheckRollup=[]), [], None),
+            ("mergeable unknown", view(mergeable="UNKNOWN"), [], None),
+            ("merge state unknown", view(mergeStateStatus="UNKNOWN"), [], None),
+            ("draft with a pending check", view(isDraft=True, statusCheckRollup=[PENDING]), [], None),
+            ("unknown rollup kind", view(statusCheckRollup=[{"name": "x"}]), [], None),
         ]
-        for name, pr, threads, (state, reason, failed) in rows:
+        for name, pr, threads, want in rows:
             with self.subTest(name):
                 got = ci.verdict(pr, threads)
+                if want is None:
+                    self.assertIsNone(got)
+                    continue
                 assert got is not None
-                self.assertEqual((got["state"], got["reason"], got["failed"]), (state, reason, failed))
-
-    def test_verdict_polls_again(self) -> None:
-        rows = [
-            ("pending check", view(statusCheckRollup=[run(), PENDING])),
-            ("no check registered yet", view(statusCheckRollup=[])),
-            ("mergeable unknown", view(mergeable="UNKNOWN")),
-            ("merge state unknown", view(mergeStateStatus="UNKNOWN")),
-            ("draft with a pending check", view(isDraft=True, statusCheckRollup=[PENDING])),
-            ("unknown rollup kind", view(statusCheckRollup=[{"name": "x"}])),
-        ]
-        for name, pr in rows:
-            with self.subTest(name):
-                self.assertIsNone(ci.verdict(pr, []))
+                self.assertEqual((got["state"], got["reason"], got["failed"]), want)
 
     def test_open_threads(self) -> None:
         def node(resolved: bool = False, body: str = "Line one\nLine two", author: dict | None = None, line: int | None = 12,
@@ -268,6 +260,11 @@ class CiWaitTests(StubGh):
             ("pr view fails on a later pass", {"view": [self.pr(statusCheckRollup=[PENDING]), BUSY]}, (),
              {"state": "error"}, {"pr view": 2}),
             ("graphql fails", {"view": [self.pr()], "graphql": [BUSY]}, (), {"state": "error"}, {}),
+            ("pr view is not json", {"view": [out("not json")]}, (), {"state": "error", "message": "pr view"}, {}),
+            ("graphql is not json", {"view": [self.pr()], "graphql": [out("not json")]}, (),
+             {"state": "error", "message": "graphql"}, {}),
+            ("repository is null", {"view": [self.pr()], "graphql": [out({"data": {"repository": None}})]}, (),
+             {"state": "error", "message": "graphql"}, {}),
         ]
         for name, script, args, want, counts in rows:
             with self.subTest(name):
@@ -313,9 +310,19 @@ class CiWaitTests(StubGh):
                           baseRefName="main", statusCheckRollup=[run("FAILURE")]))
         self.wait({"view": [answer]})
         graph = next(c for c in self.calls() if c[:2] == ["api", "graphql"])
-        self.assertIn("owner=acme", graph)
-        self.assertIn("name=tool", graph)
+        pairs = list(zip(graph, graph[1:]))
+        self.assertIn(("-f", "owner=acme"), pairs)
+        self.assertIn(("-f", "name=tool"), pairs)
+        self.assertIn(("-F", "number=7"), pairs)
         self.assertTrue(any(c[1].startswith("repos/acme/tool/compare/") for c in self.calls() if c[:1] == ["api"]))
+
+    def test_a_timeout_that_is_not_a_finite_number_above_zero_is_a_usage_error(self) -> None:
+        for value in ("nan", "inf", "0", "-1"):
+            with self.subTest(value=value):
+                result = subprocess.run([sys.executable, str(DEVLOOP), "ci", "wait", f"--timeout={value}"],
+                                        cwd=self.repo, env=self.env({"view": [self.pr()]}), capture_output=True,
+                                        text=True, timeout=60)
+                self.assertEqual((result.returncode, self.calls()), (2, []))
 
     def test_outside_a_git_repo_is_an_error_before_any_gh_call(self) -> None:
         outside = self.root / "plain"

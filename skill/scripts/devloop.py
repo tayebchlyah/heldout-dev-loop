@@ -1376,7 +1376,7 @@ def main() -> int:
     ci = commands.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     wait = ci.add_parser("wait")
     wait.add_argument("--pr", type=int)
-    wait.add_argument("--timeout", type=float, default=30, help="minutes")
+    wait.add_argument("--timeout", type=finite_minutes, default=30, help="minutes")
     wait.set_defaults(run=cmd_ci_wait)
 
     board = commands.add_parser("board")
