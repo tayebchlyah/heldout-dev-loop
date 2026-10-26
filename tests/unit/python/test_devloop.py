@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -11,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
 # The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
@@ -127,6 +130,17 @@ class LoggedTests(Sandbox):
         put(self.root / "noisy.py", self.SCRIPT)
         return run_cli("logged", "--name", "noisy", "--", sys.executable, str(self.root / "noisy.py"), str(code),
                        cwd=self.repo, env=self.env)
+
+    def test_main_of_an_imported_copy_does_not_register_the_caller_as_devloop(self) -> None:
+        module = load_devloop()
+        out = io.StringIO()
+        with mock.patch.dict(sys.modules), mock.patch.object(sys, "argv", ["devloop.py", "status", "--repo", str(self.repo)]):
+            sys.modules.pop("devloop", None)
+            sys.modules.pop("status", None)
+            with contextlib.redirect_stdout(out):
+                module.main()
+            self.assertIsNot(sys.modules.get("devloop"), sys.modules["__main__"])
+        self.assertIsInstance(json.loads(out.getvalue()), dict)
 
     def test_full_output_on_disk_and_tail(self) -> None:
         code, out = self.logged(0)
