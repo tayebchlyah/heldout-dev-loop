@@ -273,5 +273,43 @@ class SeamTests(unittest.TestCase):
         self.assertEqual(size.seam(data, "a.py")[0], {"line": 12, "name": "def b():"})
 
 
+class SizeTextTests(unittest.TestCase):
+    ROOT = HERE.parents[2]
+
+    def text(self, path: str) -> str:
+        return (self.ROOT / path).read_text()
+
+    def section(self, heading: str) -> str:
+        return self.text("skill/SKILL.md").split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
+
+    def lines(self, path: str, *words: str) -> list[str]:
+        return [line for line in self.text(path).splitlines() if all(w in line for w in words)]
+
+    def test_skill(self) -> None:
+        self.assertNotIn("`gate --summary` (`exit` 0)", self.text("skill/SKILL.md"))
+        self.assertLessEqual(len((self.ROOT / "skill/SKILL.md").read_bytes()), size.LIMIT)
+        self.assertIn("size-check --all", self.section("4 Plan"))
+        self.assertIn("`seam`", self.section("5 Build"))
+        self.assertTrue([line for line in self.section("6 Feature gate").splitlines()
+                         if all(w in line for w in ("`size`", "`seal`", "red"))])
+
+    def test_references_and_agents(self) -> None:
+        self.assertTrue(self.lines("skill/references/building.md", "40,000 bytes", "`size`"))
+        self.assertTrue(self.lines("skill/references/claude.md", "`Read`", "`Edit`", "`sed -n`"))
+        for ref in ("skill/references/claude.md", "skill/references/codex.md"):
+            with self.subTest(ref):
+                self.assertTrue(self.lines(ref, "`size`", "`seal`", "`weakened`"))
+                self.assertTrue(self.lines(ref, "Fix wave", "process exits 0"))
+        for agent in ("claude/agents/spec-tester.md", "codex/agents/spec-tester.toml"):
+            with self.subTest(agent):
+                self.assertTrue(self.lines(agent, "40,000 bytes", "`seal`"))
+
+    def test_repo_docs(self) -> None:
+        agents = self.text("AGENTS.md")
+        for word in ("`size-check", "`file_size_exempt`", "`skill/scripts/size.py`", "`test_size.py`"):
+            self.assertIn(word, agents)
+        self.assertIn("`size-check", self.text("README.md"))
+
+
 if __name__ == "__main__":
     unittest.main()
