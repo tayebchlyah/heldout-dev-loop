@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import time
+from pathlib import Path
 
 POLL_SECONDS = 30
 GH_TIMEOUT = 60
@@ -97,10 +98,10 @@ def first_error(log: str) -> str | None:
     return None
 
 
-def gh(*args: str) -> subprocess.CompletedProcess[str]:
+def gh(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
     """One gh call. A hang or a missing gh is a failed call (exit 1), never a traceback."""
     try:
-        return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT)
+        return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout or GH_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return subprocess.CompletedProcess(["gh", *args], 1, "", f"gh failed: {exc}")
 
@@ -163,3 +164,17 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
         if state in ("fail", "blocked"):
             payload["stale_base"] = stale_base(f"{owner}/{name}", view.get("baseRefName") or "", head)
         return (0 if state == "pass" else 1), payload
+
+
+def check_github(repo: Path) -> list[str]:
+    """Spec D12: a "User actions required" line when the GitHub repo of `origin` does not allow a rebase merge."""
+    origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=repo, capture_output=True, text=True)
+    match = re.match(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/([^/]+?)(?:\.git)?/?$",
+                     origin.stdout.strip()) if origin.returncode == 0 else None
+    if not match:
+        return []
+    slug = "/".join(match.groups())
+    allowed = gh("api", f"repos/{slug}", "--jq", ".allow_rebase_merge", timeout=10)
+    if allowed.returncode == 0 and allowed.stdout.strip() == "false":
+        return [f"allow rebase merging in the GitHub settings of {slug} (Stage 7 runs gh pr merge --rebase)"]
+    return []
