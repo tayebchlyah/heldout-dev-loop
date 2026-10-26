@@ -810,6 +810,29 @@ class MergeCheckTests(Sandbox):
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [])
 
 
+    def test_file_size_exempt_change(self) -> None:
+        rows = [
+            ("branch adds a pattern", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": ["x/*"]}, True),
+            ("branch adds an empty list", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": []}, False),
+            ("bad value on both sides", {"file_size_exempt": "x"}, {"file_size_exempt": "x", "version": "9"}, False),
+            ("branch drops the file", {"file_size_exempt": ["x/*"]}, None, True),
+        ]
+        for name, main, branch, changed in rows:
+            with self.subTest(name):
+                self.tearDown()
+                self.setUp()
+                self.main_config(main)
+                wt = self.feature()
+                if branch is None:
+                    git(wt, "rm", "-q", "dev-loop.json")
+                    git(wt, "commit", "-q", "-m", "drop")
+                else:
+                    self.commit(wt, "dev-loop.json", json.dumps(branch))
+                self.gate_green(wt, self.head(wt))
+                out = self.ok(wt)
+                self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
+
+
 class LoggedTests(Sandbox):
     SCRIPT = "import sys\nfor i in range(30): print(f'line {i}')\nprint('to stderr', file=sys.stderr)\nsys.exit(int(sys.argv[1]))\n"
 

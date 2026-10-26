@@ -23,6 +23,7 @@ from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
 import ci  # noqa: E402
 import devloop  # noqa: E402
 import second_review  # noqa: E402
+from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
 
 
@@ -236,6 +237,8 @@ def check_project_config(repo: Path) -> list[str]:
         and all(isinstance(item, str) and item.strip() and not item.endswith("/") for item in paths)
     ):
         failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
+    if "file_size_exempt" in config and not exempt_ok(config["file_size_exempt"]):
+        failures.append(EXEMPT_ERROR)
     if "security_audit" in config and audit_images(config) is None:
         failures.append(AUDIT_SHAPE)
     return failures
