@@ -190,6 +190,7 @@ ReviewMergeTests = test_feature_gate.ReviewMergeTests
 ProgressGuardTests = test_feature_gate.ProgressGuardTests
 AcceptanceCommandTests = test_feature_gate.AcceptanceCommandTests
 StaleCheckTests = test_feature_gate.StaleCheckTests
+AcceptanceScriptTests = test_feature_gate.AcceptanceScriptTests
 
 _upstream_spec = importlib.util.spec_from_file_location("test_upstream_watch", Path(__file__).resolve().parent / "test_upstream_watch.py")
 if _upstream_spec is None or _upstream_spec.loader is None:
@@ -3015,9 +3016,8 @@ class TimedResult(unittest.TextTestResult):
         self.seconds[test.id()] = elapsed
 
 
-def run_chunk(report: str, ids: list[str]) -> int:
-    """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
-    result = unittest.TextTestRunner(resultclass=TimedResult).run(unittest.TestLoader().loadTestsFromNames(ids))
+def case_outcomes(result: TimedResult) -> dict:
+    """Each test's outcome and time by test id. A test with two outcomes keeps the first kind, all texts."""
     cases = {test_id: {"seconds": seconds, "outcome": "pass", "text": ""} for test_id, seconds in result.seconds.items()}
     for kind, found in (("skipped", result.skipped), ("failure", result.failures), ("error", result.errors)):
         for test, text in found:
@@ -3026,16 +3026,34 @@ def run_chunk(report: str, ids: list[str]) -> int:
                 case.update(outcome=kind, text=text)
             else:
                 case["text"] += text
-    Path(report).write_text(json.dumps(cases))
+    return cases
+
+
+def run_chunk(report: str, ids: list[str]) -> int:
+    """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
+    result = unittest.TextTestRunner(resultclass=TimedResult).run(unittest.TestLoader().loadTestsFromNames(ids))
+    Path(report).write_text(json.dumps(case_outcomes(result)))
     return 0 if result.wasSuccessful() else 1
 
 
-def write_junit(path: Path, outcomes: Path) -> None:
+def run_discover(folder: str, xml: str | None) -> int:
+    """One serial unittest discover of `folder` (`test_*.py`), as `python3 -m unittest discover -s` runs it.
+    With `xml`: the JUnit report there. For the held-out suite, `scripts/acceptance.sh`."""
+    suite = unittest.TestLoader().discover(folder, pattern="test_*.py")
+    result = unittest.TextTestRunner(resultclass=TimedResult).run(suite)
+    if xml:
+        with tempfile.TemporaryDirectory() as outcomes:
+            Path(outcomes, "discover.json").write_text(json.dumps(case_outcomes(result)))
+            write_junit(Path(xml), Path(outcomes), "acceptance-python")
+    return 0 if result.wasSuccessful() else 1
+
+
+def write_junit(path: Path, outcomes: Path, name: str = "skill") -> None:
     """JUnit XML of every chunk's outcomes, for `devloop.py gate --summary`."""
     cases = {}
     for report in outcomes.glob("*.json"):
         cases.update(json.loads(report.read_text()))
-    suite = ET.Element("testsuite", name="skill", tests=str(len(cases)))
+    suite = ET.Element("testsuite", name=name, tests=str(len(cases)))
     for test_id, case in sorted(cases.items()):
         head = test_id.partition(" ")[0]
         if "." in head:
@@ -3056,6 +3074,8 @@ def write_junit(path: Path, outcomes: Path) -> None:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--chunk"]:
         sys.exit(run_chunk(sys.argv[2], sys.argv[3:]))
+    if sys.argv[1:2] == ["--discover"]:
+        sys.exit(run_discover(sys.argv[2], (sys.argv[3:4] or [None])[0]))
     # Arguments (test names, -k, -v): plain unittest. DEVLOOP_TEST_JOBS=1: one chunk process at a time.
     if len(sys.argv) > 1:
         unittest.main(verbosity=2)

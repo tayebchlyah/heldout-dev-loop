@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -419,6 +420,50 @@ class StaleCheckTests(RepoCase):
                          int(datetime(2026, 10, 26, 8, tzinfo=timezone.utc).timestamp()))
         with self.assertRaises(ValueError):
             created_seconds("2026-10-26 08:00:00")
+
+
+
+ROOT = HERE.parents[2]
+
+
+class AcceptanceScriptTests(TempDir):
+    def test_script_writes_both_reports(self) -> None:
+        folder, reports = self.tmp / "suite", self.tmp / "reports"
+        folder.mkdir()
+        reports.mkdir()
+        (folder / "test_one.py").write_text(
+            "import unittest\n\n\nclass One(unittest.TestCase):\n    def test_ok(self):\n        pass\n\n"
+            "    def test_bad(self):\n        self.assertEqual(1, 2)\n")
+        (folder / "one.test.mjs").write_text("import test from 'node:test';\ntest('passes', () => {});\n")
+        result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
+                                capture_output=True, text=True, env={**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        python = {c.get("name"): c for c in ET.parse(reports / "acceptance-python.xml").getroot().iter("testcase")}
+        self.assertEqual(set(python), {"test_ok", "test_bad"})
+        self.assertEqual(python["test_bad"].get("classname"), "test_one.One")
+        self.assertIsNotNone(python["test_bad"].find("failure"))
+        self.assertIsNone(python["test_ok"].find("failure"))
+        node = list(ET.parse(reports / "acceptance-node.xml").getroot().iter("testcase"))
+        self.assertEqual([c.get("name") for c in node], ["passes"])
+
+    def test_script_without_report_dir_passes(self) -> None:
+        folder = self.tmp / "suite"
+        folder.mkdir()
+        (folder / "test_one.py").write_text("import unittest\n\n\nclass One(unittest.TestCase):\n"
+                                            "    def test_ok(self):\n        pass\n")
+        (folder / "one.test.mjs").write_text("import test from 'node:test';\ntest('passes', () => {});\n")
+        env = {k: v for k, v in os.environ.items() if k != "DEVLOOP_REPORT_DIR"}
+        result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
+                                capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(list(self.tmp.glob("*.xml")), [])
+
+    def test_config_and_ci_run_the_script(self) -> None:
+        config = json.loads((ROOT / "dev-loop.json").read_text())
+        self.assertEqual(config["commands"]["acceptance"], "scripts/acceptance.sh")
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        self.assertIn("run: scripts/acceptance.sh\n", ci)
+        self.assertNotIn("unittest discover -s tests/acceptance", ci)
 
 
 if __name__ == "__main__":
