@@ -21,7 +21,6 @@ BLOCKED_REASONS = {"REVIEW_REQUIRED": "review-required", "CHANGES_REQUESTED": "c
 
 
 def check_state(item: dict) -> str:
-    """`pass`, `fail` or `pending` for one `statusCheckRollup` item. An unknown kind is pending, never a pass."""
     kind = item.get("__typename")
     if kind == "CheckRun":
         if item.get("conclusion") in FAILED_CHECK_STATES:
@@ -47,8 +46,10 @@ def pending_checks(view: dict) -> list[str | None]:
 
 
 def open_threads(data: dict) -> list[dict]:
-    """The review threads not resolved, outdated ones too, from the `gh api graphql` answer."""
-    nodes = data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+    try:
+        nodes = data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+    except (KeyError, TypeError):
+        raise ValueError("unexpected gh api graphql answer") from None
     threads = []
     for node in nodes:
         if node.get("isResolved"):
@@ -63,7 +64,6 @@ def open_threads(data: dict) -> list[dict]:
 
 
 def verdict(view: dict, threads: list[dict]) -> dict | None:
-    """Spec D4 for one pass: `state`, `reason`, `failed` (first failed check), `pending` (names), or None to poll again."""
     checks = view.get("statusCheckRollup") or []
     failed = next((c for c in checks if check_state(c) == "fail"), None)
     pending = pending_checks(view)
@@ -99,7 +99,6 @@ def first_error(log: str) -> str | None:
 
 
 def gh(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
-    """One gh call. A hang or a missing gh is a failed call (exit 1), never a traceback."""
     try:
         return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout or GH_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -116,7 +115,7 @@ def stale_base(slug: str, base: str, head: str) -> bool | None:
 
 
 def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
-    """Spec D3: poll the PR of the local HEAD until a final verdict or the deadline."""
+    """Poll the PR of the local HEAD until a final verdict or the deadline."""
     payload: dict = {"state": "error", "reason": None, "url": None, "head": None, "failed_job": None,
                      "first_error": None, "stale_base": None, "threads": [], "pending": []}
     local = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
@@ -133,17 +132,23 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
                 return 1, {**payload, "state": "no-pr"}
             return 1, {**payload, "message": shown.stderr.strip()}
         first = False
-        view = json.loads(shown.stdout)
+        try:
+            view = json.loads(shown.stdout)
+        except ValueError:
+            return 1, {**payload, "message": "gh pr view did not return JSON"}
         payload.update(url=view.get("url"), head=view.get("headRefOid"))
         match = re.search(r"/([^/]+)/([^/]+)/pull/\d+", view.get("url") or "")
         owner, name = match.groups() if match else ("", "")
         result = threads = None
         if view.get("headRefOid") == head:
-            found = gh("api", "graphql", "-F", f"owner={owner}", "-F", f"name={name}", "-F",
+            found = gh("api", "graphql", "-f", f"owner={owner}", "-f", f"name={name}", "-F",
                        f"number={view.get('number')}", "-f", f"query={THREADS_QUERY}")
             if found.returncode != 0:
                 return 1, {**payload, "message": found.stderr.strip()}
-            threads = open_threads(json.loads(found.stdout))
+            try:
+                threads = open_threads(json.loads(found.stdout))
+            except ValueError as exc:
+                return 1, {**payload, "message": f"gh api graphql: {exc}"}
             result = verdict(view, threads)
         if result is None:
             now = time.monotonic()
@@ -167,7 +172,7 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
 
 
 def check_github(repo: Path) -> list[str]:
-    """Spec D12: a "User actions required" line when the GitHub repo of `origin` does not allow a rebase merge."""
+    """A "User actions required" line when the GitHub repo of `origin` does not allow a rebase merge."""
     origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=repo, capture_output=True, text=True)
     match = re.match(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/([^/]+?)(?:\.git)?/?$",
                      origin.stdout.strip()) if origin.returncode == 0 else None

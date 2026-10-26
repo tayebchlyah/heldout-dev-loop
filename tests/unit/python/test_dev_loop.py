@@ -1281,7 +1281,6 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         commands = [command for command, _ in rows]
         for (command, got), (_, want) in zip(self.decisions(commands, "topic/x"), rows):
             self.assertEqual(got, want, command)
-        # A branch without a `/` and main are not feature branches.
         for branch in ("feat", "main"):
             self.assertEqual(self.decision("git push --force-with-lease", branch), "ask", branch)
 
