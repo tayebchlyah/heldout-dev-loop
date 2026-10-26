@@ -454,6 +454,23 @@ class AcceptanceScriptTests(TempDir):
         node = list(ET.parse(reports / "acceptance-node.xml").getroot().iter("testcase"))
         self.assertEqual([c.get("name") for c in node], ["passes"])
 
+    def test_script_discovers_files_named_like_the_unit_modules(self) -> None:
+        folder, reports = self.tmp / "suite", self.tmp / "reports"
+        folder.mkdir()
+        reports.mkdir()
+        ok = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n"
+        (folder / "test_devloop.py").write_text(ok)
+        (folder / "test_seal.py").write_text(ok + "\n    def test_bad(self):\n        self.assertEqual(1, 2)\n")
+        (folder / "one.test.mjs").write_text("import test from 'node:test';\ntest('passes', () => {});\n")
+        result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
+                                capture_output=True, text=True, env={**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        python = {(c.get("classname"), c.get("name")): c
+                  for c in ET.parse(reports / "acceptance-python.xml").getroot().iter("testcase")}
+        self.assertEqual(set(python), {("test_devloop.T", "test_ok"), ("test_seal.T", "test_ok"),
+                                       ("test_seal.T", "test_bad")})
+        self.assertIsNotNone(python[("test_seal.T", "test_bad")].find("failure"))
+
     def test_script_without_report_dir_passes(self) -> None:
         folder = self.tmp / "suite"
         folder.mkdir()
