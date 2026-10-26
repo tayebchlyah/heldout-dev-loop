@@ -5,6 +5,7 @@ audit (D8, D10 to D12)."""
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import devloop
+from devloop import emit, git
 import merge_check
 from seal import audit, merge_base
 
@@ -458,3 +460,8 @@ def _decide(repo: Path, harness: str, timeout_minutes: float, env: Mapping[str, 
     if devloop.git(repo, "rev-list", "--count", f"{ref}..{sha}") == "0":
         return skip("nothing-to-review")
     return _review(repo, reviewer, ref, sha, entry, timeout_minutes, env, out)
+
+
+def cmd_second_review(args: argparse.Namespace) -> int:
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    return emit(*run(Path(top or "."), args.harness, args.timeout, os.environ))

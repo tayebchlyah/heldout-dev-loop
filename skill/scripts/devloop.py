@@ -120,136 +120,6 @@ def find_plan(notes: Path, spec: Path) -> Path | None:
     return plans[-1] if plans else None
 
 
-# ci wait
-
-
-def cmd_ci_wait(args: argparse.Namespace) -> int:
-    import ci
-
-    code, payload = ci.wait(args.pr, args.timeout)
-    return emit(payload, code)
-
-
-# board
-
-
-def cmd_board(args: argparse.Namespace) -> int:
-    raw = os.environ.get("DEVLOOP_BOARD_PORT") or "7777"
-    port = int(raw) if raw.isascii() and raw.isdigit() and 0 < int(raw) < 65536 else None
-    bad_port = {"state": "error", "url": f"http://127.0.0.1:{raw}/",
-                "message": f"DEVLOOP_BOARD_PORT is not a port: {raw}"}
-    # Lazy: the old tests load this file with importlib and must not need the board package.
-    sys.path.insert(0, str(Path(__file__).parent))
-    from board import store, writer  # board.server only when a server is stopped or ensured: its imports are slow.
-
-    if args.stop_server:
-        from board import server
-        stopped = server.stop(port) if port is not None else bad_port
-        return emit({"notes": [], "removed": [], "board_note": None, "skipped": [], "server": stopped}, 0)
-    repo = Path(args.repo).resolve()
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
-    hook_cwd = hook_session = hook_agent = hook_transcript = None
-    if args.event:
-        try:
-            hook = json.loads(sys.stdin.read())
-        except ValueError:
-            hook = None
-        hook = hook if isinstance(hook, dict) else {}
-        cwd, session = hook.get("cwd"), hook.get("session_id")
-        hook_cwd = Path(cwd) if isinstance(cwd, str) and cwd else None
-        hook_session = session if isinstance(session, str) and session else None  # D12: else no session map.
-        agent = hook.get("agent_id")
-        hook_agent = agent if isinstance(agent, str) and agent else None
-        log = hook.get("transcript_path")
-        hook_transcript = log if isinstance(log, str) and log else None
-
-    try:
-        code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
-                                   hook_cwd=hook_cwd, hook_session=hook_session, hook_agent=hook_agent,
-                                   hook_transcript=hook_transcript,
-                                   claim=args.claim)
-        if code != 0:
-            return emit(payload, code)
-        whole = {s["reason"] for s in payload["skipped"]} & {"no-dev-loop", "notes-in-repo"}
-        if args.no_serve or whole:
-            payload["server"] = {"state": "disabled", "url": f"http://127.0.0.1:{raw}/"}
-        elif port is None:
-            payload["server"] = bad_port
-        else:
-            from board import server
-            machine = store.load_machine(Path.home())
-            top = Path(git(repo, "rev-parse", "--show-toplevel") or repo)
-            payload["server"] = server.ensure(port, writer.kit_version(top), [store.root_of(notes)], machine["id"],
-                                              machine["owner"])
-    except Exception as exc:  # A bad machine.json, an undecodable spec, an OSError: JSON, never a traceback.
-        error = f"{type(exc).__name__}: {exc}"
-        try:  # A hook drops the JSON: `last_run` shows the crash in `status`. Best effort.
-            from board import state
-            common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            if common:
-                state.save_last_run(Path(common) / "dev-loop", time.strftime(writer.TIME, time.gmtime()),
-                                    [{"feature": None, "reason": "error", "message": error}])
-        except Exception:
-            pass
-        return emit({"error": error}, 1)
-    return emit(payload, 0)
-
-
-# seal
-
-
-def cmd_seal(args: argparse.Namespace) -> int:
-    if args.rebase_continue == bool(args.feature or args.message or args.reverts) or (
-            not args.rebase_continue and not (args.feature and args.message)):
-        return emit({"error": "seal needs --feature and --message, or --rebase-continue alone"}, 2)
-    # Lazy, as `board`: the old tests load this file with importlib.
-    sys.path.insert(0, str(Path(__file__).parent))
-    from seal import value
-
-    repo = Path.cwd()
-    out = value.rebase_continue(repo) if args.rebase_continue else value.seal(
-        repo, args.feature, args.message, args.reverts or [])
-    return emit(out, 1 if "error" in out else 0)
-
-
-def cmd_audit(args: argparse.Namespace) -> int:
-    sys.path.insert(0, str(Path(__file__).parent))
-    from seal import audit
-
-    try:
-        hook = json.loads(sys.stdin.read())
-    except ValueError:
-        hook = None
-    if not isinstance(hook, dict):  # An audit error is a warning: exit 0, as on every skip.
-        return emit(audit.unparsed(Path.cwd()), 0)
-    return emit(audit.audit(hook), 0)
-
-
-def cmd_seal_check(args: argparse.Namespace) -> int:
-    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
-    if top is None:
-        return emit({"error": "not a git repository"}, 2)
-    sys.path.insert(0, str(Path(__file__).parent))
-    from seal.check import check
-
-    out = check(Path(top), args.uncommitted)
-    return emit(out, 0 if out["ok"] else 1)
-
-
-def cmd_size_check(args: argparse.Namespace) -> int:
-    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
-    if top is None:
-        return emit({"error": "not a git repository"}, 2)
-    sys.path.insert(0, str(Path(__file__).parent))
-    import size
-
-    out = size.check(Path(top), "all" if args.all else "uncommitted" if args.uncommitted else "committed")
-    return emit(out, 0 if out["ok"] else 1)
-
-
 SKILL_TEMPLATE = """---
 name: {skill}
 description: Launch, check, drive and clean up this project's app, as a user does. {fill}
@@ -501,133 +371,6 @@ def cmd_drive(args: argparse.Namespace) -> int:
     return emit(out, 0 if out["ok"] or mode == "before" else 1)
 
 
-def cmd_capture(args: argparse.Namespace) -> int:
-    from capture import run, write_after
-
-    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
-    if top is None:
-        return emit({"error": "not a git repository"}, 1)
-    if args.write_after:
-        return emit(*write_after(Path(top), args.write_after))
-    payload, code = run(Path(top), args.pr, args.before, args.after)
-    return emit(payload, code)
-
-
-def cmd_second_review(args: argparse.Namespace) -> int:
-    from second_review import run
-
-    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
-    return emit(*run(Path(top or "."), args.harness, args.timeout, os.environ))
-
-
-def cmd_review_merge(args: argparse.Namespace) -> int:
-    from feature_gate import review_merge
-
-    return emit(*review_merge(args.pairs, git(Path.cwd(), "rev-parse", "--show-toplevel")))
-
-
-def cmd_acceptance(args: argparse.Namespace) -> int:
-    from feature_gate import acceptance
-
-    return emit(*acceptance(Path.cwd(), args.failed, os.environ))
-
-
-def cmd_release_check(args: argparse.Namespace) -> int:
-    from release import check, is_release_tag
-
-    repo = Path(args.repo).resolve()
-    notes = None  # a non-release tag is skipped before any note read, so it needs no notes path
-    if args.tag is None or is_release_tag(args.tag):
-        try:
-            notes = resolve(repo, os.environ, Path.home())
-        except NotesPathError as exc:
-            return emit({"error": str(exc)}, 1)
-    return emit(*check(repo, notes, args.tag or args.sha, args.tag))
-
-
-def cmd_release_plan(args: argparse.Namespace) -> int:
-    from release import plan
-
-    repo = Path(args.repo).resolve()
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
-    return emit(*plan(repo, notes, args.harness, args.profile, args.budget))
-
-
-def cmd_release_record(args: argparse.Namespace) -> int:
-    from release import record
-
-    repo = Path(args.repo).resolve()
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
-    return emit(*record(repo, notes, Path(args.run_folder), args.base, args.harness, os.environ))
-
-
-def cmd_metrics(args: argparse.Namespace) -> int:
-    from merge_check import main_ref
-    from status import feature_checkout
-    import metrics
-    from board import writer
-
-    repo = Path(args.repo).resolve()
-    slug = (args.feature or "").lower() or branch_slug(repo)
-    if slug is None:
-        return emit({"error": "no feature: run metrics on a feature branch or pass --feature"}, 1)
-    worktree, _ = feature_checkout(repo, slug)
-    if worktree is None:
-        return emit({"error": f"no worktree for {slug}"}, 1)
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
-    matches = [path for name, path in specs(notes) if name == slug]
-    fields = frontmatter(matches[-1]) if matches else {}
-    track = (fields.get("track") or "").upper() or "S"
-    found = writer.worktrees(sys.modules[__name__], repo)  # a worktree in a rebase (detached) keeps its slug
-    paths = list(found)
-    features = {name: path for path, name in found.items() if name}
-    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
-    items = metrics.attribute(metrics.load(metrics.project_folders(root, paths)), features)
-    if not any(c.feature == slug and not c.copy for c in items):
-        return emit({"error": f"no transcript records for {slug}"}, 1)
-    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir") or ""
-    bounds, present = metrics.boundaries(Path(common) / "dev-loop" / "board-state.json", slug, bool(matches))
-    ref = main_ref(repo)
-    payload = {"feature": slug, "track": track, "shipped": fields.get("shipped", ""),
-               **metrics.numbers(items, slug, bounds),
-               "tests": metrics.test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0}}
-    payload["row"] = metrics.row(slug, track, payload["shipped"], payload, present)
-    payload["file"] = None
-    if args.write:
-        file = notes / "Feature Metrics.md"
-        try:
-            metrics.write_row(file, slug, payload["row"], Path(common) / "dev-loop" / "metrics.lock")
-        except (OSError, UnicodeError) as exc:
-            return emit({"error": f"cannot read or write {file}: {exc}"}, 1)
-        payload["file"] = str(file)
-    return emit(payload, 0)
-
-
-def cmd_sessions(args: argparse.Namespace) -> int:
-    import retro
-    from board import writer
-
-    repo = Path(args.repo).resolve()
-    if git(repo, "rev-parse", "--show-toplevel") is None:
-        return emit({"error": f"not a git repo: {repo}"}, 1)
-    now = datetime.now(timezone.utc).replace(microsecond=0)
-    try:
-        found = retro.sessions(repo, args.since, os.environ, Path.home(), now)
-        since = writer.iso((now - timedelta(days=args.since)).timestamp())
-    except OverflowError:
-        return emit({"error": f"--since too large: {args.since}"}, 2)
-    return emit({"since": since, "sessions": found}, 0)
-
-
 def finite_minutes(value: str) -> float:
     try:
         minutes = float(value)
@@ -827,7 +570,7 @@ def main() -> int:
     wait = ci.add_parser("wait")
     wait.add_argument("--pr", type=int)
     wait.add_argument("--timeout", type=finite_minutes, default=30, help="minutes")
-    wait.set_defaults(run=("devloop", "cmd_ci_wait"))
+    wait.set_defaults(run=("ci", "cmd_ci_wait"))
 
     board = commands.add_parser("board")
     board.add_argument("--repo", default=".")
@@ -835,27 +578,27 @@ def main() -> int:
     board.add_argument("--claim")
     board.add_argument("--no-serve", action="store_true")
     board.add_argument("--stop-server", action="store_true")
-    board.set_defaults(run=("devloop", "cmd_board"))
+    board.set_defaults(run=("board.cli", "cmd_board"))
 
     seal = commands.add_parser("seal")
     seal.add_argument("--feature")
     seal.add_argument("--message")
     seal.add_argument("--reverts", action="extend", nargs="+")
     seal.add_argument("--rebase-continue", action="store_true")
-    seal.set_defaults(run=("devloop", "cmd_seal"))
+    seal.set_defaults(run=("seal.value", "cmd_seal"))
 
     audit = commands.add_parser("audit")
-    audit.set_defaults(run=("devloop", "cmd_audit"))
+    audit.set_defaults(run=("seal.audit", "cmd_audit"))
 
     seal_check = commands.add_parser("seal-check")
     seal_check.add_argument("--uncommitted", action="store_true")
-    seal_check.set_defaults(run=("devloop", "cmd_seal_check"))
+    seal_check.set_defaults(run=("seal.check", "cmd_seal_check"))
 
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()
     size_mode.add_argument("--uncommitted", action="store_true")
     size_mode.add_argument("--all", action="store_true")
-    size_check.set_defaults(run=("devloop", "cmd_size_check"))
+    size_check.set_defaults(run=("size", "cmd_size_check"))
 
     verify_init = commands.add_parser("verify-init")
     verify_init.add_argument("--base-url", required=True)
@@ -874,52 +617,52 @@ def main() -> int:
     capture.add_argument("--before")
     capture.add_argument("--after")
     capture.add_argument("--write-after")
-    capture.set_defaults(run=("devloop", "cmd_capture"))
+    capture.set_defaults(run=("capture", "cmd_capture"))
 
     second = commands.add_parser("second-review")
     second.add_argument("--harness", choices=["claude", "codex"], required=True)
     second.add_argument("--timeout", type=finite_minutes, default=15)
-    second.set_defaults(run=("devloop", "cmd_second_review"))
+    second.set_defaults(run=("second_review", "cmd_second_review"))
 
     review = commands.add_parser("review-merge")
     review.add_argument("pairs", nargs="+")
-    review.set_defaults(run=("devloop", "cmd_review_merge"))
+    review.set_defaults(run=("feature_gate", "cmd_review_merge"))
 
     accept = commands.add_parser("acceptance")
     accept.add_argument("--failed", action="store_true")
-    accept.set_defaults(run=("devloop", "cmd_acceptance"))
+    accept.set_defaults(run=("feature_gate", "cmd_acceptance"))
 
     release = commands.add_parser("release-check")
     release.add_argument("--repo", default=".")
     target = release.add_mutually_exclusive_group(required=True)
     target.add_argument("--tag")
     target.add_argument("--sha")
-    release.set_defaults(run=("devloop", "cmd_release_check"))
+    release.set_defaults(run=("release", "cmd_release_check"))
 
     plan = commands.add_parser("release-plan")
     plan.add_argument("--repo", default=".")
     plan.add_argument("--harness", choices=["claude", "codex"], default="claude")
     plan.add_argument("--profile", choices=["quick", "standard", "deep"])
     plan.add_argument("--budget", type=positive_int)
-    plan.set_defaults(run=("devloop", "cmd_release_plan"))
+    plan.set_defaults(run=("release", "cmd_release_plan"))
 
     rec = commands.add_parser("release-record")
     rec.add_argument("--repo", default=".")
     rec.add_argument("--run", dest="run_folder", required=True)
     rec.add_argument("--base")
     rec.add_argument("--harness", choices=["claude", "codex"], default="claude")
-    rec.set_defaults(run=("devloop", "cmd_release_record"))
+    rec.set_defaults(run=("release", "cmd_release_record"))
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
     metrics.add_argument("--feature")
     metrics.add_argument("--write", action="store_true")
-    metrics.set_defaults(run=("devloop", "cmd_metrics"))
+    metrics.set_defaults(run=("metrics", "cmd_metrics"))
 
     sessions = commands.add_parser("sessions")
     sessions.add_argument("--since", type=positive_int, required=True)
     sessions.add_argument("--repo", default=".")
-    sessions.set_defaults(run=("devloop", "cmd_sessions"))
+    sessions.set_defaults(run=("retro", "cmd_sessions"))
 
     decide = commands.add_parser("decide")
     decide.add_argument("--kind", choices=["decision", "discovery"], required=True)

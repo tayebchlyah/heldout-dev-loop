@@ -5,6 +5,7 @@ D2 read, D3 feature of a record, D4 stage of a record, D5 weights, D6 numbers, D
 
 from __future__ import annotations
 
+import argparse
 import fcntl
 import json
 import os
@@ -13,6 +14,12 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+import devloop
+from devloop import branch_slug, emit, frontmatter, git, specs
+from merge_check import main_ref
+from notes_path import NotesPathError, resolve
+from status import feature_checkout
 
 WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_read": 0.1, "output": 5.0}
 STAGES = ("1-2", "3", "4", "5", "6", "7")
@@ -407,3 +414,45 @@ def write_locked(file: Path, slug: str, line: str) -> None:
         os.replace(temp, file)
     finally:
         temp.unlink(missing_ok=True)
+
+
+def cmd_metrics(args: argparse.Namespace) -> int:
+    from board import writer
+
+    repo = Path(args.repo).resolve()
+    slug = (args.feature or "").lower() or branch_slug(repo)
+    if slug is None:
+        return emit({"error": "no feature: run metrics on a feature branch or pass --feature"}, 1)
+    worktree, _ = feature_checkout(repo, slug)
+    if worktree is None:
+        return emit({"error": f"no worktree for {slug}"}, 1)
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    matches = [path for name, path in specs(notes) if name == slug]
+    fields = frontmatter(matches[-1]) if matches else {}
+    track = (fields.get("track") or "").upper() or "S"
+    found = writer.worktrees(devloop, repo)  # a worktree in a rebase (detached) keeps its slug
+    paths = list(found)
+    features = {name: path for path, name in found.items() if name}
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    items = attribute(load(project_folders(root, paths)), features)
+    if not any(c.feature == slug and not c.copy for c in items):
+        return emit({"error": f"no transcript records for {slug}"}, 1)
+    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir") or ""
+    bounds, present = boundaries(Path(common) / "dev-loop" / "board-state.json", slug, bool(matches))
+    ref = main_ref(repo)
+    payload = {"feature": slug, "track": track, "shipped": fields.get("shipped", ""),
+               **numbers(items, slug, bounds),
+               "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0}}
+    payload["row"] = row(slug, track, payload["shipped"], payload, present)
+    payload["file"] = None
+    if args.write:
+        file = notes / "Feature Metrics.md"
+        try:
+            write_row(file, slug, payload["row"], Path(common) / "dev-loop" / "metrics.lock")
+        except (OSError, UnicodeError) as exc:
+            return emit({"error": f"cannot read or write {file}: {exc}"}, 1)
+        payload["file"] = str(file)
+    return emit(payload, 0)
