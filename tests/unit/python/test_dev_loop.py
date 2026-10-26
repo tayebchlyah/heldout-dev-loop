@@ -181,6 +181,14 @@ SessionsTests = test_retro.SessionsTests
 SessionsCommandTests = test_retro.SessionsCommandTests
 RetroTextTests = test_retro.RetroTextTests
 
+_upstream_spec = importlib.util.spec_from_file_location("test_upstream_watch", Path(__file__).resolve().parent / "test_upstream_watch.py")
+if _upstream_spec is None or _upstream_spec.loader is None:
+    raise ImportError("cannot load test_upstream_watch module")
+test_upstream_watch = importlib.util.module_from_spec(_upstream_spec)
+_upstream_spec.loader.exec_module(test_upstream_watch)
+UpstreamWatchTests = test_upstream_watch.UpstreamWatchTests
+UpstreamListTests = test_upstream_watch.UpstreamListTests
+
 _sandbox_spec = importlib.util.spec_from_file_location("test_sandbox_run", Path(__file__).resolve().parent / "test_sandbox_run.py")
 if _sandbox_spec is None or _sandbox_spec.loader is None:
     raise ImportError("cannot load test_sandbox_run module")

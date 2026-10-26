@@ -1,0 +1,91 @@
+{
+  "sources": [
+    {
+      "name": "pocock-skills",
+      "repo": "mattpocock/skills",
+      "signal": "release",
+      "pin": "v1.3.1",
+      "version": "v1.3.1",
+      "paths": [
+        "skills/engineering/code-review/",
+        "skills/engineering/codebase-design/",
+        "skills/engineering/diagnosing-bugs/",
+        "skills/engineering/domain-modeling/",
+        "skills/engineering/pr/",
+        "skills/engineering/prototype/",
+        "skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md",
+        "skills/engineering/tdd/",
+        "skills/engineering/to-spec/SKILL.md",
+        "skills/engineering/wayfinder/",
+        "skills/productivity/grilling/"
+      ],
+      "local": ["skill/references/maps.md", "skill/references/spec.md", "skill/references/tests.md"]
+    },
+    {
+      "name": "superpowers",
+      "repo": "obra/superpowers",
+      "signal": "release",
+      "pin": "v7.0.0",
+      "version": "7.0.0",
+      "paths": [
+        "skills/brainstorming/builder-check-prompt.md",
+        "skills/executing-plans/",
+        "skills/subagent-driven-development/",
+        "skills/using-git-worktrees/",
+        "skills/writing-plans/"
+      ],
+      "local": ["skill/references/spec.md"]
+    },
+    {
+      "name": "agent-skills",
+      "repo": "addyosmani/agent-skills",
+      "signal": "release",
+      "pin": "0.6.12",
+      "version": "0.6.12",
+      "paths": ["skills/doubt-driven-development/SKILL.md", "skills/security-and-hardening/SKILL.md"],
+      "local": ["skill/references/spec.md"]
+    },
+    {
+      "name": "ponytail",
+      "repo": "DietrichGebert/ponytail",
+      "signal": "release",
+      "pin": "v5.1.0",
+      "version": "v5.1.0",
+      "paths": ["AGENTS.md"],
+      "local": ["skill/references/building.md"]
+    },
+    {
+      "name": "pstack",
+      "repo": "cursor/plugins",
+      "signal": "plugin-version",
+      "file": "pstack/.cursor-plugin/plugin.json",
+      "pin": "b1a129891c49f6b84d0613477f5d021a0782b5e0",
+      "version": "0.15.32",
+      "paths": [
+        "pstack/skills/benchmark-checklist/SKILL.md",
+        "pstack/skills/blast-radius/SKILL.md",
+        "pstack/skills/create-verification-skill/",
+        "pstack/skills/principle-attack-the-premise/SKILL.md",
+        "pstack/skills/principle-boundary-discipline/SKILL.md",
+        "pstack/skills/principle-explain-the-number/SKILL.md",
+        "pstack/skills/principle-fix-root-causes/SKILL.md",
+        "pstack/skills/principle-make-operations-idempotent/SKILL.md",
+        "pstack/skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md",
+        "pstack/skills/principle-prove-it-works/SKILL.md",
+        "pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md"
+      ],
+      "local": ["skill/references/benchmark.md", "skill/references/building.md", "skill/references/verify.md"]
+    },
+    {
+      "name": "security-audit",
+      "repo": "cloudflare/security-audit-skill",
+      "signal": "tree",
+      "folder": "skills/security-audit",
+      "tree": "ccbc33ed119b28c3ef7b44a7e2081ab191ad63af",
+      "pin": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "version": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "paths": ["skills/security-audit/"],
+      "local": ["AGENTS.md", "README.md", "skill/scripts/check_setup.py"]
+    }
+  ]
+}
