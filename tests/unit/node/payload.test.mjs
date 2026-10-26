@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync, lstatSync, readlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
@@ -106,6 +107,56 @@ test('no tracked file holds an absolute home path or a personal name', () => {
     const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')
     assert.ok(!text.includes(forbiddenPathPrefix), `absolute path in ${relative}`)
     assert.ok(!text.includes(forbiddenName), `personal name in ${relative}`)
+  }
+})
+
+const INTERNAL_NAME_HASHES = new Set([
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
+])
+
+const nameHash = (words) => createHash('sha256').update(words).digest('hex').slice(0, 16)
+
+function internalNames(text, hashes) {
+  const words = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+  const found = new Set()
+  for (let i = 0; i < words.length; i++) {
+    for (let n = 1; n <= 3 && i + n <= words.length; n++) {
+      const hash = nameHash(words.slice(i, i + n).join(' '))
+      if (hashes.has(hash)) found.add(hash)
+    }
+  }
+  return [...found]
+}
+
+test('internalNames finds a hashed name of one to three words in any case', () => {
+  const hashes = new Set([nameHash('acme'), nameHash('big shop co')])
+  assert.deepEqual(internalNames('Run the ACME suite', hashes), [nameHash('acme')])
+  assert.deepEqual(internalNames('/x/big-shop_co/y', hashes), [nameHash('big shop co')])
+  assert.deepEqual(internalNames('acmeshop and big shop', hashes), [])
+})
+
+test('no tracked file names an internal client or project', () => {
+  const tracked = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' })
+    .split('\n')
+    // shortcut: the installed kit under .agents/ is a copy of the guarded source, cleared by the next upgrade; drop this filter after it
+    .filter((line) => line.length > 0 && !line.startsWith('.agents/'))
+  for (const relative of tracked) {
+    const path = join(repoRoot, relative)
+    const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')
+    assert.deepEqual(internalNames(text, INTERNAL_NAME_HASHES), [], `internal name in ${relative}`)
   }
 })
 
