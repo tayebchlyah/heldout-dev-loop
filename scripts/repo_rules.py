@@ -72,8 +72,9 @@ def subjects(repo: Path, base: str) -> tuple[dict, int]:
 CHECKED_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
 SKIPPED_PREFIXES = ("tests/acceptance/", ".agents/", ".claude/", ".codex/", ".dev-loop/", "node_modules/")
 KINDS = re.compile(
-    r"shortcut: [^,]+, \S|https?://|#\d+\b|\bRFC \d+|SPDX-License-Identifier|Copyright|License"
-    r"|allow-comment: dependency|noqa|type:|pyright:|pylint:|pragma|fmt:|eslint-|biome-ignore|@ts-|shellcheck"
+    r"https?://|#\d+\b|\bRFC \d+|allow-comment: dependency"
+    r"|(?:#|//)\s*(?:shortcut: [^,]+, \S|SPDX-License-Identifier|Copyright|License(?::|d under|\s*$)"
+    r"|noqa|type:|pyright:|pylint:|pragma|fmt: (?:off|on|skip)|eslint-|biome-ignore|@ts-|shellcheck)"
 )
 CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
@@ -118,11 +119,19 @@ def allowed_lines(path: str, text: str) -> set[int]:
     return allowed
 
 
+class GitFailed(Exception):
+    pass
+
+
 def base_comments(repo: Path, base: str) -> set[str]:
     listing = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", base], cwd=repo, capture_output=True)
+    if listing.returncode != 0:
+        raise GitFailed("git ls-tree")
     paths = [p for p in listing.stdout.decode("utf-8", "replace").split("\0") if p and "\n" not in p and checked(p)]
     batch = subprocess.run(["git", "cat-file", "--batch"], cwd=repo, capture_output=True,
                            input="".join(f"{base}:{p}\n" for p in paths).encode())
+    if batch.returncode != 0:
+        raise GitFailed("git cat-file")
     out, pos, texts = batch.stdout, 0, set()
     for path in paths:
         end = out.index(b"\n", pos)
@@ -142,11 +151,15 @@ def base_comments(repo: Path, base: str) -> set[str]:
 def added_lines(repo: Path, base: str) -> dict[str, set[int] | None]:
     changed = run_git(repo, "diff", "--name-only", "-z", "--no-renames", base)
     untracked = run_git(repo, "ls-files", "--others", "--exclude-standard", "-z")
+    if changed.returncode != 0 or untracked.returncode != 0:
+        raise GitFailed("git diff" if changed.returncode != 0 else "git ls-files")
     added: dict[str, set[int] | None] = {p: None for p in untracked.stdout.split("\0") if p and checked(p)}
     for path in changed.stdout.split("\0"):
         if not path or not checked(path) or path in added:
             continue
         diff = run_git(repo, "diff", "-U0", "--no-renames", "--no-ext-diff", "--no-color", base, "--", path)
+        if diff.returncode != 0:
+            raise GitFailed("git diff")
         rows: set[int] = set()
         for match in re.finditer(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", diff.stdout, re.M):
             start, count = int(match.group(1)), int(match.group(2) or 1)
@@ -156,9 +169,13 @@ def added_lines(repo: Path, base: str) -> dict[str, set[int] | None]:
 
 
 def comments(repo: Path, base: str) -> tuple[dict, int]:
-    old = base_comments(repo, base)
+    try:
+        old = base_comments(repo, base)
+        added = added_lines(repo, base)
+    except GitFailed as exc:
+        return {"ok": False, "base": base, "error": f"{exc} failed"}, 1
     violations = []
-    for path, rows in added_lines(repo, base).items():
+    for path, rows in added.items():
         try:
             text = (repo / path).read_text()
         except (OSError, UnicodeDecodeError):
