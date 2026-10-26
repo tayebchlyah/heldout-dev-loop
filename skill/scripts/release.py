@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
+from autonomy import write_atomic
 from devloop import emit
 from merge_check import is_test_or_doc
 from notes_path import NotesPathError, resolve
@@ -321,8 +322,6 @@ def add_lines(lines: list[str], heading: str, new: list[str], blank_before: bool
 def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, env: Mapping[str, str]) -> tuple[dict, int]:
     """Validate a finished audit run, then write its Deferred lines, Gardener line and record line in one write of the
     project note. Exit 0, else 1 with `error` and the note untouched."""
-    from autonomy import write_atomic  # lazy: keeps the import graph of the parsers flat
-
     run = run.absolute()
     audits = (notes / "security-audit").absolute()
     if run.parent.resolve() != audits.resolve() or not re.fullmatch(r"run-\d+", run.name):
