@@ -189,6 +189,7 @@ _feature_gate_spec.loader.exec_module(test_feature_gate)
 ReviewMergeTests = test_feature_gate.ReviewMergeTests
 ProgressGuardTests = test_feature_gate.ProgressGuardTests
 AcceptanceCommandTests = test_feature_gate.AcceptanceCommandTests
+StaleCheckTests = test_feature_gate.StaleCheckTests
 
 _upstream_spec = importlib.util.spec_from_file_location("test_upstream_watch", Path(__file__).resolve().parent / "test_upstream_watch.py")
 if _upstream_spec is None or _upstream_spec.loader is None:
