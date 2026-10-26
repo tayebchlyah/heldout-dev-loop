@@ -3,13 +3,88 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 import ci  # noqa: E402
+
+DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
+GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main"]
+
+# A stub gh: records each argv, answers by kind (pr view, api graphql, compare, run view, api repos) from
+# script.json; the n-th call of a kind gets the n-th answer, the last one repeats; no answer: exit 1.
+STUB_GH = """#!{python}
+import json, os, sys, time
+args = sys.argv[1:]
+d = os.environ["STUB_DIR"]
+with open(os.path.join(d, "calls.jsonl"), "a") as f:
+    f.write(json.dumps(args) + "\\n")
+if args[:2] == ["pr", "view"]:
+    kind = "view"
+elif args[:2] == ["api", "graphql"]:
+    kind = "graphql"
+elif args[:1] == ["api"] and "/compare/" in args[1]:
+    kind = "compare"
+elif args[:2] == ["run", "view"]:
+    kind = "run"
+elif args[:1] == ["api"]:
+    kind = "repo"
+else:
+    sys.exit("unexpected gh call: %s" % args)
+answers = json.load(open(os.path.join(d, "script.json"))).get(kind, [])
+counter = os.path.join(d, kind + ".n")
+n = int(open(counter).read()) if os.path.exists(counter) else 0
+open(counter, "w").write(str(n + 1))
+if not answers:
+    sys.exit(1)
+a = answers[min(n, len(answers) - 1)]
+time.sleep(a.get("sleep", 0))
+sys.stdout.write(a.get("out", ""))
+sys.stderr.write(a.get("err", ""))
+sys.exit(a.get("code", 0))
+"""
+
+
+class StubGh(unittest.TestCase):
+    """A temp folder with a git repo (one commit, `self.head`) and the stub gh first on PATH."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "one"]):
+            subprocess.run([*GIT, *args], cwd=self.repo, check=True)
+        self.head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
+                                   check=True).stdout.strip()
+        self.stub = self.root / "stub"
+        (self.stub / "bin").mkdir(parents=True)
+        gh = self.stub / "bin" / "gh"
+        gh.write_text(STUB_GH.format(python=sys.executable))
+        gh.chmod(0o755)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def env(self, script: dict, **extra: str) -> dict[str, str]:
+        for old in self.stub.glob("*.n"):
+            old.unlink()
+        (self.stub / "calls.jsonl").write_text("")
+        (self.stub / "script.json").write_text(json.dumps(script))
+        return {**os.environ, "PATH": f"{self.stub / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                "STUB_DIR": str(self.stub), "DEVLOOP_TEST_CI_POLL": "0", **extra}
+
+    def calls(self) -> list[list[str]]:
+        return [json.loads(line) for line in (self.stub / "calls.jsonl").read_text().splitlines()]
 
 
 def run(conclusion: str | None = "SUCCESS", status: str = "COMPLETED", name: str = "test", link: str = "") -> dict:
@@ -117,6 +192,143 @@ class CiVerdictTests(unittest.TestCase):
         for name, data, want in rows:
             with self.subTest(name):
                 self.assertEqual(ci.open_threads(data), want)
+
+
+def out(value) -> dict:
+    return {"out": value if isinstance(value, str) else json.dumps(value)}
+
+
+def graphql(*nodes: dict) -> dict:
+    return out({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": list(nodes)}}}}})
+
+
+LOG = "Setup\tinstalling\nRun\tERROR: test_widget failed\n" + "".join(f"Run\tdetail {i}\n" for i in range(40))
+THREAD_NODE = {"isResolved": False, "path": "skill/x.py", "line": 12,
+               "comments": {"nodes": [{"author": {"login": "bot"}, "body": "Line one\nLine two",
+                                       "url": "https://github.com/o/r/pull/7#r1"}]}}
+FAIL_LINK = "https://github.com/o/r/actions/runs/99/job/5"
+BUSY = {"err": "HTTP 502", "code": 1}
+
+
+class CiWaitTests(StubGh):
+    def pr(self, **fields) -> dict:
+        return out(view(**{"number": 7, "url": "https://github.com/o/r/pull/7", "headRefOid": self.head,
+                           "baseRefName": "main", **fields}))
+
+    def wait(self, script: dict, *args: str, cwd: Path | None = None, **extra: str) -> tuple[int, dict]:
+        script = {"graphql": [graphql()], "compare": [out("0")], **script}
+        result = subprocess.run([sys.executable, str(DEVLOOP), "ci", "wait", "--timeout", "1", *args],
+                                cwd=cwd or self.repo, env=self.env(script, **extra), capture_output=True, text=True,
+                                timeout=60)
+        return result.returncode, json.loads(result.stdout)
+
+    def kinds(self) -> list[str]:
+        return ["compare" if c[:1] == ["api"] and "/compare/" in c[1] else " ".join(c[:2]) for c in self.calls()]
+
+    def test_verdicts(self) -> None:
+        failed = run("FAILURE", name="acceptance", link=FAIL_LINK)
+        rows = [
+            ("green", {"view": [self.pr()]}, (),
+             {"state": "pass", "reason": None, "head": self.head, "threads": [], "stale_base": None,
+              "failed_job": None, "pending": [], "url": "https://github.com/o/r/pull/7"}, {"pr view": 1, "compare": 0}),
+            ("conflict at once", {"view": [self.pr(mergeable="CONFLICTING", statusCheckRollup=[PENDING])]}, (),
+             {"state": "conflicts", "stale_base": None}, {"pr view": 1}),
+            ("open thread", {"view": [self.pr()], "graphql": [graphql(THREAD_NODE)]}, (),
+             {"state": "threads", "threads": [{"path": "skill/x.py", "line": 12, "author": "bot",
+                                               "url": "https://github.com/o/r/pull/7#r1", "text": "Line one"}]}, {}),
+            ("failed check at once", {"view": [self.pr(statusCheckRollup=[failed, PENDING])], "run": [out(LOG)],
+                                      "compare": [out("0")]}, (),
+             {"state": "fail", "failed_job": "acceptance", "url": FAIL_LINK, "stale_base": False},
+             {"pr view": 1, "run view": 1, "compare": 1}),
+            ("status context", {"view": [self.pr(statusCheckRollup=[context("ERROR")])]}, (),
+             {"state": "fail", "failed_job": "ci/x", "url": "https://ci.example/1", "first_error": None},
+             {"run view": 0}),
+            ("stale base", {"view": [self.pr(statusCheckRollup=[failed])], "compare": [out("2")]}, (),
+             {"state": "fail", "stale_base": True}, {}),
+            ("compare fails", {"view": [self.pr(statusCheckRollup=[failed])], "compare": [BUSY]}, (),
+             {"state": "fail", "stale_base": None}, {}),
+            ("review required", {"view": [self.pr(mergeStateStatus="BLOCKED", reviewDecision="REVIEW_REQUIRED")]}, (),
+             {"state": "blocked", "reason": "review-required", "stale_base": False}, {"compare": 1}),
+            ("behind", {"view": [self.pr(mergeStateStatus="BEHIND")], "compare": [out("3")]}, (),
+             {"state": "blocked", "reason": "behind", "stale_base": True}, {}),
+            ("change request", {"view": [self.pr(latestReviews=[{"state": "CHANGES_REQUESTED"}],
+                                                 statusCheckRollup=[PENDING])]}, (),
+             {"state": "blocked", "reason": "changes-requested"}, {"pr view": 1}),
+            ("pending, then green", {"view": [self.pr(statusCheckRollup=[PENDING]), self.pr()]}, (),
+             {"state": "pass"}, {"pr view": 2}),
+            ("no check yet, then green", {"view": [self.pr(statusCheckRollup=[]), self.pr()]}, (),
+             {"state": "pass"}, {"pr view": 2}),
+            ("unknown, then green", {"view": [self.pr(mergeable="UNKNOWN", mergeStateStatus="UNKNOWN"), self.pr()]},
+             (), {"state": "pass"}, {"pr view": 2}),
+            ("old head, then green", {"view": [self.pr(headRefOid="b" * 40), self.pr()]}, (),
+             {"state": "pass", "head": self.head}, {"pr view": 2, "api graphql": 1}),
+            ("no pr", {"view": [{"err": 'no pull requests found for branch "feat/x"', "code": 1}]}, (),
+             {"state": "no-pr"}, {}),
+            ("pr view fails", {"view": [BUSY]}, (), {"state": "error", "message": "HTTP 502"}, {}),
+            ("pr view fails on a later pass", {"view": [self.pr(statusCheckRollup=[PENDING]), BUSY]}, (),
+             {"state": "error"}, {"pr view": 2}),
+            ("graphql fails", {"view": [self.pr()], "graphql": [BUSY]}, (), {"state": "error"}, {}),
+        ]
+        for name, script, args, want, counts in rows:
+            with self.subTest(name):
+                code, got = self.wait(script, *args)
+                self.assertEqual(code, 0 if want["state"] == "pass" else 1)
+                for key, value in want.items():
+                    if key == "message":
+                        self.assertIn(value, got[key])
+                    else:
+                        self.assertEqual(got[key], value, key)
+                kinds = self.kinds()
+                for kind, n in counts.items():
+                    self.assertEqual(kinds.count(kind), n, kind)
+                for call in self.calls():
+                    self.assertFalse({"--watch", "rerun"} & set(call), call)
+
+    def test_first_error_and_compare_call(self) -> None:
+        script = {"view": [self.pr(statusCheckRollup=[run("FAILURE", name="acceptance", link=FAIL_LINK)])],
+                  "run": [out(LOG)]}
+        _, got = self.wait(script)
+        lines = got["first_error"].splitlines()
+        self.assertEqual((lines[0], len(lines)), ("Run\tERROR: test_widget failed", 30))
+        self.assertIn(["run", "view", "99", "--log-failed"], self.calls())
+        compare = [c for c in self.calls() if c[:1] == ["api"] and "/compare/" in c[1]]
+        self.assertEqual(compare[0][1], f"repos/o/r/compare/main...{self.head}")
+
+    def test_timeout_names_the_pending_checks(self) -> None:
+        rows = [("draft, pending", self.pr(isDraft=True, statusCheckRollup=[PENDING]), ["test"]),
+                ("old head", self.pr(headRefOid="b" * 40), [])]
+        for name, answer, pending in rows:
+            with self.subTest(name):
+                code, got = self.wait({"view": [answer]}, "--timeout", "0.001", DEVLOOP_TEST_CI_POLL="0.05")
+                self.assertEqual((code, got["state"], got["pending"]), (1, "timeout", pending))
+
+    def test_pr_number_goes_to_pr_view(self) -> None:
+        for args, third in ((("--pr", "7"), "7"), ((), "--json")):
+            with self.subTest(args=args):
+                self.wait({"view": [self.pr()]}, *args)
+                self.assertTrue(all(c[2] == third for c in self.calls() if c[:2] == ["pr", "view"]))
+
+    def test_owner_and_repo_come_from_the_pr_url(self) -> None:
+        answer = out(view(number=7, url="https://ghe.example/acme/tool/pull/7", headRefOid=self.head,
+                          baseRefName="main", statusCheckRollup=[run("FAILURE")]))
+        self.wait({"view": [answer]})
+        graph = next(c for c in self.calls() if c[:2] == ["api", "graphql"])
+        self.assertIn("owner=acme", graph)
+        self.assertIn("name=tool", graph)
+        self.assertTrue(any(c[1].startswith("repos/acme/tool/compare/") for c in self.calls() if c[:1] == ["api"]))
+
+    def test_outside_a_git_repo_is_an_error_before_any_gh_call(self) -> None:
+        outside = self.root / "plain"
+        outside.mkdir()
+        code, got = self.wait({"view": [self.pr()]}, cwd=outside)
+        self.assertEqual((code, got["state"], self.calls()), (1, "error", []))
+
+    def test_a_hanging_gh_call_is_an_error(self) -> None:
+        env = self.env({"view": [{**self.pr(), "sleep": 2}]})
+        with mock.patch.dict(os.environ, env), mock.patch.object(ci, "GH_TIMEOUT", 0.2), \
+                contextlib.chdir(self.repo):
+            code, got = ci.wait(None, 1)
+        self.assertEqual((code, got["state"]), (1, "error"))
 
 
 if __name__ == "__main__":
