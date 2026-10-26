@@ -53,4 +53,4 @@ jobs:
         run: npm ci && npx playwright install --with-deps chromium
 
       - name: Held-out acceptance suite
-        run: python3 -m unittest discover -s tests/acceptance -p 'test_*.py' && node --test tests/acceptance/*.test.mjs
+        run: scripts/acceptance.sh

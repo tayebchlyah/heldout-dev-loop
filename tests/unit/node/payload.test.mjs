@@ -109,11 +109,12 @@ test('no tracked file holds an absolute home path or a personal name', () => {
   }
 })
 
-test('dev-loop.json maps commands.acceptance to both runners', () => {
+test('dev-loop.json maps commands.acceptance to the script that runs both runners', () => {
   const marker = JSON.parse(readFileSync(join(repoRoot, 'dev-loop.json'), 'utf8'))
-  assert.equal(typeof marker.commands.acceptance, 'string')
-  assert.ok(marker.commands.acceptance.includes('unittest discover'))
-  assert.ok(marker.commands.acceptance.includes('node --test'))
+  assert.equal(marker.commands.acceptance, 'scripts/acceptance.sh')
+  const script = readFileSync(join(repoRoot, 'scripts', 'acceptance.sh'), 'utf8')
+  assert.ok(script.includes('--discover'))
+  assert.ok(script.includes('node --test'))
 })
 
 test('ci.yml has a job named acceptance that runs commands.acceptance', () => {
