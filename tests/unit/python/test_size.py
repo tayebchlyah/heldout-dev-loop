@@ -188,6 +188,58 @@ class SizeCommandTests(SizeRepo):
         self.assertEqual(hints["m.txt"], "split m.txt by responsibility")
 
 
+class GateSizeTests(SizeRepo):
+    def gate(self) -> tuple[int, dict]:
+        self.write("scripts/gate.sh", b"#!/bin/sh\necho all good\n")
+        (self.repo / "scripts" / "gate.sh").chmod(0o755)
+        return run_cli("gate", "--summary", cwd=self.repo)
+
+    def test_size_fails_a_passing_gate(self) -> None:
+        self.write("big.txt", blob(41000))
+        code, out = self.gate()
+        self.assertEqual((code, out["exit"], out["size"]["ok"], out["size"]["mode"]), (1, 0, False, "uncommitted"))
+        self.assertEqual([v["path"] for v in out["size"]["violations"]], ["big.txt"])
+        (self.repo / "big.txt").unlink()
+        code, out = self.gate()
+        self.assertEqual((code, out["size"]["ok"]), (0, True), out)
+
+
+class SealSizeTests(SizeRepo):
+    SUITE = "tests/acceptance/test_x.py"
+
+    def seal(self) -> tuple[int, dict]:
+        return run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+
+    def head(self) -> str:
+        return git(self.repo, "rev-parse", "HEAD").strip()
+
+    def test_seal_refuses_a_big_file(self) -> None:
+        self.write(self.SUITE, blob(41000))
+        git(self.repo, "add", self.SUITE)
+        before = self.head()
+        code, out = self.seal()
+        self.assertEqual((code, out["error"], [v["path"] for v in out["size"]], self.head()),
+                         (1, "file over the size limit", [self.SUITE], before))
+        self.write(self.SUITE, blob(39000))
+        git(self.repo, "add", self.SUITE)
+        code, out = self.seal()
+        self.assertEqual((code, out["commit"]), (0, self.head()), out)
+
+    def test_rebase_continue_takes_a_big_file(self) -> None:
+        self.write(self.SUITE, b"a\n")
+        git(self.repo, "add", self.SUITE)
+        self.assertEqual(self.seal()[0], 0)
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(self.SUITE, b"b\n", "on main")
+        git(self.repo, "checkout", "-q", "feat/x")
+        self.assertNotEqual(subprocess.run(["git", "rebase", "-q", "main"], cwd=self.repo,
+                                           capture_output=True).returncode, 0)
+        self.write(self.SUITE, blob(41000))
+        git(self.repo, "add", self.SUITE)
+        code, out = run_cli("seal", "--rebase-continue", cwd=self.repo)
+        self.assertEqual((code, out["rebase"]), (0, "continued"), out)
+
+
 class SeamTests(unittest.TestCase):
     def test_seam(self) -> None:
         unit = blob(960)
