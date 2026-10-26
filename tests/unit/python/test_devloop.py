@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for devloop.py: status, logged, gate --summary, ci wait."""
+"""Tests for devloop.py: status, logged, gate --summary."""
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
-import io
 import json
 import os
 import re
@@ -15,9 +13,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
-from contextlib import redirect_stdout
 from pathlib import Path
-from unittest import mock
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
 # The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
@@ -921,102 +917,6 @@ class GateTests(Sandbox):
         code, out = self.run_gate()
         self.assertEqual((code, out["exit"]), (1, 127))
         self.assertTrue(Path(out["log"]).is_file())
-
-
-FAKE_GH = """#!{python}
-import json, os, sys, time
-mode = os.environ["FAKE_GH"]
-args = sys.argv[1:]
-if args[:2] == ["pr", "view"]:
-    if mode == "nopr":
-        print("no pull requests found for branch", file=sys.stderr)
-        sys.exit(1)
-    if mode == "autherror":
-        print("HTTP 401: Bad credentials", file=sys.stderr)
-        sys.exit(1)
-    print(json.dumps({{"number": 7, "url": "https://github.com/o/r/pull/7"}}))
-elif args[:2] == ["pr", "checks"] and "--watch" in args:
-    assert args[2] == "7", args
-    if mode == "timeout":
-        time.sleep(30)
-    if mode == "nochecks" or (mode == "late" and not os.path.exists(os.path.join(os.environ["FAKE_GH_DIR"], "seen"))):
-        if mode == "late":
-            open(os.path.join(os.environ["FAKE_GH_DIR"], "seen"), "w").close()
-        print("no checks reported on the 'feat/x' branch", file=sys.stderr)
-        sys.exit(1)
-    if mode == "late":
-        sys.exit(0)
-    sys.exit(0 if mode == "green" else 1)
-elif args[:2] == ["pr", "checks"]:
-    print(json.dumps([
-        {{"name": "lint", "state": "SUCCESS", "link": "https://github.com/o/r/actions/runs/41/job/1"}},
-        {{"name": "test", "state": "FAILURE", "link": "https://github.com/o/r/actions/runs/42/job/9"}},
-    ]))
-    sys.exit(1)
-elif args[:3] == ["run", "view", "42"] and "--log-failed" in args:
-    print("test\\tSetup\\tinstalling")
-    print("test\\tRun\\tERROR: test_widget failed")
-    for i in range(40):
-        print(f"test\\tRun\\tdetail {{i}}")
-else:
-    sys.exit(f"unexpected gh call: {{args}}")
-"""
-
-
-class CiWaitTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self._tmp.name)
-        gh = self.root / "bin" / "gh"
-        put(gh, FAKE_GH.format(python=sys.executable))
-        gh.chmod(0o755)
-        self.bin = gh.parent
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def wait(self, mode: str, *args: str) -> tuple[int, dict]:
-        env = {**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "FAKE_GH": mode}
-        return run_cli("ci", "wait", *args, cwd=self.root, env=env)
-
-    def test_green(self) -> None:
-        code, out = self.wait("green")
-        self.assertEqual((code, out["state"], out["url"]), (0, "pass", "https://github.com/o/r/pull/7"))
-
-    def test_red_names_the_failed_job_and_its_first_error(self) -> None:
-        code, out = self.wait("red", "--pr", "7")
-        self.assertEqual((code, out["state"], out["failed_job"]), (1, "fail", "test"))
-        lines = out["first_error"].splitlines()
-        self.assertEqual(lines[0], "test\tRun\tERROR: test_widget failed")
-        self.assertEqual(len(lines), 30)
-        self.assertEqual(out["url"], "https://github.com/o/r/actions/runs/42/job/9")
-
-    def test_timeout(self) -> None:
-        code, out = self.wait("timeout", "--timeout", "0.02")
-        self.assertEqual((code, out["state"]), (1, "timeout"))
-
-    def test_no_pr(self) -> None:
-        code, out = self.wait("nopr")
-        self.assertEqual((code, out["state"]), (1, "no-pr"))
-
-    def test_no_checks_yet_retries_until_checks_exist(self) -> None:
-        module = load_devloop()
-        setattr(module, "CHECKS_RETRY_SECONDS", 0.05)
-        env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "FAKE_GH": "late", "FAKE_GH_DIR": str(self.root)}
-        args = argparse.Namespace(pr=None, timeout=1.0)
-        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()) as out:
-            code = module.cmd_ci_wait(args)
-        self.assertEqual((code, json.loads(out.getvalue())["state"]), (0, "pass"))
-        env["FAKE_GH"] = "nochecks"
-        args.timeout = 0.005
-        with mock.patch.dict(os.environ, env), redirect_stdout(io.StringIO()) as out:
-            code = module.cmd_ci_wait(args)
-        self.assertEqual((code, json.loads(out.getvalue())["state"]), (1, "timeout"))
-
-    def test_other_pr_view_failure_is_an_error(self) -> None:
-        code, out = self.wait("autherror")
-        self.assertEqual((code, out["state"]), (1, "error"))
-        self.assertIn("Bad credentials", out["message"])
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
