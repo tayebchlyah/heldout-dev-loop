@@ -1267,8 +1267,11 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
             "git push --force-with-lease", "git push --force-with-lease --force-if-includes",
             "git push --force-with-lease --force-if-includes origin HEAD", "git push --force-with-lease origin topic/x",
             "git push --force-with-lease origin HEAD:topic/x", "git push --force-with-lease origin @",
-            "git push origin topic/x --force-with-lease")]
+            "git push origin topic/x --force-with-lease", "git push --force-with-lease origin HEAD")]
         rows += [(command, "ask") for command in (
+            "git push --force-with-lease git@github.com:other/repo.git HEAD", "git push --force-with-lease upstream HEAD",
+            "git push --force-with-lease origin HEAD topic/x", "git push --mirr origin", "git push --dele origin topic/x",
+            "git push --force-w", "git push --force-with", "git push --tag", "git push --follow",
             "git push --force", "git push -f", "git push -uf origin topic/x", "git push --force-if-includes",
             "git push --force-with-lease=topic/x:abc origin topic/x", "git push --force-with-lease origin +topic/x",
             "git push --force-with-lease --tags", "git push --force-with-lease --delete origin topic/x",
@@ -1281,6 +1284,28 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         # A branch without a `/` and main are not feature branches.
         for branch in ("feat", "main"):
             self.assertEqual(self.decision("git push --force-with-lease", branch), "ask", branch)
+
+    def test_lease_push_config_that_maps_to_another_branch_asks(self) -> None:
+        def config(*args: str) -> None:
+            subprocess.run(["git", "-C", self.repo, "config", *args], check=True)
+
+        lease = ("git push --force-with-lease", "git push --force-with-lease origin topic/x",
+                 "git push --force-with-lease origin HEAD")
+        for merge in ("refs/heads/main", "refs/heads/topic/y"):
+            config("branch.topic/x.merge", merge)
+            config("push.default", "upstream")
+            for command, got in self.decisions(lease, "topic/x"):
+                self.assertEqual(got, "ask", f"{merge} {command}")
+        config("branch.topic/x.merge", "refs/heads/topic/x")
+        self.assertEqual(self.decision("git push --force-with-lease", "topic/x"), "allow")
+        config("--unset", "branch.topic/x.merge")
+        config("remote.origin.push", "refs/heads/topic/x:refs/heads/main")
+        self.assertEqual(self.decision("git push --force-with-lease origin topic/x", "topic/x"), "ask")
+        config("--unset", "remote.origin.push")
+        config("remote.upstream.url", "x")
+        config("branch.topic/x.pushRemote", "upstream")
+        self.assertEqual(self.decision("git push --force-with-lease origin HEAD", "topic/x"), "ask")
+        self.assertEqual(self.decision("git push --force-with-lease upstream HEAD", "topic/x"), "allow")
 
     def test_rewriting_deleting_tag_or_main_push_asks(self) -> None:
         for command, got in self.decisions(("git push --force origin feat", "git push --force-with-lease origin feat",
