@@ -173,6 +173,7 @@ _ci_spec.loader.exec_module(test_ci)
 CiVerdictTests = test_ci.CiVerdictTests
 CiWaitTests = test_ci.CiWaitTests
 CiGithubTests = test_ci.CiGithubTests
+CiTextTests = test_ci.CiTextTests
 
 _gardener_spec = importlib.util.spec_from_file_location("test_gardener", Path(__file__).resolve().parent / "test_gardener.py")
 if _gardener_spec is None or _gardener_spec.loader is None:
