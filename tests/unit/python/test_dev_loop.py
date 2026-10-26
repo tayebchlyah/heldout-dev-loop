@@ -124,6 +124,7 @@ SizeCommandTests = test_size.SizeCommandTests
 SeamTests = test_size.SeamTests
 GateSizeTests = test_size.GateSizeTests
 SealSizeTests = test_size.SealSizeTests
+SizeTextTests = test_size.SizeTextTests
 
 _seal_hooks_spec = importlib.util.spec_from_file_location("test_seal_hooks", Path(__file__).resolve().parent / "test_seal_hooks.py")
 if _seal_hooks_spec is None or _seal_hooks_spec.loader is None:
