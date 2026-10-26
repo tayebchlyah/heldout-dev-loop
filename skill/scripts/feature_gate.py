@@ -7,11 +7,22 @@ records the run and gives the progress guard verdict.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
+
+import devloop
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
 CLASSES = {"correctness", "security", "spec", "standards"}
+ACCEPTANCE_HINT = ("No JUnit XML read in {folder}. The acceptance command writes JUnit XML into $DEVLOOP_REPORT_DIR "
+                   "(the dev-loop JUnit standard).")
 
 
 class TableError(Exception):
@@ -125,3 +136,128 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
         except TableError as exc:
             return {"error": exc.message, "file": path, "row": exc.row}, 1
     return merge(tables), 0
+
+
+# acceptance
+
+
+def junit_failures(folder: Path) -> tuple[int | None, list[str] | None]:
+    """The failing test ids of every JUnit file in `folder`. No file, or one that does not parse: (None, None)."""
+    files = sorted(folder.glob("*.xml"))
+    if not files:
+        return None, None
+    ids: set[str] = set()
+    for path in files:
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            return None, None
+        for case in root.iter("testcase"):
+            if case.find("failure") is not None or case.find("error") is not None:
+                name, classname = case.get("name", ""), case.get("classname")
+                ids.add(f"{classname}::{name}" if classname else name)
+    return len(ids), sorted(ids)
+
+
+def known(run: dict) -> bool:
+    return run["counted"] and run["failing"] is not None and not (run["exit"] != 0 and run["failing"] == 0)
+
+
+def green(run: dict) -> bool:
+    return run["counted"] and run["mode"] == "full" and run["exit"] == 0 and run["failing"] in (0, None)
+
+
+def guard(runs: list[dict]) -> dict | None:
+    """The progress guard verdict of the last run of `runs`. None when that run is not counted."""
+    this = runs[-1]
+    if not this["counted"]:
+        return None
+    if green(this):
+        return {"verdict": "green", "reason": None, "ids": [], "counts": []}
+    earlier = runs[:-1]
+    start = max((i + 1 for i, r in enumerate(earlier) if green(r)), default=0)
+    loop = [r for r in runs[start:] if known(r)]
+    counts = [r["failing"] for r in loop]
+    verdict = {"verdict": "continue", "reason": None, "ids": [], "counts": counts}
+    if not known(this):
+        return {**verdict, "verdict": "unknown"}
+    if len(loop) >= 4:
+        stuck = set.intersection(*(set(r["ids"]) for r in loop[-4:]))
+        if stuck:
+            return {**verdict, "verdict": "stop", "reason": "stuck", "ids": sorted(stuck)}
+    if len(counts) >= 3 and counts[-2] >= counts[-3] and counts[-1] >= counts[-2]:
+        return {**verdict, "verdict": "stop", "reason": "no-progress"}
+    return verdict
+
+
+def read_record(path: Path) -> list[dict] | None:
+    """The runs of the record. No file: no run. None: not the record shape."""
+    try:
+        data = json.loads(path.read_text())
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("runs"), list):
+        return None
+    return data["runs"] if all(isinstance(r, dict) for r in data["runs"]) else None
+
+
+def write_record(path: Path, runs: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".acceptance-")
+    with os.fdopen(fd, "w") as out:
+        json.dump({"runs": runs}, out, indent=2)
+    os.replace(tmp, path)
+
+
+def stale_check(top: Path, env: Mapping[str, str]) -> dict:
+    """Is a container of a compose build service older than the newest commit that changes code."""
+    names = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
+    if not any((top / name).exists() for name in names) and not env.get("COMPOSE_FILE"):
+        return {"state": "skipped", "reason": "no-compose"}
+    return {"state": "skipped", "reason": "no-build-service"}
+
+
+def mapped(top: Path, key: str) -> str | None:
+    try:
+        command = json.loads((top / "dev-loop.json").read_text()).get("commands", {}).get(key)
+    except (OSError, ValueError, AttributeError):
+        return None
+    return command if isinstance(command, str) and command else None
+
+
+def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, int]:
+    top_out = devloop.git(cwd, "rev-parse", "--show-toplevel")
+    git_dir = devloop.git(cwd, "rev-parse", "--absolute-git-dir")
+    if top_out is None or git_dir is None:
+        return {"error": "not a git repository"}, 1
+    top = Path(top_out)
+    key = "acceptance_failed" if failed else "acceptance"
+    command = mapped(top, key)
+    if command is None:
+        return {"error": f"no commands.{key} in dev-loop.json"}, 1
+    record = Path(git_dir) / "dev-loop" / "acceptance.json"
+    runs = read_record(record)
+    if runs is None:
+        return {"error": f"bad record: {record}"}, 1
+    log = devloop.log_path(top, "acceptance")
+    if log is None:
+        return {"error": "not a git repository"}, 1
+    reports = log.parent / f"{log.stem}-reports"
+    reports.mkdir()
+    print(f"acceptance log: {log}", file=sys.stderr, flush=True)
+    payload = devloop.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
+    failing, ids = junit_failures(reports)
+    stale = stale_check(top, env)
+    counted = stale["state"] not in ("stale", "error")
+    head = devloop.git(top, "rev-parse", "HEAD")
+    runs.append({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "head": head,
+                 "mode": "failed" if failed else "full", "exit": payload["exit"], "failing": failing, "ids": ids,
+                 "stale": stale["state"], "counted": counted, "log": str(log)})
+    write_record(record, runs)
+    payload.update(mode=runs[-1]["mode"], head=head, failing=failing, ids=ids, stale=stale, counted=counted,
+                   guard=guard(runs), record=str(record))
+    if failing is None:
+        payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
+    return payload, 0 if payload["exit"] == 0 and counted else 1
