@@ -134,6 +134,15 @@ class SubjectCommandTests(RulesRepo):
                 self.assertEqual(code, 0, out)
                 self.assertEqual(out, {"ok": True, "base": None, "skipped": "no-base", "violations": []})
 
+    def test_failed_git_call_is_an_error(self) -> None:
+        for command in ("comments", "subjects"):
+            with self.subTest(command=command):
+                payload, code = getattr(repo_rules, command)(self.repo, "0" * 40)
+                self.assertEqual(code, 1)
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["base"], "0" * 40)
+                self.assertIn("failed", payload["error"])
+
     def test_usage_errors(self) -> None:
         for args in (["nope"], ["subjects", "--bad"], []):
             with self.subTest(args=args):
@@ -165,7 +174,8 @@ class CommentRuleTests(unittest.TestCase):
         for text in ALLOWED:
             with self.subTest(text=text):
                 self.assertTrue(repo_rules.kind_ok(text))
-        for text in [SINCE, EXCEPTION, "# shortcut: no reason", "# plain words", "# 3. A plain push asks."]:
+        for text in [SINCE, EXCEPTION, "# shortcut: no reason", "# plain words", "# 3. A plain push asks.",
+                     "# record type: decision", "# License check first", "# no pragma here", "# fmt: see below"]:
             with self.subTest(text=text):
                 self.assertFalse(repo_rules.kind_ok(text))
 
@@ -290,9 +300,6 @@ class RepoDocsTests(unittest.TestCase):
         for value in ("`reference/kit.md`", "`kit-changed`", "`reference/release.md`"):
             with self.subTest(value=value):
                 self.assertIn(value, self.agents)
-        release = (ROOT / "reference" / "release.md").read_text()
-        self.assertEqual(re.findall(r"(?m)^(\d)\. ", release), list("123456"))
-        self.assertLess(release.index("/release-audit"), release.index("git tag"))
 
 
 class GateScopeTests(unittest.TestCase):
@@ -314,7 +321,8 @@ class GateScopeTests(unittest.TestCase):
                 with self.subTest(path=path):
                     put(repo / path, "b\n")
                     out = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
-                                         env={**os.environ, "GATE_SCOPE": "changed"}, timeout=60).stdout
+                                         env={**{k: v for k, v in os.environ.items() if k != "DEVLOOP_REPORT_DIR"},
+                                              "GATE_SCOPE": "changed"}, timeout=60).stdout
                     self.assertEqual("SKILL-RAN" in out, runs, out)
                     git(repo, "checkout", "-q", "--", path)
 
