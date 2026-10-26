@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import fnmatch
 import json
 import os
@@ -9,6 +10,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+import devloop
+from devloop import emit
 from seal import merge_base, run_git
 
 LIMIT = 40000
@@ -185,3 +188,11 @@ def staged(repo: Path, entries: list[tuple[str, str]]) -> list[dict]:
         if why is not None and not binary(data := cat(repo, obj)):
             found.append(violation(path, data, base_bytes, why))
     return found
+
+
+def cmd_size_check(args: argparse.Namespace) -> int:
+    top = devloop.git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 2)
+    out = check(Path(top), "all" if args.all else "uncommitted" if args.uncommitted else "committed")
+    return emit(out, 0 if out["ok"] else 1)

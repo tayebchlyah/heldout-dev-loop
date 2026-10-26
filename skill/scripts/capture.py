@@ -5,6 +5,7 @@ Stdlib only. gh uploads each attached file to GitHub `user-attachments` and repl
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import shutil
@@ -12,6 +13,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+from devloop import emit, git
 from seal import git_dir
 from verify import GH_LINE, gh_too_old, gh_version, read_config
 
@@ -252,3 +254,13 @@ def run(repo: Path, pr: int, before_path: str | None, after_path: str | None) ->
         return {"error": "gh pr edit failed", "tail": tail(edit.stdout + edit.stderr)}, 1
     return {"ok": True, "pr": pr, "files": [str(f) for f in files], "routes": count, "omitted": omitted,
             "body": str(body_md), "before": str(before_json)}, 0
+
+
+def cmd_capture(args: argparse.Namespace) -> int:
+    top = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        return emit({"error": "not a git repository"}, 1)
+    if args.write_after:
+        return emit(*write_after(Path(top), args.write_after))
+    payload, code = run(Path(top), args.pr, args.before, args.after)
+    return emit(payload, code)
