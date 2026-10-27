@@ -9,7 +9,7 @@ with fake transcripts, a temporary git repo with a bare origin and feature workt
 for the notes folder. Every name in the temp repos is invented. HOME is a temporary folder.
 
 Fixture choices the spec leaves open (taken from the documented loop and the transcript facts):
-- Main transcripts sit in the project folder of the main worktree (Session B keeps `cwd` = the main
+- Main transcripts sit in the project folder of the main worktree (Delivery keeps `cwd` = the main
   checkout and `gitBranch` = `main`). Subagent transcripts sit in `<folder>/<session>/subagents/`.
 - A transcript `tool_result` text is a plain string `content`; a typed prompt is a string or a list
   with one `text` block.
@@ -34,7 +34,7 @@ SONNET = "claude-sonnet-4-6"
 DAY = "2026-10-20"
 METRICS_FILE = "Feature Metrics.md"
 HEADER = ("| feature | track | shipped | sessions | active h | user msgs | gate runs | gate s | unit tests "
-          "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | escaped |")
+          "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | effort | escaped |")
 SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_PROJECT_DIR", "CLAUDE_CONFIG_DIR")
 GATE = "python3 .agents/skills/dev-loop/scripts/devloop.py gate --summary"
 STAGE_CELLS = slice(11, 17)
@@ -195,7 +195,7 @@ class MetricsCase(Board):
 
 class TrackMFeatureTests(MetricsCase):
     def test_f1_track_m_feature_claimed_built_and_written(self) -> None:
-        """F1, O1 to O11, O14 to O20, O22, O26, O28: Session A claims `widget-export`, Session B builds it with
+        """F1, O1 to O11, O14 to O20, O22, O26, O28: Shaping claims `widget-export`, Delivery builds it with
         subagents across Stages 3 to 7 and then moves to `label-printer`; `metrics` without `--write` writes
         nothing; `metrics --write` writes the row with stage cells."""
         slug, other = "widget-export", "label-printer"
@@ -335,7 +335,7 @@ class TrackMFeatureTests(MetricsCase):
             self.assertEqual([item["description"] for item in label["agents"]], ["Task 1: labels"], label)
 
         expected = [slug, "M", "2026-10-25", "2", "0.4", "3", "2", "30", "2", "2", "1",
-                    "11", "3", "4", "6", "26", "7", "56", ""]
+                    "11", "3", "4", "6", "26", "7", "56", "1-2:- 3:- 4:- 5:- 6:- 7:-", ""]
         with self.subTest(oracle=20):
             self.assertEqual(Path(out["file"]).resolve(), self.metrics_file.resolve(), out)
             self.assertEqual(cells(out["row"]), expected, out["row"])
@@ -371,7 +371,7 @@ class EscapedRerunTests(MetricsCase):
         own = cells(lines[index])
         self.assertEqual(own[-1], "", lines[index])
         edited = "| " + " | ".join(own[:-1] + ["1: duplicate rows on retry"]) + " |"
-        other_row = "| older-feature | S |  | 1 | 0.5 | 2 | 1 | 12 | 1 | 0 | 0 | - | - | - | 4 | 2 | 1 | 7 |  |"
+        other_row = "| older-feature | S |  | 1 | 0.5 | 2 | 1 | 12 | 1 | 0 | 0 | - | - | - | 4 | 2 | 1 | 7 | ? |  |"
         lines[index:index + 1] = [other_row, edited]
         self.metrics_file.write_text("\n".join(lines) + "\n")
         before = self.metrics_file.read_text().splitlines()
@@ -391,7 +391,7 @@ class EscapedRerunTests(MetricsCase):
         self.assertEqual(new[:-1], cells(out["row"])[:-1], after[row_at])
         self.assertEqual(new[0], slug)
         self.assertEqual(new[3], "2", after[row_at])
-        self.assertEqual(new[-2], "10", after[row_at])
+        self.assertEqual(new[-3], "10", after[row_at])
         self.assertEqual(new[-1], "1: duplicate rows on retry", after[row_at])
 
 

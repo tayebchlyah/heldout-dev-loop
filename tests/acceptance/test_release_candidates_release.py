@@ -301,10 +301,10 @@ class TextTests(unittest.TestCase):
 
     def test_o42_skill_session_rule(self) -> None:
         """O42, D8: SKILL.md names main-newer, pause and /continue for the start of Stages 3, 6 and 7, and keeps
-        the Session B start rule for worktree-newer."""
+        the Stage 3 start rule for worktree-newer (amended by one-session-effort)."""
         blocks = paragraphs(SKILL.read_text())
-        newer = [b for b in blocks if "worktree-newer" in b and "Session B" in b]
-        self.assertTrue(newer, "no Session B start rule for worktree-newer")
+        newer = [b for b in blocks if "worktree-newer" in b and "Stage 3 start" in b]
+        self.assertTrue(newer, "no Stage 3 start rule for worktree-newer")
         main = "\n".join(b for b in blocks if "main-newer" in b)
         for pattern in (r"\bpause\b", r"/continue", r"Stages? 3\b", r"\b6\b", r"\b7\b"):
             self.assertRegex(main, pattern)

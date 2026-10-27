@@ -108,15 +108,16 @@ class BoardWriterTests(Board):
         self.event("stop", self.repo)
         self.assertNotIn("gamma", self.own_notes())
 
-    def test_o8_approved_claim_shows_stage_3_start_session_b(self) -> None:
-        """O8, D17: after approval of a claimed spec, the next run writes Stage 3 "start Session B"."""
+    def test_o8_approved_claim_shows_stage_3_start_delivery(self) -> None:
+        """O8, D17, amended by one-session-effort: after approval of a claimed spec, the next run writes Stage 3
+        "start Delivery"."""
         spec = self.spec("gadget", "Gadget Export", review="draft")
         self.ok("--claim", "gadget")
         self.ok()
         self.set_field(spec, "review_status", "approved")
         self.ok()
         note = self.note("gadget")
-        self.assertEqual((note["stage"], note["waiting"]), (3, "start Session B"))
+        self.assertEqual((note["stage"], note["waiting"]), (3, "start Delivery"))
 
     def test_o9_worktree_drops_the_claim_and_keeps_file_and_stage_times(self) -> None:
         """O9, D10: a worktree removes the claim; the note keeps its file and stage_times."""
