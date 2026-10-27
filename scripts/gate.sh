@@ -4,6 +4,7 @@
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
 # README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh. No change: neither. Else both.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
+# Both suites run with an empty TMPDIR: anything left in it but node-compile-cache fails the gate (a temp leak).
 set -u
 cd "$(dirname "$0")/.."
 
@@ -30,11 +31,12 @@ if [ $node = 1 ] && [ ! -d node_modules/playwright ]; then
   exit 1
 fi
 
-out=$(mktemp -d)
-trap 'rm -rf "$out"' EXIT
+out=$(mktemp -d) scratch=$(mktemp -d)
+trap 'rm -rf "$out" "$scratch"' EXIT
 report=()
 [ -n "${DEVLOOP_REPORT_DIR:-}" ] && report=(--test-reporter=spec --test-reporter-destination=stdout
   --test-reporter=junit --test-reporter-destination="$DEVLOOP_REPORT_DIR/node.xml")
+export TMPDIR="$scratch"
 [ $node = 1 ] && { node --test ${report[@]+"${report[@]}"} tests/unit/node/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } &
 [ $py = 1 ] && { python3 tests/unit/python/test_dev_loop.py >"$out/py" 2>&1; echo $? >"$out/py.exit"; } &
 wait
@@ -45,6 +47,11 @@ for suite in node py; do
   cat "$out/$suite"
   [ "$(cat "$out/$suite.exit")" = 0 ] || status=1
 done
+left=$(ls -A "$scratch" | grep -vx node-compile-cache)
+if [ -n "$left" ]; then
+  printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
+  status=1
+fi
 if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
   python3 - "$DEVLOOP_REPORT_DIR" <<'EOF'
 import sys, xml.etree.ElementTree as ET
