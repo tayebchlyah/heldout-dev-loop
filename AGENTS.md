@@ -2,7 +2,7 @@
 
 ## Purpose
 
-dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Session A: Stages 1, 2, stops at spec approval. Session B: Stages 3 to 7 chained under autonomy grant. Track S: no spec, no plan. `devloop.py status` detects the stage.
+dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Shaping: Stages 1, 2, to spec approval. Delivery: Stages 3 to 7, autonomy grant. Same session. Track S: no spec, no plan. `devloop.py status` detects the stage.
 
 ## Repo map
 
