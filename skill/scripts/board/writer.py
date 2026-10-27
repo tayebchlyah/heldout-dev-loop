@@ -507,9 +507,9 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue  # D12: a shipped note is never rewritten.
         waiting = str(entry.get("waiting") or "")
         if slug in claims and stage == 3 and result["worktree"] is None:
-            waiting = "start Session B"
+            waiting = "start Delivery"
         else:
-            if waiting == "start Session B":  # D6: its condition no longer holds.
+            if waiting == "start Delivery":  # D6: its condition no longer holds.
                 waiting = ""
             for event, features in scoped:
                 if slug in features and event == "stop":

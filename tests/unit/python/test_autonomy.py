@@ -344,7 +344,7 @@ class PauseStatusTests(PauseSandbox):
 
 
 HOOKS = HERE.parents[2] / "claude" / "hooks"
-DENY_REASON = ("Session B autonomy grant: no questions. Decide, log it with devloop.py decide, and go on. "
+DENY_REASON = ("Delivery autonomy grant: no questions. Decide, log it with devloop.py decide, and go on. "
                "A stop-list item: stop and report it as your final message.")
 
 
@@ -432,7 +432,7 @@ IMPLEMENTERS = [ROOT / "claude" / "agents" / "implementer.md", ROOT / "codex" / 
 
 
 class AutonomyContractTests(unittest.TestCase):
-    """The kit text of Session B autonomy: run instead of ask, the decision log, the report, pause and continue."""
+    """The kit text of Delivery autonomy: run instead of ask, the decision log, the report, pause and continue."""
 
     def test_kit_text_names(self) -> None:
         refs = ROOT / "skill" / "references"
@@ -461,7 +461,7 @@ class AutonomyContractTests(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertNotIn(value, path.read_text())
 
-    def test_session_b_text_never_asks(self) -> None:
+    def test_delivery_text_never_asks(self) -> None:
         text = (ROOT / "skill" / "SKILL.md").read_text().lower()
         grant = text[text.index("autonomy grant"):text.index("monitor rule")]
         session_b = grant + text[text.index("## 3 acceptance"):]
