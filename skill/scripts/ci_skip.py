@@ -47,10 +47,14 @@ def version_pairs(repo: Path, mb: str, head: str, path: str) -> set[tuple[str, s
         return None
     hunks: list[tuple[list[bytes], list[bytes]]] = []
     for line in diff.stdout.split(b"\n"):
+        if not hunks and line.startswith((b"old mode ", b"new mode ")):
+            return None
         if line.startswith(b"@@"):
             hunks.append(([], []))
         elif hunks and line[:1] in (b"-", b"+"):
             hunks[-1][line[:1] == b"+"].append(line[1:])
+    if not hunks:
+        return None
     pairs: set[tuple[str, str]] = set()
     for removed, added in hunks:
         if len(removed) != len(added):

@@ -519,11 +519,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
             for args in (("init", "-q", "-b", "main"), ("config", "user.email", "a@b"), ("config", "user.name", "a"),
                          ("commit", "-q", "--allow-empty", "-m", "a")):
                 subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
-            for code, ok in ((0, True), (1, False)):
-                with self.subTest(npx_exit=code):
-                    (stubs / "npx").write_text(f"#!/bin/sh\nexit {code}\n")
+            for code, ok, extra in ((0, True, ""), (1, False, ""), (0, False, "touch stray.txt\n")):
+                with self.subTest(npx_exit=code, untracked=bool(extra)):
+                    (stubs / "npx").write_text(f"#!/bin/sh\n{extra}exit {code}\n")
                     (stubs / "npx").chmod(0o755)
-                    scratch = root / f"tmp{code}"
+                    scratch = root / f"tmp{code}{len(extra)}"
                     scratch.mkdir()
                     env = {**os.environ, "RELEASE_TAG": "v9.9.9", "RELEASE_VERSION": "9.9.9", "TMPDIR": str(scratch),
                            "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}"}
