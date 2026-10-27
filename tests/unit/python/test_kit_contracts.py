@@ -159,6 +159,18 @@ class FeatureWorktreeContractTests(unittest.TestCase):
         self.assertIn("Never ask the user to change directory.", skill)
         self.assertNotIn(".worktrees/", skill)
 
+    def test_routes_name_the_planner_the_wall_and_the_exit_step(self) -> None:
+        routes = {
+            "claude.md": ["## Stage 4 plan", "general-purpose", "model: opus", "effort: high", "superpowers:writing-plans",
+                          "worktree-wall.sh", "ExitWorktree", "`keep`", "/clear"],
+            "codex.md": ["## Stage 4 plan", "`planner`", ".codex/agents/planner.toml", "/reasoning", "No worktree wall"],
+        }
+        for route, values in routes.items():
+            text = (SKILL_ROOT / "references" / route).read_text()
+            for value in values:
+                with self.subTest(route=route, value=value):
+                    self.assertIn(value, text)
+
     def test_rebase_points_exclude_the_build(self) -> None:
         skill = SKILL.read_text()
         self.assertIn("Never during Stages 4 and 5", skill)

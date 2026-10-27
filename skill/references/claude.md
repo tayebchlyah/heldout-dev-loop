@@ -5,21 +5,23 @@ Read this file only in Claude Code. Preserve these names and walls.
 ## Setup contract
 
 - Project agents: `.claude/agents/implementer.md`, `.claude/agents/spec-tester.md`.
-- Project hooks: `.dev-loop/hooks/claude/gate.sh`, `gate-snapshot.sh`, `tree-hash.sh`, `deny-path.sh`, `deny-acceptance-to-subagents.sh`, `git-guard.sh`, `seal.sh`, `board.sh`, `deny-ask.sh`, `pause.sh`. `PostToolUse` runs `board.sh post-tool` (matchers `Bash`, `TaskCreate|TaskUpdate`).
+- Project hooks: `.dev-loop/hooks/claude/gate.sh`, `gate-snapshot.sh`, `tree-hash.sh`, `deny-path.sh`, `deny-acceptance-to-subagents.sh`, `git-guard.sh`, `seal.sh`, `board.sh`, `deny-ask.sh`, `pause.sh`, `worktree-wall.sh`. `PostToolUse` runs `board.sh post-tool` (matchers `Bash`, `TaskCreate|TaskUpdate`).
 - Walls and seal: `deny-acceptance-to-subagents.sh` denies `Edit`, `Write` and `NotebookEdit` under `tests/acceptance/` to the main session and every subagent but `spec-tester`; reads stay open. It denies the same tools on an installed kit file to every caller (kit files change only by `upgrade`), and resolves a relative path against the cwd and each folder a `cd` or `pushd` of the command moves to. It also denies `spec-tester` any path that names `src/`, `app/`, `backend/` or `frontend/`: the `deny-path.sh` hook in its frontmatter holds the same rule, but did not fire in Claude Code 2.1.309. `git-guard.sh`: only `spec-tester` runs `devloop.py seal` (it cannot run a plain `git commit`). Every guard entry carries `onFailure: "block"` and exits 2 on an internal error. `seal.sh stop` (SubagentStop) runs the audit and the seal check, `seal.sh turn` (Stop) the seal check and the taint check. `stop_hook_active` true skips the block, as `gate.sh` does. `gate-snapshot.sh` (SubagentStart) writes `<git-dir>/dev-loop-subagents/<agent_id>.head`. Minimum Claude Code 2.1.295.
+- Worktree wall: `worktree-wall.sh` (PreToolUse `Edit|Write|NotebookEdit`) denies an edit of a file in a feature worktree when the session cwd is another checkout: `EnterWorktree` first. Target `file_path` (`notebook_path`), relative against the hook `cwd`, nearest existing folder, physical path. A `release/` branch is not a feature worktree. Fails open. Gap: a Bash write passes it; `seal-check` and the PR diff are the backstop.
 - Gaps (full list in `codex.md`): a wrapped run (`env`, `uv run`) passes the command-position seal rule, the seal check still catches the commit; `git patch-id` includes context lines, so a revert after neighbouring edits may not close a taint record; `seal.sh` exits 0 when `jq` is missing (a Stop hook cannot fail closed), `devloop.py gate` still checks; a variable that holds the script name passes the seal-run rule, and a trailer key set through git config or `git commit -F file` passes the typed-trailer rule, the seal check catches both; a tainted agent can steer the audit's commit attribution by printing a commit line, and an agent can edit the kit in the worktree through the shell: `seal-check` reports it (`kit-changed`) unless the agent also edits the checker or rewrites the MANIFEST hash, the PR diff shows it.
 - Repo settings: `.claude/settings.json` denies `Agent(caveman:cavecrew-reviewer)`, `Agent(caveman:cavecrew-builder)`, and `Agent(caveman:cavecrew-investigator)`. It sets `ENABLE_STOP_REVIEW=0`, `ENABLE_COMMIT_REVIEW=0`, `SG_PUSH_SWEEP=0`, and `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (the `TaskCreate`/`TaskUpdate` checklist).
 - Read a file with `Read`, never `sed -n` or `cat`, before you `Edit` it: `Edit` refuses a file `Read` has not read.
 - User deny list keeps `Skill(superpowers:verification-before-completion)`, `Read(./.env)`, and `Read(./.env.*)`.
 - Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .`.
 
-## Session B autonomy
+## Delivery autonomy
 
 - Stages 3 to 7 start: `EnterWorktree` with the feature worktree `path` (create it first with `git worktree add` when absent). The session cwd, and so each hook `cwd`, is then the worktree.
 - Ask wall: `deny-ask.sh` (PreToolUse `AskUserQuestion`) denies the call in a feature worktree: a linked worktree, branch with `/`, `dev-loop.json` at its top. Decide and log with `devloop.py decide`, or stop and report a stop-list item. Fails open on an internal error: `main` keeps its questions.
 - Limit: `pause.sh` (`StopFailure`, matcher `rate_limit`) writes the pause note through `devloop.py pause --event`. No intent fields: `/pause` adds them. Unconfirmed until a live check: a subscription usage limit arrives as `rate_limit`.
 - Wake (same session, `/continue` or "continue"): `SendMessage` to each subagent that stopped during its work: it resumes with its full history. Source: the Claude Code docs; unconfirmed until a live check. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
 - `/pause`: `TaskStop` on each running subagent; background `logged` runs stay alive.
+- Stage 7 end: after the merge, `git fetch origin` and `metrics --write` in the feature worktree: `ExitWorktree` with `keep`: the session cwd is the main checkout again. The final report suggests `/clear` before the next feature.
 
 ## Skill and agent names
 
@@ -29,8 +31,12 @@ Read this file only in Claude Code. Preserve these names and walls.
 - Denied in the project, never invoke: `Skill(superpowers:brainstorming)`, `Skill(superpowers:test-driven-development)`, `Skill(superpowers:systematic-debugging)`, `Skill(superpowers:finishing-a-development-branch)`.
 - Acceptance author: `spec-tester`.
 - SDD implementers: `subagent_type: implementer`.
-- Task reviewers and re-reviewers: `general-purpose`. Never use `caveman:cavecrew-*`.
+- Task reviewers and re-reviewers: `general-purpose`, `effort: high`. Never use `caveman:cavecrew-*`.
 - Subagent models: name them by alias only, `haiku`, `sonnet`, `opus` or `fable`, in plans, Agent calls and agent frontmatter. An alias resolves to the newest model the running Claude Code knows. A full ID such as `claude-sonnet-5` pins an old model.
+
+## Stage 4 plan
+
+Stage 4 planner: one Agent call, `general-purpose`, `model: opus`, `effort: high`. Prompt: invoke `superpowers:writing-plans` for the spec path; write the plan to `$NOTES/plans/`, frontmatter `spec: <spec file name>`; apply the smart zone rule and the size check of SKILL.md Stage 4; never read, list or name `tests/acceptance/`; skip the execution hand-off question; return the plan path. The main thread reads the plan, then runs Stage 5.
 
 ## Feature gate
 
@@ -56,7 +62,7 @@ Never invoke `superpowers:verification-before-completion`. The shell gate owns v
 
 ## Release audit
 
-User-invoked only: `/release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Session B, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
+User-invoked only: `/release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Delivery, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
 
 `/release` (Codex: `$release`, kit skill `release`) runs the whole release and the audit steps inside it.
 

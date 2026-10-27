@@ -227,7 +227,7 @@ class SkillStackContractTests(unittest.TestCase):
                 "A non-defect that asks for what a spec `## Non-goals` line rules out", "A defect stays a defect",
             ]),
             ((REFERENCES / "spec.md").read_text(), [
-                "## Non-goals", "Catches:", "Misses:", "benchmark.md", "Session B runs no doubt review",
+                "## Non-goals", "Catches:", "Misses:", "benchmark.md", "Delivery runs no doubt review",
                 "the framing note (SKILL.md Stage 1)",
             ]),
             ((REFERENCES / "maps.md").read_text(), [

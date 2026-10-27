@@ -44,4 +44,4 @@ Continue the stage: `CLI status`, then its `next`.
 ## Always
 
 - A finished agent never gets new work (a fix round, a new task): new work goes to a fresh agent with the full brief.
-- Session B runs under the autonomy grant: decide, log with `CLI decide`, go on.
+- Delivery runs under the autonomy grant: decide, log with `CLI decide`, go on.
