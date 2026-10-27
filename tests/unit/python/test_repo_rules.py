@@ -424,6 +424,12 @@ class RepoDocsTests(unittest.TestCase):
         for value in ("`.dev-loop/MANIFEST.json`", "Ruling R10", "\n## Upgrade\n"):
             with self.subTest(value=value):
                 self.assertIn(value, kit)
+        for value in (
+            "release_notes", "version_files", "release_prepare", "release_check", "release_verify",
+            "ci-skip", ".devloop-base", "--github-output", "needs: changes", "release-notes --tag",
+        ):
+            with self.subTest(kit_value=value):
+                self.assertIn(value, kit)
         for value in ("`reference/kit.md`", "`kit-changed`", "`reference/release.md`"):
             with self.subTest(value=value):
                 self.assertIn(value, self.agents)
