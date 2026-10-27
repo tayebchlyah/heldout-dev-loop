@@ -1,6 +1,7 @@
 """`devloop.py metrics`: the token cost of each stage of a feature and its numbers, from local Claude transcripts.
 
-D2 read, D3 feature of a record, D4 stage of a record, D5 weights, D6 numbers, D7 row and notes file.
+D2 read, D3 feature of a record, D4 stage of a record, D5 weights, D6 numbers, D7 row and notes file;
+effort per stage and role, its row cell and the old table migration.
 """
 
 from __future__ import annotations
@@ -29,7 +30,9 @@ DENIAL = re.compile(r"PreToolUse:\S+ hook error: \[(.*?)(?:\]:.*)?$")
 HOOK = re.compile(r"[^\s/\[\]\"'`]+\.sh")
 TESTS = (re.compile(r"^\s*def test_\w*\("), re.compile(r"^\s*(?:it|test)\("), re.compile(r"^func Test\w*\("))
 HEADER = ("| feature | track | shipped | sessions | active h | user msgs | gate runs | gate s | unit tests "
-          "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | escaped |")
+          "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | effort | escaped |")
+LEVELS = ("low", "medium", "high", "xhigh", "max")
+CODES = dict(zip(LEVELS, ("l", "m", "h", "xh", "max")))
 DATA_RULE = ("Data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) "
              "until 5 features have a row with stage cells that are not `?`.")
 CLAIM = re.compile(r"devloop\.py board\b.*--claim[ =]([a-z0-9]+(?:-[a-z0-9]+)*)")
@@ -340,6 +343,41 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
     }
 
 
+def efforts(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | None) -> dict:
+    """Requests of the feature by stage, role and effort level, from its `api-request` records."""
+    if bounds is None:
+        return {}
+    found: dict[str, dict[str, dict[str, int]]] = {}
+    for c in items:
+        rec = c.record
+        if c.feature != slug or c.copy or rec.get("type") != "api-request":
+            continue
+        params = rec.get("params")
+        config = params.get("output_config") if isinstance(params, dict) else None
+        level = config.get("effort") if isinstance(config, dict) else None
+        agent = (c.transcript.meta or {}).get("agentType")
+        role = "main" if c.transcript.main else agent if isinstance(agent, str) and agent else "?"
+        levels = found.setdefault(stage_of(parse_time(rec.get("timestamp")), bounds), {}).setdefault(role, {})
+        key = level if level in LEVELS else "?"
+        levels[key] = levels.get(key, 0) + 1
+    return found
+
+
+def effort_cell(payload: dict) -> str:
+    """`<stage>:<code>` per stage from the main role: most requests, a tie to the higher level."""
+    if payload["unattributed"]:
+        return "?"
+
+    def code(stage: str) -> str:
+        counts = payload["effort"].get(stage, {}).get("main", {})
+        if not counts:
+            return "-"
+        known = [lv for lv in LEVELS if counts.get(lv)]
+        return CODES[max(reversed(known), key=lambda lv: counts[lv])] if known else "?"
+
+    return " ".join(f"{stage}:{code(stage)}" for stage in STAGES)
+
+
 def test_counts(worktree: Path, ref: str) -> dict[str, int]:
     """Test functions added minus removed on the branch, by tier (D6)."""
     counts = {"unit": 0, "acceptance": 0}
@@ -374,7 +412,7 @@ def row(slug: str, track: str, shipped: str, payload: dict, present: set[str]) -
     cells = [slug, track, shipped, payload["sessions"], payload["active_hours"], payload["user_messages"],
              payload["gate"]["runs"], round(payload["gate"]["seconds"]), payload["tests"]["unit"],
              payload["tests"]["acceptance"], sum(payload["denials"].values()), *map(stage, STAGES),
-             round(payload["total"] / 1000), ""]
+             round(payload["total"] / 1000), effort_cell(payload), ""]
     return "| " + " | ".join(map(str, cells)) + " |"
 
 
@@ -392,10 +430,34 @@ def write_row(file: Path, slug: str, line: str, lock: Path) -> None:
         write_locked(file, slug, line)
 
 
+def migrate(lines: list[str]) -> list[str]:
+    """An old header with no `effort` column becomes `HEADER`, its rows get a `?` cell before `escaped`."""
+    if any(cells(x) == cells(HEADER) for x in lines if x.lstrip().startswith("|")):
+        return lines
+    at = next((i for i, x in enumerate(lines) if x.lstrip().startswith("|") and cells(x)[0] == "feature"
+               and "effort" not in cells(x)), None)
+    if at is None:
+        return lines
+    out = [*lines[:at], HEADER, separator()]
+    rule = at + 1 < len(lines) and lines[at + 1].lstrip().startswith("|") \
+        and set("".join(cells(lines[at + 1]))) <= set("-:")
+    rest = lines[at + 1 + rule:]
+    for i, x in enumerate(rest):
+        if not x.lstrip().startswith("|"):
+            return out + rest[i:]
+        head, last = x.rstrip().removesuffix("|").rsplit("|", 1)
+        out.append(f"{head}| ? |{last}|")
+    return out
+
+
+def separator() -> str:
+    return "| " + " | ".join(["---"] * len(cells(HEADER))) + " |"
+
+
 def write_locked(file: Path, slug: str, line: str) -> None:
-    table = [HEADER, "| " + " | ".join(["---"] * len(cells(HEADER))) + " |"]
+    table = [HEADER, separator()]
     if file.exists():
-        lines = file.read_text().splitlines()
+        lines = migrate(file.read_text().splitlines())
         rows = [i for i, x in enumerate(lines) if x.lstrip().startswith("|")]
         data = [i for i in rows if cells(lines[i]) != cells(HEADER) and not all(set(c) <= set("-:") for c in cells(lines[i]))]
         mine = next((i for i in data if cells(lines[i])[0] == slug), None)
@@ -446,7 +508,8 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     ref = main_ref(repo)
     payload = {"feature": slug, "track": track, "shipped": fields.get("shipped", ""),
                **numbers(items, slug, bounds),
-               "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0}}
+               "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0},
+               "effort": efforts(items, slug, bounds)}
     payload["row"] = row(slug, track, payload["shipped"], payload, present)
     payload["file"] = None
     if args.write:
