@@ -240,3 +240,16 @@ test('Review Focus 4: a project name with markup is escaped in the fold key and 
   assert.ok(h.includes('data-key="project:a&lt;b&quot;&amp;"'))
   assert.ok(!h.includes('a<b"&'))
 })
+
+test('D9: a feature updated 20 s ago reads "under a minute ago"', () => {
+  const s = text(summary(row(html([note({ updated: iso(T0 - 20000) })]))))
+  assert.ok(s.includes('under a minute ago'), s)
+  assert.ok(!s.includes('just now'), s)
+})
+
+test('D7: a negative stage duration from clock skew shows no chip and no total', () => {
+  const r = row(html([note({ stage: 6, stage_times: { 5: ago(10), 6: ago(40) } })]))
+  assert.ok(!text(r).includes('unknown'), text(r))
+  const s = row(html([shippedNote({ stage_times: { 1: iso(Date.parse(SHIP) + 30 * MIN) } })]))
+  assert.ok(!text(s).includes('unknown'), text(s))
+})
