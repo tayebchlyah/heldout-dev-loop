@@ -569,5 +569,66 @@ class ReleasePlanExcludeTests(PlanRepo):
             self.assertTrue(any(p.startswith(root) for p in paths), root)
 
 
+class ReleaseNotesTests(unittest.TestCase):
+    CHANGELOG = (
+        "# Changelog\n\n## [3.0.0] - 2026-11-01\n\n### Highlights\n\nIt does more.\n\n"
+        "### Fixes\n\nIt breaks less.\n\n## [3.0.0-rc.2] - 2026-10-30\n\nRC body.\n\n"
+        "## [v3.1.0] - 2026-12-01\n\nV heading body.\n\n## [2.1.1] - 2026-10-16\n\nOld text.\n\n"
+        "## [3.2.0] - 2027-01-01\n\n\n## [2.0.0] - 2026-01-01\n"
+    )
+
+    def setUp(self) -> None:
+        self.repo = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.repo, True)
+        (self.repo / "CHANGELOG.md").write_text(self.CHANGELOG)
+
+    def run_notes(self, *args: str) -> tuple[int, dict]:
+        done = subprocess.run([sys.executable, str(DEVLOOP), "release-notes", "--repo", str(self.repo), *args],
+                              capture_output=True, text=True, cwd=self.repo)
+        return done.returncode, json.loads(done.stdout) if done.stdout.strip() else {}
+
+    def test_final_section_to_file(self) -> None:
+        code, out = self.run_notes("--tag", "v3.0.0", "--output", "out.md")
+        self.assertEqual(code, 0)
+        self.assertEqual(out, {"ok": True, "tag": "v3.0.0", "version": "3.0.0", "output": "out.md", "lines": 7})
+        body = (self.repo / "out.md").read_text()
+        self.assertIn("It does more.", body)
+        self.assertNotIn("## [3.0.0]", body)
+        self.assertNotIn("Old text", body)
+        self.assertNotIn("RC body", body)
+        self.assertTrue(body.startswith("### Highlights\n") and body.endswith("It breaks less.\n"))
+
+    def test_subsections_stay_in_the_body(self) -> None:
+        self.run_notes("--tag", "v3.0.0", "--output", "out.md")
+        body = (self.repo / "out.md").read_text()
+        self.assertIn("### Highlights", body)
+        self.assertIn("### Fixes", body)
+
+    def test_rc_section(self) -> None:
+        code, out = self.run_notes("--tag", "v3.0.0-rc.2")
+        self.assertEqual((code, out["ok"], out["version"], out["output"], out["lines"]), (0, True, "3.0.0-rc.2", None, 1))
+
+    def test_v_heading(self) -> None:
+        code, out = self.run_notes("--tag", "v3.1.0")
+        self.assertEqual((code, out["ok"]), (0, True))
+
+    def test_failures(self) -> None:
+        for tag, reason in (("v3.0.1", "no-section"), ("v3.2.0", "empty-section")):
+            with self.subTest(tag=tag):
+                code, out = self.run_notes("--tag", tag, "--output", "never.md")
+                self.assertEqual((code, out["ok"], out["reason"], out["tag"]), (1, False, reason, tag))
+                self.assertFalse((self.repo / "never.md").exists())
+        (self.repo / "CHANGELOG.md").unlink()
+        code, out = self.run_notes("--tag", "v3.0.0")
+        self.assertEqual((code, out["reason"]), (1, "no-changelog"))
+
+    def test_bad_tags(self) -> None:
+        for tag in ("3.0.0", "v3.0", "v3.0.0-beta.1"):
+            with self.subTest(tag=tag):
+                code, out = self.run_notes("--tag", tag)
+                self.assertEqual(code, 2)
+                self.assertIn("error", out)
+
+
 if __name__ == "__main__":
     unittest.main()
