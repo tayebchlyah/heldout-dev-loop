@@ -4,7 +4,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { entries, git, hookCommands, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, upgrade, version, assertValidToml } from './helpers.mjs'
+import { entries, fakePackage, git, hookCommands, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, upgrade, version, assertValidToml } from './helpers.mjs'
 import { buildKit } from '../../../lib/kit.mjs'
 import { compareManifest, sha256 } from '../../../lib/manifest.mjs'
 import { readVersion, writeKit } from '../../../lib/project.mjs'
@@ -215,6 +215,24 @@ test('init refuses an unknown harness answer and writes nothing', () => {
   const { home, repo } = setup()
   initFails(repo, home, [], /claude, codex or both/, { input: 'emacs\n\n' })
   assert.deepEqual(entries(repo), [])
+})
+
+test('init refuses a package version that is not x.y.z or x.y.z-rc.n, and writes nothing', () => {
+  for (const bad of ['3.0.0-beta.1', '3.0', '3.0.0-rc.0', '03.0.0']) {
+    const { home, repo } = setup()
+    assert.throws(() => run(fakePackage(bad), 'init', repo, home, ['--yes']), (error) => {
+      assert.equal(error.status, 1)
+      assert.ok((error.stdout + error.stderr).includes(`not a x.y.z or x.y.z-rc.n version: ${bad}`))
+      return true
+    })
+    assert.deepEqual(entries(repo), [])
+  }
+})
+
+test('init accepts a release candidate package version', () => {
+  const { home, repo } = setup()
+  run(fakePackage('3.0.0-rc.1'), 'init', repo, home, ['--yes'])
+  assert.equal(readJson(join(repo, 'dev-loop.json')).version, '3.0.0-rc.1')
 })
 
 test('readVersion reads the package.json version', () => {
