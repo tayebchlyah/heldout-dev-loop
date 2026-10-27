@@ -6,7 +6,7 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 
 ## Repo map
 
-Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/dev-loop/`, `.agents/skills/pause/`, `.agents/skills/continue/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.claude/skills/pause`, `.claude/skills/continue`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag, after each release. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else in the repo is edited normally.
+Dogfood: this repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/dev-loop/`, `.agents/skills/pause/`, `.agents/skills/continue/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.claude/skills/pause`, `.claude/skills/continue`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else in the repo is edited normally.
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
@@ -75,7 +75,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to a release (`
 - `scripts/gate.sh`: repo gate, node and skill suites side by side; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
 - `scripts/canary.sh`: live canary, run by hand before a release (this repo only).
-- `scripts/repo_rules.py`: repo checks `comments` (allowed comment kinds) and `subjects` (gitmoji subjects), this repo only.
+- `scripts/repo_rules.py`: repo checks `comments` (allowed comment kinds) and `subjects` (gitmoji subjects), `promoted` (final tag ships its last rc kit source), this repo only.
 - `scripts/upstream_watch.py`, `upstream.json`: weekly upstream watch of the outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
 - `reference/cli/<command>.md`: the full contract of each `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
@@ -144,6 +144,7 @@ Skill suite runs test ids in chunks of 5 per `test_dev_loop.py --chunk` process,
 - Issues: every new feature or fix starts from a GitHub issue, opened before the branch. Each of its commits names it in the subject (`#<issue>:`). PR body: `Closes #<issue>`.
 - Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Workflow fails when tag and `package.json` version differ.
 - Release: follow `reference/release.md`.
+- Stage 7 after a merge: report line `rc: now|later: <reason>`; rule in `reference/release.md`.
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` does not allow; mark one about behaviour an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). Its `warnings` (older commits) are reworded in the Stage 7 rebase, before the push.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path. A guard test enforces this.
