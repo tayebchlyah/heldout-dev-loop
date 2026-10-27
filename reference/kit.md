@@ -2,7 +2,7 @@
 
 | Target | Content | How |
 | --- | --- | --- |
-| `dev-loop.json` | `version`, `harnesses`; optional `commands` (keys `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`, non-empty strings), `merge` (`auto` default, or `human`), `merge_human_paths` (list of strings, each non-empty after strip, no trailing `/` (write `src/auth/*`), `fnmatchcase` patterns on the repo-relative path, `*` matches `/`: a changed path that matches makes the PR wait; `check_setup.py` fails another shape), `file_size_exempt` (same shape as `merge_human_paths`, paths `size-check` skips; `check_setup.py` fails another shape; `init` and `upgrade` never write it), `verify` (`false`, or `skill`, `base_url`, optional `setup`, `storage_state`; `ui` in `stacks:` and no `verify`: `check_setup.py` fails), `second_review` (JSON boolean, the project lock of `second-review`, read from `<main-ref>` only; `init` and `upgrade` never write it), `security_audit` (`{"images": {<name>: <image>}}`, name `^[a-z0-9][a-z0-9_-]*$`, the images `sandbox-run.py` may start; another shape: `check_setup.py` fails; images set and `docker info` failing, or an image not pulled: a "User actions required" line) | write |
+| `dev-loop.json` | `version`, `harnesses`; optional `commands` (keys `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`, non-empty strings), `merge` (`auto` default, or `human`), `merge_human_paths` (list of strings, each non-empty after strip, no trailing `/` (write `src/auth/*`), `fnmatchcase` patterns on the repo-relative path, `*` matches `/`: a changed path that matches makes the PR wait; `check_setup.py` fails another shape), `file_size_exempt` (same shape as `merge_human_paths`, paths `size-check` skips; `check_setup.py` fails another shape; `init` and `upgrade` never write it), `verify` (`false`, or `skill`, `base_url`, optional `setup`, `storage_state`; `ui` in `stacks:` and no `verify`: `check_setup.py` fails), `second_review` (JSON boolean, the project lock of `second-review`, read from `<main-ref>` only; `init` and `upgrade` never write it), `security_audit` (`{"images": {<name>: <image>}}`, name `^[a-z0-9][a-z0-9_-]*$`, the images `sandbox-run.py` may start; another shape: `check_setup.py` fails; images set and `docker info` failing, or an image not pulled: a "User actions required" line), `release_notes` (`"cliff"` or `"written"`, no key: `cliff`; another value or type: `check_setup.py` fails), `version_files` (list of repo-relative paths, each a non-empty string with no leading `/` and no `..` segment; no key or `[]`: the version comes from the tag only; `check_setup.py` fails another shape and a listed path that does not exist; `/release` proposes it on the first run), `commands.release_prepare`, `commands.release_check`, `commands.release_verify` (optional non-empty strings; `release_prepare` runs in the release branch before the release commit, `release_check` after it, `release_verify` in the main checkout after the GitHub Release is published; each gets `RELEASE_VERSION` (`X.Y.Z` or `X.Y.Z-rc.N`) and `RELEASE_TAG` in its environment; non-zero exit stops `/release`); `init` and `upgrade` never write these keys | write |
 | `dev-loop.local.json` | `notes` path, gitignored (`init` adds the `.gitignore` line); optional `"board_dataview": false` (`check_setup.py` skips the Dataview check), `"board_vault_git": "shared"` (skips the vault `.gitignore` check), `second_review` (the user lock: `false`, or `{"codex": ..., "claude": ...}`, each `false` or `{"model": ..., "effort": ...}`; Session A writes it, `init` and `upgrade` never do) | write, only with a notes path |
 | `.dev-loop/MANIFEST.json` | version, sha256 of each kit file | write |
 | `.dev-loop/hooks/claude/`, `.dev-loop/hooks/codex/` | shell walls (Claude `deny-acceptance-to-subagents.sh`, `git-guard.sh`, `deny-path.sh`, `deny-ask.sh` (PreToolUse `AskUserQuestion`: deny in a feature worktree, the autonomy grant); Codex `acceptance-wall.sh`, `git-guard.sh`, `deny-path.sh`), Claude `pause.sh` (StopFailure `rate_limit`: `devloop.py pause --event`, CLI of the cwd top level), `seal.sh` (SubagentStop `stop`, Stop `turn`, Codex SubagentStart `start`), and `board.sh` (SessionStart, UserPromptSubmit, PostToolUse: background `devloop.py board`, CLI taken from the main worktree; PostToolUse `Bash` runs it only after `task-start`, `task-done`, `sdd-workspace`, `git commit`, `git worktree add`, `gh pr create`, `gh pr merge`, Claude also on `TaskCreate|TaskUpdate`; `gate.sh` runs it on Stop and SubagentStop, Claude `gate-snapshot.sh` on SubagentStart) | kit |
@@ -33,6 +33,48 @@ Ruling R10: right after a correct install, `check_setup.py` still fails things n
 3. The Cloudflare `security-audit` skill (the Stage 6 security verifier's prompt), pinned at tree `ccbc33ed119b28c3ef7b44a7e2081ab191ad63af` in `~/.claude/skills/security-audit` (Claude) or `~/.agents/skills/security-audit` (Codex): `npx skills add https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 --skill security-audit --global --agent claude-code codex`.
 
 These are expected manual steps, not install defects.
+
+## Release
+
+Two modes, `dev-loop.json` `release_notes`: `cliff` (default: `CHANGELOG.md` and the release body come from `git cliff`) and `written` (the `CHANGELOG.md` section of the tag is written by hand, `/release-notes`; the release body is that section).
+
+`written`: the step of a project `release.yml` that takes the release body from the changelog:
+
+```bash
+python3 .agents/skills/dev-loop/scripts/devloop.py release-notes --tag "$GITHUB_REF_NAME" --output CHANGES.md
+```
+
+CI skip job. A release PR or a kit upgrade PR changes no code; job `changes` in a project `ci.yml` lets the other jobs skip. It checks out the PR head with `fetch-depth: 0` and the base into `.devloop-base`, and runs the `ci-skip` of the base kit, never the kit of the PR. A base without `ci_skip.py` writes `skip=false`.
+
+```yaml
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.skip.outputs.skip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+          path: .devloop-base
+      - id: skip
+        run: |
+          if [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output
+          fi
+```
+
+Each other job:
+
+```yaml
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
+```
 
 ## Upgrade
 
