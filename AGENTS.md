@@ -6,7 +6,7 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 
 ## Repo map
 
-Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/dev-loop/`, `.agents/skills/pause/`, `.agents/skills/continue/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.claude/skills/pause`, `.claude/skills/continue`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else edited normally.
+Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else edited normally.
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
@@ -58,7 +58,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_release.py`: `release-check`, `release-plan`, `release-notes`.
   - `test_release_record.py`: `release-record`.
   - `test_release_guard.py`: release guards, setup, kit, text.
-  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; skipped without it, a failure with `DEVLOOP_REQUIRE_DOCKER=1`, set in CI).
+  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, or fail with `DEVLOOP_REQUIRE_DOCKER=1`, set in CI).
   - `test_metrics.py`: `metrics`.
   - `test_ci.py`: `ci wait` (stub `gh` on `PATH`).
   - `test_ci_skip.py`: `ci-skip`.
@@ -76,10 +76,11 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never by the gate. Never read, list or run it as an implementer.
 - `scripts/gate.sh`: repo gate, node and skill suites side by side in an empty `TMPDIR`, a leftover fails it; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
-- `scripts/canary.sh`: live canary, run by hand before a release (this repo only).
+- `scripts/canary.sh`: live canary before a release (this repo only).
+- `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of a `main` clone, no diff).
 - `scripts/repo_rules.py`: repo checks `comments` (allowed comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source), this repo only.
 - `scripts/upstream_watch.py`, `upstream.json`: weekly upstream watch of the outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
-- `reference/cli/<command>.md`: the full contract of each `devloop` command.
+- `reference/cli/<command>.md`: full contract per `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
 - `reference/release.md`: the release steps.
 - `GLOSSARY.md`: domain terms (Stage 0).
@@ -126,13 +127,9 @@ npm test                                    # node suite: installer, board rende
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
-Held-out suite: `commands.acceptance` in `dev-loop.json`, `scripts/acceptance.sh`. CI job `acceptance` runs it, never the gate.
-
 Skill suite: test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` processes at once (default one per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: writes JUnit `skill.xml` there; a dead chunk process counts each of its ids as an error. Argument (a test name): plain unittest, no report.
 
-`scripts/gate.sh`: both, full gate.
-
-`scripts/gate.sh` fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml` runs jobs `test` (both suites) and `acceptance` (held-out suite) on every PR and `main`. Merge only when both are green.
+`scripts/gate.sh` (full gate, both suites) fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), jobs `test` (both suites) and `acceptance` (held-out suite) on every PR and `main`. Merge only when both are green or skipped.
 
 ## Project kit
 
@@ -146,7 +143,7 @@ Skill suite: test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DE
 - Cost data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (written by `metrics --write` at Stage 7).
 - Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required (e.g. `🐛(install) #12: Back up a replaced skill outside its skills folder`).
 - Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
-- Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases tag-driven (`vX.Y.Z`; `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Fails when tag and `package.json` version differ.
+- Changelog: `release_notes` `written`: prose `CHANGELOG.md` by `/release-notes`. `cliff.toml` kept for `repo_rules.py subjects`. Releases tag-driven (`vX.Y.Z`; `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check (fails when tag and `package.json` differ), `promoted`, `devloop.py release-notes`, `ncipollo/release-action`.
 - Release: `reference/release.md`.
 - Stage 7 after a merge: report line `rc: now|later: <reason>`; rule in `reference/release.md`.
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
