@@ -268,8 +268,8 @@ def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
 
     def upgraded(commit: str) -> bool:
         if commit not in upgrades:
-            mine = version_at(repo, commit)
-            upgrades[commit] = mine is not None and mine != version_at(repo, f"{commit}^")
+            mine, parent = version_at(repo, commit), version_at(repo, f"{commit}^")
+            upgrades[commit] = mine is not None and parent is not None and mine != parent
         return upgrades[commit]
 
     def only_upgrades(path: str) -> bool:
