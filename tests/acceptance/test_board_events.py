@@ -56,8 +56,9 @@ class BoardEventTests(Board):
         self.event("subagent-stop", wt)
         self.assertEqual(self.note("alpha")["waiting"], "")
 
-    def test_f1_session_a_claim_stop_approve_stop(self) -> None:
-        """F1: claim, stop: Stage 2 "approve the spec"; approval, stop: Stage 3 "start Session B"."""
+    def test_f1_shaping_claim_stop_approve_stop(self) -> None:
+        """F1, amended by one-session-effort: claim, stop: Stage 2 "approve the spec"; approval, stop: Stage 3
+        "start Delivery"."""
         spec = self.spec("gadget", "Gadget Export", review="draft")
         self.ok("--claim", "gadget")
         self.event("stop", self.repo)
@@ -66,7 +67,7 @@ class BoardEventTests(Board):
         self.set_field(spec, "review_status", "approved")
         self.event("stop", self.repo)
         note = self.note("gadget")
-        self.assertEqual((note["stage"], note["waiting"]), (3, "start Session B"))
+        self.assertEqual((note["stage"], note["waiting"]), (3, "start Delivery"))
 
     @slow
     def test_f2_session_b_continues_the_claimed_note(self) -> None:
