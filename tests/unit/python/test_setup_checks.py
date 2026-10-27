@@ -102,14 +102,15 @@ class BoardVaultCheckTests(unittest.TestCase):
                 write(vault / "Project" / "dev-loop-board" / "Dev Loop Board.md", text)
                 self.assertEqual(check_setup.check_board_vault(home, repo, {}), expected)
 
-    def test_release_candidate_board_note_at_the_kit_version_is_not_reported(self) -> None:
-        """D2: a board note and a kit both at 3.0.0-rc.1 compare equal: no template line."""
+    def test_older_release_candidate_board_note_is_not_reported(self) -> None:
+        """D2: a planted note at 3.0.0-rc.1 is older than kit 3.0.0-rc.2: no template line."""
         from board import writer
 
+        planted = writer.board_text("3.0.0-rc.1") + "\n```dataviewjs\ndv.el('p', 'planted')\n```\n"
         with tempfile.TemporaryDirectory() as tmp:
             home, repo, vault = self.setup_vault(tmp, dataview=True, js=True, git=False, ignore=False)
-            write(repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "3.0.0-rc.1", "files": {}}))
-            write(vault / "Project" / "dev-loop-board" / "Dev Loop Board.md", writer.board_text("3.0.0-rc.1"))
+            write(repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "3.0.0-rc.2", "files": {}}))
+            write(vault / "Project" / "dev-loop-board" / "Dev Loop Board.md", planted)
             self.assertEqual(check_setup.check_board_vault(home, repo, {}), [])
 
     def test_lines_print_under_user_actions_not_as_failures(self) -> None:
