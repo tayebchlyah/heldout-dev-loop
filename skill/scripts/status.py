@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -268,5 +269,15 @@ def cmd_status(args: argparse.Namespace) -> int:
     if top and first:
         have, main = writer.kit_version(Path(top)), writer.kit_version(Path(first))
         if store.version_key(have) > store.version_key(main):
-            out["kit_drift"] = {"worktree": have, "main": main}
+            out["kit_drift"] = {"worktree": have, "main": main, "direction": "worktree-newer"}
+        else:
+            from merge_check import main_ref
+
+            ref = main_ref(Path(top))
+            try:
+                remote = json.loads(git(Path(top), "show", f"{ref}:.dev-loop/MANIFEST.json") or "")["version"] if ref else None
+            except (ValueError, KeyError, TypeError):
+                remote = None
+            if isinstance(remote, str) and store.version_key(remote) > store.version_key(have):
+                out["kit_drift"] = {"worktree": have, "main": remote, "direction": "main-newer"}
     return emit(out, 0)
