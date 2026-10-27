@@ -198,11 +198,11 @@ def promoted(repo: Path, tag: str) -> tuple[dict, int]:
     candidate_form = CANDIDATE_TAG.fullmatch(tag)
     if not FINAL_TAG.fullmatch(tag) and not candidate_form:
         return {"error": f"not a vX.Y.Z or vX.Y.Z-rc.N tag: {tag}"}, 2
+    if candidate_form:
+        return {"ok": True, "tag": tag, "skipped": "not-a-final-tag"}, 0
     final = run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
     if final.returncode != 0:
         return {"error": f"unknown tag: {tag}"}, 2
-    if candidate_form:
-        return {"ok": True, "tag": tag, "skipped": "not-a-final-tag"}, 0
     listing = run_git(repo, "tag", "--list", f"{tag}-rc.*")
     if listing.returncode != 0:
         return {"ok": False, "tag": tag, "error": "git tag failed"}, 1
