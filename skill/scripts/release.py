@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
+import ci_skip
 from autonomy import write_atomic
 from devloop import emit
 from merge_check import is_test_or_doc
@@ -132,7 +133,8 @@ def mismatch(notes: Path, record: dict) -> str | None:
 
 def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     """Paths that make the audit stale: the code paths changed since the audited commit, all changed paths when it is
-    not an ancestor (possibly none). None when the audit is current."""
+    not an ancestor (possibly none). None when the audit is current: only test or doc paths changed, or the
+    code paths are all a release or kit upgrade that `ci-skip` allows."""
     ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", record_sha, target)
     if diff.returncode != 0:  # the record commit is unknown here
@@ -140,7 +142,14 @@ def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     paths = [p for p in diff.stdout.split("\0") if p]
     if not ancestor:
         return paths
-    return [p for p in paths if not is_test_or_doc(p)] or None
+    code = [p for p in paths if not is_test_or_doc(p)]
+    if not code:
+        return None
+    try:
+        blocked = set(ci_skip.blocking(repo, record_sha, target, paths))
+    except ci_skip.ConfigError:
+        return code
+    return code if blocked.intersection(code) else None
 
 
 def is_release_tag(name: str) -> bool:
