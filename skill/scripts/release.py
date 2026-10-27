@@ -240,7 +240,10 @@ def kit_copies(repo: Path, commit: str) -> set[str]:
         mode, blob = entries[path]
         if mode not in ("100644", "100755", "120000"):
             continue
-        content = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True).stdout
+        read = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True)
+        if read.returncode != 0:
+            continue
+        content = read.stdout
         if mode == "120000":
             actual = "link:" + content.decode("utf-8", "replace")
         else:
@@ -292,8 +295,11 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     record = current_record(text)
     first = record is None
     base = None
+    exclude: list[str] = []
     if record is not None:
         base = expected_base(repo, record["sha"], head_sha)
+        if base is not None:
+            exclude = excluded(repo, record["sha"], base, head_sha)
     runs = sorted(
         (int(p.name[4:]), p) for p in audits.iterdir() if p.is_dir() and re.fullmatch(r"run-\d+", p.name)
     ) if audits.is_dir() else []
@@ -319,7 +325,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         "budget": budget if budget is not None else (100 if first else None),
         "scope": "whole" if base is None else f"{base}..{head_sha}",
         "base": base,
-        "exclude": excluded(repo, record["sha"], base, head_sha) if base is not None else [],
+        "exclude": exclude,
         "prior_runs": [str(p) for _, p in runs],
         "sandbox": {
             "engine": docker_up(),

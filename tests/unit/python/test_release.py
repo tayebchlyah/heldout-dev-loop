@@ -432,6 +432,7 @@ class ReleasePlanTests(PlanRepo):
 
 ONE, TWO, GONE = ".agents/skills/k/one.md", ".agents/skills/k/two.md", ".agents/skills/k/gone.md"
 MANIFEST = ".dev-loop/MANIFEST.json"
+SUB, LOST = ".agents/skills/sub", ".agents/skills/k/lost.md"
 
 
 class ReleasePlanExcludeTests(PlanRepo):
@@ -497,15 +498,26 @@ class ReleasePlanExcludeTests(PlanRepo):
             ("links", {"links": {".claude/skills/k": "../../.agents/skills/k", ".claude/skills/w": "../x"},
                        "entries": {".claude/skills/w": "link:../y"}}, [ONE, TWO, ".claude/skills/k", MANIFEST]),
             ("no MANIFEST at HEAD", {"version": None}, []),
+            ("submodule entry", {"entries": {SUB: sha("")}, "gitlink": True}, [ONE, TWO, MANIFEST]),
+            ("unreadable blob", {"files": {LOST: "x"}, "entries": {LOST: sha("")}, "lose": True}, [ONE, TWO, MANIFEST]),
         ]
         start = self.git("rev-parse", "HEAD")
         for label, change, expected in cases:
             with self.subTest(label):
                 self.git("reset", "-q", "--hard", start)
+                gitlink, lose = change.pop("gitlink", False), change.pop("lose", False)
                 head = self.upgrade(**change)
+                if gitlink:
+                    (self.repo / SUB).mkdir(exist_ok=True)
+                    self.git("update-index", "--add", "--cacheinfo", f"160000,{start},{SUB}")
+                    self.git("commit", "-q", "--amend", "--no-edit")
+                    head = self.git("rev-parse", "HEAD")
+                if lose:
+                    blob = self.git("rev-parse", f"HEAD:{LOST}")
+                    (self.repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
                 out, code = self.plan()
                 self.assertEqual((code, out["scope"], out["exclude"]), (0, f"{self.a}..{head}", expected))
-                subprocess.run(["rm", "-rf", out["output"]], check=True)
+                shutil.rmtree(out["output"])
 
     def test_no_exclude_without_the_record_as_base(self) -> None:
         self.upgrade()
