@@ -248,6 +248,32 @@ class PromotedCommandTests(RulesRepo):
         self.assertEqual(subprocess.run([sys.executable, str(RULES), "promoted"], cwd=self.repo,
                                         capture_output=True).returncode, 2)
 
+    def sha_run(self, extra: dict[str, str], *args: str) -> tuple[int, dict]:
+        self.release("v3.0.0-rc.2", {"skill/SKILL.md": "a\n"})
+        for path, text in {"package.json": "{}\n", "CHANGELOG.md": "c\n",
+                           ".agents/skills/x/SKILL.md": "x\n", **extra}.items():
+            put(self.repo / path, text)
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "🔖(release) v3.0.0")
+        return run_rules(self.repo, "promoted", "--tag", "v3.0.0", *args)
+
+    def test_promoted_sha_before_the_tag(self) -> None:
+        code, out = self.sha_run({}, "--sha", "HEAD")
+        self.assertEqual((code, out["ok"], out["candidate"]), (0, True, "v3.0.0-rc.2"))
+
+    def test_promoted_sha_kit_source_change(self) -> None:
+        code, out = self.sha_run({"skill/SKILL.md": "b\n"}, "--sha", "HEAD")
+        self.assertEqual((code, out["violations"]), (1, ["skill/SKILL.md"]))
+
+    def test_promoted_sha_unresolved(self) -> None:
+        code, out = self.sha_run({}, "--sha", "nope")
+        self.assertEqual(code, 2)
+        self.assertIn("error", out)
+
+    def test_sha_needs_promoted(self) -> None:
+        self.assertEqual(subprocess.run([sys.executable, str(RULES), "subjects", "--sha", "HEAD"], cwd=self.repo,
+                                        capture_output=True).returncode, 2)
+
     def test_runs_without_a_main_base(self) -> None:
         git(self.repo, "branch", "-m", "other")
         git(self.repo, "branch", "-D", "main")

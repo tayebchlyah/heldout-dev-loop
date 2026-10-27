@@ -4,7 +4,7 @@
 comments: each comment line added against <base> is of an allowed kind (CODING_STANDARDS.md).
 subjects: the subject of each commit in <base>..HEAD follows the gitmoji convention of cliff.toml.
 <base>: git merge-base HEAD origin/main, else main, else none (skipped no-base).
-promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base).
+promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base). With --sha <rev>: the commit <rev> stands for the final tag, before it exists.
 """
 
 from __future__ import annotations
@@ -194,15 +194,16 @@ FINAL_TAG = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 CANDIDATE_TAG = re.compile(r"(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-rc\.([1-9]\d*)")
 
 
-def promoted(repo: Path, tag: str) -> tuple[dict, int]:
+def promoted(repo: Path, tag: str, sha: str | None = None) -> tuple[dict, int]:
     candidate_form = CANDIDATE_TAG.fullmatch(tag)
     if not FINAL_TAG.fullmatch(tag) and not candidate_form:
         return {"error": f"not a vX.Y.Z or vX.Y.Z-rc.N tag: {tag}"}, 2
     if candidate_form:
         return {"ok": True, "tag": tag, "skipped": "not-a-final-tag"}, 0
-    final = run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
+    target = f"{sha}^{{commit}}" if sha is not None else f"refs/tags/{tag}^{{commit}}"
+    final = run_git(repo, "rev-parse", "--verify", "--quiet", target)
     if final.returncode != 0:
-        return {"error": f"unknown tag: {tag}"}, 2
+        return {"error": f"unknown commit: {sha}" if sha is not None else f"unknown tag: {tag}"}, 2
     listing = run_git(repo, "tag", "--list", f"{tag}-rc.*")
     if listing.returncode != 0:
         return {"ok": False, "tag": tag, "error": "git tag failed"}, 1
@@ -215,7 +216,7 @@ def promoted(repo: Path, tag: str) -> tuple[dict, int]:
         return {"ok": False, "tag": tag, "candidate": None, "violations": [], "reason": "no-release-candidate"}, 1
     candidate = numbers[max(numbers)]
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames",
-                   f"refs/tags/{candidate}^{{commit}}", f"refs/tags/{tag}^{{commit}}")
+                   f"refs/tags/{candidate}^{{commit}}", final.stdout.strip())
     if diff.returncode != 0:
         return {"ok": False, "tag": tag, "candidate": candidate, "error": "git diff failed"}, 1
     violations = sorted(p for p in diff.stdout.split("\0") if p.startswith(KIT_SOURCE))
@@ -230,16 +231,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=[*sorted(COMMANDS), "promoted"])
     parser.add_argument("--repo", default=".")
     parser.add_argument("--tag")
+    parser.add_argument("--sha")
     args = parser.parse_args(argv)
     if (args.command == "promoted") != (args.tag is not None):
         parser.error("--tag goes with promoted only")
+    if args.sha is not None and args.command != "promoted":
+        parser.error("--sha goes with promoted only")
     top = run_git(Path(args.repo), "rev-parse", "--show-toplevel") if Path(args.repo).is_dir() else None
     if top is None or top.returncode != 0:
         print(json.dumps({"error": f"not a git repository: {args.repo}"}))
         return 2
     repo = Path(top.stdout.strip())
     if args.command == "promoted":
-        payload, code = promoted(repo, args.tag)
+        payload, code = promoted(repo, args.tag, args.sha)
         print(json.dumps(payload, ensure_ascii=False))
         return code
     base = merge_base(repo)
