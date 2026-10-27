@@ -27,6 +27,12 @@ from board_fixtures import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, gi
 
 
 class BoardRobustTests(Board):
+    def setUp(self) -> None:
+        super().setUp()
+        log = mock.patch.object(server, "LOG", self.root / "dev-loop-board.log")
+        log.start()
+        self.addCleanup(log.stop)
+
     def test_malformed_board_files_are_left_alone(self) -> None:
         """Review Focus 1: a bad JSON line, no frontmatter, a sync conflict copy: unchanged, exit 0."""
         self.worktree("tiny", prefix="fix")
@@ -516,6 +522,20 @@ class BoardRobustTests(Board):
         found = health(self.port, timeout=1)
         if found and isinstance(found.get("pid"), int):
             os.kill(found["pid"], signal.SIGKILL)
+
+    def test_start_keeps_one_old_log_generation(self) -> None:
+        """A log over the cap moves to `.1` at launch, replacing the older one; a log at the cap stays."""
+        log, old = server.LOG, self.root / "dev-loop-board.log.1"
+        child = mock.Mock(pid=0)
+        child.poll.return_value = 0
+        for size, kept, moved in ((server.LOG_BYTES + 1, "", "x" * (server.LOG_BYTES + 1)),
+                                  (server.LOG_BYTES, "x" * server.LOG_BYTES, "oldest\n")):
+            with self.subTest(size=size):
+                put(old, "oldest\n")
+                put(log, "x" * size)
+                with mock.patch.object(subprocess, "Popen", return_value=child):
+                    server.start(self.port, VERSION, [self.vault], "x", "y", "started")
+                self.assertEqual((log.read_text(), old.read_text()), (kept, moved))
 
     def test_fifo_note_does_not_block_the_reader(self) -> None:
         """C1, D21: a note swapped for a FIFO after the listing is skipped within 2 s; the other notes are read."""
