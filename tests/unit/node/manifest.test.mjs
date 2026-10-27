@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { sha256, buildManifest, readManifest, compareManifest } from '../../../lib/manifest.mjs'
+import { tempDir } from './helpers.mjs'
 
 const kit = {
   files: [
@@ -46,7 +46,7 @@ test('the manifest lists the version and each kit path, sorted, with the link', 
 })
 
 test('readManifest returns the parsed file, or null when there is none', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'manifest-'))
+  const repo = tempDir('manifest-')
   assert.equal(readManifest(repo), null)
   mkdirSync(join(repo, '.dev-loop'))
   writeFileSync(join(repo, '.dev-loop', 'MANIFEST.json'), JSON.stringify({ version: '1.5.0', files: {} }))
@@ -54,13 +54,13 @@ test('readManifest returns the parsed file, or null when there is none', () => {
 })
 
 test('compareManifest finds nothing on an untouched kit', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'manifest-'))
+  const repo = tempDir('manifest-')
   writeKit(repo)
   assert.deepEqual(compareManifest(repo, buildManifest('1.5.0', kit)), { changed: [], missing: [] })
 })
 
 test('compareManifest reports a changed byte, a deleted file and a changed link target', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'manifest-'))
+  const repo = tempDir('manifest-')
   writeKit(repo)
   writeFileSync(join(repo, '.dev-loop/hooks/claude/gate.sh'), 'gatE\n')
   rmSync(join(repo, '.agents/skills/dev-loop/SKILL.md'))
@@ -73,7 +73,7 @@ test('compareManifest reports a changed byte, a deleted file and a changed link 
 })
 
 test('compareManifest calls a missing link missing, and a real folder in its place changed', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'manifest-'))
+  const repo = tempDir('manifest-')
   writeKit(repo)
   unlinkSync(join(repo, '.claude/skills/dev-loop'))
   const manifest = buildManifest('1.5.0', kit)
@@ -83,7 +83,7 @@ test('compareManifest calls a missing link missing, and a real folder in its pla
 })
 
 test('compareManifest calls a folder in place of a kit file changed', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'manifest-'))
+  const repo = tempDir('manifest-')
   writeKit(repo)
   rmSync(join(repo, '.dev-loop/hooks/claude/gate.sh'))
   mkdirSync(join(repo, '.dev-loop/hooks/claude/gate.sh'))

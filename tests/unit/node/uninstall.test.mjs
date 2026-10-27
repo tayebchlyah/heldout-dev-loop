@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tempDir } from './helpers.mjs'
 
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -86,7 +86,7 @@ function write14(home) {
 // A full 1.4 install of both harnesses, then a foreign agent and, unless
 // told otherwise, a foreign vault guard in the user settings.
 function globalInstall({ guard = true } = {}) {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  const home = tempDir('dev-loop-home-')
   write14(home)
   writeFileSync(join(home, '.claude/agents/other.md'), 'mine\n')
   if (guard) {
@@ -238,14 +238,14 @@ test('uninstall-global --dry-run changes nothing and says what would change', ()
 })
 
 test('uninstall-global on a machine with no global install reports nothing to remove and exits 0', () => {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  const home = tempDir('dev-loop-home-')
   const output = run(home, ['uninstall-global'])
   assert.match(output, /nothing to remove/)
   assert.deepEqual(readdirSync(home), [])
 })
 
 test('uninstall-global moves a dangling skill link aside', () => {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  const home = tempDir('dev-loop-home-')
   mkdirSync(join(home, '.claude/skills'), { recursive: true })
   symlinkSync(join(home, 'nowhere'), join(home, '.claude/skills/dev-loop'))
   run(home, ['uninstall-global', '--force'])

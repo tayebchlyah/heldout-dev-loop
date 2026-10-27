@@ -1,15 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tempDir } from './helpers.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 function fails(args, check) {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
+  const home = tempDir('dev-loop-home-')
   assert.throws(
     () => execFileSync('node', [join(repoRoot, 'bin', 'install.mjs'), ...args], {
       cwd: repoRoot,

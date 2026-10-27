@@ -1,10 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { entries, fakePackage, git, hookCommands, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, upgrade, version, assertValidToml } from './helpers.mjs'
+import { assertValidToml, entries, fakePackage, git, hookCommands, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, tempDir, upgrade, version } from './helpers.mjs'
 import { buildKit } from '../../../lib/kit.mjs'
 import { compareManifest, sha256 } from '../../../lib/manifest.mjs'
 import { readVersion, writeKit } from '../../../lib/project.mjs'
@@ -127,8 +126,8 @@ test('init from a subfolder refuses, names the top level and writes nothing', ()
 })
 
 test('init outside a git repository refuses', () => {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
-  const dir = mkdtempSync(join(tmpdir(), 'dev-loop-plain-'))
+  const home = tempDir('dev-loop-home-')
+  const dir = tempDir('dev-loop-plain-')
   initFails(dir, home, ['--yes'], /git repository/)
   assert.deepEqual(readdirSync(dir), [])
 })
@@ -240,7 +239,7 @@ test('readVersion reads the package.json version', () => {
 })
 
 test('writeKit writes changed files, skips equal ones, links, and deletes files the new kit dropped', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'dev-loop-kit-'))
+  const repo = tempDir('dev-loop-kit-')
   mkdirSync(join(repo, 'a'), { recursive: true })
   writeFileSync(join(repo, 'a/same.txt'), 'same\n')
   writeFileSync(join(repo, 'a/old.txt'), 'edited\n')
@@ -315,7 +314,7 @@ test('init accepts a kit file path that already holds the kit content', () => {
 })
 
 test('writeKit replaces a link that points elsewhere', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'dev-loop-kit-'))
+  const repo = tempDir('dev-loop-kit-')
   mkdirSync(join(repo, 'links'))
   symlinkSync('../other', join(repo, 'links/kept'))
   const reports = writeKit({ repo, kit: { files: [], links: [{ path: 'links/kept', target: '../skill' }] }, oldManifest: null, dryRun: false })
@@ -342,7 +341,7 @@ test('init replaces a skill link that points elsewhere', () => {
 
 test('init refuses a symlinked .codex folder that leads out of the repository, and writes nothing', () => {
   const { home, repo } = setup()
-  const outside = mkdtempSync(join(tmpdir(), 'dev-loop-outside-'))
+  const outside = tempDir('dev-loop-outside-')
   symlinkSync(outside, join(repo, '.codex'))
   initFails(repo, home, ['--yes'], /\.codex/)
   assert.deepEqual(readdirSync(outside), [])
@@ -351,7 +350,7 @@ test('init refuses a symlinked .codex folder that leads out of the repository, a
 
 test('init refuses a .claude/settings.json that is a symlink, and writes nothing', () => {
   const { home, repo } = setup()
-  const outside = mkdtempSync(join(tmpdir(), 'dev-loop-outside-'))
+  const outside = tempDir('dev-loop-outside-')
   writeFileSync(join(outside, 'settings.json'), '{}\n')
   mkdirSync(join(repo, '.claude'))
   symlinkSync(join(outside, 'settings.json'), join(repo, '.claude/settings.json'))
@@ -363,7 +362,7 @@ test('init refuses a .claude/settings.json that is a symlink, and writes nothing
 test('init refuses a symlinked skill folder and a symlinked .gitignore', () => {
   for (const path of ['.agents/skills/dev-loop', '.gitignore']) {
     const { home, repo } = setup()
-    const outside = mkdtempSync(join(tmpdir(), 'dev-loop-outside-'))
+    const outside = tempDir('dev-loop-outside-')
     mkdirSync(dirname(join(repo, path)), { recursive: true })
     symlinkSync(outside, join(repo, path))
     initFails(repo, home, ['--yes', '--harness=claude'], new RegExp(path.replace(/\./g, '\\.')))

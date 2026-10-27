@@ -8,6 +8,7 @@ import http.server
 import threading
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -109,6 +110,7 @@ def verify_lines(root: Path, words: tuple[str, ...] = ("verify", "base_url")) ->
 class VerifyCheckTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
         self.verify = load_verify()
 
     def test_ui_stack_without_verify_names_verify_init(self) -> None:
@@ -250,6 +252,7 @@ def snapshot(root: Path) -> dict[str, str]:
 class VerifyInitTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
         self.verify = load_verify()
 
     def test_writes_skeleton_link_and_config(self) -> None:
@@ -348,6 +351,7 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
 class DriveTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.shutdown)

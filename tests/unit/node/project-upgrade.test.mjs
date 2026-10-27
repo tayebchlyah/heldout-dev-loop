@@ -1,10 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { entries, fakePackage, git, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, upgrade, version } from './helpers.mjs'
+import { entries, fakePackage, git, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, tempDir, upgrade, version } from './helpers.mjs'
 import { compareManifest, sha256 } from '../../../lib/manifest.mjs'
 import { releaseNotes } from '../../../lib/project.mjs'
 
@@ -260,7 +259,7 @@ test('upgrade --dry-run writes nothing', () => {
 test('upgrade refuses a symlinked .codex folder that leads out of the repository, and writes nothing', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes'])
-  const outside = join(mkdtempSync(join(tmpdir(), 'dev-loop-outside-')), 'codex')
+  const outside = join(tempDir('dev-loop-outside-'), 'codex')
   renameSync(join(repo, '.codex'), outside)
   symlinkSync(outside, join(repo, '.codex'))
   const before = snapshot(outside)
@@ -322,7 +321,7 @@ function addManifestEntry(repo, key, value) {
 
 test('upgrade refuses an old manifest path outside the kit locations, with and without --force, and deletes nothing', () => {
   for (const force of [[], ['--force']]) {
-    const victim = mkdtempSync(join(tmpdir(), 'dev-loop-victim-'))
+    const victim = tempDir('dev-loop-victim-')
     writeFileSync(join(victim, 'keep.txt'), 'keep\n')
     const cases = [
       [`../${victim.split('/').pop()}`, 'sha256:0'],
@@ -367,7 +366,7 @@ test('upgrade --force removes a dropped kit file that is a symlink, and keeps th
   const { home, repo } = setup()
   const older = fakePackage('98.0.0', (root) => writeFileSync(join(root, 'skill/extra.md'), 'extra\n'))
   run(older, 'init', repo, home, ['--yes', '--harness=claude'])
-  const outside = join(mkdtempSync(join(tmpdir(), 'dev-loop-outside-')), 'target.txt')
+  const outside = join(tempDir('dev-loop-outside-'), 'target.txt')
   writeFileSync(outside, 'outside\n')
   rmSync(join(repo, '.agents/skills/dev-loop/extra.md'))
   symlinkSync(outside, join(repo, '.agents/skills/dev-loop/extra.md'))
@@ -432,7 +431,7 @@ test('upgrade --force moves a dropped path that no longer matches the old manife
 
 test('upgrade --force keeps the backup of a dropped path in a skills folder beside it, never through a backups link', () => {
   const { home, repo } = setup()
-  const out = mkdtempSync(join(tmpdir(), 'dev-loop-out-'))
+  const out = tempDir('dev-loop-out-')
   init(repo, home, ['--yes', '--harness=claude'])
   mkdirSync(join(repo, '.agents/skills/dev-loop/skills'))
   writeFileSync(join(repo, '.agents/skills/dev-loop/skills/x'), 'x\n')
@@ -447,7 +446,7 @@ test('upgrade --force keeps the backup of a dropped path in a skills folder besi
 
 test('upgrade --force keeps the backup of a dropped skill link beside it, never through a backups link', () => {
   const { home, repo } = setup()
-  const out = mkdtempSync(join(tmpdir(), 'dev-loop-out-'))
+  const out = tempDir('dev-loop-out-')
   init(repo, home, ['--yes'])
   symlinkSync(out, join(repo, '.claude/backups'))
   unlinkSync(join(repo, '.claude/skills/dev-loop'))
