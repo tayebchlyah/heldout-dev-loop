@@ -2,11 +2,11 @@
 
 ## Purpose
 
-dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Session A: Stages 1 and 2, stops at spec approval. Session B: Stages 3 to 7 chained under the autonomy grant. Track S: no spec, no plan. `devloop.py status` detects the stage.
+dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Session A: Stages 1, 2, stops at spec approval. Session B: Stages 3 to 7 chained under autonomy grant. Track S: no spec, no plan. `devloop.py status` detects the stage.
 
 ## Repo map
 
-Dogfood: this repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/dev-loop/`, `.agents/skills/pause/`, `.agents/skills/continue/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.claude/skills/pause`, `.claude/skills/continue`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else in the repo is edited normally.
+Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/dev-loop/`, `.agents/skills/pause/`, `.agents/skills/continue/`, `.claude/agents/`, `.claude/skills/dev-loop`, `.claude/skills/pause`, `.claude/skills/continue`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Everything else edited normally.
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
@@ -26,7 +26,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to the latest t
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check.
 - `skill/scripts/ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/retro.py`: `status` `review_due`, `sessions`.
-- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`.
+- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`.
 - `skill/scripts/sandbox-run.py`: the audit sandbox runner (Docker).
 - `skill/scripts/feature_gate.py`: `review-merge`, `acceptance`.
 - `skill/scripts/second_review.py`: `second-review`.
@@ -55,7 +55,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to the latest t
   - `test_verify.py`: `verify-init`, `drive`, verify checks.
   - `test_capture.py`: `capture`.
   - `test_second_review.py`: `second-review`.
-  - `test_release.py`: `release-check`, `release-plan`.
+  - `test_release.py`: `release-check`, `release-plan`, `release-notes`.
   - `test_release_record.py`: `release-record`.
   - `test_release_guard.py`: release guards, setup, kit, text.
   - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; skipped without it, a failure with `DEVLOOP_REQUIRE_DOCKER=1`, set in CI).
@@ -98,22 +98,23 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `seal --feature <slug> --message <subject> [--reverts <sha> ...]`: Commit the staged held-out tests with the seal trailers (`spec-tester` only); `seal --rebase-continue` in a rebase. `reference/cli/seal.md`
 - `seal-check [--uncommitted]`: Check the seal commits of the branch, kit file changes and taint records. `reference/cli/seal-check.md`
 - `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a seam to split at. `reference/cli/size-check.md`
-- `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, the feature map README and the `verify` key. `reference/cli/verify-init.md`
-- `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save screenshots and evidence. `reference/cli/drive.md`
-- `capture --write-after <file>`: Save the evidence after set to a file, no gh; `capture --pr <n>` puts the before and after shots and videos in the PR. `reference/cli/capture.md`
+- `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, feature map README and `verify` key. `reference/cli/verify-init.md`
+- `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save shots and evidence. `reference/cli/drive.md`
+- `capture --write-after <file>`: Save the evidence after set to a file, no gh; `capture --pr <n>` puts before and after shots and videos in the PR. `reference/cli/capture.md`
 - `audit`: SubagentStop hook: record a taint when a subagent read files it must not read. `reference/cli/audit.md`
 - `board [--repo <path>] [--event session-start|prompt|stop|subagent-start|subagent-stop|post-tool] [--claim <slug>] [--no-serve] [--stop-server]`: Write the progress board notes and run the local board server. `reference/cli/board.md`
-- `decide --kind decision|discovery --what <text> --why <text> --evidence <text> [--result <text>] [--risk] [--feature <slug>] [--repo <path>]`: Append one row to the decision log of the feature. `reference/cli/decide.md`
-- `pause [--event] [--intent <t>] [--verified <t>] [--open <t>] [--next <t>] [--agent <id>=<task> ...] [--run <log> ...] [--repo <path>]`: Write the pause note of the worktree; `pause --clear` removes it. `reference/cli/pause.md`
-- `second-review --harness claude|codex [--timeout <minutes>]`: Run the other family's CLI as a second reviewer of the branch, correctness and security only. `reference/cli/second-review.md`
+- `decide --kind decision|discovery --what <text> --why <text> --evidence <text> [--result <text>] [--risk] [--feature <slug>] [--repo <path>]`: Append one row to the feature decision log. `reference/cli/decide.md`
+- `pause [--event] [--intent <t>] [--verified <t>] [--open <t>] [--next <t>] [--agent <id>=<task> ...] [--run <log> ...] [--repo <path>]`: Write the worktree pause note; `pause --clear` removes it. `reference/cli/pause.md`
+- `second-review --harness claude|codex [--timeout <minutes>]`: Run the other family's CLI as second reviewer of the branch, correctness and security only. `reference/cli/second-review.md`
 - `review-merge <reviewer>=<file> [...]`: Merge the Stage 6 reviewer tables by file and line. `reference/cli/review-merge.md`
-- `acceptance [--failed]`: Run the held-out suite; read its JUnit, check stale images, apply the progress guard. `reference/cli/acceptance.md`
-- `ci wait [--pr <n>] [--timeout <min>]`: Wait for one PR verdict for the local `HEAD`: pass, fail, conflicts, threads, blocked or timeout. `reference/cli/ci.md`
+- `acceptance [--failed]`: Run the held-out suite; read its JUnit, check stale images, apply progress guard. `reference/cli/acceptance.md`
+- `ci wait [--pr <n>] [--timeout <min>]`: Wait for one PR verdict for local `HEAD`: pass, fail, conflicts, threads, blocked, timeout. `reference/cli/ci.md`
 - `merge-check [--repo <path>] [--feature <slug>]`: The Stage 7 merge decision, `auto` or `human`, with its reasons. `reference/cli/merge-check.md`
 - `metrics [--repo <path>] [--feature <slug>] [--write]`: Token cost of each stage of a feature from Claude transcripts; `--write` adds the Feature Metrics row. `reference/cli/metrics.md`
 - `sessions --since <days> [--repo <path>]`: List the Claude Code and Codex sessions of every worktree, for retro. `reference/cli/sessions.md`
 - `release-check [--repo <path>] (--tag <name> | --sha <rev>)`: May a commit get a release tag: a current audit record and no open security item. `reference/cli/release-check.md`
 - `ci-skip --base <rev> [--head <rev>] [--repo <path>] [--github-output]`: May CI skip this diff: only a release (version files, `CHANGELOG.md`) or a kit upgrade. `reference/cli/ci-skip.md`
+- `release-notes --tag <tag> [--repo <path>] [--output <file>]`: Print or write the body of the `CHANGELOG.md` section of a tag, the GitHub Release body. `reference/cli/release-notes.md`
 - `release-plan [--repo <path>] [--harness claude|codex] [--profile quick|standard|deep] [--budget <n>]`: Plan a release security audit run: run folder, profile, budget, scope, sandbox. `reference/cli/release-plan.md`
 - `release-record --run <folder> [--base <sha>] [--harness claude|codex] [--repo <path>]`: Write a release audit result into the project note. `reference/cli/release-record.md`
 
@@ -125,38 +126,38 @@ npm test                                    # node suite: installer, board rende
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
-Held-out suite: `commands.acceptance` in `dev-loop.json`, `scripts/acceptance.sh`. Run by CI job `acceptance`, never by the gate.
+Held-out suite: `commands.acceptance` in `dev-loop.json`, `scripts/acceptance.sh`. CI job `acceptance` runs it, never the gate.
 
-Skill suite: test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` processes at once (default one per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: writes JUnit `skill.xml` there; a chunk process that dies counts each of its ids as an error. Arguments (a test name): plain unittest, no report.
+Skill suite: test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` processes at once (default one per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: writes JUnit `skill.xml` there; a dead chunk process counts each of its ids as an error. Argument (a test name): plain unittest, no report.
 
-`scripts/gate.sh`: both, the full gate.
+`scripts/gate.sh`: both, full gate.
 
-`scripts/gate.sh` fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs that command first. Both must pass before any commit. `.github/workflows/ci.yml` runs jobs `test` (both suites) and `acceptance` (the held-out suite) on every PR and on `main`. Merge a PR only when both checks are green.
+`scripts/gate.sh` fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml` runs jobs `test` (both suites) and `acceptance` (held-out suite) on every PR and `main`. Merge only when both are green.
 
 ## Project kit
 
 - Kit files are never edited in a project: change the source here, then run `upgrade`.
 - The walls deny a file-tool edit of a kit file; `seal-check` reports any other route as `kit-changed`.
-- Kit table, MANIFEST rule, notes path, verify after install (Ruling R10), upgrade notes: `reference/kit.md`.
+- Kit table, MANIFEST rule, notes path, verify after install (R10), upgrade notes: `reference/kit.md`.
 
 ## Conventions
 
 - Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in Review Yield.md (`$NOTES/Review Yield.md`).
 - Cost data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (written by `metrics --write` at Stage 7).
 - Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required (e.g. `🐛(install) #12: Back up a replaced skill outside its skills folder`).
-- Issues: each new feature or fix starts from a GitHub issue, opened before the branch; each of its commit subjects names it (`#<issue>:`). PR body: `Closes #<issue>`.
-- Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases are tag-driven (`vX.Y.Z`; `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Workflow fails when tag and `package.json` version differ.
-- Release: follow `reference/release.md`.
+- Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
+- Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases tag-driven (`vX.Y.Z`; `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Fails when tag and `package.json` version differ.
+- Release: `reference/release.md`.
 - Stage 7 after a merge: report line `rc: now|later: <reason>`; rule in `reference/release.md`.
-- Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` does not allow; mark one about behaviour an outside dependency forces with `allow-comment: dependency`.
-- Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). Its `warnings` (older commits): reword in the Stage 7 rebase, before the push.
+- Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
+- Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase, before push.
 - No tracked file may contain an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path (guard test).
-- No tracked file may name an internal client or project (employer, its customers, private projects). The node test in `tests/unit/node/payload.test.mjs` holds only `sha256` of the lowercased name words joined by one space, first 16 hex chars. New name: add its hash to `INTERNAL_NAME_HASHES`, never the name.
+- No tracked file may name an internal client or project (employer, its customers, private projects). Node test `tests/unit/node/payload.test.mjs` holds only `sha256` (first 16 hex) of the lowercased name words joined by one space. New name: add hash to `INTERNAL_NAME_HASHES`, never the name.
 - The three merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`): always merged, never copied wholesale.
 
 ## Gotchas
 
-- Repo private. Nothing may assume an anonymous reader: no badges, no links that need a public repo. `npx github:tchlyah/dev-loop` install works only with Git or SSH credentials that reach it.
+- Repo private. No anonymous reader: no badges, no links needing a public repo. `npx github:tchlyah/dev-loop` install needs Git or SSH credentials that reach it.
 
 ## Working principles
 
