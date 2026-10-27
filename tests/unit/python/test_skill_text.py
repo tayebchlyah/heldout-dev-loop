@@ -351,12 +351,16 @@ class TracksContractTests(unittest.TestCase):
                 self.assertIn(value, stage_text(1))
         start = self.skill.index("\n## Detect the stage")
         detect = self.skill[start:self.skill.index("\n## ", start + 1)]
-        for value in ["`effort`", "`want`", "`/effort <want>`"]:
+        for value in ["`effort`", "`level` and `want` not null, and they differ", "`/effort <want>`"]:
             with self.subTest(value=value):
                 self.assertIn(value, detect)
         for value in ["planner", "high effort"]:
             with self.subTest(value=value):
                 self.assertIn(value, stage_text(4))
+        self.assertGreater(stage_text(4).index("then Stage 5"), stage_text(4).index("size-check --all"))
+        self.assertIn("number outside the block", stage_text(2))
+        self.assertNotIn("Session A", self.skill)
+        self.assertNotIn("Session B", self.skill)
 
     def test_skill_detects_by_devloop_status(self) -> None:
         self.assertIn("scripts/devloop.py status", self.header)
