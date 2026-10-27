@@ -36,6 +36,7 @@ MAX_BYTES = 65536
 MAX_NOTES = 500
 WALK_EVERY = 60
 LOG = Path(tempfile.gettempdir()) / "dev-loop-board.log"
+LOG_BYTES = 65536
 
 
 class Index:
@@ -187,6 +188,11 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
            "--me", me]
     for root in roots:
         cmd += ["--root", str(root)]
+    try:
+        if LOG.stat().st_size > LOG_BYTES:
+            LOG.replace(LOG.with_name(f"{LOG.name}.1"))
+    except FileNotFoundError:
+        pass  # No log yet, or a racing start moved it first.
     with open(LOG, "a") as log:
         proc = subprocess.Popen(cmd, start_new_session=True, cwd="/", stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=log)
