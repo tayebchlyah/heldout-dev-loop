@@ -4,8 +4,16 @@
     "claude",
     "codex"
   ],
+  "release_notes": "written",
+  "version_files": [
+    "package.json",
+    "package-lock.json"
+  ],
   "commands": {
-    "acceptance": "scripts/acceptance.sh"
+    "acceptance": "scripts/acceptance.sh",
+    "release_prepare": "node bin/install.mjs upgrade",
+    "release_check": "scripts/release-check.sh",
+    "release_verify": "scripts/release-verify.sh"
   },
   "file_size_exempt": [
     "CHANGELOG.md",

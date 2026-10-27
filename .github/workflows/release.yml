@@ -31,29 +31,12 @@ jobs:
         if: ${{ !contains(github.ref_name, '-rc.') }}
         run: python3 scripts/repo_rules.py promoted --tag "$GITHUB_REF_NAME"
 
-      - name: Generate the changelog of a final release
-        if: ${{ !contains(github.ref_name, '-rc.') }}
-        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
-        id: git-cliff-final
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          config: cliff.toml
-          version: v2.14.2
-          args: -vv --latest --strip header --tag-pattern ^v[0-9]+[.][0-9]+[.][0-9]+$
-        env:
-          OUTPUT: CHANGES.md
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          python-version: "3.14"
 
-      - name: Generate the changelog of a release candidate
-        if: ${{ contains(github.ref_name, '-rc.') }}
-        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
-        id: git-cliff-rc
-        with:
-          config: cliff.toml
-          version: v2.14.2
-          args: -vv --latest --strip header
-        env:
-          OUTPUT: CHANGES.md
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write the release notes
+        run: python3 .agents/skills/dev-loop/scripts/devloop.py release-notes --tag "$GITHUB_REF_NAME" --output CHANGES.md
 
       - name: Create or update release
         uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
