@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { assertValidToml, entries, fakePackage, git, hookCommands, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, tempDir, upgrade, version } from './helpers.mjs'
+import { entries, fakePackage, git, hookCommands, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, tempDir, upgrade, version, assertValidToml } from './helpers.mjs'
 import { buildKit } from '../../../lib/kit.mjs'
 import { compareManifest, sha256 } from '../../../lib/manifest.mjs'
 import { readVersion, writeKit } from '../../../lib/project.mjs'
