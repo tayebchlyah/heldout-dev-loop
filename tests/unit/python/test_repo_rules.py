@@ -395,6 +395,32 @@ class RepoDocsTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, self.agents)
 
+    def test_release_candidate_rules(self) -> None:
+        release = (ROOT / "reference" / "release.md").read_text()
+        rules = re.search(r"^- `scripts/repo_rules.py`:.*$", self.agents, re.M).group(0)
+        for text, value in (
+            (self.agents, "installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`)"),
+            (self.agents, "changes only by `upgrade` to the next tag"),
+            (self.agents, "`rc: now|later: <reason>`"),
+            (rules, "`promoted`"),
+            (release, "## Release candidate"),
+            (release, "`npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade`"),
+            (release, "## Final release"),
+            (release, "scripts/repo_rules.py promoted --tag vX.Y.Z`"),
+            (release, "`scripts/canary.sh`"),
+            (release, "`rc: now|later: <reason>`"),
+            (release, "`3.0.0`"),
+        ):
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+        self.assertLess(release.index("/release-audit"), release.index("git tag -a vX.Y.Z-rc.N"))
+        cliff = re.findall(r"`([^`]*git cliff[^`]*CHANGELOG\.md[^`]*)`", release)
+        pattern = "--tag-pattern '^v[0-9]+[.][0-9]+[.][0-9]+$'"
+        self.assertEqual(cliff, [
+            f"GITHUB_TOKEN=$(gh auth token) git cliff {pattern} --tag vX.Y.Z-rc.N -o CHANGELOG.md",
+            f"GITHUB_TOKEN=$(gh auth token) git cliff {pattern} --tag vX.Y.Z -o CHANGELOG.md",
+        ])
+
 
 class GateScopeTests(unittest.TestCase):
     def test_changed_scope_runs_the_skill_suite(self) -> None:

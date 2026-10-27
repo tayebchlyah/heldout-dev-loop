@@ -315,6 +315,16 @@ class TracksContractTests(unittest.TestCase):
         self.assertNotIn("Tell the user to review", stage)
         self.assertNotIn("/clear", stage)
 
+    def test_kit_drift_session_rule(self) -> None:
+        start = self.skill.index("\n## Where each stage runs")
+        where = self.skill[start:self.skill.index("\n## 0 ")]
+        self.assertIn("`worktree-newer`: stop; tell the user to merge the kit upgrade", self.header)
+        for value in ["`main-newer`", "Stage 3, 6 or 7 start", "`scripts/devloop.py pause --intent",
+                      "--next <stage start>", "`/continue` (Codex `$continue`)", "new session in the worktree",
+                      "Main worktree", "start a new session", "Stages 4 and 5 ignore `main-newer`"]:
+            with self.subTest(value=value):
+                self.assertIn(value, where)
+
     def test_skill_detects_by_devloop_status(self) -> None:
         self.assertIn("scripts/devloop.py status", self.header)
         self.assertNotIn("| Check | Stage |", self.skill)
