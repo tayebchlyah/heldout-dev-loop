@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, git_in, write
@@ -444,6 +446,7 @@ class WorktreeWallTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.root, True)
         self.main = self.root / "main"
         write(self.main / "dev-loop.json", "{}\n")
         write(self.main / "docs" / "d.txt", "d\n")
@@ -466,11 +469,9 @@ class WorktreeWallTests(unittest.TestCase):
         self.wt["other"] = self.root / "other-x"
         git_in(other, "worktree", "add", "-q", "-b", "feat/x", str(self.wt["other"]))
         (self.main / "link").symlink_to(self.wt["x"])
+        write(self.wt["x"] / "a.txt", "a\n")
+        (self.main / "flink").symlink_to(self.wt["x"] / "a.txt")
         (self.wt["x"] / "sub").mkdir()
-
-    def tearDown(self) -> None:
-        import shutil
-        shutil.rmtree(self.root, ignore_errors=True)
 
     def run_wall(self, stdin: str, env: dict | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["/bin/bash", str(CLAUDE_HOOKS / "worktree-wall.sh")], input=stdin, text=True,
@@ -490,7 +491,10 @@ class WorktreeWallTests(unittest.TestCase):
                  (self.edit(self.main, ".claude/worktrees/x/a.txt"), x),
                  (self.edit(self.main, self.main / "link" / "a.txt"), x),
                  (self.edit(self.main, f"{self.main}/docs/../.claude/worktrees/x/a.txt"), x),
-                 (self.edit(self.main, self.wt["odd"] / "a.txt"), self.wt["odd"])]
+                 (self.edit(self.main, self.wt["odd"] / "a.txt"), self.wt["odd"]),
+                 (self.edit(self.main, f"{self.main}/nope/../.claude/worktrees/x/a.txt", "Write"), x),
+                 (self.edit(self.main, self.main / "flink"), x),
+                 (self.edit(self.root / "gone", x / "a.txt"), x)]
         for stdin, worktree in cases:
             with self.subTest(stdin=stdin):
                 result = self.run_wall(stdin)
@@ -512,23 +516,24 @@ class WorktreeWallTests(unittest.TestCase):
                 self.assert_quiet(self.run_wall(stdin))
 
     def test_fails_open(self) -> None:
-        import shutil
-        bins = self.root / "bin"
-        bins.mkdir()
-        for tool in ("git", "cat"):
-            (bins / tool).symlink_to(shutil.which(tool))
-        no_jq = {**os.environ, "PATH": str(bins)}
+        envs = {}
+        for name, tools in (("no_jq", ("git", "cat")), ("no_git", ("jq", "cat"))):
+            bins = self.root / name
+            bins.mkdir()
+            for tool in tools:
+                (bins / tool).symlink_to(shutil.which(tool))
+            envs[name] = {**os.environ, "PATH": str(bins)}
         target = {"tool_name": "Edit", "tool_input": {"file_path": str(self.wt["x"] / "a.txt")}}
         cases = [("{", None), (json.dumps(target), None),
                  (json.dumps({"cwd": str(self.main), "tool_name": "Edit", "tool_input": {}}), None),
                  (json.dumps({"cwd": str(self.main), "tool_name": "Edit", "tool_input": {"file_path": 7}}), None),
-                 (self.edit(self.main, self.wt["x"] / "a.txt"), no_jq)]
+                 (self.edit(self.main, self.wt["x"] / "a.txt"), envs["no_jq"]),
+                 (self.edit(self.main, self.wt["x"] / "a.txt"), envs["no_git"])]
         for stdin, env in cases:
             with self.subTest(stdin=stdin, env=bool(env)):
                 self.assert_quiet(self.run_wall(stdin, env))
 
     def test_ends_on_odd_paths(self) -> None:
-        import uuid
         gone = self.root / "gone"
         gone.mkdir()
         gone.rmdir()
