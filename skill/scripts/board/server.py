@@ -10,6 +10,7 @@ Endpoints: `/` (page.html with render.js inline), `/api/status` (status notes un
 from __future__ import annotations
 
 import argparse
+import contextlib
 import http.client
 import json
 import os
@@ -188,11 +189,9 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
            "--me", me]
     for root in roots:
         cmd += ["--root", str(root)]
-    try:
+    with contextlib.suppress(OSError):
         if LOG.stat().st_size > LOG_BYTES:
             LOG.replace(LOG.with_name(f"{LOG.name}.1"))
-    except FileNotFoundError:
-        pass  # No log yet, or a racing start moved it first.
     with open(LOG, "a") as log:
         proc = subprocess.Popen(cmd, start_new_session=True, cwd="/", stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=log)
