@@ -215,6 +215,26 @@ def detect(repo: Path, feature: str | None, notes: Path) -> dict:
 
 
 PAUSED_NEXT = "resume from the pause note"
+LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def effort(stage: int | str, linked: bool, env: Mapping[str, str]) -> dict:
+    """The session effort level in effect, and the level the stage wants (a rebase follows its worktree kind)."""
+    level = env.get("CLAUDE_EFFORT")
+    if stage == "rebase":
+        want = "medium" if linked else "high"
+    else:
+        want = {1: "high", 2: "high", 3: "medium", 4: "medium", 5: "medium", 6: "medium", 7: "medium"}.get(stage)
+    return {"level": level if level in LEVELS else None, "want": want}
+
+
+def is_linked(path: Path | str | None) -> bool:
+    """True when the path is in a linked worktree: its git dir is not the common git dir (physical paths)."""
+    if not path:
+        return False
+    git_dir = git(Path(path), "rev-parse", "--absolute-git-dir")
+    common = git(Path(path), "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return bool(git_dir and common) and os.path.realpath(git_dir) != os.path.realpath(common)
 
 
 def pause_state(worktree: Path, env: Mapping[str, str], delete: bool) -> dict | None:
@@ -237,7 +257,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     try:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
-        return emit(result(0, "no notes path", str(exc)), 0)
+        payload = result(0, "no notes path", str(exc))
+        payload["effort"] = effort(0, False, os.environ)
+        return emit(payload, 0)
     out = detect(repo, args.feature, notes)
     # Only `status` deletes a note: `board`, `decide` and `pause` run in the same session and must keep it.
     top = git(repo, "rev-parse", "--show-toplevel")
@@ -280,4 +302,5 @@ def cmd_status(args: argparse.Namespace) -> int:
                 remote = None
             if isinstance(remote, str) and store.version_key(remote) > store.version_key(have):
                 out["kit_drift"] = {"worktree": have, "main": remote, "direction": "main-newer"}
+    out["effort"] = effort(out["stage"], is_linked(out["worktree"] or top), os.environ)
     return emit(out, 0)
