@@ -295,8 +295,8 @@ class KitTextTests(unittest.TestCase):
         self.assertIn("second_review", text)
         self.assertIn("dev-loop.local.json", text)
         review = [line for line in text.splitlines() if re.search(r"second[_ -]review|reviewer", line, re.I)]
-        self.assertTrue([line for line in review if "Session B" in line and re.search(r"never asks?\b", line, re.I)],
-                        "no line says Session B never asks")
+        self.assertTrue([line for line in review if "Delivery" in line and re.search(r"never asks?\b", line, re.I)],
+                        "no line says Delivery never asks")
         self.assertTrue([line for line in review if re.search(r"no default answer", line, re.I)],
                         "no line says the enable question has no default answer")
 
