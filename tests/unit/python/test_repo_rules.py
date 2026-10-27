@@ -229,6 +229,13 @@ class PromotedCommandTests(RulesRepo):
         self.assertTrue(out["ok"])
         self.assertEqual(out["skipped"], "not-a-final-tag")
 
+    def test_missing_release_candidate_tag_is_skipped(self) -> None:
+        self.release("v3.0.0-rc.1", {"skill/a": "1\n"})
+        code, out = self.promoted("v3.0.0-rc.3")
+        self.assertEqual(code, 0)
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["skipped"], "not-a-final-tag")
+
     def test_unknown_tag_and_bad_names_are_usage_errors(self) -> None:
         self.release("v3.0.0-rc.1", {"skill/a": "1\n"})
         for tag in ("v9.9.9", "3.0.0", "v3.0", "v3.0.0-rc.0", "v03.0.0", "v3.0.0-beta.1", "main"):
