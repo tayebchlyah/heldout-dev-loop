@@ -649,18 +649,18 @@ def section(text: str, heading: str) -> str:
 
 
 class SecondReviewTextTests(unittest.TestCase):
-    """The kit text that wires the command into Session A and the Stage 6 review wave, AGENTS.md, the canary."""
+    """The kit text that wires the command into Shaping and the Stage 6 review wave, AGENTS.md, the canary."""
 
     ROOT = SCRIPTS.parents[1]
 
-    def test_skill_runs_the_second_review_and_asks_only_in_session_a(self) -> None:
+    def test_skill_runs_the_second_review_and_asks_only_in_shaping(self) -> None:
         skill = (SCRIPTS.parent / "SKILL.md").read_text()
         stage6 = section(skill, "6 Feature gate")
         for value in ("devloop.py second-review", "logged --name second-review", "Monitor", "second-review:<reviewer>",
                       "second review:", "`skipped: <reason>`", "`failed: <reason>`", "`tainted`", "Only `fail` fails"):
             with self.subTest(value=value):
                 self.assertIn(value, stage6)
-        for value in ("second_review", "dev-loop.local.json", "Session B never asks", "no default answer"):
+        for value in ("second_review", "dev-loop.local.json", "Delivery never asks", "no default answer"):
             with self.subTest(value=value):
                 self.assertIn(value, skill)
 

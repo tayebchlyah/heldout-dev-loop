@@ -305,9 +305,9 @@ class TracksContractTests(unittest.TestCase):
         self.assertIn("dev-loop.json", description)
         self.assertNotIn("vault_notes", self.skill)
         for value in [
-            "Track S", "Track M", "Track L", "Session A", "Session B", "Stages 3 to 7",
+            "Track S", "Track M", "Track L", "Shaping", "Delivery", "Stages 3 to 7",
             "devloop.py decide", "three fix rounds", "one-way door", "deletes data", "reaches production",
-            "usage limit", "Supersedes", "Monitor", "two minutes", "| T0 |", "| T4 |",
+            "usage limit", "Supersedes", "Monitor", "two minutes",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, self.header)
@@ -325,12 +325,38 @@ class TracksContractTests(unittest.TestCase):
                 self.assertIn(value, self.header)
         for value in ["`main-newer`", "Stage 3, 6 or 7 start", "`scripts/devloop.py pause --intent",
                       "--next <stage start>", "`/continue` (Codex `$continue`)", "new session in the worktree",
-                      "Main worktree, Session B start (after `git fetch origin`) or Stage 2 start",
+                      "Main worktree, Stage 3 start (after `git fetch origin`) or Stage 2 start",
                       "start a new session", "Stages 4 and 5 ignore `main-newer`",
                       "rebase the main checkout onto `origin/main` as the Stage 2 start does, then `scripts/devloop.py pause",
                       "Main checkout rebase: in the main worktree, first in `git worktree list` (`git -C <main worktree>`)"]:
             with self.subTest(value=value):
                 self.assertIn(value, where)
+
+    def test_verification_budget_moved(self) -> None:
+        tests_md = (SKILL_ROOT / "references" / "tests.md").read_text()
+        for value in ["## Verification budget", "| T0 |", "| T4 |", "Each project caps T0"]:
+            with self.subTest(value=value):
+                self.assertIn(value, tests_md)
+        self.assertIn("references/tests.md", self.header)
+
+    def test_one_session_hand_off_and_effort(self) -> None:
+        for value in ["one session by default", "optional", "high effort", "medium effort"]:
+            with self.subTest(value=value):
+                self.assertIn(value, self.header)
+        for value in ["`/effort medium`", "`/compact`", "`Start Delivery of <slug>`", "own code block", "after the compaction"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage_text(2))
+        for value in ["`/effort medium`", "`Accept Track S`"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage_text(1))
+        start = self.skill.index("\n## Detect the stage")
+        detect = self.skill[start:self.skill.index("\n## ", start + 1)]
+        for value in ["`effort`", "`want`", "`/effort <want>`"]:
+            with self.subTest(value=value):
+                self.assertIn(value, detect)
+        for value in ["planner", "high effort"]:
+            with self.subTest(value=value):
+                self.assertIn(value, stage_text(4))
 
     def test_skill_detects_by_devloop_status(self) -> None:
         self.assertIn("scripts/devloop.py status", self.header)
