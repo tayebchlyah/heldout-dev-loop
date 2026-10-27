@@ -83,6 +83,34 @@ class ProjectConfigTests(unittest.TestCase):
             self.assertEqual(self.check({"file_size_exempt": value}), [message], value)
         self.assertEqual(self.check({"file_size_exempt": ["docs/*"]}), [])
 
+    def test_release_notes_values(self) -> None:
+        failures = self.check({"release_notes": "ai"})
+        self.assertEqual(len(failures), 1)
+        for word in ("release_notes", "cliff", "written"):
+            self.assertIn(word, failures[0])
+        for config in ({"release_notes": "cliff"}, {"release_notes": "written"}, {}):
+            self.assertEqual([f for f in self.check(config) if "release_notes" in f], [], config)
+        self.assertEqual(len(self.check({"release_notes": 1})), 1)
+
+    def test_version_files_shape(self) -> None:
+        self.assertIn("VERSION", "\n".join(self.check({"version_files": ["VERSION"]})))
+        for value in (["/etc/passwd"], ["../x"], ["a/../b"], "package.json", [""]):
+            self.assertEqual(len(self.check({"version_files": value})), 1, value)
+        self.assertEqual(self.check({"version_files": []}), [])
+        self.assertEqual(self.check({}), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            write(Path(tmp) / "dev-loop.json", json.dumps({"version_files": ["package.json"]}))
+            write(Path(tmp) / "package.json", "{}")
+            self.assertEqual(check_setup.check_project_config(Path(tmp)), [])
+
+    def test_release_commands(self) -> None:
+        self.assertEqual(
+            self.check({"commands": {"release_verify": ""}}),
+            ["commands.release_verify in dev-loop.json must be a non-empty string"],
+        )
+        commands = {key: "scripts/x.sh" for key in ("release_prepare", "release_check", "release_verify")}
+        self.assertEqual(self.check({"commands": commands}), [])
+
     def test_valid_commands_and_merge_pass(self) -> None:
         commands = {key: f"run {key}" for key in check_setup.COMMAND_KEYS}
         self.assertEqual(self.check({"commands": commands, "merge": "human"}), [])
