@@ -72,7 +72,7 @@ Dogfood: this repo runs dev-loop on itself, installed kit pinned to the latest t
   - `fixtures/`: test data. No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests (Node test runner, real Chromium).
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never by the gate. Never read, list or run it as an implementer.
-- `scripts/gate.sh`: repo gate, node and skill suites side by side; `GATE_SCOPE=changed` picks the suites by path.
+- `scripts/gate.sh`: repo gate, node and skill suites side by side in an empty `TMPDIR`, a leftover fails it; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
 - `scripts/canary.sh`: live canary, run by hand before a release (this repo only).
 - `scripts/repo_rules.py`: repo checks `comments` (allowed comment kinds) and `subjects` (gitmoji subjects), `promoted` (final tag ships its last rc kit source), this repo only.
