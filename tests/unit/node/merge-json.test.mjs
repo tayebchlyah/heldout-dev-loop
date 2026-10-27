@@ -259,3 +259,27 @@ test('one dev-loop command under two matchers stays stable', () => {
   assert.deepEqual([second.added, second.changed, second.removed], [[], [], []])
   assert.deepEqual(second.value, first.value)
 })
+
+test('mergeSettings adds a missing top-level key and keeps the value the user set', () => {
+  const frag = { effortLevel: 'high', autoCompactWindow: 400000 }
+  const fresh = mergeSettings(null, frag)
+  const parsed = JSON.parse(fresh.text)
+  assert.equal(parsed.effortLevel, 'high')
+  assert.equal(parsed.autoCompactWindow, 400000)
+  assert.ok(fresh.added.includes('effortLevel=high'))
+  assert.ok(fresh.added.includes('autoCompactWindow=400000'))
+  assert.deepEqual(mergeSettings(fresh.text, frag).added, [])
+  const set = mergeSettings('{"effortLevel": "medium", "autoCompactWindow": 300000}', frag)
+  assert.equal(JSON.parse(set.text).effortLevel, 'medium')
+  assert.equal(JSON.parse(set.text).autoCompactWindow, 300000)
+  assert.deepEqual(set.added, [])
+})
+
+test('mergeSettings keeps a present key of any value', () => {
+  const frag = { effortLevel: 'high', autoCompactWindow: 400000 }
+  const out = mergeSettings('{"effortLevel": null, "autoCompactWindow": "300000"}', frag)
+  const parsed = JSON.parse(out.text)
+  assert.equal(parsed.effortLevel, null)
+  assert.equal(parsed.autoCompactWindow, '300000')
+  assert.deepEqual(out.added, [])
+})
