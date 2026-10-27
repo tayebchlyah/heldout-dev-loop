@@ -39,7 +39,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Stage 4 plan
 
-Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), with the spec path. It invokes `superpowers:writing-plans` and returns the plan path. The main thread reads the plan, then runs Stage 5.
+Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), with the spec path. It invokes `superpowers:writing-plans` and returns the plan path. No worktree wall in Codex: the main thread stays in the cwd Codex started in. The main thread reads the plan, applies the SKILL.md Stage 4 checks, then runs Stage 5.
 
 ## Feature gate
 
