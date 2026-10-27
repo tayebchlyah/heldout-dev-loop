@@ -161,15 +161,22 @@ class FeatureWorktreeContractTests(unittest.TestCase):
 
     def test_routes_name_the_planner_the_wall_and_the_exit_step(self) -> None:
         routes = {
-            "claude.md": ["## Stage 4 plan", "general-purpose", "model: opus", "effort: high", "superpowers:writing-plans",
-                          "worktree-wall.sh", "ExitWorktree", "`keep`", "/clear"],
-            "codex.md": ["## Stage 4 plan", "`planner`", ".codex/agents/planner.toml", "/reasoning", "No worktree wall"],
+            "claude.md": (["worktree-wall.sh", "ExitWorktree", "`keep`", "/clear",
+                           "- Task reviewers and re-reviewers: `general-purpose`, `effort: high`."],
+                          ["general-purpose", "model: opus", "effort: high", "superpowers:writing-plans", "notes_path.py",
+                           "size-check --all", "one module or one seam", "applies the SKILL.md Stage 4 checks"]),
+            "codex.md": ([".codex/agents/planner.toml", "/reasoning", "No worktree wall"],
+                         ["`planner`", "No worktree wall", "applies the SKILL.md Stage 4 checks"]),
         }
-        for route, values in routes.items():
+        for route, (whole, stage_4) in routes.items():
             text = (SKILL_ROOT / "references" / route).read_text()
-            for value in values:
+            section = text.split("## Stage 4 plan\n", 1)[-1].split("\n## ", 1)[0] if "## Stage 4 plan\n" in text else ""
+            for value in whole:
                 with self.subTest(route=route, value=value):
                     self.assertIn(value, text)
+            for value in stage_4:
+                with self.subTest(route=route, stage_4=value):
+                    self.assertIn(value, section)
 
     def test_rebase_points_exclude_the_build(self) -> None:
         skill = SKILL.read_text()

@@ -21,7 +21,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 - Limit: `pause.sh` (`StopFailure`, matcher `rate_limit`) writes the pause note through `devloop.py pause --event`. No intent fields: `/pause` adds them. Unconfirmed until a live check: a subscription usage limit arrives as `rate_limit`.
 - Wake (same session, `/continue` or "continue"): `SendMessage` to each subagent that stopped during its work: it resumes with its full history. Source: the Claude Code docs; unconfirmed until a live check. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
 - `/pause`: `TaskStop` on each running subagent; background `logged` runs stay alive.
-- Stage 7 end: after the merge, `git fetch origin` and `metrics --write` in the feature worktree: `ExitWorktree` with `keep`: the session cwd is the main checkout again. The final report suggests `/clear` before the next feature.
+- Stage 7 end: after the merge, `git fetch origin` and `metrics --write` in the feature worktree, then `ExitWorktree` with `keep`: the session cwd is the main checkout again. The final report suggests `/clear` before the next feature.
 
 ## Skill and agent names
 
@@ -36,7 +36,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 ## Stage 4 plan
 
-Stage 4 planner: one Agent call, `general-purpose`, `model: opus`, `effort: high`. Prompt: invoke `superpowers:writing-plans` for the spec path; write the plan to `$NOTES/plans/`, frontmatter `spec: <spec file name>`; apply the smart zone rule and the size check of SKILL.md Stage 4; never read, list or name `tests/acceptance/`; skip the execution hand-off question; return the plan path. The main thread reads the plan, then runs Stage 5.
+Stage 4 planner: one Agent call, `general-purpose`, `model: opus`, `effort: high`. Pass the spec path and the resolved notes folder (`notes_path.py` output). Prompt: invoke `superpowers:writing-plans` for the spec path; write the plan to `<notes folder>/plans/`, frontmatter `spec: <spec file name>`; smart zone rule: each task fits one fresh agent from its brief alone: one module or one seam, the brief names each file it changes, the task needs no ruling from another task; run `python3 .agents/skills/dev-loop/scripts/devloop.py size-check --all`: a task that changes a file over 40,000 bytes, or pushes one past it, names the split in its brief; never read, list or name `tests/acceptance/`; skip the execution hand-off question; return the plan path. The main thread reads the plan, applies the SKILL.md Stage 4 checks, then runs Stage 5.
 
 ## Feature gate
 
