@@ -65,6 +65,10 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
       matcher: 'AskUserQuestion',
       hooks: [{ type: 'command', command: '~/.claude/hooks/deny-ask.sh', timeout: 5 }],
     },
+    {
+      matcher: 'Edit|Write|NotebookEdit',
+      hooks: [{ type: 'command', command: '~/.claude/hooks/worktree-wall.sh', timeout: 5 }],
+    },
   ])
 
   assert.deepEqual(fragment.hooks.StopFailure, [
@@ -94,6 +98,26 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
     { hooks: [{ type: 'command', command: '~/.claude/hooks/gate.sh', timeout: 600 }] },
     { hooks: [{ type: 'command', command: '~/.claude/hooks/seal.sh stop', timeout: 120 }] },
   ])
+})
+
+test('the Claude fragment sets the effort defaults', () => {
+  const fragment = readJson('claude/settings.fragment.json')
+  assert.equal(fragment.effortLevel, 'high')
+  assert.equal(fragment.autoCompactWindow, 400000)
+})
+
+test('agent effort levels', () => {
+  const frontmatter = (name) => readFileSync(join(repoRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
+  assert.match(frontmatter('spec-tester.md'), /^effort: high$/m)
+  assert.match(frontmatter('implementer.md'), /^effort: medium$/m)
+  const codex = (name) => readFileSync(join(repoRoot, 'codex/agents', name), 'utf8')
+  for (const name of ['spec-tester.toml', 'task-reviewer.toml', 'planner.toml']) {
+    assert.match(codex(name), /^model_reasoning_effort = "high"$/m, name)
+  }
+  assert.match(codex('implementer.toml'), /^model_reasoning_effort = "medium"$/m)
+  const lines = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8').split('\n')
+  const firstTable = lines.findIndex((line) => line.trimStart().startsWith('['))
+  assert.ok(lines.slice(0, firstTable).includes('model_reasoning_effort = "high"'))
 })
 
 test('the deny-path hooks of both Claude agent frontmatters block when they fail', () => {
