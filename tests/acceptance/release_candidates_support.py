@@ -5,8 +5,8 @@ One test per `## Acceptance oracle` line (O<n>) or per `## Acceptance flows` ite
 the lines it names. The tests use only the seams the spec names: `bin/install.mjs init` and `upgrade` run from
 a copy of the package with another `package.json` version; `version_key` of `skill/scripts/board/store.py`;
 `devloop.py board`, `status`, `release-plan`, `release-check` and `check_setup.py` as processes on scratch git
-repos; `scripts/repo_rules.py promoted`; `git cliff` with this repo's `cliff.toml` on a scratch repo with tags,
-run with the arguments of `.github/workflows/release.yml` and the commands of `reference/release.md`; the text
+repos; `scripts/repo_rules.py promoted`; the `release-notes` step of `.github/workflows/release.yml` on a scratch
+repo with a written `CHANGELOG.md` (spec Written Release Notes supersedes the `git cliff` notes lines); the text
 of `skill/SKILL.md`, `skills/release-audit/SKILL.md`, `AGENTS.md`, `reference/release.md` and
 `reference/cli/*.md`. Every name in the scratch repos is invented.
 
@@ -15,13 +15,8 @@ Fixture choices the spec leaves open:
   for a tag by a small GitHub expression evaluator (`github.ref_name`, `env.*`, `steps.*.outputs.*`,
   `contains`, `startsWith`, `endsWith`, `!`, `==`, `!=`, `&&`, `||`). A `run` step with an `id` that writes
   `$GITHUB_OUTPUT` or `$GITHUB_ENV` runs (bash, as GitHub runs it) so later steps can read its outputs.
-- `git cliff` always runs through a wrapper that adds `--offline`: `cliff.toml` names a GitHub remote, and
-  a test makes no network call. `--offline` changes no commit range. The `git-cliff-action` step is run as
-  `git cliff --config <config> <args>`, its body the standard output.
-- The `reference/release.md` changelog commands are its code spans that hold `git cliff` and
-  `CHANGELOG.md`: the release-candidate one holds the placeholder `X.Y.Z-rc.N`, the final one holds `X.Y.Z`
-  and no `-rc.N`. Placeholders become `3.0.0-rc.2` and `3.0.0`; `gh` is a stub that prints a token.
-- The final changelog command (O33) runs in the release PR state: after the commits, before tag `v3.0.0`.
+- The `release-notes` step runs the kit source: a copy of `skill/` at `.agents/skills/dev-loop` of the
+  scratch repo, as the tagged commit holds its own installed kit.
 - The release step of O35 runs with stub `python3`, `python` and `git` on `PATH` and a stub
   `scripts/repo_rules.py`, each logging its arguments, so the test sees whether `promoted` would run.
 """
@@ -32,7 +27,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -48,7 +42,6 @@ DEVLOOP = REPO_ROOT / "skill" / "scripts" / "devloop.py"
 CHECKER = REPO_ROOT / "skill" / "scripts" / "check_setup.py"
 REPO_RULES = REPO_ROOT / "scripts" / "repo_rules.py"
 RELEASE_YML = REPO_ROOT / ".github" / "workflows" / "release.yml"
-CLIFF_TOML = REPO_ROOT / "cliff.toml"
 RELEASE_MD = REPO_ROOT / "reference" / "release.md"
 SKILL = REPO_ROOT / "skill" / "SKILL.md"
 AUDIT_SKILL = REPO_ROOT / "skills" / "release-audit" / "SKILL.md"
@@ -499,33 +492,6 @@ class Workflow:
             if step.get("id"):
                 context["steps"][step["id"]] = {"outputs": outputs, "outcome": "success", "conclusion": "success"}
         return context, proc
-
-
-def cliff_bin(root: Path) -> Path:
-    """A folder with a `git-cliff` that adds `--offline`, and a `gh` stub that prints a token."""
-    real = shutil.which("git-cliff")
-    if not real:
-        raise AssertionError("git-cliff not on PATH: the release notes tests run this repo's cliff.toml with it")
-    folder = root / f"cliff-bin-{uuid.uuid4().hex[:6]}"
-    folder.mkdir()
-    put(folder / "git-cliff", f'#!/bin/bash\ncase " $* " in *" --offline "*) exec {shlex.quote(real)} "$@";; esac\n'
-                              f'exec {shlex.quote(real)} --offline "$@"\n')
-    put(folder / "gh", "#!/bin/sh\necho test-token\n")
-    for name in ("git-cliff", "gh"):
-        (folder / name).chmod(0o755)
-    return folder
-
-
-def release_md_commands() -> tuple[list[str], list[str]]:
-    """The rc and the final `git cliff` changelog commands of reference/release.md."""
-    text = RELEASE_MD.read_text()
-    spans = re.findall(r"`([^`\n]+)`", text)
-    for block in re.findall(r"```[^\n]*\n(.*?)```", text, re.S):
-        spans.extend(block.splitlines())
-    found = [s.strip() for s in spans if re.search(r"git[ -]cliff", s) and "CHANGELOG.md" in s]
-    rc = [s for s in found if "X.Y.Z-rc.N" in s]
-    final = [s for s in found if "X.Y.Z" in s and "-rc.N" not in s]
-    return rc, final
 
 
 def headings(text: str) -> list[str]:
