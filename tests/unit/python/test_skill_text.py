@@ -351,7 +351,7 @@ class TracksContractTests(unittest.TestCase):
                 self.assertIn(value, stage_text(1))
         start = self.skill.index("\n## Detect the stage")
         detect = self.skill[start:self.skill.index("\n## ", start + 1)]
-        for value in ["`effort`", "`level` and `want` not null, and they differ", "`/effort <want>`"]:
+        for value in ["`effort`", "`feature` set, `level` and `want` not null, and they differ", "`/effort <want>`"]:
             with self.subTest(value=value):
                 self.assertIn(value, detect)
         for value in ["planner", "high effort"]:
