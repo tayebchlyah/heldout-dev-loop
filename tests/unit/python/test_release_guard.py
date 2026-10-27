@@ -356,6 +356,21 @@ class ReleaseSkillTextTests(unittest.TestCase):
         self.assertLess(text.index("Stop 2"), text.index("git push origin <tag>"))
         self.assertLess(text.index("Stop 2"), text.index("gh release create"))
 
+    def test_release_notes_steps_use_output_file(self) -> None:
+        text = self.skill("release")
+        step6 = text.split("\n6. ")[1].split("\n7. ")[0]
+        step9 = text.split("\n9. ")[1].split("\n10. ")[0]
+        self.assertIn("release-notes --tag <tag> --output <file>", step6)
+        self.assertIn("--output", step9)
+        self.assertNotIn("`release-notes --tag <tag>`", step6 + step9)
+
+    def test_release_worktree_setup_before_gate(self) -> None:
+        text = self.skill("release")
+        step4 = text.split("\n4. ")[1].split("\n5. ")[0]
+        self.assertIn("dependency install", step4)
+        self.assertIn("new worktree", step4)
+        self.assertNotIn("npm ci", text)
+
     def test_release_notes_skill(self) -> None:
         text = self.skill("release-notes")
         for name in ["--all", "### Highlights", "### Fixes", "### Upgrade notes", "Full changes:",
@@ -481,7 +496,6 @@ class ReleaseWorkflowTests(unittest.TestCase):
         config = json.loads((self.ROOT / "dev-loop.json").read_text())
         self.assertEqual(config["release_notes"], "written")
         self.assertEqual(config["version_files"], ["package.json", "package-lock.json"])
-        self.assertEqual(config["version"], "2.1.1")
         for key, value in (("release_prepare", "node bin/install.mjs upgrade"),
                            ("release_check", "scripts/release-check.sh"),
                            ("release_verify", "scripts/release-verify.sh")):

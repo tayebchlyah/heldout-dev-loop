@@ -115,7 +115,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `sessions --since <days> [--repo <path>]`: List the Claude Code and Codex sessions of every worktree, for retro. `reference/cli/sessions.md`
 - `release-check [--repo <path>] (--tag <name> | --sha <rev>)`: May a commit get a release tag: a current audit record and no open security item. `reference/cli/release-check.md`
 - `ci-skip --base <rev> [--head <rev>] [--repo <path>] [--github-output]`: May CI skip this diff: only a release (version files, `CHANGELOG.md`) or a kit upgrade. `reference/cli/ci-skip.md`
-- `release-notes --tag <tag> [--repo <path>] [--output <file>]`: Print or write the body of the `CHANGELOG.md` section of a tag, the GitHub Release body. `reference/cli/release-notes.md`
+- `release-notes --tag <tag> [--repo <path>] [--output <file>]`: Find the `CHANGELOG.md` section of a tag, write its body to `--output`: the GitHub Release body. `reference/cli/release-notes.md`
 - `release-plan [--repo <path>] [--harness claude|codex] [--profile quick|standard|deep] [--budget <n>]`: Plan a release security audit run: run folder, profile, budget, scope, sandbox. `reference/cli/release-plan.md`
 - `release-record --run <folder> [--base <sha>] [--harness claude|codex] [--repo <path>]`: Write a release audit result into the project note. `reference/cli/release-record.md`
 
