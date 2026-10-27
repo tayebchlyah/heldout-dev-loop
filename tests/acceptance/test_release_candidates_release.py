@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Held-out oracle tests of the release side: release notes with `git cliff`, `release.yml`, `scripts/repo_rules.py
+"""Held-out oracle tests of the release side: the release notes body, `release.yml`, `scripts/repo_rules.py
 promoted` and the text contracts (spec: Release Candidates). Seams, fixture choices and shared helpers:
 `release_candidates_support.py`.
 """
@@ -16,138 +16,120 @@ import sys
 import unittest
 from pathlib import Path
 
-from release_candidates_support import (AGENTS, AUDIT_SKILL, CLIFF_TOML, PLAN_MD, RELEASE_MD, REPO_RULES, SKILL,
-                                        STATUS_MD, Scratch, Workflow, cliff_bin, condition, headings, interpolate,
-                                        paragraphs, put, release_md_commands, section_of)
+from release_candidates_support import (AGENTS, AUDIT_SKILL, PLAN_MD, RELEASE_MD, REPO_ROOT, REPO_RULES, SKILL,
+                                        STATUS_MD, Scratch, Workflow, condition, headings, interpolate, paragraphs,
+                                        put, section_of)
+
+DEV_LOOP_JSON = REPO_ROOT / "dev-loop.json"
+RELEASE_CHECK_SH = REPO_ROOT / "scripts" / "release-check.sh"
+RELEASE_VERIFY_SH = REPO_ROOT / "scripts" / "release-verify.sh"
+
+
+def is_notes(step: dict) -> bool:
+    return bool(re.search(r"devloop\.py release-notes\b", str(step.get("run", ""))))
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Release notes (O30 to O33)
+# Release notes (O30 to O33, superseded by spec Written Release Notes: the body is the written section)
 # ---------------------------------------------------------------------------------------------------------------
+
+RC2_CHANGELOG = """# Changelog
+
+## [3.0.0-rc.2] - 2026-10-30
+
+### Highlights
+
+**Gadget dials.** Marker mkrc2 gadget dials turn by themselves, so a user sets them once.
+
+**Widget trays.** Marker mkrc1 widget trays hold every widget, so a user finds them in one place.
+
+## [2.1.1] - 2026-10-16
+
+### Fixes
+
+- Marker mka1 widget colour no longer resets.
+"""
+
+FINAL_CHANGELOG = """# Changelog
+
+## [3.0.0] - 2026-11-01
+
+### Highlights
+
+**Gadget dials.** Marker mkfinal gadget dials turn by themselves, so a user sets them once.
+
+### Upgrade notes
+
+- Marker mkupgrade run the widget migration once.
+
+## [2.1.1] - 2026-10-16
+
+### Fixes
+
+- Marker mka1 widget colour no longer resets.
+"""
+
 
 class NotesCase(Scratch):
-    """A scratch repo with gitmoji commits, markers mk<group><n>: a before v2.1.1, b up to v3.0.0-rc.1,
-    c up to v3.0.0-rc.2 (tagged by `tag_rc2`), d after it."""
+    """A scratch repo with the kit source installed at `.agents/skills/dev-loop` and a written `CHANGELOG.md`."""
 
     def setUp(self) -> None:
         super().setUp()
-        self.bin = cliff_bin(self.root)
-        self.env["PATH"] = f"{self.bin}{os.pathsep}{self.env.get('PATH', '')}"
-        self.env.pop("GITHUB_TOKEN", None)
         self.repo = self.new_repo("notes-repo")
-        shutil.copy(CLIFF_TOML, self.repo / "cliff.toml")
-        put(self.repo / ".git" / "info" / "exclude", "cliff.toml\n")
-        self.n = 0
-        self.group("a", 2)
-        self.tag(self.repo, "v2.1.1")
-        self.group("b", 2, changelog="## [3.0.0-rc.1] - 2026-10-20\n\n- mkb1\n\n## [2.1.1] - 2026-10-16\n\n- mka1\n")
-        self.tag(self.repo, "v3.0.0-rc.1")
-        self.group("c", 2)
-
-    def group(self, letter: str, count: int, changelog: str | None = None) -> None:
-        for i in range(1, count + 1):
-            self.n += 1
-            files = {f"src/{letter}{i}.py": f"N = {self.n}\n"}
-            if changelog is not None and i == count:
-                files["CHANGELOG.md"] = "# Changelog\n\n" + changelog
-            emoji = "✨" if i % 2 else "🐛"
-            self.commit(self.repo, files, f"{emoji}(widget) #{self.n}: Add marker mk{letter}{i}")
-
-    def tag_rc2_and_continue(self) -> None:
-        self.tag(self.repo, "v3.0.0-rc.2")
-        self.group("d", 2, changelog="## [3.0.0-rc.2] - 2026-10-24\n\n- mkc1\n\n## [2.1.1] - 2026-10-16\n\n- mka1\n")
-
-    def markers(self, *letters: str) -> list[str]:
-        return [f"mk{letter}{i}" for letter in letters for i in (1, 2)]
+        shutil.copytree(REPO_ROOT / "skill", self.repo / ".agents" / "skills" / "dev-loop", symlinks=True,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        self.commit(self.repo, {"package.json": '{"version": "2.1.1"}\n', "CHANGELOG.md": "# Changelog\n"}, "base")
 
     def workflow_body(self, tag: str) -> str:
-        """The release body the `release.yml` git-cliff step makes for `tag`, HEAD at the tag."""
+        """The release body file of `release.yml` after its `release-notes` step ran for `tag`."""
         flow = Workflow()
-        ran = [n for n in flow.index(flow.is_cliff)]
-        self.assertTrue(ran, "no git-cliff step in release.yml")
-        bodies = []
-        for n in ran:
-            context, env = flow.context(tag, self.repo, self.env, n)
-            step = flow.steps[n]
-            if not condition(step, context):
-                continue
-            for key, value in (step.get("env") or {}).items():
-                env[key] = interpolate(value, context)
-            env.pop("GITHUB_TOKEN", None)
-            env.pop("OUTPUT", None)
-            if "git-cliff" in str(step.get("uses", "")):
-                with_ = step.get("with") or {}
-                cmd = ["git-cliff", "--config", interpolate(with_.get("config") or "cliff.toml", context),
-                       *shlex.split(interpolate(with_.get("args") or "", context))]
-                result = subprocess.run(cmd, cwd=self.repo, env=env, capture_output=True, text=True, timeout=120)
-            else:
-                result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c",
-                                         interpolate(step["run"], context)], cwd=self.repo, env=env,
-                                        capture_output=True, text=True, timeout=120)
-            self.assertEqual(result.returncode, 0, result.stderr[-3000:])
-            body = result.stdout
-            release = flow.steps[flow.index(flow.is_release)[0]]
-            body_file = interpolate((release.get("with") or {}).get("bodyFile") or "", context)
-            if body_file and (self.repo / body_file).is_file():
-                body = (self.repo / body_file).read_text()
-            bodies.append(body)
-        self.assertEqual(len(bodies), 1, f"{len(bodies)} git-cliff steps ran for {tag}")
-        return bodies[0]
-
-    def changelog_command(self, kind: str) -> str:
-        rc, final = release_md_commands()
-        found = rc if kind == "rc" else final
-        self.assertTrue(found, f"reference/release.md names no {kind} `git cliff ... CHANGELOG.md` command")
-        command = found[0].replace("X.Y.Z-rc.N", "3.0.0-rc.2").replace("X.Y.Z", "3.0.0")
-        result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", command], cwd=self.repo,
-                                env=self.env, capture_output=True, text=True, timeout=120)
-        self.assertEqual(result.returncode, 0, f"{command}: {result.stderr[-3000:]}")
-        return (self.repo / "CHANGELOG.md").read_text()
+        ran = flow.index(is_notes)
+        self.assertEqual(len(ran), 1, "release.yml needs one step that runs devloop.py release-notes")
+        n = ran[0]
+        context, env = flow.context(tag, self.repo, self.env, n)
+        step = flow.steps[n]
+        self.assertTrue(condition(step, context), f"the release-notes step does not run for {tag}")
+        for key, value in (step.get("env") or {}).items():
+            env[key] = interpolate(value, context)
+        result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c",
+                                 interpolate(step["run"], context)], cwd=self.repo, env=env,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout[-3000:] + result.stderr[-3000:])
+        release = flow.steps[flow.index(flow.is_release)[0]]
+        body_file = interpolate((release.get("with") or {}).get("bodyFile") or "", context)
+        self.assertTrue(body_file and (self.repo / body_file).is_file(), f"no release body file {body_file!r}")
+        return (self.repo / body_file).read_text()
 
 
 class ReleaseNotesTests(NotesCase):
 
     def test_f6_rc_body_and_final_body(self) -> None:
-        """F6 (O30, O31): the release.yml notes of v3.0.0-rc.2 hold only the commits after v3.0.0-rc.1; those of
-        v3.0.0 hold every commit after v2.1.1 and no 3.0.0-rc heading."""
+        """F6 (O30, O31 as superseded): the release.yml body of v3.0.0-rc.2 is the written `## [3.0.0-rc.2]`
+        section, cumulative after v2.1.1; the body of v3.0.0 is the written `## [3.0.0]` section, no rc
+        heading."""
+        self.commit(self.repo, {"CHANGELOG.md": RC2_CHANGELOG, "package.json": '{"version": "3.0.0-rc.2"}\n'},
+                    "release 3.0.0-rc.2")
         self.tag(self.repo, "v3.0.0-rc.2")
         body = self.workflow_body("v3.0.0-rc.2")
-        for marker in self.markers("c"):
+        self.assertEqual(body.strip(), section_of(RC2_CHANGELOG, "## [3.0.0-rc.2]").strip())
+        for marker in ("mkrc1", "mkrc2"):
             self.assertIn(marker, body)
-        for marker in self.markers("a", "b"):
-            self.assertNotIn(marker, body)
-        self.group("d", 2)
+        self.assertNotIn("mka1", body)
+        self.commit(self.repo, {"CHANGELOG.md": FINAL_CHANGELOG, "package.json": '{"version": "3.0.0"}\n'},
+                    "release 3.0.0")
         self.tag(self.repo, "v3.0.0")
         body = self.workflow_body("v3.0.0")
-        for marker in self.markers("b", "c", "d"):
-            self.assertIn(marker, body)
-        for marker in self.markers("a"):
-            self.assertNotIn(marker, body)
+        self.assertEqual(body.strip(), section_of(FINAL_CHANGELOG, "## [3.0.0]").strip())
+        self.assertNotIn("mka1", body)
         self.assertEqual([line for line in body.splitlines() if line.startswith("#") and "3.0.0-rc" in line], [])
+        self.assertEqual(headings(body), [])
 
-    def test_o32_rc_changelog_command(self) -> None:
-        """O32: the release.md rc changelog command, before tag v3.0.0-rc.2: one `## [3.0.0-rc.2]` section with
-        every commit after v2.1.1, no `## [3.0.0-rc.1]`, and the `## [2.1.1]` section."""
-        text = self.changelog_command("rc")
-        heads = headings(text)
-        self.assertEqual(len([h for h in heads if h.startswith("## [3.0.0-rc.2]")]), 1, heads)
-        self.assertEqual([h for h in heads if h.startswith("## [3.0.0-rc.1]")], [], heads)
-        self.assertTrue([h for h in heads if h.startswith("## [2.1.1]")], heads)
-        section = section_of(text, "## [3.0.0-rc.2]")
-        for marker in self.markers("b", "c"):
-            self.assertIn(marker, section)
-
-    def test_o33_final_changelog_command(self) -> None:
-        """O33: the release.md final changelog command, after the commits of v3.0.0: `## [3.0.0]` with every
-        commit after v2.1.1, no rc heading."""
-        self.tag_rc2_and_continue()
-        text = self.changelog_command("final")
-        heads = headings(text)
-        self.assertEqual(len([h for h in heads if h.startswith("## [3.0.0]")]), 1, heads)
-        self.assertEqual([h for h in heads if "rc" in h], [], heads)
-        section = section_of(text, "## [3.0.0]")
-        for marker in self.markers("b", "c", "d"):
-            self.assertIn(marker, section)
+    def test_o32_o33_release_md_names_no_cliff_changelog_command(self) -> None:
+        """O32, O33 as superseded: reference/release.md names no `git cliff` command; the rc and final sections
+        are written through `/release` (which runs the `/release-notes` steps)."""
+        text = RELEASE_MD.read_text()
+        self.assertIsNone(re.search(r"git[ -]cliff", text), "reference/release.md still names a git cliff command")
+        self.assertRegex(text, r"(?<![\w-])/release(?![\w-])")
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -184,13 +166,13 @@ class WorkflowTests(Scratch):
                 self.assertEqual(got, expected, with_)
 
     def test_o35_promoted_runs_for_a_final_tag_only(self) -> None:
-        """O35, threat 2: release.yml runs `scripts/repo_rules.py promoted --tag <tag>` for v3.0.0, before the
-        git-cliff step, after a checkout of all tags; not for v3.0.0-rc.1."""
+        """O35 as superseded, threat 2: release.yml runs `scripts/repo_rules.py promoted --tag <tag>` for v3.0.0,
+        before the `release-notes` step, after a checkout of all tags; not for v3.0.0-rc.1."""
         flow = Workflow()
         promoted = flow.index(flow.is_promoted)
         self.assertTrue(promoted, "no release.yml step runs scripts/repo_rules.py promoted")
-        cliff = flow.index(flow.is_cliff)
-        self.assertTrue(cliff and max(promoted) < min(cliff), (promoted, cliff))
+        notes = flow.index(is_notes)
+        self.assertTrue(notes and max(promoted) < min(notes), (promoted, notes))
         checkouts = [n for n, s in enumerate(flow.steps[:min(promoted)])
                      if "actions/checkout" in str(s.get("uses", ""))
                      and (str((s.get("with") or {}).get("fetch-depth")) == "0"
@@ -340,16 +322,21 @@ class TextTests(unittest.TestCase):
         self.assertRegex(text, r"rc: now\\?\|later")
 
     def test_o45_release_md_cycle_steps(self) -> None:
-        """O45, D11: release.md has the rc steps (upgrade command, audit before the rc tag) and the final steps
-        (promoted, scripts/canary.sh)."""
+        """O45 as superseded, D10 of Written Release Notes: release.md runs the cycle through `/release`, with no
+        rc upgrade PR step; the dogfood upgrade is `commands.release_prepare`; `release_check` runs
+        `scripts/canary.sh` and `promoted --sha`; `release_verify` runs the `npx` upgrade."""
         text = RELEASE_MD.read_text()
-        self.assertIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", text)
-        tag = re.search(r"(git tag[^\n]*vX\.Y\.Z-rc\.N|[Tt]ag `vX\.Y\.Z-rc\.N`)", text)
-        self.assertIsNotNone(tag, "no rc tag step")
-        assert tag is not None
-        self.assertIn("release-audit", text[:tag.start()])
-        self.assertIn("promoted", text)
-        self.assertIn("scripts/canary.sh", text)
+        self.assertRegex(text, r"(?<![\w-])/release(?![\w-])")
+        self.assertNotIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", text)
+        commands = json.loads(DEV_LOOP_JSON.read_text()).get("commands") or {}
+        self.assertEqual(commands.get("release_prepare"), "node bin/install.mjs upgrade", commands)
+        self.assertEqual(commands.get("release_check"), "scripts/release-check.sh", commands)
+        self.assertEqual(commands.get("release_verify"), "scripts/release-verify.sh", commands)
+        check = RELEASE_CHECK_SH.read_text()
+        self.assertIn("scripts/canary.sh", check)
+        self.assertRegex(check, r"repo_rules\.py promoted\b[^\n]*--sha")
+        self.assertRegex(RELEASE_VERIFY_SH.read_text(),
+                         r"npx\b[^\n]*github:tchlyah/dev-loop#\S*RELEASE_TAG\S*[^\n]*\bupgrade\b")
 
     def test_o46_cli_references(self) -> None:
         """O46: status.md names direction, worktree-newer and main-newer; release-plan.md names exclude."""
