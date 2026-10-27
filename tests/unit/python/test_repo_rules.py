@@ -154,6 +154,100 @@ class SubjectCommandTests(RulesRepo):
             self.assertIn("error", out)
 
 
+class PromotedCommandTests(RulesRepo):
+    def release(self, tag: str, files: dict[str, str], annotated: bool = False) -> None:
+        for path, text in files.items():
+            put(self.repo / path, text)
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", f"🔖(release) {tag}")
+        if annotated:
+            git(self.repo, "tag", "-a", "-m", tag, tag)
+        else:
+            git(self.repo, "tag", tag)
+
+    def promoted(self, tag: str) -> tuple[int, dict]:
+        return run_rules(self.repo, "promoted", "--tag", tag)
+
+    def final_after_rc(self, extra: dict[str, str], annotated: bool = False) -> tuple[int, dict]:
+        self.release("v3.0.0-rc.2", {"skill/SKILL.md": "a\n"}, annotated)
+        self.release("v3.0.0", {"package.json": "{}\n", "CHANGELOG.md": "c\n", "README.md": "r2\n",
+                                ".agents/skills/x.md": "x\n", **extra}, annotated)
+        return self.promoted("v3.0.0")
+
+    def test_non_kit_changes_pass(self) -> None:
+        code, out = self.final_after_rc({})
+        self.assertEqual((code, out), (0, {"ok": True, "tag": "v3.0.0", "candidate": "v3.0.0-rc.2", "violations": []}))
+
+    def test_kit_source_change_fails(self) -> None:
+        code, out = self.final_after_rc({"skill/SKILL.md": "b\n"})
+        self.assertEqual(code, 1)
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["violations"], ["skill/SKILL.md"])
+
+    def test_violations_sorted_over_every_kit_prefix(self) -> None:
+        paths = ["skill/a", "skills/a", "claude/a", "codex/a", "bin/a", "lib/a"]
+        self.release("v3.0.0-rc.1", {p: "1\n" for p in paths})
+        self.release("v3.0.0", {p: "2\n" for p in paths})
+        code, out = self.promoted("v3.0.0")
+        self.assertEqual(code, 1)
+        self.assertEqual(out["violations"], sorted(paths))
+
+    def test_annotated_tags_give_the_same_result(self) -> None:
+        self.assertEqual(self.final_after_rc({}, annotated=True)[0], 0)
+
+    def test_annotated_tags_with_a_violation(self) -> None:
+        code, out = self.final_after_rc({"skill/SKILL.md": "b\n"}, annotated=True)
+        self.assertEqual((code, out["violations"]), (1, ["skill/SKILL.md"]))
+
+    def test_highest_candidate_by_number(self) -> None:
+        self.release("v3.0.0-rc.9", {"skill/a": "1\n"})
+        self.release("v3.0.0-rc.10", {"skill/a": "2\n"})
+        self.release("v3.0.0", {"package.json": "{}\n"})
+        code, out = self.promoted("v3.0.0")
+        self.assertEqual((code, out["candidate"]), (0, "v3.0.0-rc.10"))
+
+    def test_other_versions_and_bad_forms_are_not_candidates(self) -> None:
+        self.release("v3.0.1-rc.1", {"skill/a": "1\n"})
+        self.release("v3.0.0-rc.01", {"skill/a": "2\n"})
+        self.release("v3.0.0-rc.0", {"skill/a": "3\n"})
+        self.release("v3.0.0-beta.1", {"skill/a": "4\n"})
+        self.release("v3.0.0", {"package.json": "{}\n"})
+        code, out = self.promoted("v3.0.0")
+        self.assertEqual((code, out["candidate"], out["reason"]), (1, None, "no-release-candidate"))
+        self.assertFalse(out["ok"])
+
+    def test_no_candidate(self) -> None:
+        self.release("v3.0.0", {"package.json": "{}\n"})
+        code, out = self.promoted("v3.0.0")
+        self.assertEqual(code, 1)
+        self.assertEqual((out["ok"], out["candidate"], out["reason"]), (False, None, "no-release-candidate"))
+
+    def test_release_candidate_tag_is_skipped(self) -> None:
+        self.release("v3.0.0-rc.3", {"skill/a": "1\n"})
+        code, out = self.promoted("v3.0.0-rc.3")
+        self.assertEqual(code, 0)
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["skipped"], "not-a-final-tag")
+
+    def test_unknown_tag_and_bad_names_are_usage_errors(self) -> None:
+        self.release("v3.0.0-rc.1", {"skill/a": "1\n"})
+        for tag in ("v9.9.9", "3.0.0", "v3.0", "v3.0.0-rc.0", "v03.0.0", "v3.0.0-beta.1", "main"):
+            with self.subTest(tag=tag):
+                code, out = self.promoted(tag)
+                self.assertEqual(code, 2)
+                self.assertIn("error", out)
+
+    def test_tag_is_required(self) -> None:
+        self.assertEqual(subprocess.run([sys.executable, str(RULES), "promoted"], cwd=self.repo,
+                                        capture_output=True).returncode, 2)
+
+    def test_runs_without_a_main_base(self) -> None:
+        git(self.repo, "branch", "-m", "other")
+        git(self.repo, "branch", "-D", "main")
+        code, out = self.final_after_rc({})
+        self.assertEqual((code, out["ok"]), (0, True))
+
+
 class RepoSubjectsTests(unittest.TestCase):
     def test_this_repo(self) -> None:
         code, out = run_rules(ROOT, "subjects")
