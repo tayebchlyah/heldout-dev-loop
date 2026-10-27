@@ -22,7 +22,7 @@ function renderBoard(features, nowMs, opts) {
     if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
     return h % 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${Math.floor(h / 24)} d`;
   };
-  const ago = (iso) => (isFinite(ms(iso)) ? (nowMs - ms(iso) < 60000 ? "just now" : `${dur(nowMs - ms(iso))} ago`) : "never");
+  const ago = (iso) => (isFinite(ms(iso)) ? `${dur(nowMs - ms(iso))} ago` : "never");
   const clock = (t) => {
     const d = new Date(t), hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     return d.toDateString() === new Date(nowMs).toDateString() ? hm : `${d.toLocaleDateString([], { weekday: "short" })} ${hm}`;
@@ -115,7 +115,7 @@ function renderBoard(features, nowMs, opts) {
     const segs = sp.map((s) => {
       const pct = total ? (s.w ? (s.w / total) * share : minw) : past / sp.length;
       const now = s.n === cur;
-      const time = isFinite(s.d) ? `${dur(s.d)}${now ? " so far" : ""}${now && isFinite(m.left) ? `, about ${dur(m.left)} left` : ""}` : "";
+      const time = isFinite(s.d) && s.d >= 0 ? `${dur(s.d)}${now ? " so far" : ""}${now && isFinite(m.left) ? `, about ${dur(m.left)} left` : ""}` : "";
       return { n: s.n, pct, now, time, wc: wc(pct), split: s.n === 5 && cur === 5 && m.f.tasks.length > 0 };
     });
     next.forEach((n) => segs.push({ n, pct: slot, fut: true, time: "not started", wc: "fut" }));
@@ -138,7 +138,7 @@ function renderBoard(features, nowMs, opts) {
   const ledgerRow = (m) => {
     const f = m.f, live = !m.shipped, end = m.end;
     const first = Math.min(...Object.values(f.times));
-    const total = isFinite(end - first) ? `<strong>${dur(end - first)}</strong>` : "";
+    const total = isFinite(end - first) && end - first >= 0 ? `<strong>${dur(end - first)}</strong>` : "";
     const taskD = (t) => {
       const d = t.state === "done" ? ms(t.done) - ms(t.started) : t.state === "doing" ? end - ms(t.started) : NaN;
       return isFinite(d) && d >= 0 ? d : NaN;
@@ -149,11 +149,11 @@ function renderBoard(features, nowMs, opts) {
           const st = stateOf(t), d = taskD(t);
           const time = st === "todo" ? "to do" : isFinite(d) ? `${st === "doing" && live ? "running " : ""}${dur(d)}` : "";
           const w = st !== "todo" && isFinite(d) && max ? (d / max) * 100 : 0;
-          return `<li class="${st}">${icon(st)}<span class="tn">${num(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="lb"><b style="width:${w.toFixed(1)}%"></b></span><span class="td">${time}</span></li>`;
+          return `<li class="${st}">${icon(st)}<span class="tn">${num(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="lb"><b style="width:${+w.toFixed(1)}%"></b></span><span class="td">${time}</span></li>`;
         }).join("")}</ol>`
       : `<p class="na">${f.track.toUpperCase() === "S" ? "Track S: no plan, no tasks." : "No plan yet. Tasks appear at Stage 4."}</p>`;
     const sp = spans(m, end);
-    const chips = sp.filter((s) => isFinite(s.d))
+    const chips = sp.filter((s) => isFinite(s.d) && s.d >= 0)
       .map((s) => `<span class="chip${live && s.n === f.stage ? " now" : ""}">${label(s.n)} <strong>${dur(s.d)}</strong>${live && s.n === f.stage ? " so far" : ""}</span>`).join("")
       + (live && isFinite(m.left) ? `<span class="chip now">About <strong>${dur(m.left)}</strong> left</span>` : "");
     const decs = f.decisions.length ? `<h3>Decided without you</h3><div class="decs">${f.decisions.map((d) => `<p>${esc(d)}</p>`).join("")}</div>` : "";
@@ -168,7 +168,7 @@ function renderBoard(features, nowMs, opts) {
     const you = live && f.waiting;
     return `<details class="lg${live ? " act" : ""}${you ? " you" : ""}" data-key="${esc(m.key)}"${open.has(m.key) ? " open" : ""}>
 <summary><span class="t">${esc(f.title)}${you ? `<span class="flag">Needs you: ${esc(f.waiting)}</span>` : ""}</span><span class="trk"><span class="pill">Track ${esc(f.track || "?")}</span>${total}</span>${stage}<span class="who">${esc(f.owner)}, ${esc(f.machine)}${here && f.machine_id === here ? ' <span class="pill">this machine</span>' : ""}</span>${when}</summary>
-<div class="lg-body">${bar(m, end, live ? f.stage : 0)}<h3>Time per stage</h3>${f.backfilled ? `<p class="na">Times are estimated</p>` : ""}<div class="chips">${chips}</div>${tasks}${decs}</div>
+<div class="lg-body">${bar(m, end, live ? f.stage : 0)}<h3>Time per stage</h3><div class="chips">${chips}</div>${f.backfilled ? `<p class="na">Times are estimated</p>` : ""}${tasks}${decs}</div>
 </details>`;
   };
 
@@ -203,8 +203,8 @@ function renderBoard(features, nowMs, opts) {
     const you = act.filter((m) => m.f.waiting).length;
     const stages = perStage(act).map(([n, c]) => `${c} in ${label(n)}`).join(", ");
     const meta = [act.length ? `${act.length} in progress (${stages})` : "nothing in progress", sh.length ? `${sh.length} recently shipped` : ""].filter(Boolean).join(", ");
-    const sum = `<span class="pn">${esc(p)}</span><span class="pc">${meta}</span>${you ? `<span class="pyou">${you} ${you === 1 ? "needs" : "need"} you</span>` : ""}`;
-    return fold(`project:${p}`, "pg", sum, (act.length ? `<h3 class="part">In progress</h3>${ledger(act)}` : "")
+    const head = `<span class="pn">${esc(p)}</span><span class="pc">${meta}</span>${you ? `<span class="pyou">${you} ${you === 1 ? "needs" : "need"} you</span>` : ""}`;
+    return fold(`project:${p}`, "pg", head, (act.length ? `<h3 class="part">In progress</h3>${ledger(act)}` : "")
       + (sh.length ? fold(`shipped:${p}`, "shf", `Recently shipped <span class="pc">${sh.length}</span>`, ledger(sh)) : ""));
   };
 
