@@ -212,3 +212,24 @@ class FeatureWorktreeContractTests(unittest.TestCase):
             "when mapped, else `scripts/gate.sh`",
             SKILL.read_text(),
         )
+
+    def test_session_a_and_b_names_are_gone(self) -> None:
+        from support import PACKAGE_ROOT
+
+        paths = [PACKAGE_ROOT / "AGENTS.md", PACKAGE_ROOT / "README.md"]
+        for folder in ("skill", "skills", "claude", "codex", "reference"):
+            paths += [p for p in (PACKAGE_ROOT / folder).rglob("*") if p.is_file() and "__pycache__" not in p.parts]
+        for path in paths:
+            try:
+                text = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            with self.subTest(path=str(path.relative_to(PACKAGE_ROOT))):
+                self.assertNotRegex(text, r"Session [AB]\b")
+        glossary = (PACKAGE_ROOT / "GLOSSARY.md").read_text()
+        for line in glossary.splitlines():
+            if "Session A" in line or "Session B" in line:
+                self.assertTrue(line.startswith("_Avoid_"), line)
+        self.assertIn("**Shaping**:", glossary)
+        self.assertIn("**Delivery**:", glossary)
+
