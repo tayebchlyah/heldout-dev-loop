@@ -4,7 +4,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Setup contract
 
-- Project agents: `.codex/agents/implementer.toml`, `.codex/agents/spec-tester.toml`, `.codex/agents/task-reviewer.toml`.
+- Project agents: `.codex/agents/implementer.toml`, `.codex/agents/spec-tester.toml`, `.codex/agents/task-reviewer.toml`, `.codex/agents/planner.toml`.
 - Review agents: `.codex/agents/final-reviewer.toml`, `.codex/agents/security-reviewer.toml`.
 - Project hooks: `.codex/hooks.json`, plus scripts in `.dev-loop/hooks/codex/`: `gate.sh`, `deny-path.sh`, `git-guard.sh`, `acceptance-wall.sh`, `seal.sh`, `session-start.sh`, and `board.sh`. `PostToolUse` runs `board.sh post-tool` (matcher `Bash`). No `update_plan`: Codex 0.162.1 has no plan tool, the ledger is the record.
 - `features.hooks = true`. Trust exact hook definitions through `/hooks` before relying on them. Codex skips an untrusted hook without a message: once `session-start.sh` is trusted, it names each project hook event with a hook entry that has no trusted hash (`check_setup.py --hooks-trust`). Tell the user to run `/hooks`.
@@ -14,13 +14,15 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - Command rules prompt for direct pushes and every `git -C` form. They forbid direct hard resets and `rm -rf /`. The trusted Git hook provides defense in depth for wrapped commands.
 - Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .`.
 
-## Session B autonomy
+## Delivery autonomy
 
 - Skills `$pause` and `$continue` (`.agents/skills/pause/`, `.agents/skills/continue/`). `$pause` is user-invoked only (`agents/openai.yaml` `allow_implicit_invocation: false`).
 - Decision log: the controller runs `devloop.py decide`; the log is in the spec in the notes folder. With the notes folder outside the writable roots, each `decide` asks for approval: add the notes folder as a writable root in the user config. Implementers never run it: they end their final report with a `Discoveries` list.
 - Wake (same session): `send_input` (v1) or `followup_task` (v2) to each subagent that stopped during its work; a closed one: `resume_agent` first. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
 - `$pause`: `interrupt_agent` (v2), else `close_agent` (v1), on each running subagent; background runs stay alive.
 - No ask tool outside plan mode: no ask wall needed.
+- Hand-off at spec approval (SKILL.md Stage 2), each line in its own code block: 1 `/reasoning` with the medium level, 2 `/compact`, 3 `Start Delivery of <slug>`. Track S (Stage 1): `/reasoning` medium, then `Accept Track S`.
+- No worktree wall: Codex has no model-side command that moves the session cwd; the session cwd stays where Codex started it.
 - Gaps, written down, not closed: no failure event (Codex `Stop` has no error field), so only `$pause` writes a pause note, a usage limit writes none; the wake of an `errored` agent and the `$pause`, `$continue` entries of the `/` menu are unconfirmed until a live check. Confirmed on 0.162.1: a shell command sees `CODEX_THREAD_ID`, the id of the session file `rollout-<time>-<id>.jsonl`.
 
 ## Skill and agent names
@@ -34,6 +36,10 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - SDD implementers: custom agent `implementer`.
 - Task reviewers and re-reviewers: custom read-only agent `task_reviewer`.
 - Explicitly request each custom role. A generic worker does not provide the held-out-test wall: the wall keys on the custom agent name.
+
+## Stage 4 plan
+
+Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), with the spec path. It invokes `superpowers:writing-plans` and returns the plan path. The main thread reads the plan, then runs Stage 5.
 
 ## Feature gate
 
@@ -54,7 +60,7 @@ Do not substitute Claude-only review, security, or verification slash commands i
 
 ## Release audit
 
-User-invoked only: `$release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Session B, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. It needs the Docker engine reachable from the `dev-workspace` profile: `release-plan` `sandbox.engine` false means a source-only run. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
+User-invoked only: `$release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Delivery, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. It needs the Docker engine reachable from the `dev-workspace` profile: `release-plan` `sandbox.engine` false means a source-only run. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
 
 `/release` (Codex: `$release`, kit skill `release`) runs the whole release and the audit steps inside it.
 
