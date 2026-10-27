@@ -31,6 +31,7 @@ RECORD_RE = re.compile(
 CLOSING_WORDS = ("accept", "close")
 FINGERPRINT_RE = re.compile(r"Fingerprint `([^`]+)`")
 SECURITY_RE = re.compile(r"(?i)\bsecurity\b")
+TAG_RE = re.compile(r"v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-rc\.[1-9]\d*)?)")
 CHECKBOX_RE = re.compile(r"^\[[ x]\] ")
 
 
@@ -485,6 +486,43 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         out = "\n".join(lines)
         write_atomic(note, out if out.endswith("\n") else out + "\n")
     return {"record": line, "deferred": deferred, "skipped": skipped, "gardener": gardener}, 0
+
+
+def section_body(text: str, version: str) -> list[str] | None:
+    lines = text.split("\n")
+    for start, line in enumerate(lines):
+        if line.startswith("## [") and line[4:].split("]")[0].removeprefix("v") == version and "]" in line:
+            body = []
+            for following in lines[start + 1 :]:
+                if following.startswith("## "):
+                    break
+                body.append(following)
+            while body and not body[0].strip():
+                body.pop(0)
+            while body and not body[-1].strip():
+                body.pop()
+            return body
+    return None
+
+
+def cmd_release_notes(args: argparse.Namespace) -> int:
+    match = TAG_RE.fullmatch(args.tag)
+    if not match:
+        return emit({"error": f"{args.tag} is not vX.Y.Z or vX.Y.Z-rc.N"}, 2)
+    version = match.group(1)
+    fail = {"ok": False, "tag": args.tag, "version": version}
+    try:
+        text = (Path(args.repo) / "CHANGELOG.md").read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return emit({**fail, "reason": "no-changelog"}, 1)
+    body = section_body(text, version)
+    if body is None:
+        return emit({**fail, "reason": "no-section"}, 1)
+    if not body:
+        return emit({**fail, "reason": "empty-section"}, 1)
+    if args.output:
+        write_atomic(Path(args.output), "\n".join(body) + "\n")
+    return emit({"ok": True, "tag": args.tag, "version": version, "output": args.output, "lines": len(body)}, 0)
 
 
 def cmd_release_check(args: argparse.Namespace) -> int:
