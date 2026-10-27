@@ -6,6 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from board_fixtures import slow
 from test_devloop import GIT, PLAN, Sandbox, frontmatter, git, load_devloop, load_script, put
 
 
@@ -387,6 +388,7 @@ class KitDriftTests(Sandbox):
         self.remote_main(json.dumps({"version": "3.0.0"}))
         self.assertIsNone(self.drift(self.feature_worktree("3.0.0")))
 
+    @slow
     def test_an_unreadable_main_manifest_reports_no_main_newer(self) -> None:
         self.commit_manifest("3.0.0-rc.1")
         wt = self.feature_worktree("3.0.0-rc.1")
