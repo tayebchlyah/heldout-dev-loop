@@ -29,6 +29,8 @@
                                                       record a finished release audit run in the project note
   devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
+  devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
+                                                      may CI skip this diff: only a release or a kit upgrade
   devloop.py metrics [--repo PATH] [--feature SLUG] [--write]
                                                       the token cost of each stage of a feature, its row in Feature Metrics.md
   devloop.py sessions --since DAYS [--repo PATH]       the Claude Code and Codex sessions of the repo, for retro
@@ -233,6 +235,13 @@ def main() -> int:
     target.add_argument("--tag")
     target.add_argument("--sha")
     release.set_defaults(run=("release", "cmd_release_check"))
+
+    skip = commands.add_parser("ci-skip")
+    skip.add_argument("--base", required=True)
+    skip.add_argument("--head", default="HEAD")
+    skip.add_argument("--repo", default=".")
+    skip.add_argument("--github-output", action="store_true")
+    skip.set_defaults(run=("ci_skip", "cmd_ci_skip"))
 
     plan = commands.add_parser("release-plan")
     plan.add_argument("--repo", default=".")
