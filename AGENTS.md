@@ -77,7 +77,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `scripts/gate.sh`: repo gate, node and skill suites side by side in an empty `TMPDIR`, a leftover fails it; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
 - `scripts/canary.sh`: live canary, run by hand before a release (this repo only).
-- `scripts/repo_rules.py`: repo checks `comments` (allowed comment kinds) and `subjects` (gitmoji subjects), `promoted` (final tag ships its last rc kit source), this repo only.
+- `scripts/repo_rules.py`: repo checks `comments` (allowed comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source), this repo only.
 - `scripts/upstream_watch.py`, `upstream.json`: weekly upstream watch of the outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
 - `reference/cli/<command>.md`: the full contract of each `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
