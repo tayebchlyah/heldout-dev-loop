@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { backupPath, freeBackupPath } from '../../../lib/fsops.mjs'
+import { tempDir } from './helpers.mjs'
 
 test('backupPath appends a timestamp suffix', () => {
   assert.equal(backupPath('/x/y.json', new Date('2026-09-14T10:20:30Z')), '/x/y.json.bak-20260914T102030Z')
@@ -24,7 +24,7 @@ test('backupPath is pure: same arguments always return the same string', () => {
 })
 
 test('freeBackupPath steps past a name already taken on disk', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dev-loop-fs-'))
+  const root = tempDir('dev-loop-fs-')
   const target = join(root, 'out', 'taken.json')
   mkdirSync(join(root, 'out'), { recursive: true })
   writeFileSync(target, 'live\n')

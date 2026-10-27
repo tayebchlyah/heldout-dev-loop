@@ -2,10 +2,10 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tempDir } from './helpers.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const DRIVE = join(ROOT, 'skill', 'scripts', 'drive.mjs')
@@ -39,7 +39,7 @@ before(async () => {
 after(() => server.close())
 
 function repo({ link = true } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'drive-'))
+  const dir = tempDir('drive-')
   execFileSync('git', ['init', '-q'], { cwd: dir })
   if (link) symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))
   mkdirSync(join(dir, 'evidence'))

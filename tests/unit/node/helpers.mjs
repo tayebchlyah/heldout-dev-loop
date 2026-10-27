@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs'
+import { cpSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { after } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { buildKit } from '../../../lib/kit.mjs'
@@ -22,9 +23,17 @@ if (!fsmonitorOff) {
 export const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 export const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
 
+const temps = []
+after(() => temps.forEach((dir) => rmSync(dir, { recursive: true, force: true })))
+
+export function tempDir(prefix) {
+  temps.push(mkdtempSync(join(tmpdir(), prefix)))
+  return temps.at(-1)
+}
+
 export function setup() {
-  const home = mkdtempSync(join(tmpdir(), 'dev-loop-home-'))
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'dev-loop-repo-')))
+  const home = tempDir('dev-loop-home-')
+  const repo = realpathSync(tempDir('dev-loop-repo-'))
   execFileSync('git', ['init', '-q', repo])
   return { home, repo }
 }
@@ -60,7 +69,7 @@ export const kitContent = (path) => buildKit({ packageRoot, harnesses: ['claude'
 // A copy of the package with another version, so that upgrade has something
 // to move to. `edit` changes the copy before it is used.
 export function fakePackage(nextVersion, edit = () => {}) {
-  const root = mkdtempSync(join(tmpdir(), 'dev-loop-pkg-'))
+  const root = tempDir('dev-loop-pkg-')
   for (const name of ['bin', 'lib', 'skill', 'skills', 'claude', 'codex', 'package.json']) {
     cpSync(join(packageRoot, name), join(root, name), { recursive: true })
   }
