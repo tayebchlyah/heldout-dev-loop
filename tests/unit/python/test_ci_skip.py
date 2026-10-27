@@ -215,6 +215,21 @@ class CiSkipTests(unittest.TestCase):
                 code, out = self.check({"CHANGELOG.md": RELEASED, "package.json": new}, {"package.json": old})
                 self.assertEqual((code, out["skip"], "package.json" in out["blocking"]), (0, False, True))
 
+    def test_mode_change_in_version_file_blocks(self) -> None:
+        self.base = self.commit(BASE)
+        (self.repo / "package.json").chmod(0o755)
+        self.head = self.commit(RELEASE)
+        self.assertEqual(self.git("diff", "--summary", self.base, self.head).count("mode change 100644 => 100755"), 1)
+        code, out = self.run_skip("--base", self.base)
+        self.assertEqual((code, out["skip"], "package.json" in out["blocking"]), (0, False, True))
+
+    def test_mode_only_change_in_version_file_blocks(self) -> None:
+        self.base = self.commit(BASE)
+        (self.repo / "package.json").chmod(0o755)
+        self.head = self.commit({"CHANGELOG.md": RELEASED})
+        code, out = self.run_skip("--base", self.base)
+        self.assertEqual((code, out["skip"], "package.json" in out["blocking"]), (0, False, True))
+
     def test_no_version_heading_blocks_version_files(self) -> None:
         _, out = self.check({**RELEASE, "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- New.\n\n" + CHANGELOG[13:]})
         self.assertFalse(out["skip"])
