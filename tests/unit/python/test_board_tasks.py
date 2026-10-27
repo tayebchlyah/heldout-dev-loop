@@ -120,13 +120,20 @@ class HookFilterTests(RobustnessHookFixture, unittest.TestCase):
 
 
 class VersionKeyTests(unittest.TestCase):
-    def test_a_prerelease_compares_by_its_leading_integers(self) -> None:
-        """B3: 2.1.0-rc.1 is (2, 1, 0); only a version with no leading integer is ()."""
+    def test_order(self) -> None:
+        """D2: X, Y, Z, then a release candidate before its release, then N as a number; no leading X.Y.Z is ()."""
         from board import store
 
-        self.assertGreater(store.version_key("2.1.0-rc.1"), store.version_key("2.0.9"))
-        self.assertEqual(store.version_key("2.1.0-rc.1"), store.version_key("2.1.0"))
-        self.assertEqual(store.version_key("abc"), ())
+        chain = ["2.1.1", "3.0.0-rc.1", "3.0.0-rc.2", "3.0.0-rc.10", "3.0.0", "3.0.1"]
+        keys = [store.version_key(v) for v in chain]
+        self.assertEqual(keys, sorted(keys))
+        self.assertEqual(len(set(keys)), len(chain))
+        for same in ["3.0.0-rc.0", "3.0.0-beta.1", "3.0.0-rc.1x", "3.0.0-rc.01"]:
+            with self.subTest(same=same):
+                self.assertEqual(store.version_key(same), store.version_key("3.0.0"))
+        for none in [None, 3, "", "2.1", "abc"]:
+            with self.subTest(none=none):
+                self.assertEqual(store.version_key(none), ())
 
 
 class BoardSubagentTests(RobustBoard):
