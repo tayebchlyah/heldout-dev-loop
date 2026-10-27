@@ -35,7 +35,8 @@ PROJECT_SKILL_DENIES = [
     "Skill(superpowers:brainstorming)",
     "Skill(superpowers:finishing-a-development-branch)",
 ]
-COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed")
+COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed",
+                "release_prepare", "release_check", "release_verify")
 MERGE_VALUES = ("auto", "human")
 EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
 EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
@@ -241,6 +242,16 @@ def check_project_config(repo: Path) -> list[str]:
         failures.append(EXEMPT_ERROR)
     if "security_audit" in config and audit_images(config) is None:
         failures.append(AUDIT_SHAPE)
+    if config.get("release_notes", "cliff") not in ("cliff", "written"):
+        failures.append("release_notes in dev-loop.json must be cliff or written")
+    if "version_files" in config:
+        files = config["version_files"]
+        if not (isinstance(files, list) and all(
+                isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in files)):
+            failures.append("version_files in dev-loop.json must be a list of repo-relative paths (no leading /, no ..)")
+        else:
+            failures += [f"version_files path in dev-loop.json does not exist: {p}"
+                         for p in files if not (repo / p).exists()]
     return failures
 
 
