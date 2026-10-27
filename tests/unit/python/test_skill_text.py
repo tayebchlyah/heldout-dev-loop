@@ -321,7 +321,9 @@ class TracksContractTests(unittest.TestCase):
         self.assertIn("`worktree-newer`: stop; tell the user to merge the kit upgrade", self.header)
         for value in ["`main-newer`", "Stage 3, 6 or 7 start", "`scripts/devloop.py pause --intent",
                       "--next <stage start>", "`/continue` (Codex `$continue`)", "new session in the worktree",
-                      "Main worktree", "start a new session", "Stages 4 and 5 ignore `main-newer`"]:
+                      "Main worktree, Session B start (after `git fetch origin`) or Stage 2 start",
+                      "start a new session", "Stages 4 and 5 ignore `main-newer`",
+                      "rebase the main checkout onto `origin/main` as the Stage 2 start does, then `scripts/devloop.py pause"]:
             with self.subTest(value=value):
                 self.assertIn(value, where)
 
