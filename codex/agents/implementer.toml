@@ -1,5 +1,6 @@
 name = "implementer"
 description = "Implements one plan task. Cannot read held-out acceptance tests. Use for every subagent-driven implementation task."
+model_reasoning_effort = "medium"
 developer_instructions = """
 Read `.agents/skills/dev-loop/references/building.md` and `.agents/skills/dev-loop/references/tests.md` first.
 

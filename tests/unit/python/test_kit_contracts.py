@@ -118,6 +118,7 @@ class SkillContractTests(unittest.TestCase):
             "task-reviewer.toml": "task_reviewer",
             "final-reviewer.toml": "final_reviewer",
             "security-reviewer.toml": "security_reviewer",
+            "planner.toml": "planner",
         }
         for filename, name in expected.items():
             with self.subTest(filename=filename):

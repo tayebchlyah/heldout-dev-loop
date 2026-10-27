@@ -52,7 +52,7 @@ fi
 # base is the cwd, so the repo top is the cwd. Any other absolute path is dropped (not a kit path).
 # A shell write is left to seal-check (kit-changed).
 if [ "$tool" != Bash ]; then
-  kit='^(\.agents/skills/(dev-loop|pause|continue)|\.claude/skills/(dev-loop|pause|continue)|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|security-reviewer|spec-tester|task-reviewer)\.toml$'
+  kit='^(\.agents/skills/(dev-loop|pause|continue)|\.claude/skills/(dev-loop|pause|continue)|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|planner|security-reviewer|spec-tester|task-reviewer)\.toml$'
   normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
   repo_rel() { awk -v t="$1" 'BEGIN { p = index(t, "/private/") == 1 ? substr(t, 9) : "/private" t }
     /^\// { if (t != "" && index($0, t "/") == 1) $0 = substr($0, length(t) + 2)

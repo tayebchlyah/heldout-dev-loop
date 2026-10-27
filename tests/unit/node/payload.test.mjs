@@ -39,6 +39,7 @@ const REQUIRED_CODEX_AGENTS = [
   'task-reviewer.toml',
   'final-reviewer.toml',
   'security-reviewer.toml',
+  'planner.toml',
 ]
 
 test('every payload file is present', () => {
