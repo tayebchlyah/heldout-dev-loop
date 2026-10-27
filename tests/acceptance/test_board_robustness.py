@@ -476,8 +476,14 @@ class RobustnessKitTests(RobustBoard):
         self.assertNotIn("kit_drift", self.drift(VERSION))
 
     def test_o38_older_worktree_kit_reports_no_kit_drift(self) -> None:
-        """O38, D16: a worktree with an older kit than the main worktree: `status` has no kit_drift."""
-        self.assertNotIn("kit_drift", self.drift("2.0.0"))
+        """O38 as Release Candidates replaced it: older than the main worktree, same as <main-ref>: no
+        kit_drift; older than <main-ref>: main-newer."""
+        put(self.repo / ".dev-loop/MANIFEST.json", json.dumps({"version": "2.2.0", "files": {}}))
+        self.assertNotIn("kit_drift", self.drift(VERSION))
+        wt = self.repo.parent / "worktrees" / f"{self.repo.name}-gadget"
+        put(wt / ".dev-loop/MANIFEST.json", json.dumps({"version": "2.0.0", "files": {}}))
+        drift = self.status(cwd=wt).get("kit_drift")
+        self.assertEqual(drift, {"worktree": "2.0.0", "main": VERSION, "direction": "main-newer"})
 
 
 class RobustnessHookTests(RobustnessHookFixture, unittest.TestCase):
