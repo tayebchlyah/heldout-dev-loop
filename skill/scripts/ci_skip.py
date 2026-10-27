@@ -8,14 +8,15 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import release
 from devloop import emit
 from merge_check import read_config
 
-VERSION = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.[1-9]\d*)?")
-HEADING = re.compile(r"^## \[v?([^\]]+)\]", re.M)
+VERSION = re.compile(rb"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.[1-9]\d*)?")
+HEADING = re.compile(rb"^## \[v?([^\]]+)\]", re.M)
 MERGED = {".claude/settings.json", ".codex/hooks.json", ".codex/config.toml"}
 
 
@@ -40,31 +41,33 @@ def version_files(repo: Path, head: str) -> list[str]:
 
 def version_pairs(repo: Path, mb: str, head: str, path: str) -> set[tuple[str, str]] | None:
     """The (old, new) version token pairs of a version-only diff of `path`, else None."""
-    diff = release.run_git(repo, "diff", "-U0", "--text", "--no-renames", mb, head, "--", path)
+    diff = subprocess.run(["git", "-C", str(repo), "diff", "-U0", "--text", "--no-renames", mb, head, "--", path],
+                          capture_output=True)
     if diff.returncode != 0:
         return None
-    hunks: list[tuple[list[str], list[str]]] = []
-    for line in diff.stdout.split("\n"):
-        if line.startswith("@@"):
+    hunks: list[tuple[list[bytes], list[bytes]]] = []
+    for line in diff.stdout.split(b"\n"):
+        if line.startswith(b"@@"):
             hunks.append(([], []))
-        elif hunks and line[:1] in ("-", "+"):
-            hunks[-1][line[:1] == "+"].append(line[1:])
+        elif hunks and line[:1] in (b"-", b"+"):
+            hunks[-1][line[:1] == b"+"].append(line[1:])
     pairs: set[tuple[str, str]] = set()
     for removed, added in hunks:
         if len(removed) != len(added):
             return None
         for old, new in zip(removed, added):
-            if VERSION.sub("\0", old) != VERSION.sub("\0", new):
+            olds, news = VERSION.findall(old), VERSION.findall(new)
+            if len(olds) != len(news) or VERSION.sub(b"\0", old) != VERSION.sub(b"\0", new):
                 return None
-            pairs |= {(a.group(0), b.group(0)) for a, b in zip(VERSION.finditer(old), VERSION.finditer(new))
-                      if a.group(0) != b.group(0)}
+            pairs |= {(a.group(0).decode(), b.group(0).decode())
+                      for a, b in zip(VERSION.finditer(old), VERSION.finditer(new)) if a.group(0) != b.group(0)}
     return pairs
 
 
 def released(repo: Path, head: str) -> str | None:
-    shown = release.run_git(repo, "show", f"{head}:CHANGELOG.md")
+    shown = subprocess.run(["git", "-C", str(repo), "show", f"{head}:CHANGELOG.md"], capture_output=True)
     match = HEADING.search(shown.stdout) if shown.returncode == 0 else None
-    return match.group(1) if match else None
+    return match.group(1).decode("utf-8", "replace") if match else None
 
 
 def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
