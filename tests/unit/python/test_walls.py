@@ -494,6 +494,8 @@ class WorktreeWallTests(unittest.TestCase):
                  (self.edit(self.main, self.wt["odd"] / "a.txt"), self.wt["odd"]),
                  (self.edit(self.main, f"{self.main}/nope/../.claude/worktrees/x/a.txt", "Write"), x),
                  (self.edit(self.main, self.main / "flink"), x),
+                 (self.edit(self.main, f"{self.main}/nope/../flink", "Write"), x),
+                 (self.edit(self.main, f"{self.main}/link/../flink", "Write"), x),
                  (self.edit(self.root / "gone", x / "a.txt"), x)]
         for stdin, worktree in cases:
             with self.subTest(stdin=stdin):
