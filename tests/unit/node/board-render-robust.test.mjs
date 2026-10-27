@@ -59,11 +59,11 @@ test('O4: render.js holds no triple backtick and no closing script tag', () => {
   assert.ok(!src.includes('</script'))
 })
 
-test('D1: notes with one machine_id but different owners give two groups', () => {
+test('D1: notes with one machine_id but different owners each name their own owner', () => {
   const html = loadRender()([
     baseNote({ feature: 'a', owner: 'Robin' }), baseNote({ feature: 'b', owner: 'Sam' }),
   ], T0, {})
-  assert.equal(html.split('class="grp"').length - 1, 2)
+  assert.ok(html.includes('Robin, lab-mac') && html.includes('Sam, lab-mac'))
 })
 
 test('D2: task segments show only while Stage 5 runs', () => {
