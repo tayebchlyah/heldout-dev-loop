@@ -55,7 +55,7 @@ No `paused`, same session: wake. Each subagent that stopped during its work gets
 
 ## Detect the stage
 
-Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left. `effort`: `level` and `want` not null, and they differ: tell the user one line with the command to type (`/effort <want>`), then go on.
+Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left. `effort`: `feature` set, `level` and `want` not null, and they differ (plain `status` on `main`: never): tell the user one line with the command to type (`/effort <want>`), then go on.
 
 Checklist. Claude: one `TaskCreate` item per stage; end of Stage 4: one item per plan task, subject `Task N: <plan heading>`; `in_progress` at start, `completed` after its ledger line; close a stage item before the next. Codex: no plan tool, the ledger is the record. Both: `task-start` for each task, inline too.
 

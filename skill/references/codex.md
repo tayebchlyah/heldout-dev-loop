@@ -22,7 +22,6 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - `$pause`: `interrupt_agent` (v2), else `close_agent` (v1), on each running subagent; background runs stay alive.
 - No ask tool outside plan mode: no ask wall needed.
 - Hand-off at spec approval (SKILL.md Stage 2), each line in its own code block: 1 `/reasoning` with the medium level, 2 `/compact`, 3 `Start Delivery of <slug>`. Track S (Stage 1): `/reasoning` medium, then `Accept Track S`.
-- No worktree wall: Codex has no model-side command that moves the session cwd; the session cwd stays where Codex started it.
 - Gaps, written down, not closed: no failure event (Codex `Stop` has no error field), so only `$pause` writes a pause note, a usage limit writes none; the wake of an `errored` agent and the `$pause`, `$continue` entries of the `/` menu are unconfirmed until a live check. Confirmed on 0.162.1: a shell command sees `CODEX_THREAD_ID`, the id of the session file `rollout-<time>-<id>.jsonl`.
 
 ## Skill and agent names
@@ -39,7 +38,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 
 ## Stage 4 plan
 
-Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), with the spec path. It invokes `superpowers:writing-plans` and returns the plan path. No worktree wall in Codex: the main thread stays in the cwd Codex started in. The main thread reads the plan, applies the SKILL.md Stage 4 checks, then runs Stage 5.
+Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), with the spec path. It invokes `superpowers:writing-plans` and returns the plan path. No worktree wall in Codex: the session cwd stays where Codex started it. The main thread reads the plan, applies the SKILL.md Stage 4 checks, then runs Stage 5.
 
 ## Feature gate
 
