@@ -569,6 +569,51 @@ class ReleasePlanExcludeTests(PlanRepo):
             self.assertTrue(any(p.startswith(root) for p in paths), root)
 
 
+class ReleaseCommitTests(PlanRepo):
+    """Record at A (version `3.0.0-rc.1`), B the release commit for `3.0.0`."""
+
+    state = ReleasePlanExcludeTests.state
+    run_folder = ReleasePlanExcludeTests.run_folder
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.a = self.state("3.0.0-rc.1", {ONE: "1", TWO: "1", "src/app.py": "a", "dev-loop.json": self.config("3.0.0-rc.1"),
+                                          "package.json": '{"version": "3.0.0-rc.1"}\n',
+                                          "CHANGELOG.md": "# Changelog\n\n## [2.1.1] - 2026-10-16\n"})
+        self.record(self.a)
+        self.run_folder()
+
+    @staticmethod
+    def config(version: str, files: object = ("package.json",)) -> str:
+        return json.dumps({"version": version, "version_files": files})
+
+    def release(self, files: dict | None = None) -> str:
+        return self.state("3.0.0", {ONE: "2", TWO: "2", "dev-loop.json": self.config("3.0.0"),
+                                    "package.json": '{"version": "3.0.0"}\n',
+                                    "CHANGELOG.md": "# Changelog\n\n## [3.0.0] - 2026-11-01\n\n## [2.1.1] - 2026-10-16\n",
+                                    **(files or {})})
+
+    def check(self, sha: str) -> tuple[dict, int, str]:
+        env = {**os.environ, "DEV_LOOP_NOTES": str(self.notes)}
+        done = subprocess.run([sys.executable, str(DEVLOOP), "release-check", "--repo", str(self.repo), "--sha", sha],
+                              capture_output=True, text=True, env=env)
+        return json.loads(done.stdout), done.returncode, done.stderr
+
+    def test_release_commit_after_record_is_current(self) -> None:
+        out, code, _ = self.check(self.release())
+        self.assertEqual((out["ok"], out["reasons"], code), (True, [], 0))
+
+    def test_code_next_to_release_commit_is_stale(self) -> None:
+        out, code, _ = self.check(self.release({"src/app.py": "b"}))
+        self.assertEqual((out["reasons"], code), (
+            [{"reason": "stale-audit",
+              "paths": [ONE, TWO, MANIFEST, "dev-loop.json", "package.json", "src/app.py"]}], 1))
+
+    def test_bad_version_files_is_stale(self) -> None:
+        out, code, err = self.check(self.release({"dev-loop.json": self.config("3.0.0", "package.json")}))
+        self.assertEqual((out["reasons"][0]["reason"], code, "Traceback" in err), ("stale-audit", 1, False))
+
+
 class ReleaseNotesTests(unittest.TestCase):
     CHANGELOG = (
         "# Changelog\n\n## [3.0.0] - 2026-11-01\n\n### Highlights\n\nIt does more.\n\n"
