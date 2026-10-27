@@ -1,6 +1,6 @@
 # dev-loop
 
-Stage-driven development loop for Claude Code and Codex. Each piece of work is sized as Track S, M or L. A Track M or L feature runs in two sessions: Session A frames it and writes the spec (Stages 1 and 2) and stops at the spec approval. Session B chains Stages 3 to 7 (acceptance tests, plan, build, feature gate, ship) under an autonomy grant. A Track S change has no spec and no plan: it is built, goes through the review wave of the feature gate (no acceptance tests), then ships.
+Stage-driven development loop for Claude Code and Codex. Each piece of work is sized as Track S, M or L. A Track M or L feature runs in one session by default, in two parts: Shaping (Stages 1 and 2, at high effort) frames it and writes the spec and stops at the spec approval; Delivery (Stages 3 to 7, at medium effort) chains acceptance tests, plan, build, feature gate, ship under an autonomy grant. A Track S change has no spec and no plan: it is built, goes through the review wave of the feature gate (no acceptance tests), then ships.
 
 ## Install
 

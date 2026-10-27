@@ -50,14 +50,16 @@ The size class of a feature, S, M or L, which decides which stages it runs.
 One step of the loop, numbered 0 to 7, from bootstrap to ship.
 _Avoid_: phase, step
 
-**Session A**:
-The session that frames a feature and ends when the user approves its spec.
+**Shaping**:
+The first part of a feature: Stages 1 and 2 on `main`, up to the spec approval, at high effort. It runs in the same session as Delivery by default; a new session is optional.
+_Avoid_: Session A
 
-**Session B**:
-The session that runs a feature from acceptance tests to merge without stopping for routine decisions.
+**Delivery**:
+The second part of a feature: Stages 3 to 7, chained under the autonomy grant, at medium effort. It runs in the same session as Shaping by default; a new session is optional.
+_Avoid_: Session B
 
 **Autonomy grant**:
-The permission Session B holds to decide open questions itself and record them, stopping only for the listed exceptions.
+The permission Delivery holds to decide open questions itself and record them, stopping only for the listed exceptions.
 
 **Spec**:
 The approved description of a feature: its behaviour, interfaces and acceptance oracle.
