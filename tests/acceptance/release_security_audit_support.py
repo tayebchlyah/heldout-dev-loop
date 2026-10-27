@@ -375,10 +375,11 @@ class SandboxCase(unittest.TestCase):
         target.mkdir(mode=0o755)
         put(target / "dev-loop.json", json.dumps({**BASE_CONFIG, **extra}, indent=2) + "\n")
         put(target / "src" / "app.py", APP_A)
+        quiet = ("-c", "maintenance.auto=false", "-c", "gc.auto=0")
         for args in (["init", "-q", "-b", "main"], ["add", "-A"],
                      ["-c", "user.name=Robin Quill", "-c", "user.email=robin@example.invalid",
                       "-c", "commit.gpgsign=false", "commit", "-q", "-m", "Target"]):
-            subprocess.run(["git", *args], cwd=target, env=self.env, check=True, capture_output=True)
+            subprocess.run(["git", *quiet, *args], cwd=target, env=self.env, check=True, capture_output=True)
         for folder in (target, target / "src"):
             folder.chmod(0o755)
         return target
