@@ -21,7 +21,7 @@ import devloop
 from devloop import emit, frontmatter, git, specs
 from merge_check import main_ref
 from notes_path import NotesPathError, resolve
-from status import feature_checkout
+from status import LEVELS, feature_checkout
 
 WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_read": 0.1, "output": 5.0}
 STAGES = ("1-2", "3", "4", "5", "6", "7")
@@ -31,7 +31,6 @@ HOOK = re.compile(r"[^\s/\[\]\"'`]+\.sh")
 TESTS = (re.compile(r"^\s*def test_\w*\("), re.compile(r"^\s*(?:it|test)\("), re.compile(r"^func Test\w*\("))
 HEADER = ("| feature | track | shipped | sessions | active h | user msgs | gate runs | gate s | unit tests "
           "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | effort | escaped |")
-LEVELS = ("low", "medium", "high", "xhigh", "max")
 CODES = dict(zip(LEVELS, ("l", "m", "h", "xh", "max")))
 DATA_RULE = ("Data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) "
              "until 5 features have a row with stage cells that are not `?`.")
