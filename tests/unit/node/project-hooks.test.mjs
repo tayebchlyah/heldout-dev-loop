@@ -179,7 +179,7 @@ test('upgrade of a 2.1.1 Claude project keeps user groups in order and the empty
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
 
-for (const name of ['release-audit', 'garden']) {
+for (const name of ['release-audit', 'garden', 'release', 'release-notes']) {
   test(`upgrade from a kit without ${name} adds its files, link and MANIFEST entries`, () => {
     const { home, repo } = setup()
     init(repo, home, ['--yes'])

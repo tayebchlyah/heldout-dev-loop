@@ -56,6 +56,8 @@ Do not substitute Claude-only review, security, or verification slash commands i
 
 User-invoked only: `$release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Session B, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. It needs the Docker engine reachable from the `dev-workspace` profile: `release-plan` `sandbox.engine` false means a source-only run. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
 
+`/release` (Codex: `$release`, kit skill `release`) runs the whole release and the audit steps inside it.
+
 ## Garden
 
 User-invoked only: `$garden` (kit skill `garden`), the weekly `## Gardener` triage, main checkout on `main`. Steps: the skill's `SKILL.md`.
