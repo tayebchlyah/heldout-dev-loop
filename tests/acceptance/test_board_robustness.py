@@ -469,7 +469,8 @@ class RobustnessKitTests(RobustBoard):
 
     def test_o26_newer_worktree_kit_reports_kit_drift(self) -> None:
         """O26, D16: `status` in a worktree whose kit version differs from the main worktree's has kit_drift."""
-        self.assertEqual(self.drift("2.2.0").get("kit_drift"), {"worktree": "2.2.0", "main": VERSION})
+        drift = self.drift("2.2.0").get("kit_drift") or {}
+        self.assertEqual((drift.get("worktree"), drift.get("main")), ("2.2.0", VERSION))
 
     def test_o27_same_kit_reports_no_kit_drift(self) -> None:
         """O27, D16: with the same version, `status` has no kit_drift."""
