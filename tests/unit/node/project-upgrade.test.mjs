@@ -470,3 +470,74 @@ test('init --force --dry-run names the backup it would make and changes nothing'
   assert.deepEqual(readdirSync(join(repo, '.claude/agents')), ['implementer.md'])
   assert.equal(readFileSync(join(repo, '.claude/agents/implementer.md'), 'utf8'), 'mine\n')
 })
+
+function installAt(repo, home, from) {
+  run(fakePackage(from), 'init', repo, home, ['--yes', '--harness=claude'])
+}
+
+const pattern = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+test('upgrade to a release candidate sets its version in dev-loop.json and MANIFEST.json', () => {
+  const { home, repo } = setup()
+  installAt(repo, home, '2.1.1')
+  upgrade(repo, home, [], fakePackage('3.0.0-rc.1'))
+  assert.equal(readJson(join(repo, 'dev-loop.json')).version, '3.0.0-rc.1')
+  assert.equal(readJson(join(repo, '.dev-loop/MANIFEST.json')).version, '3.0.0-rc.1')
+})
+
+test('upgrade orders release candidates by their number, and a final after its candidates', () => {
+  const { home, repo } = setup()
+  installAt(repo, home, '3.0.0-rc.9')
+  upgrade(repo, home, [], fakePackage('3.0.0-rc.10'))
+  assert.equal(readJson(join(repo, 'dev-loop.json')).version, '3.0.0-rc.10')
+  upgrade(repo, home, [], fakePackage('3.0.0'))
+  assert.equal(readJson(join(repo, 'dev-loop.json')).version, '3.0.0')
+})
+
+test('upgrade to an older release candidate or a candidate of the installed final refuses, and writes nothing', () => {
+  for (const [from, to] of [['3.0.0-rc.10', '3.0.0-rc.9'], ['3.0.0', '3.0.0-rc.1']]) {
+    const { home, repo } = setup()
+    installAt(repo, home, from)
+    const before = snapshot(repo)
+    upgradeFails(repo, home, [], new RegExp(`${pattern(to)}, older than the installed ${pattern(from)}`), fakePackage(to))
+    assert.deepEqual(snapshot(repo), before)
+  }
+})
+
+test('upgrade refuses a package version that is not x.y.z or x.y.z-rc.n, and writes nothing', () => {
+  for (const bad of ['3.0.0-beta.1', '3.0', '3.0.0-rc.0', '03.0.0']) {
+    const { home, repo } = setup()
+    installAt(repo, home, '2.1.1')
+    const before = snapshot(repo)
+    upgradeFails(repo, home, [], new RegExp(`not a x\\.y\\.z or x\\.y\\.z-rc\\.n version: ${pattern(bad)}`), fakePackage(bad))
+    assert.deepEqual(snapshot(repo), before)
+  }
+})
+
+test('upgrade refuses an installed dev-loop.json version that is not x.y.z or x.y.z-rc.n, and writes nothing', () => {
+  const { home, repo } = setup()
+  installAt(repo, home, '2.1.1')
+  const devLoop = readJson(join(repo, 'dev-loop.json'))
+  writeFileSync(join(repo, 'dev-loop.json'), `${JSON.stringify({ ...devLoop, version: '2.1' }, null, 2)}\n`)
+  const before = snapshot(repo)
+  upgradeFails(repo, home, [], /not a x\.y\.z or x\.y\.z-rc\.n version: 2\.1$/m, fakePackage('3.0.0'))
+  assert.deepEqual(snapshot(repo), before)
+})
+
+test('releaseNotes keeps release candidate sections and ends a section at a heading that is no version', () => {
+  const changelog = [
+    '# Changelog', '', '## [3.0.0-rc.1] - 2026-11-01', '', '- rc', '', '## [v3.0.0-beta.1]', '', '- beta', '',
+    '## [2.1.1] - 2026-10-20', '', '- one', '', '## [2.1.0]', '', '- zero', '',
+  ].join('\n')
+  const notes = releaseNotes(changelog, '2.1.1', '3.0.0-rc.1')
+  assert.match(notes, /- rc/)
+  assert.doesNotMatch(notes, /- one/)
+  assert.doesNotMatch(notes, /- beta/)
+  assert.match(releaseNotes('## [v3.0.0-rc.2]\n\n- two\n\n## [3.0.0-rc.1]\n\n- rc\n', '3.0.0-rc.1', '3.0.0'), /- two/)
+})
+
+test('init with a release candidate package writes its version', () => {
+  const { home, repo } = setup()
+  run(fakePackage('3.0.0-rc.1'), 'init', repo, home, ['--yes', '--harness=claude'])
+  assert.equal(readJson(join(repo, 'dev-loop.json')).version, '3.0.0-rc.1')
+})
