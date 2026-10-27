@@ -45,7 +45,6 @@ const tasks = (startMin, ...specs) => specs.map(([state, minutes], i) => ({
   ...(state === 'done' ? { done: ago(startMin - i * 20 - minutes) } : {}),
 }))
 
-// Durations (D9)
 
 test('O17: every duration format, through the total time of a row summary', () => {
   for (const [minutes, want] of [[0.5, 'under a minute'], [43, '43 min'], [145, '2 h 25 min'], [180, '3 h'],
@@ -60,7 +59,6 @@ test('O18: a feature idle for 182 h 35 min shows "Idle, 7 d 14 h ago"', () => {
   assert.ok(s.includes('Idle, 7 d 14 h ago'), s)
 })
 
-// Ledger row summary (D6)
 
 test('O8: an in-progress Track M row shows "Track M" and its total time', () => {
   const s = text(summary(row(html([note()]))))
@@ -91,7 +89,6 @@ test('O20a: a shipped note that keeps a waiting shows no "Needs you" and is not 
   assert.ok(!/needs? you/.test(projectSummary(h, 'p')), projectSummary(h, 'p'))
 })
 
-// Open row (D7, D8)
 
 test('O13: a shipped row lists each done task with its duration', () => {
   const r = text(row(html([shippedNote({ tasks: tasks(100, ['done', 12], ['done', 7], ['done', 43]).map((t) => ({ ...t,
@@ -104,7 +101,6 @@ test('O16: task bars scale to the longest task; doing says running, to do says t
   const list = r.slice(r.indexOf('<ol class="lt">'))
   const items = list.split('<li').slice(1)
   const width = (li) => Number(li.match(/width:([\d.]+)%/)[1])
-  // The doing task runs 60 min, so it is the longest; the 10 min task is 1/6 of it.
   assert.equal(width(items[2]), 100)
   assert.ok(Math.abs(width(items[0]) / width(items[1]) - 2) < 0.05)
   assert.match(text(items[2]), /running 1 h/)
@@ -165,7 +161,6 @@ test('Review Focus 5: a Track S row with no tasks says no plan, no tasks', () =>
   assert.ok(text(row(html([note()]))).includes('No plan yet. Tasks appear at Stage 4.'))
 })
 
-// Project folds and order (D1 to D5)
 
 test('O1: one fold per project, open only when opts.open has its key', () => {
   assert.ok(!/ open/.test(openTag(html([note()]), 'project:p')))

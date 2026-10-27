@@ -20,7 +20,6 @@ function renderBoard(features, nowMs, opts) {
     if (m < 60) return `${m} min`;
     const h = Math.floor(m / 60);
     if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
-    // D9: from a day on, days and hours, no minutes.
     return h % 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${Math.floor(h / 24)} d`;
   };
   const ago = (iso) => (isFinite(ms(iso)) ? (nowMs - ms(iso) < 60000 ? "just now" : `${dur(nowMs - ms(iso))} ago`) : "never");
@@ -136,7 +135,6 @@ function renderBoard(features, nowMs, opts) {
   };
 
   const num = (n) => (typeof n === "number" && isFinite(n) ? `${n}. ` : "");
-  // D6 to D8: one row per feature, in progress or shipped. `end`: now in progress, the ship time when shipped.
   const ledgerRow = (m) => {
     const f = m.f, live = !m.shipped, end = m.end;
     const first = Math.min(...Object.values(f.times));
@@ -181,7 +179,6 @@ function renderBoard(features, nowMs, opts) {
     : "No feature in progress.";
   const head = `<div class="hd"><p class="lede">${lede}</p><p class="stamp">Updated ${clock(nowMs)}</p></div>`;
 
-  // D5: per project, the 5 latest ship times.
   const shipRows = [];
   for (const p of new Set(shipped.map((f) => f.project))) {
     shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped)).slice(0, 5)
@@ -189,19 +186,16 @@ function renderBoard(features, nowMs, opts) {
   }
   const all = [...rows, ...shipRows];
 
-  // D2 viewer rank: this machine, then the other machines of its owner (else opts.me), then everyone else.
   const here = str(opts.here);
   const hereRow = here ? all.find((m) => m.f.machine_id === here) : null;
   const me = hereRow ? hereRow.f.owner : str(opts.me);
   const rank = (m) => (here && m.f.machine_id === here ? 0 : me && m.f.owner === me ? 1 : 2);
-  // D3 order.
   const order = (a, b) => rank(a) - rank(b) || (b.f.waiting ? 1 : 0) - (a.f.waiting ? 1 : 0) || at(b.f.updated) - at(a.f.updated);
   const byShip = (a, b) => rank(a) - rank(b) || at(b.f.shipped) - at(a.f.shipped);
   const projectRank = (p) => Math.min(...all.filter((m) => m.f.project === p).map(rank));
   const projects = [...new Set(all.map((m) => m.f.project))].sort((a, b) => projectRank(a) - projectRank(b) || a.localeCompare(b));
   const perStage = (list) => STAGES.map((_, i) => [i + 1, list.filter((m) => m.f.stage === i + 1).length]).filter(([, c]) => c);
 
-  // D1, D4: each project and its shipped part fold, closed until opened.
   const fold = (key, cls, sum, inner) => `<details class="${cls}" data-key="${esc(key)}"${open.has(key) ? " open" : ""}><summary>${sum}</summary>${inner}</details>`;
   const ledger = (list) => `<div class="ledger">${list.map(ledgerRow).join("")}</div>`;
   const project = (p) => {

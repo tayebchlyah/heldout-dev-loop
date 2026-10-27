@@ -581,7 +581,6 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         path.unlink()
         payload["removed"].append(str(path))
-    # D12: keep the own shipped notes of the SHIPPED_KEPT latest shipped_at in this project.
     for _, path in sorted(shipped, reverse=True)[SHIPPED_KEPT:]:
         path.unlink()
         payload["removed"].append(str(path))
