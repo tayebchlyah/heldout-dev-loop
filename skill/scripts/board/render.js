@@ -2,6 +2,7 @@
 // this file unchanged, so it is one plain script: no import, export or require.
 // renderBoard(features, nowMs, opts) -> HTML string.
 // opts: {theme?: "light"|"dark"|null, open?: Set<key>, here?: machine_id, me?: owner, newerSchema?: number}.
+// Open keys: "<project>/<feature>" (a row), "project:<project>" (a project fold), "shipped:<project>" (its shipped fold).
 function renderBoard(features, nowMs, opts) {
   opts = opts || {};
   const open = opts.open || new Set();
@@ -14,11 +15,13 @@ function renderBoard(features, nowMs, opts) {
   const at = (iso) => (isFinite(ms(iso)) ? ms(iso) : -Infinity);
   const dur = (d) => {
     if (!isFinite(d) || d < 0) return "unknown";
-    const m = Math.round(d / 60000);
+    const m = Math.floor(d / 60000);
     if (m < 1) return "under a minute";
     if (m < 60) return `${m} min`;
     const h = Math.floor(m / 60);
-    return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+    if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+    // D9: from a day on, days and hours, no minutes.
+    return h % 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${Math.floor(h / 24)} d`;
   };
   const ago = (iso) => (isFinite(ms(iso)) ? (nowMs - ms(iso) < 60000 ? "just now" : `${dur(nowMs - ms(iso))} ago`) : "never");
   const clock = (t) => {
@@ -113,7 +116,7 @@ function renderBoard(features, nowMs, opts) {
     const segs = sp.map((s) => {
       const pct = total ? (s.w ? (s.w / total) * share : minw) : past / sp.length;
       const now = s.n === cur;
-      const time = `${dur(s.d)}${now ? " so far" : ""}${now && isFinite(m.left) ? `, about ${dur(m.left)} left` : ""}`;
+      const time = isFinite(s.d) ? `${dur(s.d)}${now ? " so far" : ""}${now && isFinite(m.left) ? `, about ${dur(m.left)} left` : ""}` : "";
       return { n: s.n, pct, now, time, wc: wc(pct), split: s.n === 5 && cur === 5 && m.f.tasks.length > 0 };
     });
     next.forEach((n) => segs.push({ n, pct: slot, fut: true, time: "not started", wc: "fut" }));
@@ -133,40 +136,83 @@ function renderBoard(features, nowMs, opts) {
   };
 
   const num = (n) => (typeof n === "number" && isFinite(n) ? `${n}. ` : "");
-  const taskList = (m) =>
-    m.f.tasks.length
-      ? `<ol class="tasks">${m.f.tasks.map((t) => {
-          const st = stateOf(t);
-          const time = st === "done" ? dur(ms(t.done) - ms(t.started)) : st === "doing" ? `running ${dur(nowMs - ms(t.started))}` : "";
-          return `<li class="${st}">${icon(st)}${typeof t.n === "number" && isFinite(t.n) ? `<span class="tn">${t.n}.</span> ` : ""}<span class="tt">${esc(t.title)}</span><span class="td">${time}</span></li>`;
+  // D6 to D8: one row per feature, in progress or shipped. `end`: now in progress, the ship time when shipped.
+  const ledgerRow = (m) => {
+    const f = m.f, live = !m.shipped, end = m.end;
+    const first = Math.min(...Object.values(f.times));
+    const total = isFinite(end - first) ? `<strong>${dur(end - first)}</strong>` : "";
+    const taskD = (t) => {
+      const d = t.state === "done" ? ms(t.done) - ms(t.started) : t.state === "doing" ? end - ms(t.started) : NaN;
+      return isFinite(d) && d >= 0 ? d : NaN;
+    };
+    const max = Math.max(0, ...f.tasks.map(taskD).filter(isFinite));
+    const tasks = f.tasks.length
+      ? `<ol class="lt">${f.tasks.map((t) => {
+          const st = stateOf(t), d = taskD(t);
+          const time = st === "todo" ? "to do" : isFinite(d) ? `${st === "doing" && live ? "running " : ""}${dur(d)}` : "";
+          const w = st !== "todo" && isFinite(d) && max ? (d / max) * 100 : 0;
+          return `<li class="${st}">${icon(st)}<span class="tn">${num(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="lb"><b style="width:${w.toFixed(1)}%"></b></span><span class="td">${time}</span></li>`;
         }).join("")}</ol>`
-      : `<p class="na">No plan yet. Tasks appear at Stage 4.</p>`;
-
-  const row = (m) => {
-    const f = m.f, sp = spans(m, nowMs);
+      : `<p class="na">${f.track.toUpperCase() === "S" ? "Track S: no plan, no tasks." : "No plan yet. Tasks appear at Stage 4."}</p>`;
+    const sp = spans(m, end);
+    const chips = sp.filter((s) => isFinite(s.d))
+      .map((s) => `<span class="chip${live && s.n === f.stage ? " now" : ""}">${label(s.n)} <strong>${dur(s.d)}</strong>${live && s.n === f.stage ? " so far" : ""}</span>`).join("")
+      + (live && isFinite(m.left) ? `<span class="chip now">About <strong>${dur(m.left)}</strong> left</span>` : "");
+    const decs = f.decisions.length ? `<h3>Decided without you</h3><div class="decs">${f.decisions.map((d) => `<p>${esc(d)}</p>`).join("")}</div>` : "";
+    const tk = f.tasks.length ? `${m.done.length} of ${f.tasks.length} tasks` : "No plan";
     const inStage = (sp.find((s) => s.n === f.stage) || {}).d;
-    const times = sp.filter((s) => isFinite(s.d)).map((s) => `<li><span>${label(s.n)}</span><span>${dur(s.d)}${s.n === f.stage ? " so far" : ""}</span></li>`).join("");
-    const tk = f.tasks.length ? `${m.done.length} of ${f.tasks.length}` : `<span class="na">No plan yet</span>`;
-    const eta = isFinite(m.left) ? `<span data-time-left>About ${dur(m.left)} left</span>` : f.stage === 5 && f.tasks.length ? `<span class="na">Not estimated yet</span>` : "";
-    const decs = f.decisions.length ? `<h3 style="margin-top:12px">Decided without you</h3><div class="decs">${f.decisions.map((d) => `<p>${esc(d)}</p>`).join("")}</div>` : "";
-    return `<details class="row${f.waiting ? " you" : ""}" data-key="${esc(m.key)}"${open.has(m.key) ? " open" : ""}>
-<summary>
- <span class="c-f"><span class="t">${esc(f.title)}</span><span class="s">track ${esc(f.track)}</span>${f.waiting ? `<span class="flag">Needs you: ${esc(f.waiting)}</span>` : ""}</span>
- <span class="c-st"><span class="sn"><strong>${label(f.stage)}</strong> for ${dur(inStage)}</span>${bar(m, nowMs, f.stage)}</span>
- <span class="c-tk">${tk}</span>
- <span class="c-eta">${eta}</span>
- <span class="c-up${m.idle ? " stale" : ""}">${m.idle ? "Idle, " : ""}${ago(f.updated)}</span>
-</summary>
-<div class="more"><div><h3>Tasks</h3>${taskList(m)}</div><div><h3>Time per stage</h3>${f.backfilled === true ? `<p class="na">Times are estimated</p>` : ""}<ol class="times">${times}</ol>${decs}</div></div>
+    const stage = live
+      ? `<span class="stg"><strong>${label(f.stage)}</strong>${isFinite(inStage) ? ` ${dur(inStage)}` : ""}<span class="sub">${tk}${isFinite(m.left) ? `, <span data-time-left>About ${dur(m.left)} left</span>` : ""}</span></span>`
+      : `<span class="stg"><strong class="shp">Shipped</strong><span class="sub">${tk}</span></span>`;
+    const when = live
+      ? `<span class="when${m.idle ? " stale" : ""}">${m.idle ? "Idle, " : ""}${ago(f.updated)}</span>`
+      : `<span class="when">${isFinite(end) ? new Date(end).toISOString().slice(0, 10) : ""}</span>`;
+    const you = live && f.waiting;
+    return `<details class="lg${live ? " act" : ""}${you ? " you" : ""}" data-key="${esc(m.key)}"${open.has(m.key) ? " open" : ""}>
+<summary><span class="t">${esc(f.title)}${you ? `<span class="flag">Needs you: ${esc(f.waiting)}</span>` : ""}</span><span class="trk"><span class="pill">Track ${esc(f.track || "?")}</span>${total}</span>${stage}<span class="who">${esc(f.owner)}, ${esc(f.machine)}${here && f.machine_id === here ? ' <span class="pill">this machine</span>' : ""}</span>${when}</summary>
+<div class="lg-body">${bar(m, end, live ? f.stage : 0)}<h3>Time per stage</h3>${f.backfilled ? `<p class="na">Times are estimated</p>` : ""}<div class="chips">${chips}</div>${tasks}${decs}</div>
 </details>`;
   };
 
-  const rows = active.map(model);
+  const rows = active.map((f) => ({ ...model(f), shipped: false, end: nowMs }));
   const needs = rows.filter((m) => m.f.waiting);
   const lede = rows.length
     ? `${rows.length} ${rows.length === 1 ? "feature" : "features"} in progress. ${needs.length ? `${needs.length} ${needs.length === 1 ? "needs" : "need"} you.` : "Nothing needs you."}`
     : "No feature in progress.";
   const head = `<div class="hd"><p class="lede">${lede}</p><p class="stamp">Updated ${clock(nowMs)}</p></div>`;
+
+  // D5: per project, the 5 latest ship times.
+  const shipRows = [];
+  for (const p of new Set(shipped.map((f) => f.project))) {
+    shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped)).slice(0, 5)
+      .map((f) => ({ ...model({ ...f, stage: 7 }), shipped: true, end: ms(f.shipped) })));
+  }
+  const all = [...rows, ...shipRows];
+
+  // D2 viewer rank: this machine, then the other machines of its owner (else opts.me), then everyone else.
+  const here = str(opts.here);
+  const hereRow = here ? all.find((m) => m.f.machine_id === here) : null;
+  const me = hereRow ? hereRow.f.owner : str(opts.me);
+  const rank = (m) => (here && m.f.machine_id === here ? 0 : me && m.f.owner === me ? 1 : 2);
+  // D3 order.
+  const order = (a, b) => rank(a) - rank(b) || (b.f.waiting ? 1 : 0) - (a.f.waiting ? 1 : 0) || at(b.f.updated) - at(a.f.updated);
+  const byShip = (a, b) => rank(a) - rank(b) || at(b.f.shipped) - at(a.f.shipped);
+  const projectRank = (p) => Math.min(...all.filter((m) => m.f.project === p).map(rank));
+  const projects = [...new Set(all.map((m) => m.f.project))].sort((a, b) => projectRank(a) - projectRank(b) || a.localeCompare(b));
+  const perStage = (list) => STAGES.map((_, i) => [i + 1, list.filter((m) => m.f.stage === i + 1).length]).filter(([, c]) => c);
+
+  // D1, D4: each project and its shipped part fold, closed until opened.
+  const fold = (key, cls, sum, inner) => `<details class="${cls}" data-key="${esc(key)}"${open.has(key) ? " open" : ""}><summary>${sum}</summary>${inner}</details>`;
+  const ledger = (list) => `<div class="ledger">${list.map(ledgerRow).join("")}</div>`;
+  const project = (p) => {
+    const act = rows.filter((m) => m.f.project === p).sort(order), sh = shipRows.filter((m) => m.f.project === p).sort(byShip);
+    const you = act.filter((m) => m.f.waiting).length;
+    const stages = perStage(act).map(([n, c]) => `${c} in ${label(n)}`).join(", ");
+    const meta = [act.length ? `${act.length} in progress (${stages})` : "nothing in progress", sh.length ? `${sh.length} recently shipped` : ""].filter(Boolean).join(", ");
+    const sum = `<span class="pn">${esc(p)}</span><span class="pc">${meta}</span>${you ? `<span class="pyou">${you} ${you === 1 ? "needs" : "need"} you</span>` : ""}`;
+    return fold(`project:${p}`, "pg", sum, (act.length ? `<h3 class="part">In progress</h3>${ledger(act)}` : "")
+      + (sh.length ? fold(`shipped:${p}`, "shf", `Recently shipped <span class="pc">${sh.length}</span>`, ledger(sh)) : ""));
+  };
 
   let body;
   if (!rows.length) {
@@ -176,48 +222,13 @@ function renderBoard(features, nowMs, opts) {
     const panel = needs.length || decs.length
       ? `<div class="you-panel"><h2>Needs you</h2><ul>${needs.map((m) => `<li><strong>${esc(m.f.title)}</strong>: ${esc(m.f.waiting)}.</li>`).join("")}${decs.map((m) => m.f.decisions.map((d) => `<li><strong>${esc(m.f.title)}</strong> went on with a default: ${esc(d)}</li>`).join("")).join("")}</ul></div>`
       : "";
-    const counts = STAGES.map((_, i) => [i + 1, rows.filter((m) => m.f.stage === i + 1).length]).filter(([, c]) => c)
-      .map(([n, c]) => `<span><strong>${c}</strong> in ${label(n)}</span>`).join("");
-    // D26. With `here` (server page): this machine, then the other machines of its owner, then other owners.
-    // Without it (Obsidian note): owners by name, then machines by name.
-    const here = str(opts.here);
-    const hereRow = here ? rows.find((m) => m.f.machine_id === here) : null;
-    const me = hereRow ? hereRow.f.owner : here ? str(opts.me) : "";
-    const groups = new Map();
-    // D25: one group per owner and machine.
-    for (const m of rows) {
-      const k = JSON.stringify([m.f.machine_id, m.f.owner, m.f.machine]);
-      groups.set(k, [...(groups.get(k) || []), m]);
-    }
-    const rank = (g) => (here && g[0].f.machine_id === here ? 0 : me && g[0].f.owner === me ? 1 : 2);
-    const byName = (a, b) => rank(a) - rank(b) || a[0].f.owner.localeCompare(b[0].f.owner) || a[0].f.machine.localeCompare(b[0].f.machine);
-    const cols = `<div class="cols"><span>Feature</span><span>Stage</span><span>Tasks</span><span>Time left</span><span>Last update</span></div>`;
-    const order = (a, b) => (b.f.waiting ? 1 : 0) - (a.f.waiting ? 1 : 0) || at(b.f.updated) - at(a.f.updated);
-    const group = (g) => {
-      const projects = [...new Set(g.map((m) => m.f.project))].sort((a, b) => a.localeCompare(b));
-      const mark = here && g[0].f.machine_id === here ? ' <span class="here">this machine</span>' : "";
-      return `<h2 class="grp">${esc(g[0].f.owner)}, on ${esc(g[0].f.machine)}${mark}</h2>${cols}${projects.map((p) =>
-        `<h3 class="proj">${esc(p)}</h3>${g.filter((m) => m.f.project === p).sort(order).map(row).join("")}`).join("")}`;
-    };
-    body = panel + `<p class="counts">${counts}</p>` + [...groups.values()].sort(byName).map(group).join("");
+    const counts = perStage(rows).map(([n, c]) => `<span><strong>${c}</strong> in ${label(n)}</span>`).join("");
+    body = panel + `<p class="counts">${counts}</p>`;
   }
+  body += projects.map(project).join("");
 
   const newer = Math.floor(Number(opts.newerSchema)) || 0;
   const newerLine = newer > 0 ? `<p class="newer">${newer} ${newer === 1 ? "note needs" : "notes need"} a newer dev-loop</p>` : "";
-
-  // D32: per project, the 3 latest ship times, newest first.
-  const latest = [];
-  for (const p of new Set(shipped.map((f) => f.project))) {
-    latest.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped)).slice(0, 3));
-  }
-  latest.sort((a, b) => at(b.shipped) - at(a.shipped));
-  const shippedItem = (f) => {
-    const m = model({ ...f, stage: 7 }), end = ms(f.shipped);
-    const first = Math.min(...Object.values(f.times));
-    const date = isFinite(end) ? new Date(end).toISOString().slice(0, 10) : "on an unknown date";
-    return `<li><span class="t">${esc(f.title)}</span><span class="s">${esc(f.project)}, shipped ${date}, ${dur(end - first)} in total</span>${bar(m, end, 0)}</li>`;
-  };
-  const shippedList = latest.length ? `<h2 class="grp">Recently shipped</h2><ul class="shipped">${latest.map(shippedItem).join("")}</ul>` : "";
 
   // Theme tokens: system by default, Obsidian's body class wins inside Obsidian, data-theme wins over both.
   const themeCss = (light, dark) => {
@@ -240,14 +251,6 @@ body.theme-dark .dlb:not([data-theme]){${d(dark)};color-scheme:dark}
 .dlb summary{list-style:none;cursor:pointer}
 .dlb summary::-webkit-details-marker{display:none}
 .dlb summary:focus-visible{outline:2px solid var(--active);outline-offset:2px;border-radius:4px}
-.dlb .tasks{list-style:none;padding:0}
-.dlb .tasks li{display:flex;gap:8px;align-items:center;padding:4px 0}
-.dlb .tasks .done{color:var(--muted)}
-.dlb .tasks .done .ic{color:var(--done)}
-.dlb .tasks .doing{font-weight:600}
-.dlb .tasks .doing .ic{color:var(--active)}
-.dlb .tasks .todo .ic{color:var(--line)}
-.dlb .tasks .td{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:400;white-space:nowrap}
 .dlb .decs p{border-inline-start:3px solid var(--you);padding:4px 10px;margin-top:6px}
 ${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", surface: "#f3f5f8", active: "#0b6e79", done: "#2e7d4f", you: "#9b2f6a", idle: "#8a6a1f" },
     { bg: "#1a1f26", fg: "#e4e8ed", muted: "#9aa5b1", line: "#36404c", surface: "#212833", active: "#5cc0ca", done: "#64c38a", you: "#e584b6", idle: "#d6ad55" })}
@@ -255,23 +258,9 @@ ${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", su
 .dlb .hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}
 .dlb .lede{font-size:20px;font-weight:600;letter-spacing:-.01em}
 .dlb .stamp{color:var(--muted);font-size:13px;white-space:nowrap}
-.dlb .cols,.dlb summary{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,2.3fr) 90px 104px 92px;gap:14px;align-items:center}
-.dlb .cols{font-size:12px;color:var(--muted);padding:0 12px 6px;border-bottom:1px solid var(--line)}
-.dlb .row{border-bottom:1px solid var(--line)}
-.dlb .row summary{padding:12px}
-.dlb .row summary:hover{background:var(--surface)}
-.dlb .row[open] summary{background:var(--surface)}
-.dlb .row.you{box-shadow:inset 3px 0 0 var(--you)}
 .dlb .t{font-weight:600;display:block;overflow-wrap:anywhere}
-.dlb .s{font-size:13px;color:var(--muted);display:block}
 .dlb .flag{font-size:13px;color:var(--you);font-weight:600;display:block;margin-top:2px}
-.dlb .sn{font-size:13px;display:block;margin-bottom:6px}
-.dlb .sn strong{font-weight:600}
 .dlb .stale{color:var(--idle)}
-.dlb .more{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;padding:4px 12px 16px 12px;font-size:14px}
-.dlb .more h3{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:4px}
-.dlb .times{list-style:none;padding:0;font-size:13px}
-.dlb .times li{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)}
 .dlb .tb{display:block}
 .dlb .tb .segs{display:flex;gap:2px;height:8px}
 .dlb .tb .segs i{background:var(--done);border-radius:1px;min-width:3px}
@@ -296,22 +285,63 @@ ${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", su
 .dlb .you-panel li{padding:2px 0}
 .dlb .counts{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:13px;color:var(--muted);margin:0 0 6px}
 .dlb .counts strong{color:var(--fg);font-weight:600}
-.dlb .grp{font-size:16px;font-weight:600;margin:22px 0 8px}
-.dlb .grp .here{font-size:13px;font-weight:400;color:var(--muted);margin-left:6px}
-.dlb .proj{font-size:13px;font-weight:600;color:var(--muted);padding:10px 12px 2px}
 .dlb .newer{font-size:13px;color:var(--idle);margin-top:16px}
-.dlb .shipped{list-style:none;padding:0}
-.dlb .shipped li{padding:10px 12px;border-bottom:1px solid var(--line)}
-.dlb .shipped .tb{margin-top:6px;max-width:640px}
+.dlb .pg{border-bottom:2px solid var(--fg);margin-top:18px}
+.dlb .pg > summary{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:8px 4px 10px}
+.dlb .pg > summary::before{content:"\\25B8";font-size:18px;color:var(--muted);width:16px}
+.dlb .pg[open] > summary::before{content:"\\25BE"}
+.dlb .pg > summary:hover{background:var(--surface)}
+.dlb .pg .pn{font-size:22px;font-weight:700;letter-spacing:-.01em}
+.dlb .pc{font-size:13px;font-weight:500;color:var(--muted)}
+.dlb .pyou{font-size:13px;font-weight:600;color:var(--you)}
+.dlb .pg[open]{padding-bottom:12px}
+.dlb .part{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 4px}
+.dlb .shf{margin-top:14px}
+.dlb .shf > summary{display:block;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:6px 0}
+.dlb .shf > summary::before{content:"\\25B8  "}
+.dlb .shf[open] > summary::before{content:"\\25BE  "}
+.dlb .ledger{border-top:1px solid var(--line)}
+.dlb .lg{border-bottom:1px solid var(--line)}
+.dlb .lg > summary{display:grid;grid-template-columns:minmax(0,2fr) 200px minmax(0,1.4fr) minmax(0,1fr) 130px;gap:14px;align-items:center;padding:10px 12px}
+.dlb .lg > summary:hover,.dlb .lg[open] > summary{background:var(--surface)}
+.dlb .lg.you{box-shadow:inset 3px 0 0 var(--you)}
+.dlb .trk{display:flex;align-items:center;gap:8px}
+.dlb .trk strong{font-size:18px;font-weight:700;letter-spacing:-.01em}
+.dlb .lg.act .trk strong{color:var(--active)}
+.dlb .pill{font-size:11px;font-weight:600;letter-spacing:.02em;padding:1px 7px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--fg);white-space:nowrap}
+.dlb .stg{font-size:13px}
+.dlb .stg strong{font-weight:600;color:var(--active)}
+.dlb .stg strong.shp{color:var(--done)}
+.dlb .stg .sub{display:block;color:var(--muted);font-size:12px}
+.dlb .lg .who,.dlb .lg .when{font-size:13px;color:var(--muted)}
+.dlb .lg .when{text-align:right}
+.dlb .lg .when.stale{color:var(--idle)}
+.dlb .lg-body{padding:8px 12px 16px}
+.dlb .lg-body h3{font-size:13px;font-weight:600;color:var(--muted);margin:12px 0 4px}
+.dlb .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.dlb .chip{font-size:12px;padding:2px 8px;border-radius:4px;background:var(--surface);color:var(--muted)}
+.dlb .chip strong{color:var(--fg);font-weight:600}
+.dlb .chip.now{background:none;box-shadow:inset 0 0 0 1px var(--active);color:var(--active)}
+.dlb .chip.now strong{color:var(--active)}
+.dlb .lt{list-style:none;padding:0;font-size:13px}
+.dlb .lt li{display:grid;grid-template-columns:16px 28px minmax(0,1fr) minmax(80px,200px) 120px;gap:8px;align-items:center;padding:3px 0}
+.dlb .lt .done .ic{color:var(--done)}
+.dlb .lt .doing{font-weight:600}
+.dlb .lt .doing .ic{color:var(--active)}
+.dlb .lt .doing .lb b{background:var(--active)}
+.dlb .lt .todo{color:var(--muted)}
+.dlb .lt .todo .ic{color:var(--line)}
+.dlb .lt .tn{color:var(--muted)}
+.dlb .lt .lb{height:6px;background:var(--surface);border-radius:3px;overflow:hidden}
+.dlb .lt .lb b{display:block;height:100%;background:var(--done)}
+.dlb .lt .td{text-align:right;color:var(--muted)}
 @container (max-width: 720px){
- .dlb .cols{display:none}
- .dlb summary{grid-template-columns:1fr auto;gap:6px 12px}
- .dlb .c-f,.dlb .c-st{grid-column:1/-1}
- .dlb .c-tk,.dlb .c-eta,.dlb .c-up{font-size:13px}
- .dlb .c-up{grid-column:1/-1;color:var(--muted)}
- .dlb .more{grid-template-columns:1fr}
+ .dlb .lg > summary{grid-template-columns:1fr auto;gap:6px 12px}
+ .dlb .lg .stg,.dlb .lg .who{grid-column:1/-1}
+ .dlb .lt li{grid-template-columns:16px 28px 1fr 90px}
+ .dlb .lt .lb{display:none}
  .dlb .tb .w1 .short{visibility:hidden}
 }`;
   const theme = opts.theme === "light" || opts.theme === "dark" ? ` data-theme="${opts.theme}"` : "";
-  return `<style>${css}</style><div class="dlb"${theme}>${head}${body}${newerLine}${shippedList}</div>`;
+  return `<style>${css}</style><div class="dlb"${theme}>${head}${body}${newerLine}</div>`;
 }
