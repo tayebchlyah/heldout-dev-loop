@@ -413,7 +413,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         final = self.step(text, "Generate the changelog of a final release")
         rc = self.step(text, "Generate the changelog of a release candidate")
         self.assertIn(f"if: ${{{{ !{self.RC} }}}}\n", final)
-        self.assertIn(r"--tag-pattern ^v[0-9]+\.[0-9]+\.[0-9]+$" + "\n", final)
+        self.assertIn(r"--tag-pattern ^v[0-9]+[.][0-9]+[.][0-9]+$" + "\n", final)
         self.assertIn(f"if: ${{{{ {self.RC} }}}}\n", rc)
         self.assertNotIn("--tag-pattern", rc)
         for step in (final, rc):
@@ -466,10 +466,13 @@ class ReleaseWorkflowTests(unittest.TestCase):
             for name in ("first", "second", "third", "fourth"):
                 self.assertIn(name, body)
             self.assertNotIn("old", body)
-            self.assertNotIn("rc", body)
+            self.assertNotIn("3.0.0-rc", body)
 
-    def test_acceptance_job_installs_git_cliff_before_the_suite(self) -> None:
-        job = self.workflow("ci.yml").split("  acceptance:\n", 1)[1]
-        self.assertIn("git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz", job)
-        self.assertIn('echo "$HOME/.local/bin" >> "$GITHUB_PATH"', job)
-        self.assertLess(job.index("git-cliff-2.14.2"), job.index("run: scripts/acceptance.sh"))
+    def test_test_and_acceptance_jobs_install_git_cliff_before_the_suite(self) -> None:
+        ci = self.workflow("ci.yml")
+        test_job, acceptance_job = ci.split("  acceptance:\n", 1)
+        for job, suite in ((test_job, "run: npm test"), (acceptance_job, "run: scripts/acceptance.sh")):
+            self.assertIn("git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz", job)
+            self.assertIn("24f397c733add5390fdceee3a2088588ab0d5f944ce00d34cb7029b888cf2db4  git-cliff.tar.gz", job)
+            self.assertIn('echo "$HOME/.local/bin" >> "$GITHUB_PATH"', job)
+            self.assertLess(job.index("git-cliff-2.14.2"), job.index(suite))
