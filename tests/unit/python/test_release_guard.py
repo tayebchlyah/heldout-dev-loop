@@ -381,3 +381,95 @@ class ReleaseTextTests(unittest.TestCase):
                     "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "reference/kit.md",
                     "reference/release.md", "reference/upstream.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
             self.assertNotIn("\u2014", self.read(rel), rel)
+
+
+class ReleaseWorkflowTests(unittest.TestCase):
+    """Oracle 30 to 35: the workflows as text, with the changelog commands run on a scratch repo."""
+    ROOT = Path(__file__).resolve().parents[3]
+    RC = "contains(github.ref_name, '-rc.')"
+
+    def workflow(self, name: str) -> str:
+        return (self.ROOT / ".github" / "workflows" / name).read_text()
+
+    def step(self, text: str, name: str) -> str:
+        start = text.index(f"      - name: {name}\n")
+        end = text.find("\n      - ", start + 1)
+        return text[start:end if end != -1 else len(text)]
+
+    def test_checkout_fetches_all_tags(self) -> None:
+        checkout = self.workflow("release.yml").split("actions/checkout@", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("fetch-depth: 0", checkout)
+        self.assertIn("fetch-tags: true", checkout)
+
+    def test_promoted_step_runs_for_a_final_tag_before_the_changelog(self) -> None:
+        text = self.workflow("release.yml")
+        step = self.step(text, "Check the kit source of the release candidate")
+        self.assertIn(f"if: ${{{{ !{self.RC} }}}}\n", step)
+        self.assertIn('run: python3 scripts/repo_rules.py promoted --tag "$GITHUB_REF_NAME"', step)
+        self.assertLess(text.index(step), text.index("git-cliff-action"))
+
+    def test_notes_step_per_kind(self) -> None:
+        text = self.workflow("release.yml")
+        final = self.step(text, "Generate the changelog of a final release")
+        rc = self.step(text, "Generate the changelog of a release candidate")
+        self.assertIn(f"if: ${{{{ !{self.RC} }}}}\n", final)
+        self.assertIn(r"--tag-pattern ^v[0-9]+\.[0-9]+\.[0-9]+$" + "\n", final)
+        self.assertIn(f"if: ${{{{ {self.RC} }}}}\n", rc)
+        self.assertNotIn("--tag-pattern", rc)
+        for step in (final, rc):
+            self.assertIn("-vv --latest --strip header", step)
+            self.assertIn("OUTPUT: CHANGES.md", step)
+
+    def test_release_step_marks_a_candidate_as_pre_release(self) -> None:
+        step = self.step(self.workflow("release.yml"), "Create or update release")
+        self.assertIn(f"prerelease: ${{{{ {self.RC} }}}}\n", step)
+        self.assertIn(f"makeLatest: ${{{{ !{self.RC} }}}}\n", step)
+
+    def test_notes_commands_on_a_scratch_repo(self) -> None:
+        final_step = self.step(self.workflow("release.yml"), "Generate the changelog of a final release")
+        pattern = final_step.split("--tag-pattern ", 1)[1].split("\n", 1)[0]
+        if shutil.which("git-cliff") is None:
+            self.skipTest("git-cliff not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            day = [0]
+
+            def git(*args: str, env: dict | None = None) -> None:
+                subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=env)
+
+            def commit(name: str) -> None:
+                day[0] += 1
+                stamp = f"2026-01-0{day[0]} 00:00:00"
+                git("commit", "-q", "--allow-empty", "-m", f"✨(x) #1: {name}",
+                    env={**os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp})
+
+            def notes(*extra: str) -> str:
+                return subprocess.run(["git-cliff", "--offline", "-c", str(self.ROOT / "cliff.toml"), "--latest", "--strip", "header", *extra],
+                                      cwd=repo, capture_output=True, text=True, check=True).stdout
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "a@b")
+            git("config", "user.name", "a")
+            commit("old")
+            git("tag", "v2.1.1")
+            commit("first")
+            commit("second")
+            git("tag", "v3.0.0-rc.1")
+            commit("third")
+            git("tag", "v3.0.0-rc.2")
+            body = notes()
+            self.assertIn("third", body)
+            self.assertNotIn("second", body)
+            commit("fourth")
+            git("tag", "v3.0.0")
+            body = notes("--tag-pattern", pattern)
+            for name in ("first", "second", "third", "fourth"):
+                self.assertIn(name, body)
+            self.assertNotIn("old", body)
+            self.assertNotIn("rc", body)
+
+    def test_acceptance_job_installs_git_cliff_before_the_suite(self) -> None:
+        job = self.workflow("ci.yml").split("  acceptance:\n", 1)[1]
+        self.assertIn("git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz", job)
+        self.assertIn('echo "$HOME/.local/bin" >> "$GITHUB_PATH"', job)
+        self.assertLess(job.index("git-cliff-2.14.2"), job.index("run: scripts/acceptance.sh"))
