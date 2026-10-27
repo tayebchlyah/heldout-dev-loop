@@ -294,6 +294,20 @@ class BoardRobustTests(Board):
         self.assertEqual(note["tasks"], [{"n": 1, "title": "Step 1", "state": "todo"},
                                          {"n": 2, "title": "Step 2", "state": "todo"}])
 
+    def test_board_note_at_a_release_candidate_is_rewritten_by_a_newer_one(self) -> None:
+        """D2: a board note at 3.0.0-rc.1 is older than kit 3.0.0-rc.2: written again with the kit version."""
+        from board import writer
+
+        folder = self.board_dir / "features"
+        for have, kit, rewritten in [("3.0.0-rc.1", "3.0.0-rc.2", True), ("3.0.0-rc.2", "3.0.0-rc.2", False),
+                                     ("3.0.0-rc.2", "3.0.0-rc.1", False)]:
+            with self.subTest(have=have, kit=kit):
+                put(folder / "Dev Loop Board.md", writer.board_text(have))
+                put(self.repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": kit, "files": {}}))
+                writer.board_note(self.repo, folder, {"skipped": []})
+                want = writer.board_text(kit if rewritten else have)
+                self.assertEqual((folder / "Dev Loop Board.md").read_text(), want)
+
     def test_shipped_note_in_the_write_set_is_never_rewritten(self) -> None:
         """O5 regression (Task 3 fix 2): an own note with shipped_at, feature still in the write set: unchanged."""
         wt, _ = self.stage5("alpha", "Alpha Report")
