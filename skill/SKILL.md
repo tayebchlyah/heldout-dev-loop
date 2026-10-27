@@ -55,7 +55,7 @@ No `paused`, same session: wake. Each subagent that stopped during its work gets
 
 ## Detect the stage
 
-Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left. `effort`: `level` not null and not `want`: tell the user one line with the command to type (`/effort <want>`), then go on.
+Run `scripts/devloop.py status` (`--feature <slug>` from `main` names one open feature). State `stage` and `check`, one line. Run it. `next` names the next action. `shipped`: nothing left. `effort`: `level` and `want` not null, and they differ: tell the user one line with the command to type (`/effort <want>`), then go on.
 
 Checklist. Claude: one `TaskCreate` item per stage; end of Stage 4: one item per plan task, subject `Task N: <plan heading>`; `in_progress` at start, `completed` after its ledger line; close a stage item before the next. Codex: no plan tool, the ledger is the record. Both: `task-start` for each task, inline too.
 
@@ -103,7 +103,7 @@ Two or more stacks: task 1 of the plan is the contract (OpenAPI or shared types)
 Supersedes: read the earlier specs in `$NOTES/specs/`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
 Acceptance: decide from Stages 1 and 2, write it in spec frontmatter `acceptance:`. A new or changed user or system flow: empty. No flow change, product code changes (refactor, performance): `regression`. No product code change (tests, CI, tooling, docs only): `none`. `regression` or `none`: one `## Acceptance oracle` line says why no flow changes, `## Acceptance flows` says none. The user approves it with the spec.
 Stop when the user approves: end of Shaping. Acceptance tests (Stage 3) come before the plan.
-Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`. Tracks M and L: then end the turn with three numbered lines, each in its own code block: 1 `/effort medium`, 2 `/compact`, 3 `Start Delivery of <slug>`. Say: type line 3 after the compaction ends (the SessionStart `compact` hook loads `dev-loop` again). Codex: the route's lines.
+Set `review_status: approved` in spec frontmatter. Under each superseded line in its old spec add: `Amended by <feature> on <date>: <replacement>`. Tracks M and L: then end the turn with three numbered lines, each command in its own code block, the number outside the block: 1 `/effort medium`, 2 `/compact`, 3 `Start Delivery of <slug>`. Say: type line 3 after the compaction ends (the SessionStart `compact` hook loads `dev-loop` again). Codex: the route's lines.
 
 ## 3 Acceptance
 Start in the feature worktree (see Where each stage runs), then `git fetch origin`, `git rebase origin/main`.
@@ -113,10 +113,10 @@ It writes `tests/acceptance/`: API tier always. `ui` in stacks: plus 1 to 3 Play
 Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, only after a spec oracle change: a Supersedes line or an escaped bug. Controller never writes a test there: a hook denies `Edit`, `Write` and `NotebookEdit` there to the main session, and `seal-check` finds a write through Bash. The seal check runs at SubagentStop and Stop, and in `devloop.py gate`.
 
 ## 4 Plan
-The route's planner subagent, high effort, invokes `superpowers:writing-plans` and returns the plan path; read the plan, then Stage 5. Plan to `$NOTES/plans/`. Plan frontmatter `spec: <spec file name>`.
+The route's planner subagent, high effort, invokes `superpowers:writing-plans` and returns the plan path; read the plan, apply the checks below. Plan to `$NOTES/plans/`. Plan frontmatter `spec: <spec file name>`.
 Plan never references `tests/acceptance/`. No hand-off question: Track M inline execution, Track L subagent-driven.
 Run `scripts/devloop.py size-check --all`. A task that changes a file over 40,000 bytes, or pushes one past it, names the split in its brief.
-Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or one seam, the brief names each file it changes, the task needs no ruling from another task. A task that fails: split it before Stage 5.
+Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or one seam, the brief names each file it changes, the task needs no ruling from another task. A task that fails: split it before Stage 5. Checks done: then Stage 5.
 
 ## 5 Build
 Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then the Stage 6 review wave, triage and fix wave, then Stage 7.
