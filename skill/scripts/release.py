@@ -210,7 +210,6 @@ MANIFEST = ".dev-loop/MANIFEST.json"
 
 
 def manifest_at(repo: Path, commit: str) -> dict | None:
-    """The `.dev-loop/MANIFEST.json` object at `commit`, None when it is missing or not a JSON object."""
     shown = run_git(repo, "show", f"{commit}:{MANIFEST}")
     try:
         data = json.loads(shown.stdout) if shown.returncode == 0 else None
@@ -219,9 +218,13 @@ def manifest_at(repo: Path, commit: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def kit_copies(repo: Path, commit: str) -> set[str]:
-    """The kit copies at `commit`: each MANIFEST `files` key under a kit root whose tree entry matches it (`sha256:<hex>`
-    a regular file of that hash, `link:<target>` a symlink to that target), plus the MANIFEST. Empty without one."""
+def version_at(repo: Path, commit: str) -> str | None:
+    data = manifest_at(repo, commit)
+    version = data.get("version") if data else None
+    return version if isinstance(version, str) and version else None
+
+
+def kit_copies(repo: Path, commit: str, among: set[str]) -> set[str]:
     data = manifest_at(repo, commit)
     files = data.get("files") if data else None
     if not isinstance(files, dict):
@@ -235,7 +238,7 @@ def kit_copies(repo: Path, commit: str) -> set[str]:
             entries[path] = (mode, blob)
     copies = {MANIFEST}
     for path, expected in files.items():
-        if not (isinstance(expected, str) and path.startswith(KIT_ROOTS) and path in entries):
+        if not (isinstance(expected, str) and path in among and path.startswith(KIT_ROOTS) and path in entries):
             continue
         mode, blob = entries[path]
         if mode not in ("100644", "100755", "120000"):
@@ -254,17 +257,26 @@ def kit_copies(repo: Path, commit: str) -> set[str]:
 
 
 def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
-    """The upgraded kit copies an audit of `base..head` leaves out: only when `base` is the record sha and the MANIFEST
-    `version` changed, the kit copies at `head` that changed since `base`. Else []."""
     if base != record_sha:
         return []
-    old, new = manifest_at(repo, base), manifest_at(repo, head)
-    versions = [m.get("version") if m else None for m in (old, new)]
-    if not all(isinstance(v, str) and v for v in versions) or versions[0] == versions[1]:
+    old, new = version_at(repo, base), version_at(repo, head)
+    if not (old and new) or old == new:
         return []
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, head)
     changed = {p for p in diff.stdout.split("\0") if p} if diff.returncode == 0 else set()
-    return sorted(kit_copies(repo, head) & changed)
+    upgrades: dict[str, bool] = {}
+
+    def upgraded(commit: str) -> bool:
+        if commit not in upgrades:
+            mine = version_at(repo, commit)
+            upgrades[commit] = mine is not None and mine != version_at(repo, f"{commit}^")
+        return upgrades[commit]
+
+    def only_upgrades(path: str) -> bool:
+        touched = run_git(repo, "rev-list", f"{base}..{head}", "--", path)
+        return touched.returncode == 0 and all(upgraded(c) for c in touched.stdout.split())
+
+    return sorted(p for p in kit_copies(repo, head, changed) & changed if only_upgrades(p))
 
 
 def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:

@@ -17,6 +17,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 import release  # noqa: E402
+sys.path.insert(1, str(HERE))
+from board_fixtures import slow  # noqa: E402
 
 SHA = "a" * 40
 OLD = "b" * 40
@@ -433,6 +435,7 @@ class ReleasePlanTests(PlanRepo):
 ONE, TWO, GONE = ".agents/skills/k/one.md", ".agents/skills/k/two.md", ".agents/skills/k/gone.md"
 MANIFEST = ".dev-loop/MANIFEST.json"
 SUB, LOST = ".agents/skills/sub", ".agents/skills/k/lost.md"
+GATE = ".dev-loop/hooks/claude/gate.sh"
 
 
 class ReleasePlanExcludeTests(PlanRepo):
@@ -482,6 +485,7 @@ class ReleasePlanExcludeTests(PlanRepo):
     def upgrade(self, version: str = "3.0.0-rc.2", files: dict | None = None, **kw) -> str:
         return self.state(version, {ONE: "2", TWO: "2", "src/app.py": "b", "dev-loop.json": '{"v": 2}', **(files or {})}, **kw)
 
+    @slow
     def test_exclude(self) -> None:
         sha = lambda text: "sha256:" + hashlib.sha256(text.encode()).hexdigest()
         cases = [
@@ -500,13 +504,20 @@ class ReleasePlanExcludeTests(PlanRepo):
             ("no MANIFEST at HEAD", {"version": None}, []),
             ("submodule entry", {"entries": {SUB: sha("")}, "gitlink": True}, [ONE, TWO, MANIFEST]),
             ("unreadable blob", {"files": {LOST: "x"}, "entries": {LOST: sha("")}, "lose": True}, [ONE, TWO, MANIFEST]),
+            ("hook copy", {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")}}, [ONE, TWO, MANIFEST, GATE]),
+            ("hook edited after the upgrade", {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
+                                               "then": {"files": {GATE: "g2"}, "entries": {GATE: sha("g2")}}}, [ONE, TWO]),
+            ("copy edited after the upgrade", {"then": {"files": {ONE: "3"}}}, [TWO]),
+            ("second upgrade", {"then": {"version": "3.0.0-rc.3", "files": {ONE: "3"}}}, [ONE, TWO, MANIFEST]),
         ]
         start = self.git("rev-parse", "HEAD")
         for label, change, expected in cases:
             with self.subTest(label):
                 self.git("reset", "-q", "--hard", start)
-                gitlink, lose = change.pop("gitlink", False), change.pop("lose", False)
+                gitlink, lose, then = change.pop("gitlink", False), change.pop("lose", False), change.pop("then", None)
                 head = self.upgrade(**change)
+                if then:
+                    head = self.state(then.pop("version", "3.0.0-rc.2"), **then)
                 if gitlink:
                     (self.repo / SUB).mkdir(exist_ok=True)
                     self.git("update-index", "--add", "--cacheinfo", f"160000,{start},{SUB}")
