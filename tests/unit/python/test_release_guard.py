@@ -329,6 +329,44 @@ class ReleaseKitTests(unittest.TestCase):
         self.assertNotIn("\u2014", text)
 
 
+class ReleaseSkillTextTests(unittest.TestCase):
+    """Oracle 35, 36 and 38: the /release and /release-notes skills and the Stage 7 line."""
+    ROOT = Path(__file__).resolve().parents[3]
+
+    def skill(self, name: str) -> str:
+        text = (self.ROOT / "skills" / name / "SKILL.md").read_text()
+        head = text.split("---")[1]
+        self.assertIn(f"name: {name}\n", head)
+        self.assertIn("disable-model-invocation: true", head)
+        self.assertEqual((self.ROOT / "skills" / name / "agents" / "openai.yaml").read_text(),
+                         "policy:\n  allow_implicit_invocation: false\n")
+        return text
+
+    def test_release_skill(self) -> None:
+        text = self.skill("release")
+        for name in ["gh pr merge --rebase", "git push origin", "gh release create", "skills/release-audit/SKILL.md",
+                     "release-check --sha HEAD", "commands.release_prepare", "release_check", "release_verify",
+                     "release/<tag>", "\U0001f516(release)", "RELEASE_VERSION", "RELEASE_TAG", "ci-skip", ".devloop-base"]:
+            self.assertIn(name, text, name)
+        self.assertLess(text.index("skills/release-audit/SKILL.md"), text.index("release/<tag>"))
+        self.assertLess(text.index("commands.gate"), text.index("git push"))
+        self.assertLess(text.index("Stop 1"), text.index("gh pr merge --rebase"))
+        self.assertLess(text.index("Stop 2"), text.index("git push origin <tag>"))
+        self.assertLess(text.index("Stop 2"), text.index("gh release create"))
+
+    def test_release_notes_skill(self) -> None:
+        text = self.skill("release-notes")
+        for name in ["--all", "### Highlights", "### Fixes", "### Upgrade notes", "Full changes:",
+                     "gh release edit", "confirm"]:
+            self.assertIn(name, text, name)
+        self.assertLess(text.index("confirm"), text.index("gh release edit"))
+
+    def test_skill_md_names_release(self) -> None:
+        text = (self.ROOT / "skill" / "SKILL.md").read_text()
+        self.assertRegex(text, r"/release\b(?!-)")
+        self.assertRegex(text, r"\$release\b(?!-)")
+
+
 class ReleaseTextTests(unittest.TestCase):
     """Oracle 58 and 59: the kit text and this repo's release steps."""
     ROOT = Path(__file__).resolve().parents[3]
@@ -378,7 +416,8 @@ class ReleaseTextTests(unittest.TestCase):
 
     def test_kit_text_has_no_em_dash(self) -> None:
         for rel in ["skill/SKILL.md", "skill/references/claude.md", "skill/references/codex.md", "AGENTS.md",
-                    "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "reference/kit.md",
+                    "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "skills/release/SKILL.md",
+                    "skills/release-notes/SKILL.md", "reference/kit.md",
                     "reference/release.md", "reference/upstream.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
             self.assertNotIn("\u2014", self.read(rel), rel)
 

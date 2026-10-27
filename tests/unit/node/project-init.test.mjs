@@ -24,7 +24,7 @@ test('init --yes writes every path of the layout, and the manifest agrees with t
   ]) {
     assert.ok(existsSync(join(repo, path)), path)
   }
-  for (const name of ['dev-loop', 'pause', 'continue', 'release-audit', 'garden']) {
+  for (const name of ['dev-loop', 'pause', 'continue', 'release-audit', 'garden', 'release', 'release-notes']) {
     assert.equal(readlinkSync(join(repo, `.claude/skills/${name}`)), `../../.agents/skills/${name}`)
     assert.ok(existsSync(join(repo, `.claude/skills/${name}/SKILL.md`)), name)
   }
