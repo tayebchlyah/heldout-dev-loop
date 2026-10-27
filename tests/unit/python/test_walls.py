@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, write
+from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, git_in, write
 
 
 class GateGuardTests(unittest.TestCase):
@@ -437,6 +437,106 @@ class ClaudeGitGuardSubagentTests(unittest.TestCase):
             self.assertEqual((sub.returncode, sub.stdout), (2, ""))
             main = self.run_guard({"cwd": repo, "tool_input": command})
             self.assertEqual((main.returncode, main.stdout), (0, ""))
+
+
+class WorktreeWallTests(unittest.TestCase):
+    """An edit into a feature worktree is denied unless the session cwd is in that worktree."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp()).resolve()
+        self.main = self.root / "main"
+        write(self.main / "dev-loop.json", "{}\n")
+        write(self.main / "docs" / "d.txt", "d\n")
+        git_in(self.root, "init", "-q", str(self.main))
+        git_in(self.main, "add", "-A")
+        git_in(self.main, "commit", "-q", "-m", "base")
+        self.marker = self.root / "marker"
+        self.wt = {}
+        for name, branch, path in [("x", "feat/x", self.main / ".claude" / "worktrees" / "x"),
+                                   ("y", "feat/y", self.root / "y"), ("scratch", "scratch", self.root / "scratch"),
+                                   ("release", "release/v1.2.0", self.root / "release"),
+                                   ("odd", "feat/z", self.root / f"z $(touch {self.marker}) `b` 'q\" end")]:
+            git_in(self.main, "worktree", "add", "-q", "-b", branch, str(path))
+            self.wt[name] = path
+        other = self.root / "other"
+        git_in(self.root, "init", "-q", str(other))
+        write(other / "a.txt", "a\n")
+        git_in(other, "add", "-A")
+        git_in(other, "commit", "-q", "-m", "base")
+        self.wt["other"] = self.root / "other-x"
+        git_in(other, "worktree", "add", "-q", "-b", "feat/x", str(self.wt["other"]))
+        (self.main / "link").symlink_to(self.wt["x"])
+        (self.wt["x"] / "sub").mkdir()
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def run_wall(self, stdin: str, env: dict | None = None) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["/bin/bash", str(CLAUDE_HOOKS / "worktree-wall.sh")], input=stdin, text=True,
+                              capture_output=True, check=False, env=env, cwd=self.root, timeout=10)
+
+    def edit(self, cwd: object, target: object, tool: str = "Edit", key: str = "file_path") -> str:
+        return json.dumps({"cwd": str(cwd), "tool_name": tool, "tool_input": {key: str(target)}})
+
+    def assert_quiet(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+    def test_denies_from_another_cwd(self) -> None:
+        x = self.wt["x"]
+        cases = [(self.edit(self.main, x / "a.txt"), x), (self.edit(self.wt["y"], x / "a.txt"), x),
+                 (self.edit(self.main, x / "new" / "dir" / "f.txt", "Write"), x),
+                 (self.edit(self.main, x / "n.ipynb", "NotebookEdit", "notebook_path"), x),
+                 (self.edit(self.main, ".claude/worktrees/x/a.txt"), x),
+                 (self.edit(self.main, self.main / "link" / "a.txt"), x),
+                 (self.edit(self.main, f"{self.main}/docs/../.claude/worktrees/x/a.txt"), x),
+                 (self.edit(self.main, self.wt["odd"] / "a.txt"), self.wt["odd"])]
+        for stdin, worktree in cases:
+            with self.subTest(stdin=stdin):
+                result = self.run_wall(stdin)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"hookSpecificOutput": {
+                    "hookEventName": "PreToolUse", "permissionDecision": "deny",
+                    "permissionDecisionReason": f"EnterWorktree {worktree} first: Stages 3 to 7 run with the session "
+                                                "cwd in the feature worktree."}})
+        self.assertFalse(self.marker.exists())
+
+    def test_allows(self) -> None:
+        x = self.wt["x"]
+        cases = [self.edit(x, x / "a.txt"), self.edit(x / "sub", x / "a.txt"),
+                 self.edit(self.main, self.main / "docs" / "d.txt"), self.edit(self.main, self.root / "loose.txt"),
+                 self.edit(self.main, self.wt["scratch"] / "a.txt"), self.edit(self.main, self.wt["other"] / "a.txt"),
+                 self.edit(self.main, self.wt["release"] / "a.txt")]
+        for stdin in cases:
+            with self.subTest(stdin=stdin):
+                self.assert_quiet(self.run_wall(stdin))
+
+    def test_fails_open(self) -> None:
+        import shutil
+        bins = self.root / "bin"
+        bins.mkdir()
+        for tool in ("git", "cat"):
+            (bins / tool).symlink_to(shutil.which(tool))
+        no_jq = {**os.environ, "PATH": str(bins)}
+        target = {"tool_name": "Edit", "tool_input": {"file_path": str(self.wt["x"] / "a.txt")}}
+        cases = [("{", None), (json.dumps(target), None),
+                 (json.dumps({"cwd": str(self.main), "tool_name": "Edit", "tool_input": {}}), None),
+                 (json.dumps({"cwd": str(self.main), "tool_name": "Edit", "tool_input": {"file_path": 7}}), None),
+                 (self.edit(self.main, self.wt["x"] / "a.txt"), no_jq)]
+        for stdin, env in cases:
+            with self.subTest(stdin=stdin, env=bool(env)):
+                self.assert_quiet(self.run_wall(stdin, env))
+
+    def test_ends_on_odd_paths(self) -> None:
+        import uuid
+        gone = self.root / "gone"
+        gone.mkdir()
+        gone.rmdir()
+        cases = [self.edit(self.main, f"/nonexistent-{uuid.uuid4()}/a/b/c.txt"), self.edit(".", "a/b.txt"),
+                 self.edit(gone, self.root / "loose.txt")]
+        for stdin in cases:
+            with self.subTest(stdin=stdin):
+                self.assert_quiet(self.run_wall(stdin))
 
 
 class GitGuardParityTests(unittest.TestCase):
