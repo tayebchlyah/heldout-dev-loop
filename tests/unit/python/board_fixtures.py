@@ -205,7 +205,7 @@ class Board(unittest.TestCase):
         env = {k: v for k, v in os.environ.items()
                if k not in ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "GIT_DIR", "GIT_WORK_TREE", "DEV_LOOP_NOTES")}
         env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"), DEV_LOOP_NOTES=str(notes),
-                   DEVLOOP_BOARD_PORT=str(self.port))
+                   DEVLOOP_BOARD_PORT=str(self.port), TMPDIR=str(self.root))
         return env
 
     def write_machine(self, home: Path, machine: dict) -> Path:

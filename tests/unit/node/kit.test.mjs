@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, mkdtempSync, cpSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, cpSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs'
+import { tempDir } from './helpers.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
@@ -72,7 +72,7 @@ test('the kit holds no Python cache and uses forward slashes', () => {
 })
 
 test('the kit has no test_*.py filter: a skill/scripts/test_x.py is included', () => {
-  const root = mkdtempSync(join(tmpdir(), 'kit-'))
+  const root = tempDir('kit-')
   cpSync(join(packageRoot, 'skill'), join(root, 'skill'), { recursive: true })
   cpSync(join(packageRoot, 'claude'), join(root, 'claude'), { recursive: true })
   cpSync(join(packageRoot, 'codex'), join(root, 'codex'), { recursive: true })
