@@ -173,6 +173,14 @@ def result(uid: str, ts: str, tid: str, text, is_error: bool = False) -> dict:
                                                    "is_error": is_error}])
 
 
+def api(uid: str, ts: str, params: object) -> dict:
+    return {"uuid": uid, "type": "api-request", "timestamp": ts, "params": params}
+
+
+def effort(uid: str, ts: str, level: object) -> dict:
+    return api(uid, ts, {"output_config": {"effort": level}})
+
+
 def items(transcripts: list) -> list:
     return metrics.attribute(transcripts, {"a": Path("/w/feat-a")})
 
@@ -330,6 +338,31 @@ class MetricsNumbersTests(TempDir):
         self.assertEqual((got["total"], list(got["stages"]), got["active_hours"]), (7, ["1-2", "3"], 0.0))
         self.assertEqual(got["stages"]["1-2"]["weighted"], 7)
 
+    def test_effort_counts(self) -> None:
+        bounds = [(metrics.parse_time("2026-01-01T05:00:00Z"), "5")]
+        main = self.main([tool_use("1", "2026-01-01T00:00:01Z", "Agent", {"prompt": "x"}, tid="T1"),
+                          tool_use("2", "2026-01-01T00:00:02Z", "Agent", {"prompt": "y"}, tid="T2"),
+                          *[effort(f"h{i}", "2026-01-01T01:00:00Z", "high") for i in range(3)],
+                          effort("m1", "2026-01-01T01:00:00Z", "medium"),
+                          record("u1", "2026-01-01T01:00:00Z", kind="user", content="go"),
+                          api("n1", "2026-01-01T06:00:00Z", {})])
+        copy = metrics.Transcript(self.tmp / "y.jsonl", meta=None, records=list(main.records))
+        typed_agent = metrics.Transcript(self.tmp / "agent-1.jsonl", meta={"toolUseId": "T1", "agentType": "implementer"},
+                                         records=[effort(f"s{i}", "2026-01-01T06:00:00Z", "medium") for i in range(2)])
+        bare = metrics.Transcript(self.tmp / "agent-2.jsonl", meta={"toolUseId": "T2"},
+                                  records=[effort("b1", "2026-01-01T06:00:00Z", "low")])
+        got = metrics.efforts(items([main, copy, typed_agent, bare]), "a", bounds)
+        self.assertEqual(got, {"1-2": {"main": {"high": 3, "medium": 1}},
+                               "5": {"main": {"?": 1}, "implementer": {"medium": 2}, "?": {"low": 1}}})
+        self.assertEqual(metrics.efforts(items([main]), "a", None), {})
+
+    def test_effort_bad_shapes(self) -> None:
+        recs = [api("1", "2026-01-01T01:00:00Z", ["x"]), api("2", "2026-01-01T01:00:00Z", {"output_config": "high"}),
+                effort("3", "2026-01-01T01:00:00Z", 3), effort("4", "2026-01-01T01:00:00Z", "turbo"),
+                effort("5", "2026-01-01T01:00:00Z", "HIGH"), {"uuid": "6", "type": "api-request"}]
+        got = metrics.efforts(items([self.main(recs)]), "a", [])
+        self.assertEqual(got, {"1-2": {"main": {"?": 6}}})
+
     def test_test_counts(self) -> None:
         repo = self.tmp / "repo"
         run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True)  # noqa: E731
@@ -356,11 +389,13 @@ class MetricsNumbersTests(TempDir):
 def payload(**over) -> dict:
     base = {"sessions": 2, "active_hours": 1.5, "user_messages": 4, "gate": {"runs": 3, "seconds": 61.6},
             "tests": {"unit": 5, "acceptance": 1}, "denials": {"a.sh": 2, "other": 1}, "unattributed": False,
-            "stages": {"3": {"weighted": 1500}, "5": {"weighted": 12_499}, "6": {"weighted": 400}}, "total": 15_399}
+            "stages": {"3": {"weighted": 1500}, "5": {"weighted": 12_499}, "6": {"weighted": 400}}, "total": 15_399,
+            "effort": {"1-2": {"main": {"high": 2}}, "5": {"main": {"medium": 1}}}}
     return {**base, **over}
 
 
-ROW = "| a | M | 2026-10-25 | 2 | 1.5 | 4 | 3 | 62 | 5 | 1 | 3 | 0 | 2 | - | 12 | 0 | 0 | 15 |  |"
+ROW = ("| a | M | 2026-10-25 | 2 | 1.5 | 4 | 3 | 62 | 5 | 1 | 3 | 0 | 2 | - | 12 | 0 | 0 | 15 "
+       "| 1-2:h 3:- 4:- 5:m 6:- 7:- |  |")
 
 
 class MetricsCommandTests(TempDir):
@@ -375,6 +410,24 @@ class MetricsCommandTests(TempDir):
         line = metrics.row("a", "M", "", payload(unattributed=True, stages={}), {"5"})
         self.assertEqual(line.split(" | ")[11:17], ["?"] * 6)
 
+    def test_effort_cell(self) -> None:
+        def cell(effort: dict, **over) -> str:
+            return metrics.effort_cell(payload(effort=effort, **over))
+
+        main = lambda **levels: {"main": levels}  # noqa: E731
+        self.assertTrue(cell({"1-2": main(high=3, medium=1)}).startswith("1-2:h "))
+        self.assertEqual(cell({"3": main(high=2, medium=2)}).split()[1], "3:h")
+        self.assertEqual(cell({"4": main(low=1, xhigh=1, max=1)}).split()[2], "4:max")
+        self.assertEqual(cell({"4": main(low=2, xhigh=1)}).split()[2], "4:l")
+        self.assertEqual(cell({"5": {"implementer": {"high": 4}}}).split()[3], "5:-")
+        self.assertEqual(cell({"6": main(**{"?": 2})}).split()[4], "6:?")
+        self.assertEqual(cell({"6": main(**{"?": 3, "medium": 1})}).split()[4], "6:m")
+        self.assertEqual(cell({}), "1-2:- 3:- 4:- 5:- 6:- 7:-")
+        self.assertEqual(cell({"1-2": main(high=1)}, unattributed=True), "?")
+        full = {"1-2": main(high=5), "3": main(high=1), "4": main(high=2, medium=1), "5": main(medium=9),
+                "6": {**main(medium=1), "task-reviewer": {"high": 7}}, "7": main(medium=1)}
+        self.assertEqual(cell(full), "1-2:h 3:h 4:h 5:m 6:m 7:m")
+
     def test_write_new_file(self) -> None:
         file = self.tmp / "Feature Metrics.md"
         metrics.write_row(file, "a", ROW, self.lock)
@@ -384,20 +437,43 @@ class MetricsCommandTests(TempDir):
         self.assertIn(metrics.DATA_RULE, lines)
         self.assertIn("5 features", metrics.DATA_RULE)
         at = lines.index(metrics.HEADER)
-        self.assertEqual(lines[at + 1].replace(" ", "").strip("|").split("|"), ["---"] * 19)
+        self.assertEqual(metrics.HEADER, "| feature | track | shipped | sessions | active h | user msgs | gate runs "
+                         "| gate s | unit tests | acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total "
+                         "| effort | escaped |")
+        self.assertEqual(lines[at + 1].replace(" ", "").strip("|").split("|"), ["---"] * 20)
         self.assertEqual(lines[at + 2:], [ROW])
 
     def test_write_replace_keeps_escaped(self) -> None:
         file = self.tmp / "Feature Metrics.md"
-        other = "| b | S | | 1 | 0.1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | - | - | 1 | 1 | 1 | 3 |  |"
+        other = "| b | S | | 1 | 0.1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | - | - | 1 | 1 | 1 | 3 | ? |  |"
         file.write_text("intro\n\n" + metrics.HEADER + "\n|---|\n" + ROW.replace("|  |", "| yes: #12 |") + "\n"
                         + other + "\n\ntail\n")
         metrics.write_row(file, "a", ROW.replace("| 15 |", "| 99 |"), self.lock)
         text = file.read_text()
-        self.assertIn("| 99 | yes: #12 |", text)
+        self.assertIn("| 99 | 1-2:h 3:- 4:- 5:m 6:- 7:- | yes: #12 |", text)
         self.assertIn(other + "\n", text)
         self.assertTrue(text.startswith("intro\n") and text.endswith("\ntail\n"))
         self.assertEqual(text.count("| a |"), 1)
+
+    def test_write_migrates_old_header(self) -> None:
+        file = self.tmp / "Feature Metrics.md"
+        old = metrics.HEADER.replace(" effort |", "")
+        rows = ["| a | M | | 1 | 0.1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | - | - | 1 | 1 | 1 | 3 |  |",
+                "| b | S | | 1 | 0.1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | - | - | 1 | 1 | 1 | 3 | yes |"]
+        file.write_text("intro\n\n" + old + "\n| " + " | ".join(["---"] * 19) + " |\n" + "\n".join(rows) + "\n\ntail\n")
+        metrics.write_row(file, "c", ROW.replace("| a |", "| c |", 1), self.lock)
+        lines = file.read_text().splitlines()
+        at = lines.index(metrics.HEADER)
+        self.assertEqual(lines[at + 1].replace(" ", "").strip("|").split("|"), ["---"] * 20)
+        self.assertEqual([metrics.cells(x)[-2:] for x in lines[at + 2:at + 4]], [["?", ""], ["?", "yes"]])
+        metrics.write_row(file, "d", ROW.replace("| a |", "| d |", 1), self.lock)
+        lines = file.read_text().splitlines()
+        self.assertNotIn(old, lines)
+        data = [x for x in lines[at + 2:] if x.startswith("|")]
+        self.assertEqual([metrics.cells(x)[0] for x in data], ["a", "b", "c", "d"])
+        self.assertTrue(all(len(metrics.cells(x)) == 20 for x in data))
+        self.assertEqual([metrics.cells(x)[-2] for x in data[:2]], ["?", "?"])
+        self.assertEqual(lines[-1], "tail")
 
     def test_write_appends_after_last_table_line(self) -> None:
         file = self.tmp / "Feature Metrics.md"
@@ -492,7 +568,8 @@ class MetricsCommandTests(TempDir):
         self.assertEqual((out["feature"], out["track"], out["shipped"], out["total"]), ("feat-x", "M", "2026-01-02", 5000))
         self.assertEqual(out["stages"]["5"]["weighted"], 5000)
         self.assertEqual(set(out), {"feature", "track", "shipped", "sessions", "active_hours", "user_messages", "gate",
-                                    "tests", "denials", "unattributed", "stages", "total", "agents", "row", "file"})
+                                    "tests", "denials", "unattributed", "stages", "total", "agents", "effort", "row",
+                                    "file"})
 
     def test_cli_write(self) -> None:
         self.fixture()
