@@ -13,13 +13,11 @@ for (const p of dv.pages().where((p) => p.file.frontmatter && p.file.frontmatter
   if (note.schema === 1) features.push(note);
   else if (Number(note.schema) > 1) newerSchema += 1;
 }
-// D10: this computer's dev-loop identity puts the viewer's features first. Desktop only (Node `fs`); on mobile,
-// or with no readable file, the board keeps name order.
+// allow-comment: dependency: Obsidian mobile has no Node require; the board then keeps name order.
 let viewer = {};
 try {
   viewer = JSON.parse(require("fs").readFileSync(require("os").homedir() + "/.config/dev-loop/machine.json", "utf8")) || {};
 } catch (e) {}
-// D11: the open folds of this device survive a Dataview redraw.
 let open = new Set();
 try {
   const keys = JSON.parse(localStorage.getItem("dlb-open"));
