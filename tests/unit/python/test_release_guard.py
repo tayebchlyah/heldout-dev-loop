@@ -351,6 +351,8 @@ class ReleaseSkillTextTests(unittest.TestCase):
         self.assertLess(text.index("skills/release-audit/SKILL.md"), text.index("release/<tag>"))
         self.assertLess(text.index("commands.gate"), text.index("git push"))
         self.assertLess(text.index("Stop 1"), text.index("gh pr merge --rebase"))
+        self.assertIn("gh pr merge --rebase --match-head-commit <sha>", text)
+        self.assertIn("Then `ci wait`: a verdict other than `pass`: stop, report it.", text)
         self.assertLess(text.index("Stop 2"), text.index("git push origin <tag>"))
         self.assertLess(text.index("Stop 2"), text.index("gh release create"))
 
@@ -360,6 +362,9 @@ class ReleaseSkillTextTests(unittest.TestCase):
                      "gh release edit", "confirm"]:
             self.assertIn(name, text, name)
         self.assertLess(text.index("confirm"), text.index("gh release edit"))
+        self.assertIn("`cliff`: say the mode is `cliff`, change nothing, stop.", text)
+        self.assertIn("Do not commit.", text)
+        self.assertIn("`--all`: run steps 1 to 5", text)
 
     def test_skill_md_names_release(self) -> None:
         text = (self.ROOT / "skill" / "SKILL.md").read_text()
