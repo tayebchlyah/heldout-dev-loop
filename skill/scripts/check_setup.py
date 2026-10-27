@@ -338,7 +338,7 @@ def check_claude_settings(path: Path, failures: list[str]) -> None:
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Claude hook event: {event}")
-    for event, matcher, script in [("PreToolUse", "AskUserQuestion", "deny-ask.sh"), ("StopFailure", "rate_limit", "pause.sh")]:
+    for event, matcher, script in [("PreToolUse", "AskUserQuestion", "deny-ask.sh"), ("PreToolUse", "Edit|Write|NotebookEdit", "worktree-wall.sh"), ("StopFailure", "rate_limit", "pause.sh")]:
         groups = hooks.get(event, [])
         if not any(isinstance(g, dict) and g.get("matcher") == matcher
                    and any(script in str(h.get("command", "")) for h in g.get("hooks", []) if isinstance(h, dict))
@@ -404,7 +404,7 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
         if event not in hooks:
             failures.append(f"missing Codex hook event: {event}")
 
-    for filename in ["implementer.toml", "spec-tester.toml", "task-reviewer.toml", "final-reviewer.toml", "security-reviewer.toml"]:
+    for filename in ["implementer.toml", "spec-tester.toml", "task-reviewer.toml", "final-reviewer.toml", "security-reviewer.toml", "planner.toml"]:
         path = root / "agents" / filename
         require_file(path, failures)
         if path.is_file():

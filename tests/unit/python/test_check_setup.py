@@ -286,6 +286,14 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertIn("Codex hooks are not enabled", result.stdout)
         self.assertIn("spec-tester.toml", result.stdout)
 
+    def test_codex_root_without_the_planner_agent_names_it(self) -> None:
+        self.init()
+        root = self.repo / ".codex"
+        rules = root / "rules" / "default.rules"
+        self.assertNotIn(f"missing {root / 'agents' / 'planner.toml'}", check_setup.check_codex_root(root, rules))
+        (root / "agents" / "planner.toml").unlink()
+        self.assertIn(f"missing {root / 'agents' / 'planner.toml'}", check_setup.check_codex_root(root, rules))
+
     def test_codex_project_needs_a_trusted_hash_for_the_project_hooks_file(self) -> None:
         self.init()
         self.trust_codex()

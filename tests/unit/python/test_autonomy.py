@@ -397,7 +397,8 @@ class AutonomyHookTests(PauseSandbox):
         import check_setup
         settings = json.loads((HERE.parents[2] / "claude" / "settings.fragment.json").read_text())
         cases = [("PreToolUse", "AskUserQuestion", "missing Claude hook: PreToolUse AskUserQuestion deny-ask.sh"),
-                 ("StopFailure", "rate_limit", "missing Claude hook: StopFailure rate_limit pause.sh")]
+                 ("StopFailure", "rate_limit", "missing Claude hook: StopFailure rate_limit pause.sh"),
+                 ("PreToolUse", "Edit|Write|NotebookEdit", "missing Claude hook: PreToolUse Edit|Write|NotebookEdit worktree-wall.sh")]
         for event, matcher, line in cases:
             with self.subTest(event=event):
                 trimmed = json.loads(json.dumps(settings))
