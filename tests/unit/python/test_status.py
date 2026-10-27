@@ -287,6 +287,70 @@ class StatusTests(Sandbox):
                 self.assertEqual((out["stage"], out["feature"]), ("rebase", "tiny"))
                 self.assertIn("finish or abort the rebase", out["next"])
 
+    def with_effort(self, level: str | None, drop_notes: bool = False) -> dict[str, str]:
+        env = {k: v for k, v in self.env.items() if k != "CLAUDE_EFFORT" and not (drop_notes and k == "DEV_LOOP_NOTES")}
+        if level is not None:
+            env["CLAUDE_EFFORT"] = level
+        return env
+
+    def test_effort_want_per_stage(self) -> None:
+        def want(level: str, value: str | None) -> dict:
+            return {"level": level, "want": value}
+
+        self.assertEqual(self.status(env=self.with_effort("medium"))["effort"], want("medium", "high"))
+        self.spec(review="draft")
+        out = self.status("--feature", "widget", env=self.with_effort("high"))
+        self.assertEqual((out["stage"], out["effort"]), (2, want("high", "high")))
+        wt = self.built()
+        out = self.status(cwd=wt, env=self.with_effort("high"))
+        self.assertEqual((out["stage"], out["effort"]), (5, want("high", "medium")))
+        self.ledger(wt, "Task 1: complete\nTask 2: complete\nFeature gate: green at abc123\n")
+        self.commit(wt, "widget.py", "WIDGET = 1\n")
+        out = self.status(cwd=wt, env=self.with_effort("high"))
+        self.assertEqual((out["stage"], out["effort"]), (7, want("high", "medium")))
+
+    def test_effort_want_stage_3(self) -> None:
+        self.spec()
+        wt = self.worktree()
+        out = self.status(cwd=wt, env=self.with_effort("high"))
+        self.assertEqual((out["stage"], out["effort"]), (3, {"level": "high", "want": "medium"}))
+
+    def test_effort_want_track_s_shipped_and_stage_0(self) -> None:
+        git(self.repo, "switch", "-q", "-c", "fix/tiny")
+        out = self.status(env=self.with_effort("low"))
+        self.assertEqual((out["stage"], out["effort"]), (5, {"level": "low", "want": "medium"}))
+        self.spec(shipped="2026-10-02")
+        out = self.status("--feature", "widget", env=self.with_effort("high"))
+        self.assertEqual((out["stage"], out["effort"]), ("shipped", {"level": "high", "want": None}))
+        git(self.repo, "rm", "-q", "GLOSSARY.md")
+        out = self.status(env=self.with_effort("high"))
+        self.assertEqual((out["stage"], out["effort"]), (0, {"level": "high", "want": None}))
+        out = self.status(env=self.with_effort("high", drop_notes=True))
+        self.assertEqual((out["stage"], out["effort"]), (0, {"level": "high", "want": None}))
+
+    def test_effort_level_values(self) -> None:
+        for raw in (None, "", "turbo", "HIGH", " high"):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.status(env=self.with_effort(raw))["effort"]["level"], None)
+        for level in ("low", "medium", "high", "xhigh", "max"):
+            with self.subTest(level=level):
+                self.assertEqual(self.status(env=self.with_effort(level))["effort"]["level"], level)
+
+    def test_effort_want_in_a_rebase(self) -> None:
+        wt = self.worktree()
+        git(self.repo, "switch", "-q", "-c", "fix/tiny")
+        self.commit(self.repo, "a.txt", "mine\n")
+        self.commit(wt, "a.txt", "wt-mine\n")
+        git(self.repo, "switch", "-q", "main")
+        self.commit(self.repo, "a.txt", "theirs\n")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "switch", "-q", "fix/tiny")
+        for cwd, want in ((self.repo, "high"), (wt, "medium")):
+            subprocess.run([*GIT, "rebase", "origin/main"], cwd=cwd, capture_output=True)
+            out = self.status(cwd=cwd, env=self.with_effort("low"))
+            with self.subTest(cwd=cwd):
+                self.assertEqual((out["stage"], out["effort"]), ("rebase", {"level": "low", "want": want}))
+
     def test_main_lists_open_features(self) -> None:
         self.spec(review="draft")
         self.spec(name="20261003 Gadget.md", feature="gadget")
