@@ -1,4 +1,4 @@
-"""Session B autonomy: the decision log table, the pause note, the session id and the feature worktree test.
+"""Delivery autonomy: the decision log table, the pause note, the session id and the feature worktree test.
 
 The `decide` and `pause` commands. Shared by `status` and the board writer.
 """

@@ -260,11 +260,11 @@ class BoardRobustTests(Board):
         self.assertEqual(sorted(self.board_dir.glob("features/*.md")), [])
         self.assertFalse((self.board_dir / name).exists())
 
-    def test_start_session_b_clears_once_the_worktree_exists(self) -> None:
-        """D6: "start Session B" goes when the claimed feature has a worktree, with no event."""
+    def test_start_delivery_clears_once_the_worktree_exists(self) -> None:
+        """D6: "start Delivery" goes when the claimed feature has a worktree, with no event."""
         self.spec("gadget", "Gadget Export")
         self.ok("--claim", "gadget")
-        self.assertEqual(self.note("gadget")["waiting"], "start Session B")
+        self.assertEqual(self.note("gadget")["waiting"], "start Delivery")
         self.worktree("gadget")
         self.ok()
         self.assertEqual(self.note("gadget")["waiting"], "")
