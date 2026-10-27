@@ -27,7 +27,7 @@ Stage 1 sizes the work:
 - Track L: Session A, then Session B. Build `superpowers:subagent-driven-development`. Spec adds threat model. Never auto-merged.
 
 Session A: Stages 1 and 2, on `main`. Stops at the spec approval. Track S: Stage 1, then build in the same session under the grant.
-Session B: Stages 3 to 7 chained, under the grant. Each stage ends, run `scripts/devloop.py status` again, run the next stage. Session B start, `status` has `kit_drift`: stop; tell the user to merge the kit upgrade to `main` and start a new session there. Kit upgrade: own PR on `main` before Session B.
+Session B: Stages 3 to 7 chained, under the grant. Each stage ends, run `scripts/devloop.py status` again, run the next stage. Session B start, `status` `kit_drift` `direction` `worktree-newer`: stop; tell the user to merge the kit upgrade to `main` and start a new session there. `main-newer`: see Where each stage runs. Kit upgrade: own PR on `main` before Session B.
 
 Autonomy grant (Session B, Track S after Stage 1):
 
@@ -75,6 +75,7 @@ Stages 0 to 2 run in the main checkout on `main`. Stages 3 to 7 run in the featu
 At the start of Stages 3 to 7, work in that worktree yourself: find it with `git worktree list`, or create it with the harness's own worktree mechanism. The branch exists: attach the worktree to it. Else: branch from `origin/main` after `git fetch origin`. Never ask the user to change directory. Claude: enter it with `EnterWorktree` (`path` for an existing worktree): the session cwd, and so the hook `cwd` of the ask wall and of `pause.sh`, is then the worktree. A `cd` in Bash does not move it.
 
 Rebase onto `origin/main` at four points only, each right after `git fetch origin`: Stage 2 start (on `main`), Stage 3 start, Stage 6 start, Stage 7. Never during Stages 4 and 5: the SDD ledger and the review packages name commits by hash.
+Kit on `origin/main` newer: `status` `kit_drift` `direction` `main-newer`, read right after that `git fetch origin`. Main worktree, Session B start or a stage start that fetches: rebase `main` as the Stage 2 start does, then stop; tell the user to start a new session. Feature worktree, Stage 3, 6 or 7 start: `git fetch origin`, `status`, the rebase. That `status` had `main-newer`: after the rebase, `scripts/devloop.py pause --intent <stage> --next <stage start>`, stop, tell the user to start a new session in the worktree and run `/continue` (Codex `$continue`): it loads the rebased kit. Stages 4 and 5 ignore `main-newer`.
 Every conflict under `tests/acceptance/` goes to `spec-tester`: it resolves the file and runs `scripts/devloop.py seal --rebase-continue`, which writes the new seal value into the commit message of the rebase and continues it. A conflict happens only in a file the seal commit touched.
 
 ## 0 Bootstrap
