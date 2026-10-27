@@ -35,6 +35,6 @@ Release notes (the workflow): an rc body has the commits after the previous tag,
 2. Run `scripts/canary.sh`, paste its lines into the release PR.
 3. Rebase the PR, no merge commit.
 4. On `main`: `git tag -a vX.Y.Z -m "dev-loop vX.Y.Z"` (local), then `python3 scripts/repo_rules.py promoted --tag vX.Y.Z`: the final tag ships the kit source of its last rc. A failure: delete the local tag, cut a new rc.
-5. `/release-audit` (Codex `$release-audit`, main session), then `release-check --sha HEAD` must give `ok` true.
-6. `git push origin vX.Y.Z`. One tag per push: GitHub sends no push event for more than three tags. The workflow checks the version, makes the notes and the GitHub Release.
+5. `/release-audit` (Codex `$release-audit`, main session), then `python3 .agents/skills/dev-loop/scripts/devloop.py release-check --sha HEAD` must give `ok` true.
+6. `git push origin vX.Y.Z`. One tag per push: GitHub sends no push event for more than three tags. The workflow checks the version, runs `promoted` again (fails there on a kit source change after the last rc), makes the notes and the GitHub Release.
 7. Upgrade PR: on a branch, `npx github:tchlyah/dev-loop#vX.Y.Z upgrade`, rebase merge.
