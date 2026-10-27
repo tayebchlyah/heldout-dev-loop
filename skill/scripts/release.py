@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -204,6 +205,65 @@ def expected_base(repo: Path, record_sha: str, commit: str) -> str | None:
     return merged.stdout.strip() if merged.returncode == 0 and merged.stdout.strip() else None
 
 
+KIT_ROOTS = (".agents/skills/", ".claude/agents/", ".claude/skills/", ".codex/agents/", ".codex/rules/", ".dev-loop/hooks/")
+MANIFEST = ".dev-loop/MANIFEST.json"
+
+
+def manifest_at(repo: Path, commit: str) -> dict | None:
+    """The `.dev-loop/MANIFEST.json` object at `commit`, None when it is missing or not a JSON object."""
+    shown = run_git(repo, "show", f"{commit}:{MANIFEST}")
+    try:
+        data = json.loads(shown.stdout) if shown.returncode == 0 else None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def kit_copies(repo: Path, commit: str) -> set[str]:
+    """The kit copies at `commit`: each MANIFEST `files` key under a kit root whose tree entry matches it (`sha256:<hex>`
+    a regular file of that hash, `link:<target>` a symlink to that target), plus the MANIFEST. Empty without one."""
+    data = manifest_at(repo, commit)
+    files = data.get("files") if data else None
+    if not isinstance(files, dict):
+        return set()
+    tree = run_git(repo, "ls-tree", "-r", "-z", "--full-tree", commit)
+    entries = {}
+    for line in tree.stdout.split("\0") if tree.returncode == 0 else []:
+        meta, _, path = line.partition("\t")
+        if path:
+            mode, _, blob = meta.split(" ")
+            entries[path] = (mode, blob)
+    copies = {MANIFEST}
+    for path, expected in files.items():
+        if not (isinstance(expected, str) and path.startswith(KIT_ROOTS) and path in entries):
+            continue
+        mode, blob = entries[path]
+        if mode not in ("100644", "100755", "120000"):
+            continue
+        content = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True).stdout
+        if mode == "120000":
+            actual = "link:" + content.decode("utf-8", "replace")
+        else:
+            actual = "sha256:" + hashlib.sha256(content).hexdigest()
+        if expected == actual:
+            copies.add(path)
+    return copies
+
+
+def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
+    """The upgraded kit copies an audit of `base..head` leaves out: only when `base` is the record sha and the MANIFEST
+    `version` changed, the kit copies at `head` that changed since `base`. Else []."""
+    if base != record_sha:
+        return []
+    old, new = manifest_at(repo, base), manifest_at(repo, head)
+    versions = [m.get("version") if m else None for m in (old, new)]
+    if not all(isinstance(v, str) and v for v in versions) or versions[0] == versions[1]:
+        return []
+    diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, head)
+    changed = {p for p in diff.stdout.split("\0") if p} if diff.returncode == 0 else set()
+    return sorted(kit_copies(repo, head) & changed)
+
+
 def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:
     """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created."""
     if notes is None:
@@ -259,6 +319,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         "budget": budget if budget is not None else (100 if first else None),
         "scope": "whole" if base is None else f"{base}..{head_sha}",
         "base": base,
+        "exclude": excluded(repo, record["sha"], base, head_sha) if base is not None else [],
         "prior_runs": [str(p) for _, p in runs],
         "sandbox": {
             "engine": docker_up(),

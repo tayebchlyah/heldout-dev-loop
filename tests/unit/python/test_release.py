@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -289,7 +290,7 @@ class ReleaseCheckTests(unittest.TestCase):
                               capture_output=True, text=True, env=env)
         self.assertEqual((done.returncode, "error" in json.loads(done.stdout)), (1, True))
 
-class ReleasePlanTests(unittest.TestCase):
+class PlanRepo(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -325,6 +326,8 @@ class ReleasePlanTests(unittest.TestCase):
                               capture_output=True, text=True, env=env)
         return json.loads(done.stdout or "{}"), done.returncode
 
+
+class ReleasePlanTests(PlanRepo):
     def test_first_plan_creates_run_folder(self) -> None:
         out, code = self.plan()
         folder = self.notes / "security-audit" / "run-1"
@@ -425,6 +428,116 @@ class ReleasePlanTests(unittest.TestCase):
         with unittest.mock.patch.object(Path, "mkdir", racing):
             out, code = release.plan(self.repo, self.notes, "claude")
         self.assertEqual((code, out["error"]), (1, "run-folder-exists"))
+
+
+ONE, TWO, GONE = ".agents/skills/k/one.md", ".agents/skills/k/two.md", ".agents/skills/k/gone.md"
+MANIFEST = ".dev-loop/MANIFEST.json"
+
+
+class ReleasePlanExcludeTests(PlanRepo):
+    """Record at A (MANIFEST `3.0.0-rc.1`), B an upgrade to `3.0.0-rc.2`: the kit copies B changed leave the audit."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.a = self.state("3.0.0-rc.1", {ONE: "1", TWO: "1", GONE: "g", "src/app.py": "a", "dev-loop.json": "{}",
+                                          ".claude/settings.json": "{}", ".codex/hooks.json": "{}"})
+        self.record(self.a)
+        self.run_folder()
+
+    def run_folder(self) -> None:
+        folder = self.notes / "security-audit" / "run-1"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "run-metadata.json").write_text(json.dumps({"source_ref": {"commit": self.a}, "run_status": "complete"}))
+
+    def state(self, version: str | None, files: dict[str, str | None], links: dict[str, str] | None = None,
+              entries: dict[str, str] | None = None) -> str:
+        """Write `files` (None deletes) and `links`, then a MANIFEST of the files under `.agents` and the links under
+        `.claude/skills` as they are, with `entries` over them; `version` None removes it. Commit, return the sha."""
+        for path, text in files.items():
+            target = self.repo / path
+            if text is None:
+                target.unlink()
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        for path, dest in (links or {}).items():
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).symlink_to(dest)
+        manifest = self.repo / MANIFEST
+        if version is None:
+            manifest.unlink()
+        else:
+            found = {str(p.relative_to(self.repo)): "sha256:" + hashlib.sha256(p.read_bytes()).hexdigest()
+                     for p in (self.repo / ".agents").rglob("*") if p.is_file()}
+            skills = self.repo / ".claude" / "skills"
+            found.update({str(p.relative_to(self.repo)): f"link:{os.readlink(p)}"
+                          for p in (skills.iterdir() if skills.is_dir() else []) if p.is_symlink()})
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text(json.dumps({"version": version, "files": {**found, **(entries or {})}}))
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "state")
+        return self.git("rev-parse", "HEAD")
+
+    def upgrade(self, version: str = "3.0.0-rc.2", files: dict | None = None, **kw) -> str:
+        return self.state(version, {ONE: "2", TWO: "2", "src/app.py": "b", "dev-loop.json": '{"v": 2}', **(files or {})}, **kw)
+
+    def test_exclude(self) -> None:
+        sha = lambda text: "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+        cases = [
+            ("upgrade", {}, [ONE, TWO, MANIFEST]),
+            ("copy differs from its hash", {"entries": {ONE: sha("other")}}, [TWO, MANIFEST]),
+            ("same version", {"version": "3.0.0-rc.1"}, []),
+            ("product path in the MANIFEST", {"entries": {"src/app.py": sha("b")}}, [ONE, TWO, MANIFEST]),
+            ("deleted copy", {"files": {GONE: None}, "entries": {GONE: sha("g")}}, [ONE, TWO, MANIFEST]),
+            ("merged configs", {"files": {".claude/settings.json": "{1}", ".codex/hooks.json": "{1}"},
+                                "entries": {".claude/settings.json": sha("{1}"), ".codex/hooks.json": sha("{1}")}},
+             [ONE, TWO, MANIFEST]),
+            ("directory and missing entries", {"entries": {".agents/skills/k": sha(""), ".agents/skills/k/no.md": sha("")}},
+             [ONE, TWO, MANIFEST]),
+            ("links", {"links": {".claude/skills/k": "../../.agents/skills/k", ".claude/skills/w": "../x"},
+                       "entries": {".claude/skills/w": "link:../y"}}, [ONE, TWO, ".claude/skills/k", MANIFEST]),
+            ("no MANIFEST at HEAD", {"version": None}, []),
+        ]
+        start = self.git("rev-parse", "HEAD")
+        for label, change, expected in cases:
+            with self.subTest(label):
+                self.git("reset", "-q", "--hard", start)
+                head = self.upgrade(**change)
+                out, code = self.plan()
+                self.assertEqual((code, out["scope"], out["exclude"]), (0, f"{self.a}..{head}", expected))
+                subprocess.run(["rm", "-rf", out["output"]], check=True)
+
+    def test_no_exclude_without_the_record_as_base(self) -> None:
+        self.upgrade()
+        (self.notes / "Project Note.md").write_text("## Deferred\n")
+        out, _ = self.plan()
+        self.assertEqual((out["scope"], out["exclude"]), ("whole", []))
+        self.git("checkout", "-q", "-b", "side", self.a)
+        side = self.commit("s.txt", "s")
+        self.git("checkout", "-q", "main")
+        self.record(side)
+        out, _ = self.plan()
+        self.assertEqual((out["base"], out["exclude"]), (self.a, []))
+
+    def test_release_check_keeps_the_kit_copies_stale(self) -> None:
+        head = self.upgrade()
+        env = {**os.environ, "DEV_LOOP_NOTES": str(self.notes)}
+        done = subprocess.run([sys.executable, str(DEVLOOP), "release-check", "--repo", str(self.repo), "--sha", head],
+                              capture_output=True, text=True, env=env)
+        self.assertEqual(json.loads(done.stdout)["reasons"],
+                         [{"reason": "stale-audit", "paths": [ONE, TWO, MANIFEST, "dev-loop.json", "src/app.py"]}])
+
+    def test_kit_roots_are_the_roots_of_the_kit(self) -> None:
+        script = ("import {buildKit} from './lib/kit.mjs';"
+                  "const k = buildKit({packageRoot: process.cwd(), harnesses: ['claude', 'codex']});"
+                  "console.log(JSON.stringify([...k.files, ...k.links].map((f) => f.path)))")
+        done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=HERE.parents[2],
+                              capture_output=True, text=True, check=True)
+        paths = json.loads(done.stdout)
+        for path in paths:
+            self.assertEqual(sum(path.startswith(root) for root in release.KIT_ROOTS), 1, path)
+        for root in release.KIT_ROOTS:
+            self.assertTrue(any(p.startswith(root) for p in paths), root)
 
 
 if __name__ == "__main__":
