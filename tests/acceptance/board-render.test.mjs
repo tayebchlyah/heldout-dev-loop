@@ -111,49 +111,61 @@ const GROUP_NOTES = [
   note({ feature: 'f-tower', title: 'Tower Feature', machine_id: 'aaaaaaaaaaaaaaa4', owner: 'Blair', machine: 'tower-pc' }),
 ]
 
-test('O50: groups by owner and machine: here first and marked, then its owner, then other owners by name', () => {
+// The summary of the row <details> with data-key="<project>/<feature>" (Board Ledger D6).
+function rowSummary(html, key) {
+  const tag = new RegExp(`<details\\b[^>]*\\bdata-key="${key}"[^>]*>`).exec(html)
+  assert.ok(tag, `no <details data-key="${key}">`)
+  return html.slice(tag.index, html.indexOf('</summary>', tag.index))
+}
+
+test('O50, amended by board-ledger: one fold per project; here first and marked, then its owner, then other owners', () => {
   const { renderBoard } = load()
   const html = renderBoard(GROUP_NOTES, NOW, { here: HERE.machine_id, me: 'Robin' })
+  assert.equal(html.match(/<details\b[^>]*\bdata-key="project:acme-widgets"/g)?.length, 1, 'not one fold for the project')
   const at = (s) => {
     const i = html.indexOf(s)
     assert.ok(i >= 0, `${s} missing`)
     return i
   }
-  assert.ok(html.includes('this machine'))
+  assert.ok(rowSummary(html, 'acme-widgets/f-lab').includes('this machine'))
+  for (const f of ['f-zeta', 'f-alpha', 'f-desk', 'f-tower']) assert.ok(!rowSummary(html, `acme-widgets/${f}`).includes('this machine'), f)
   assert.ok(at('lab-mac') < at('alpha-mac') && at('lab-mac') < at('zeta-mac'), 'this machine is not first')
-  assert.ok(at('this machine') < at('alpha-mac'))
-  assert.ok(Math.max(at('alpha-mac'), at('zeta-mac')) < at('tower-pc'), 'other machines of the owner come next')
-  assert.ok(at('tower-pc') < at('desk-pc'), 'other owners by name')
+  assert.ok(Math.max(at('alpha-mac'), at('zeta-mac')) < Math.min(at('tower-pc'), at('desk-pc')), 'other machines of the owner come next')
 })
 
-test('O50, D26: with no here (Obsidian note), owners by name, then machines by name, no "this machine"', () => {
+test('O50, amended by board-ledger: with no here, no row shows "this machine"', () => {
   const { renderBoard } = load()
   const html = renderBoard(GROUP_NOTES, NOW, {})
-  const order = ['tower-pc', 'desk-pc', 'alpha-mac', 'lab-mac', 'zeta-mac'].map((s) => html.indexOf(s))
-  assert.ok(order.every((i) => i >= 0), 'a machine is missing')
-  assert.deepEqual([...order].sort((a, b) => a - b), order)
+  for (const m of ['tower-pc', 'desk-pc', 'alpha-mac', 'lab-mac', 'zeta-mac']) assert.ok(html.includes(m), `${m} missing`)
   assert.ok(!html.includes('this machine'))
 })
 
-test('O51: one subheading per project in a group, projects by name', () => {
+test('O51, amended by board-ledger: one fold per project, the viewer\'s first, then by name; each row names owner and machine', () => {
   const { renderBoard } = load()
+  const desk = { machine_id: 'aaaaaaaaaaaaaaa3', owner: 'Casey', machine: 'desk-pc' }
   const html = renderBoard(
     [
       note({ project: 'zephyr-app', feature: 'zed', title: 'Zed Feature' }),
-      note({ project: 'acme-widgets', feature: 'alpha', title: 'Alpha Feature' }),
-      note({ project: 'acme-widgets', feature: 'beta', title: 'Beta Feature' }),
+      note({ project: 'beta-tools', feature: 'beta', title: 'Beta Feature', ...desk }),
+      note({ project: 'acme-widgets', feature: 'alpha', title: 'Alpha Feature', ...desk }),
     ],
     NOW,
     { here: HERE.machine_id, me: 'Robin' },
   )
-  const acme = html.indexOf('acme-widgets')
-  const zephyr = html.indexOf('zephyr-app')
-  assert.ok(acme >= 0 && zephyr > acme)
-  for (const title of ['Alpha Feature', 'Beta Feature']) {
-    const i = html.indexOf(title)
-    assert.ok(i > acme && i < zephyr, `${title} not under acme-widgets`)
+  const fold = (p) => {
+    const m = new RegExp(`<details\\b[^>]*\\bdata-key="project:${p}"`).exec(html)
+    assert.ok(m, `no fold for ${p}`)
+    return m.index
   }
-  assert.ok(html.indexOf('Zed Feature') > zephyr)
+  assert.ok(fold('zephyr-app') < fold('acme-widgets') && fold('acme-widgets') < fold('beta-tools'))
+  for (const [key, owner, machine] of [
+    ['zephyr-app/zed', 'Robin', 'lab-mac'],
+    ['acme-widgets/alpha', 'Casey', 'desk-pc'],
+    ['beta-tools/beta', 'Casey', 'desk-pc'],
+  ]) {
+    const row = rowSummary(html, key)
+    assert.ok(row.includes(owner) && row.includes(machine), `${key} does not name its owner and machine`)
+  }
 })
 
 test('O52: two notes of one feature on one machine: only the newer shows', () => {
@@ -195,7 +207,7 @@ test('O53, F3: one feature on two machines: the higher stage, with the earliest 
   assert.ok(spec(merged).width > spec(alone).width, 'the Stage 2 time of machine A is not used')
 })
 
-test('O54: the Tasks column shows "N of M" and no progress bar', () => {
+test('O54, amended by board-ledger: the row summary shows "N of M tasks" as text, no progress bar', () => {
   const { renderBoard } = load()
   const html = renderBoard(
     [
@@ -212,9 +224,10 @@ test('O54: the Tasks column shows "N of M" and no progress bar', () => {
     NOW,
     {},
   )
-  assert.ok(html.includes('1 of 3'))
-  assert.ok(!/<progress\b/i.test(html))
-  assert.ok(!/role="progressbar"/i.test(html))
+  const summary = rowSummary(html, 'acme-widgets/gadget')
+  assert.ok(summary.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').includes('1 of 3 tasks'))
+  assert.ok(!/<progress\b/i.test(summary))
+  assert.ok(!/role="progressbar"/i.test(summary))
 })
 
 test('O55: one stage segment per stage of the track: 7, or 4 for Track S', () => {
@@ -316,20 +329,41 @@ const shipped = (n, day, over = {}) =>
     ...over,
   })
 
-test('O63, F4: "Recently shipped" lists the 3 latest per project, newest first, out of the groups', () => {
+test('O63, F4, amended by board-ledger: the "Recently shipped" fold of a project lists the 5 latest, newest first', () => {
   const { renderBoard } = load()
   const html = renderBoard(
-    [shipped('One', 1), shipped('Three', 3), shipped('Four', 4), shipped('Two', 2), note({ title: 'Active One' })],
+    [
+      shipped('One', 1),
+      shipped('Three', 3),
+      shipped('Six', 6),
+      shipped('Four', 4),
+      shipped('Two', 2),
+      shipped('Five', 5),
+      note({ title: 'Active One' }),
+    ],
     NOW,
     { here: HERE.machine_id, me: 'Robin' },
   )
-  const section = html.indexOf('Recently shipped')
-  assert.ok(section >= 0)
-  assert.ok(!html.includes('Ship One'), 'more than 3 shipped features in a project')
-  const at = ['Ship Four', 'Ship Three', 'Ship Two'].map((t) => html.indexOf(t))
-  assert.ok(at.every((i) => i > section), 'a shipped feature outside "Recently shipped"')
-  assert.ok(at[0] < at[1] && at[1] < at[2], 'not newest first')
-  for (const t of ['Ship Four', 'Ship Three', 'Ship Two']) assert.equal(html.split(t).length - 1, 1, `${t} shown twice`)
+  const fold = /<details\b[^>]*\bdata-key="shipped:acme-widgets"/.exec(html)
+  assert.ok(fold, 'no "Recently shipped" fold for the project')
+  assert.ok(html.indexOf('Recently shipped', fold.index) > fold.index)
+  assert.ok(!html.includes('Ship One'), 'more than 5 shipped features in a project')
+  const titles = ['Ship Six', 'Ship Five', 'Ship Four', 'Ship Three', 'Ship Two']
+  const at = titles.map((t) => html.indexOf(t))
+  assert.ok(at.every((i) => i > fold.index), 'a shipped feature outside the fold')
+  assert.ok(at.every((i, n) => n === 0 || at[n - 1] < i), 'not newest first')
+  for (const t of titles) assert.equal(html.split(t).length - 1, 1, `${t} shown twice`)
+  assert.ok(rowSummary(html, 'acme-widgets/ship-Six').includes('Track M'), 'no track in the shipped row')
+})
+
+test('O63, amended by board-ledger: the viewer\'s shipped features come first in the fold', () => {
+  const { renderBoard } = load()
+  const html = renderBoard(
+    [shipped('Theirs', 4), shipped('Mine', 2, { ...HERE })],
+    NOW,
+    { here: HERE.machine_id, me: 'Robin' },
+  )
+  assert.ok(html.indexOf('Ship Mine') >= 0 && html.indexOf('Ship Mine') < html.indexOf('Ship Theirs'))
 })
 
 test('O63: shipped notes stay out of the header count, "Needs you" and the count per stage', () => {
@@ -339,11 +373,15 @@ test('O63: shipped notes stay out of the header count, "Needs you" and the count
   const opts = { here: HERE.machine_id, me: 'Robin' }
   const without = renderBoard([active], NOW, opts)
   const withShipped = renderBoard([active, done], NOW, opts)
-  assert.ok(!withShipped.includes('review the PR'))
-  assert.ok(!withShipped.includes('Shipped decision text.'))
-  const firstGroup = without.indexOf('lab-mac')
-  assert.ok(firstGroup > 0)
-  assert.equal(withShipped.slice(0, firstGroup), without.slice(0, firstGroup), 'the header, panel or counts changed')
+  const firstFold = (html) => {
+    const m = /<details\b[^>]*\bdata-key="project:/.exec(html)
+    assert.ok(m && m.index > 0, 'no project fold after the header')
+    return m.index
+  }
+  const head = withShipped.slice(0, firstFold(withShipped))
+  assert.ok(!head.includes('review the PR'))
+  assert.ok(!head.includes('Shipped decision text.'))
+  assert.equal(head, without.slice(0, firstFold(without)), 'the header, panel or counts changed')
 })
 
 test('O63: the shipped row shows the total time from the first stage time to shipped_at', () => {
