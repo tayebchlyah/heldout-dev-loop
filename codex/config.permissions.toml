@@ -1,4 +1,5 @@
 default_permissions = "dev-workspace"
+model_reasoning_effort = "high"
 
 [features]
 hooks = true

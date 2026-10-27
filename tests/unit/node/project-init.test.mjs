@@ -387,3 +387,21 @@ test('init backs up an existing dev-loop.local.json before replacing it', () => 
   assert.equal(backups.length, 1)
   assert.equal(readFileSync(join(repo, backups[0]), 'utf8'), '{"notes": "old"}\n')
 })
+
+test('init writes the effort defaults and the worktree wall', () => {
+  const claude = setup()
+  init(claude.repo, claude.home, ['--yes', '--harness=claude'])
+  const settings = readJson(join(claude.repo, '.claude/settings.json'))
+  assert.equal(settings.effortLevel, 'high')
+  assert.equal(settings.autoCompactWindow, 400000)
+  const wall = settings.hooks.PreToolUse.find((group) => group.matcher === 'Edit|Write|NotebookEdit')
+  assert.ok(wall.hooks[0].command.endsWith('.dev-loop/hooks/claude/worktree-wall.sh"'), wall.hooks[0].command)
+  assert.ok(lstatSync(join(claude.repo, '.dev-loop/hooks/claude/worktree-wall.sh')).mode & 0o111)
+
+  const codex = setup()
+  init(codex.repo, codex.home, ['--yes', '--harness=codex'])
+  const lines = readFileSync(join(codex.repo, '.codex/config.toml'), 'utf8').split('\n')
+  const firstTable = lines.findIndex((line) => line.startsWith('['))
+  assert.ok(lines.slice(0, firstTable).includes('model_reasoning_effort = "high"'))
+  assert.match(readFileSync(join(codex.repo, '.codex/agents/planner.toml'), 'utf8'), /^model_reasoning_effort = "high"$/m)
+})

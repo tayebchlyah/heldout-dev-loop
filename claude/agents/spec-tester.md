@@ -2,6 +2,7 @@
 name: spec-tester
 description: Writes held-out acceptance tests in tests/acceptance from the approved spec alone. Never reads src. Use once per feature, after the spec is approved and before writing-plans.
 model: opus
+effort: high
 hooks:
   PreToolUse:
     - matcher: "Read|Edit|Write|Grep|Glob|Bash"

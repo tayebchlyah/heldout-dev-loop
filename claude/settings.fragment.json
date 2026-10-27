@@ -1,4 +1,6 @@
 {
+  "effortLevel": "high",
+  "autoCompactWindow": 400000,
   "hooks": {
     "SessionStart": [
       {
@@ -51,6 +53,16 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/deny-ask.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/worktree-wall.sh",
             "timeout": 5
           }
         ]
