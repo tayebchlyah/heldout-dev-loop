@@ -22,6 +22,7 @@ TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
                 5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
 FEATURES = "features"
+SHIPPED_KEPT = 5
 TEMPLATE = Path(__file__).with_name("board-note.md")
 
 
@@ -580,8 +581,8 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         path.unlink()
         payload["removed"].append(str(path))
-    # D12: keep the own shipped notes of the 3 latest shipped_at in this project.
-    for _, path in sorted(shipped, reverse=True)[3:]:
+    # D12: keep the own shipped notes of the SHIPPED_KEPT latest shipped_at in this project.
+    for _, path in sorted(shipped, reverse=True)[SHIPPED_KEPT:]:
         path.unlink()
         payload["removed"].append(str(path))
     features = [f for f in features if f in kept or f in own_features]
