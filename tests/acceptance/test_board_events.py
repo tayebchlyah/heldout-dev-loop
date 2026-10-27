@@ -165,13 +165,13 @@ class BoardShipTests(Board):
         self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
 
     @slow
-    def test_o26_o62_four_shipped_notes_keep_the_three_latest(self) -> None:
-        """O26, O62, D12: 4 own shipped notes in one project: the next run keeps the 3 latest shipped_at.
-        Rows: O26, four features shipped one by one; O62, a folder with four shipped notes and a foreign
-        one, where the run deletes the oldest and the foreign note stays."""
+    def test_o26_o62_six_shipped_notes_keep_the_five_latest(self) -> None:
+        """O26, O62, D12, amended by board-ledger: 6 own shipped notes in one project: the next run keeps the 5
+        latest shipped_at. Rows: O26, six features shipped one by one; O62, a folder with six shipped notes and a
+        foreign one, where the run deletes the oldest and the foreign note stays."""
 
         def shipped_one_by_one() -> set[str]:
-            slugs = ["one", "two", "three", "four"]
+            slugs = ["one", "two", "three", "four", "five", "six"]
             for slug in slugs:
                 self.spec(slug, f"Feature {slug.title()}")
                 self.worktree(slug)
@@ -184,12 +184,13 @@ class BoardShipTests(Board):
             self.ok()
             for path in self.own_notes().values():
                 self.assertTrue(read_note(path)["shipped_at"])
-            return {"two", "three", "four"}
+            return {"two", "three", "four", "five", "six"}
 
-        def folder_with_four_shipped() -> set[str]:
+        def folder_with_six_shipped() -> set[str]:
             self.worktree("tiny", prefix="fix")
             self.board_dir.mkdir(parents=True)
-            shipped = {"north": "2026-10-03", "south": "2026-10-01", "east": "2026-10-04", "west": "2026-10-02"}
+            shipped = {"north": "2026-10-03", "south": "2026-10-01", "east": "2026-10-04", "west": "2026-10-02",
+                       "upper": "2026-10-06", "lower": "2026-10-05"}
             for slug, day in shipped.items():
                 put(self.board_dir / note_name(MACHINE["id"], PROJECT, slug),
                     note_text(status_note(feature=slug, machine_id=MACHINE["id"], owner="Robin", machine="lab-mac",
@@ -201,10 +202,10 @@ class BoardShipTests(Board):
             south = self.board_dir / note_name(MACHINE["id"], PROJECT, "south")
             self.assertIn(str(south), [str(Path(p).resolve()) for p in out["removed"]])
             self.assertEqual((foreign.read_bytes(), foreign.stat().st_mtime_ns), foreign_before)
-            return {"north", "east", "west", "tiny"}
+            return {"north", "east", "west", "upper", "lower", "tiny"}
 
         for n, (name, run) in enumerate((("O26 shipped one by one", shipped_one_by_one),
-                                         ("O62 folder with four shipped notes", folder_with_four_shipped))):
+                                         ("O62 folder with six shipped notes", folder_with_six_shipped))):
             with self.subTest(name):
                 if n:
                     self.setUp()  # a fresh fixture per row, removed by doCleanups below
@@ -213,7 +214,6 @@ class BoardShipTests(Board):
                     self.assertEqual(set(self.own_notes()), expected)
                 finally:
                     self.doCleanups()
-
 
 if __name__ == "__main__":
     unittest.main()
