@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -334,3 +335,73 @@ class StatusTests(Sandbox):
     def test_spec_without_feature_resolves_by_its_title(self) -> None:
         put(self.notes / "specs" / "20250901 Fix: the API, v2.md", frontmatter(review_status="draft"))
         self.assertEqual(self.status("--feature", "fix-the-api-v2")["stage"], 2)
+
+
+class KitDriftTests(Sandbox):
+    def manifest(self, cwd: Path, version: object) -> None:
+        put(cwd / ".dev-loop" / "MANIFEST.json", json.dumps({"version": version}))
+
+    def commit_manifest(self, version: str) -> None:
+        self.manifest(self.repo, version)
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", f"kit {version}")
+
+    def feature_worktree(self, version: str) -> Path:
+        path = self.root / "wt-kit"
+        git(self.repo, "worktree", "add", "-q", "-b", "feat/kit", str(path), "main")
+        self.manifest(path, version)
+        return path
+
+    def remote_main(self, raw: str | None) -> None:
+        """Point `refs/remotes/origin/main` at a commit holding `raw` as the MANIFEST (none: no MANIFEST)."""
+        base = git(self.repo, "rev-parse", "HEAD").strip()
+        if raw is not None:
+            put(self.repo / ".dev-loop" / "MANIFEST.json", raw)
+            git(self.repo, "add", "-A")
+            git(self.repo, "commit", "-q", "--allow-empty", "-m", "remote kit")
+        git(self.repo, "update-ref", "refs/remotes/origin/main", git(self.repo, "rev-parse", "HEAD").strip())
+        git(self.repo, "reset", "-q", "--hard", base)
+
+    def drift(self, cwd: Path) -> dict | None:
+        return self.status(cwd=cwd).get("kit_drift")
+
+    def test_main_newer_than_the_worktree_or_the_main_worktree(self) -> None:
+        self.commit_manifest("3.0.0-rc.1")
+        wt = self.feature_worktree("3.0.0-rc.1")
+        self.remote_main(json.dumps({"version": "3.0.0-rc.2"}))
+        want = {"worktree": "3.0.0-rc.1", "main": "3.0.0-rc.2", "direction": "main-newer"}
+        self.assertEqual(self.drift(wt), want)
+        self.assertEqual(self.drift(self.repo), want)
+        self.remote_main(json.dumps({"version": "3.0.0"}))
+        self.commit_manifest("3.0.0-rc.2")
+        self.manifest(wt, "3.0.0-rc.2")
+        self.assertEqual(self.drift(wt), {"worktree": "3.0.0-rc.2", "main": "3.0.0", "direction": "main-newer"})
+
+    def test_worktree_newer_than_the_main_worktree(self) -> None:
+        self.commit_manifest("3.0.0-rc.1")
+        wt = self.feature_worktree("3.0.0-rc.2")
+        self.assertEqual(self.drift(wt), {"worktree": "3.0.0-rc.2", "main": "3.0.0-rc.1", "direction": "worktree-newer"})
+
+    def test_equal_versions_report_no_drift(self) -> None:
+        self.commit_manifest("3.0.0")
+        self.remote_main(json.dumps({"version": "3.0.0"}))
+        self.assertIsNone(self.drift(self.feature_worktree("3.0.0")))
+
+    def test_an_unreadable_main_manifest_reports_no_main_newer(self) -> None:
+        self.commit_manifest("3.0.0-rc.1")
+        wt = self.feature_worktree("3.0.0-rc.1")
+        for raw in (None, "not json", "{}", json.dumps({"version": 3}), json.dumps({"version": None}), "[]"):
+            with self.subTest(raw=raw):
+                self.remote_main(raw)
+                self.assertIsNone(self.drift(wt))
+        git(self.repo, "update-ref", "-d", "refs/remotes/origin/main")
+        self.assertIsNone(self.drift(wt))
+
+    def test_a_local_branch_named_origin_main_is_not_the_main_ref(self) -> None:
+        self.commit_manifest("3.0.0-rc.1")
+        wt = self.feature_worktree("3.0.0-rc.1")
+        self.remote_main(json.dumps({"version": "3.0.0-rc.1"}))
+        self.commit_manifest("3.0.0-rc.9")
+        git(self.repo, "update-ref", "refs/heads/origin/main", "HEAD")
+        git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        self.assertIsNone(self.drift(wt))
