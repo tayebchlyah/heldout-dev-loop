@@ -140,7 +140,8 @@ Skill suite runs test ids in chunks of 5 per `test_dev_loop.py --chunk` process,
 
 - Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in Review Yield.md (the project notes, `$NOTES/Review Yield.md`).
 - Cost data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) until 5 features have a row with stage cells that are not `?` in Feature Metrics.md (`$NOTES/Feature Metrics.md`, written by `metrics --write` at Stage 7).
-- Commits: gitmoji, format `<emoji>(<scope>) <message>`, scope required (e.g. `🐛(install) Back up a replaced skill outside its skills folder`).
+- Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required (e.g. `🐛(install) #12: Back up a replaced skill outside its skills folder`).
+- Issues: every new feature or fix starts from a GitHub issue, opened before the branch. Each of its commits names it in the subject (`#<issue>:`). PR body: `Closes #<issue>`.
 - Changelog: `cliff.toml` (gitmoji `commit_parsers`) makes `CHANGELOG.md` and the release notes. Needs `GITHUB_TOKEN` for PR and user links. Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`: version check, `git-cliff-action`, `ncipollo/release-action`. Workflow fails when tag and `package.json` version differ.
 - Release: follow `reference/release.md`.
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` does not allow; mark one about behaviour an outside dependency forces with `allow-comment: dependency`.
