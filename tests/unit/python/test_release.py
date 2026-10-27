@@ -506,18 +506,24 @@ class ReleasePlanExcludeTests(PlanRepo):
             ("unreadable blob", {"files": {LOST: "x"}, "entries": {LOST: sha("")}, "lose": True}, [ONE, TWO, MANIFEST]),
             ("hook copy", {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")}}, [ONE, TWO, MANIFEST, GATE]),
             ("hook edited after the upgrade", {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
-                                               "then": {"files": {GATE: "g2"}, "entries": {GATE: sha("g2")}}}, [ONE, TWO]),
-            ("copy edited after the upgrade", {"then": {"files": {ONE: "3"}}}, [TWO]),
-            ("second upgrade", {"then": {"version": "3.0.0-rc.3", "files": {ONE: "3"}}}, [ONE, TWO, MANIFEST]),
+                                               "then": [{"files": {GATE: "g2"}, "entries": {GATE: sha("g2")}}]}, [ONE, TWO]),
+            ("copy edited after the upgrade", {"then": [{"files": {ONE: "3"}}]}, [TWO]),
+            ("second upgrade", {"then": [{"version": "3.0.0-rc.3", "files": {ONE: "3"}}]}, [ONE, TWO, MANIFEST]),
+            ("hook edited with the MANIFEST deleted, then re-added",
+             {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
+              "then": [{"version": None, "files": {GATE: "g2"}}, {"entries": {GATE: sha("g2")}}]}, [ONE, TWO]),
+            ("hook edited as the deleted MANIFEST comes back",
+             {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
+              "then": [{"version": None}, {"files": {GATE: "g2"}, "entries": {GATE: sha("g2")}}]}, [ONE, TWO]),
         ]
         start = self.git("rev-parse", "HEAD")
         for label, change, expected in cases:
             with self.subTest(label):
                 self.git("reset", "-q", "--hard", start)
-                gitlink, lose, then = change.pop("gitlink", False), change.pop("lose", False), change.pop("then", None)
+                gitlink, lose, then = change.pop("gitlink", False), change.pop("lose", False), change.pop("then", [])
                 head = self.upgrade(**change)
-                if then:
-                    head = self.state(then.pop("version", "3.0.0-rc.2"), **then)
+                for step in then:
+                    head = self.state(step.pop("version", "3.0.0-rc.2"), step.pop("files", {}), **step)
                 if gitlink:
                     (self.repo / SUB).mkdir(exist_ok=True)
                     self.git("update-index", "--add", "--cacheinfo", f"160000,{start},{SUB}")
