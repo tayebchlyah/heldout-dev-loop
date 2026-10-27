@@ -23,6 +23,6 @@ User asked for release notes: `/release-notes <version>` or `/release-notes --al
 5. Do not commit.
 6. Published release: when `gh release view <tag>` finds one, run `release-notes --tag <tag> --output <file>`, show the new body, and ask the user to confirm. Only after the user confirms: `gh release edit <tag> --notes-file <file>`.
 
-`--all`: rewrite every section of `CHANGELOG.md` by steps 2 to 4, each heading and date kept. Then show every new body of a published release and ask to confirm once for all of them; after the user confirms, `gh release edit` each.
+`--all`: run steps 1 to 5, with steps 2 to 4 for every section of `CHANGELOG.md`, each heading and date kept: `cliff` mode changes nothing, and nothing is committed. Instead of step 6, show every new body of a published release and ask to confirm once for all of them; after the user confirms, `gh release edit` each.
 
 Report: the sections written, the releases edited.
