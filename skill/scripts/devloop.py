@@ -40,6 +40,8 @@
                                                       append one row to the decision log
   devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
   devloop.py pause --clear                            write or delete the pause note of the worktree
+  devloop.py notes-migrate [--repo PATH] [--apply [--plan HASH]]
+                                                      move the notes to the feature folder layout, rewrite the links
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -341,6 +343,12 @@ def main() -> int:
     pause.add_argument("--run", action="append", dest="runs")
     pause.add_argument("--repo", default=".")
     pause.set_defaults(run=("autonomy", "cmd_pause"))
+
+    migrate = commands.add_parser("notes-migrate")
+    migrate.add_argument("--repo", default=".")
+    migrate.add_argument("--apply", action="store_true")
+    migrate.add_argument("--plan")
+    migrate.set_defaults(run=("notes_migrate.apply", "cmd_notes_migrate"))
 
     args = parser.parse_args()
     if args.command == "capture":
