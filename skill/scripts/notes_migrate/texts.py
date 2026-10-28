@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import devloop
 from notes_migrate.links import code_ranges, find_links, resolve, rewrite
-from notes_migrate.plan import Blocked, Move, plan_moves, scan
+from notes_migrate.plan import RENAMES, Blocked, Move, plan_moves, scan
 from release import project_note
 
 
@@ -42,13 +42,13 @@ class Plan(NamedTuple):
     plan_hash: str
 
 
-RUN_PATH = re.compile(r"(?<![\w-])security-audit/run-(\d+)/")
+OLD_AUDITS = {new: old for old, new in RENAMES.items()}[devloop.AUDITS]
+RUN_PATH = re.compile(rf"(?<![\w-]){re.escape(OLD_AUDITS)}/run-(\d+)/")
 PROJECT_IDS = (
     (re.compile(r"^(- \d{4}-\d{2}-\d{2} )run-(\d+)( at )", re.M), r"\1Run \2\3"),
     (re.compile(r"(\(security, [\w-]+, )run-(\d+)\)"), r"\1Run \2)"),
     (re.compile(r"^(### Release audit )run-(\d+),", re.M), r"\1Run \2,"),
 )
-RUN_FOLDER = re.compile(r"security-audit/run-\d+/")
 
 
 def _sha(text: str) -> str:
@@ -83,7 +83,7 @@ def _frontmatter(text: str, keys: dict[str, str]) -> str:
 
 def _audit_ids(text: str, project: bool, keep: list[tuple[int, int]]) -> tuple[str, int]:
     count = 0
-    for pattern, repl in (*(PROJECT_IDS if project else ()), (RUN_PATH, r"Security Audit/Run \1/")):
+    for pattern, repl in (*(PROJECT_IDS if project else ()), (RUN_PATH, rf"{devloop.AUDITS}/Run \1/")):
         code = code_ranges(text) + keep
 
         def one(match: re.Match) -> str:
@@ -171,7 +171,7 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
             continue
         new_path = moved.get(note, note)
         text, ids = old, 0
-        if not RUN_FOLDER.match(rel):
+        if not RUN_PATH.match(rel):
             targets = [(link.start, link.end - 2 - len(link.text or "")) if link.kind == "wiki"
                        else (link.start + 1 + len(link.text), link.end)
                        for link in find_links(old) if resolve(link, note, notes, vault, files) in moved]
