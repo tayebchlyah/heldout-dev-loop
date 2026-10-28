@@ -86,7 +86,6 @@ def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) ->
 
 
 def check_notes_layout(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
-    """Nothing when the notes path does not resolve: check_notes already reports that."""
     try:
         notes = resolve(repo, os.environ if env is None else env, home)
     except NotesPathError:
