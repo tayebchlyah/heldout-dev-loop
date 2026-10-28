@@ -63,7 +63,6 @@ def _names_spec(value: str, spec: Path) -> bool:
 
 
 def _plan_hits(plan: Path, specs: list[tuple[str, Path]]) -> list[Path]:
-    """The specs a plan names by the first D10 rule that names any: `spec:`, then `feature:`, then the stem."""
     fields = devloop.frontmatter(plan)
     rules = (
         lambda slug, spec: bool(fields.get("spec")) and _names_spec(fields["spec"], spec),
@@ -90,7 +89,7 @@ class _Planner:
             self.blocked.append(item)
 
     def exact(self, path: Path) -> bool:
-        """`path` exists with each part by its exact name: the macOS file system ignores case."""
+        # allow-comment: dependency: the macOS file system ignores case, so each part is checked by its exact name.
         here = self.notes
         for part in path.relative_to(self.notes).parts:
             try:
@@ -103,14 +102,12 @@ class _Planner:
         return True
 
     def now(self, path: Path) -> Path:
-        """Where the final `path` is before the run, through the folder renames planned so far."""
         for src, dst in reversed(self.renames):
             if path == dst or dst in path.parents:
                 return src / path.relative_to(dst)
         return path
 
     def case_clash(self, path: Path) -> Path | None:
-        """The first folder of `path` that exists only under a name of another case: a move would land in it."""
         here = self.notes
         for part in path.relative_to(self.notes).parts:
             try:
@@ -132,7 +129,6 @@ class _Planner:
             self.moves.append(Move(src, dst, role, slug))
 
     def kids(self, folder: Path, top: str | None) -> list[tuple[Path, str]]:
-        """Each entry of `folder`, folders first, with its path relative to the renamed folder (D11)."""
         out = []
         for kid in sorted(folder.iterdir(), key=lambda p: (not p.is_dir(), p.name)):
             name = kid.name
@@ -152,7 +148,6 @@ class _Planner:
         return out
 
     def place(self, src: Path, dst: Path, board: bool, top: str | None) -> None:
-        """Move `src` to `dst`; into an existing `dst` folder entry by entry, the newer note winning in the board."""
         here = self.now(dst)
         if not self.exact(here):
             if not src.is_dir():
@@ -177,7 +172,6 @@ class _Planner:
                 self.place(kid, dst / name, board, None)
 
     def features(self, live: list[str], vault: Path | None, files: dict[str, Path]) -> list[str]:
-        """The D10 moves of `specs/`, `plans/` and `framing/`; returns the ambiguous notes."""
         notes = self.notes
 
         def md(name: str) -> list[Path]:
@@ -236,7 +230,6 @@ class _Planner:
         return ambiguous
 
     def linked_files(self, live: list[str], vault: Path | None, files: dict[str, Path]) -> None:
-        """Each other file of the three folders goes to the one feature folder whose moved notes link to it."""
         homes: dict[Path, set[tuple[Path, str | None]]] = {}
         for move in [m for m in self.moves if m.role in ("spec", "plan", "framing")]:
             for link in find_links(move.src.read_text(encoding="utf-8", errors="replace")):
@@ -332,7 +325,6 @@ def plan_moves(repo: Path, notes: Path, kit_version: str,
 
 
 def _worktree_guards(planner: _Planner, repo: Path, notes: Path, kit_version: str) -> None:
-    """D13 `old-kit-worktree` and `open-ledger` (D6) over every worktree of the repo."""
     plans = Path(os.path.realpath(notes / "plans"))
     listing = devloop.git(repo, "worktree", "list", "--porcelain") or ""
     for line in listing.splitlines():
@@ -356,7 +348,6 @@ def _worktree_guards(planner: _Planner, repo: Path, notes: Path, kit_version: st
 
 
 def _gitignore_guard(planner: _Planner, notes: Path, present: list[str]) -> None:
-    """D14: an old folder the vault git repo ignores needs its new name ignored too."""
     top = devloop.git(notes, "rev-parse", "--show-toplevel")
     if not top:
         return
