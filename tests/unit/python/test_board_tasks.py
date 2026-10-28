@@ -104,6 +104,22 @@ class BoardTaskStateTests(RobustBoard):
         self.assertEqual(self.states("gadget"), ["doing", "doing", "todo"])
 
 
+    def test_stage_5_time_waits_for_the_ledger_of_a_planned_feature(self) -> None:
+        """D6: a feature with a plan and no ledger yet has no Stage 5 time; a Track S feature (no plan) has its first
+        run time."""
+        wt, plan = self.stage5("gadget", "Gadget Export", tasks=2)
+        self.ok(cwd=wt)
+        self.assertEqual(self.own_note("gadget")["stage"], 5)
+        self.assertNotIn("5", self.own_note("gadget")["stage_times"])
+        self.ledger(wt, plan)
+        self.ok(cwd=wt)
+        self.assertIn("5", self.own_note("gadget")["stage_times"])
+        quick = self.worktree("quick", prefix="fix")
+        self.ok(cwd=quick)
+        self.assertEqual(self.own_note("quick")["stage"], 5)
+        self.assertIn("5", self.own_note("quick")["stage_times"])
+
+
 class HookFilterTests(RobustnessHookFixture, unittest.TestCase):
     """D11: `board.sh post-tool` filter, in the oracle hook sandbox (a fake devloop.py logs each call)."""
 
