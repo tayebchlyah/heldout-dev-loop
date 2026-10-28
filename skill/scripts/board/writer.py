@@ -21,7 +21,6 @@ from . import sources, state, store
 TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
                 5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
-FEATURES = "features"
 SHIPPED_KEPT = 5
 TEMPLATE = Path(__file__).with_name("board-note.md")
 
@@ -238,6 +237,13 @@ def remember(entry: dict, fields: dict) -> None:
     entry["fields_digest"] = state.digest(fields)
 
 
+def evicted(dl: ModuleType, notes: Path) -> bool:
+    """D5: an iCloud placeholder of a spec, in a feature folder or in `specs/` while it exists."""
+    if any((notes / dl.FEATURES).glob("*/.Spec.md.icloud")):
+        return True
+    return "specs" in dl.old_layout(notes) and any((notes / "specs").glob(".*.icloud"))
+
+
 def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | None, hook_cwd: Path | None,
         hook_session: str | None, claim: str | None, hook_agent: str | None = None,
         hook_transcript: str | None = None) -> tuple[int, dict]:
@@ -254,14 +260,14 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     common = Path(dl.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     state_dir = common / "dev-loop"
     now = time.strftime(TIME, time.gmtime())
-    if any((notes / "specs").glob(".*.icloud")):  # D5: an evicted spec would drop claims and notes.
+    if evicted(dl, notes):  # D5: an evicted spec would drop claims and notes.
         payload["skipped"].append(skip("placeholder"))
         state.save_last_run(state_dir, now, payload["skipped"])
         return 0, payload
     specs = dict(dl.specs(notes))
     claim = claim.lower() if claim else None
     if claim and claim not in specs:
-        return 1, {"error": f"no spec for {claim} in {notes / 'specs'}"}
+        return 1, {"error": f"no spec for {claim} in {notes / dl.FEATURES}"}
 
     trees = worktrees(dl, repo)
     notes_real = notes.resolve()
@@ -309,17 +315,17 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             return pass_specs, pass_trees, pass_claims
 
         specs, trees, claims = refresh(True)
-        folder = notes_real / "dev-loop-board"
+        folder = notes_real / dl.BOARD
         if folder.is_symlink():
             payload["skipped"].append(skip("link"))
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         folder.mkdir(exist_ok=True)
-        if (folder / FEATURES).is_symlink():
+        if (folder / dl.BOARD_FEATURES).is_symlink():
             payload["skipped"].append(skip("link"))
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
-        (folder / FEATURES).mkdir(exist_ok=True)
+        (folder / dl.BOARD_FEATURES).mkdir(exist_ok=True)
         events = [*drain(queue),
                   *([(event, hook_cwd.resolve(), hook_session, hook_agent, hook_transcript)] if event and hook_cwd else [])]
         claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
@@ -327,7 +333,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                       state.load(state_dir), claude)
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
-            if any((notes / "specs").glob(".*.icloud")):
+            if evicted(dl, notes):
                 # D5: a spec evicted during this write would drop claims and notes in a catch-up pass. The queue
                 # waits for a run that sees every spec.
                 payload["skipped"].append(skip("placeholder"))
@@ -427,7 +433,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     board, machine, project = ctx.folder, ctx.machine, ctx.project
-    folder = board / FEATURES
+    folder = board / ctx.dl.BOARD_FEATURES
     tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
 
     def scope(cwd: Path) -> tuple[str | None, list[str]]:

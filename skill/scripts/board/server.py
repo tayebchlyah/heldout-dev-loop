@@ -32,7 +32,8 @@ else:  # Run as a script by `start`: the board folder is sys.path[0].
 
 HERE = Path(__file__).resolve().parent
 NAME = "dev-loop board"
-FOLDER = "dev-loop-board"
+FOLDERS = ("Dev Loop Board", "dev-loop-board")
+SUBFOLDERS = ("Features", "features")
 MAX_BYTES = 65536
 MAX_NOTES = 500
 WALK_EVERY = 60
@@ -52,16 +53,24 @@ class Index:
         for root in self.roots:
             for folder, dirs, _ in os.walk(root, followlinks=False):
                 dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(folder, d))]
-                if os.path.basename(folder) == FOLDER:
+                if os.path.basename(folder) in FOLDERS:
                     found.append(folder)
         return found
 
     def notes(self, folders: list[str]) -> list[Path]:
         found: list[Path] = []
+        seen: set[tuple[int, int]] = set()
         for board in folders:
-            for folder in (board, os.path.join(board, "features")):
+            for folder in (board, *(os.path.join(board, sub) for sub in SUBFOLDERS)):
                 if os.path.islink(folder):  # B2: a cached folder swapped for a link is not listed.
                     continue
+                try:
+                    info = os.stat(folder)
+                except OSError:
+                    continue
+                if (info.st_dev, info.st_ino) in seen:  # One folder under two spellings (a case-folding disk).
+                    continue
+                seen.add((info.st_dev, info.st_ino))
                 try:
                     names = sorted(os.listdir(folder))
                 except OSError:

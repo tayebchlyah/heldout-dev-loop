@@ -172,8 +172,7 @@ class Board(unittest.TestCase):
         self.root = Path(tmp.name).resolve()
         self.vault = self.root / "vault"
         self.notes = self.vault / "Projects" / "Acme Widgets"
-        (self.notes / "specs").mkdir(parents=True)
-        (self.notes / "plans").mkdir()
+        (self.notes / "Features").mkdir(parents=True)
         self.origin = self.root / "remotes" / f"{PROJECT}.git"
         self.origin.parent.mkdir()
         git(self.root, "init", "-q", "--bare", str(self.origin))
@@ -249,7 +248,7 @@ class Board(unittest.TestCase):
 
     def spec(self, slug: str, title: str, review: str = "approved", track: str = "M",
              assumptions: tuple[str, ...] = ("Widgets are blue.",), shipped: str = "") -> Path:
-        path = self.notes / "specs" / f"20261001 {title}.md"
+        path = self.notes / "Features" / title / "Spec.md"
         put(path, f"---\ntype: spec\nreview_status: {review}\nfeature: {slug}\ntrack: {track}\nshipped: {shipped}\n---\n\n"
                   f"# {title}\n\n## Goal\n\n{title} for the widget shop.\n\n## Assumptions\n\n"
                   + "".join(f"- {a}\n" for a in assumptions))
@@ -268,13 +267,13 @@ class Board(unittest.TestCase):
         put(wt / "tests" / "acceptance" / f"test_{slug}.py", "def test_flow():\n    pass\n")
 
     def plan(self, spec: Path, title: str, tasks: int) -> Path:
-        path = self.notes / "plans" / f"20261002 {title} Plan.md"
-        put(path, f"---\nspec: {spec.name}\n---\n\n# Plan\n\n" + "".join(f"### Task {n}: Step {n}\n\n" for n in range(1, tasks + 1)))
+        path = spec.parent / "Plan.md"
+        put(path, f"---\nspec: Spec.md\n---\n\n# Plan\n\n" + "".join(f"### Task {n}: Step {n}\n\n" for n in range(1, tasks + 1)))
         return path
 
     def ledger(self, wt: Path, plan: Path, *lines: str) -> None:
-        put(wt / ".superpowers" / "sdd" / plan.stem / "plan-path", f"{plan}\n")
-        put(wt / ".superpowers" / "sdd" / plan.stem / "progress.md", "# Ledger\n" + "".join(f"{line}\n" for line in lines))
+        put(wt / ".superpowers" / "sdd" / plan.parent.name / "plan-path", f"{plan}\n")
+        put(wt / ".superpowers" / "sdd" / plan.parent.name / "progress.md", "# Ledger\n" + "".join(f"{line}\n" for line in lines))
 
     def stage5(self, slug: str, title: str, tasks: int = 3, repo: Path | None = None) -> tuple[Path, Path]:
         spec = self.spec(slug, title)
@@ -292,18 +291,18 @@ class Board(unittest.TestCase):
 
     @property
     def board_dir(self) -> Path:
-        return self.notes / "dev-loop-board"
+        return self.notes / "Dev Loop Board"
 
     @property
     def claims(self) -> Path:
         return self.repo / ".git" / "dev-loop" / "board-claims.json"
 
     def own_notes(self, machine_id: str = MACHINE["id"]) -> dict[str, Path]:
-        """Status notes of machine_id in `dev-loop-board/features/` and `dev-loop-board/` (Board Robustness D4)."""
+        """Status notes of machine_id in `Dev Loop Board/Features/` and `Dev Loop Board/` (Board Robustness D4)."""
         found = {}
         if not self.board_dir.is_dir():
             return found
-        for path in [*sorted(self.board_dir.glob("features/*.md")), *sorted(self.board_dir.glob("*.md"))]:
+        for path in [*sorted(self.board_dir.glob("Features/*.md")), *sorted(self.board_dir.glob("*.md"))]:
             if path.name == BOARD_NOTE or path.name.startswith(".") or path.is_symlink():
                 continue
             fields = read_note(path)
@@ -453,7 +452,7 @@ class RobustBoard(Board):
 
     @property
     def features_dir(self) -> Path:
-        return self.board_dir / "features"
+        return self.board_dir / "Features"
 
     @property
     def state_file(self) -> Path:
@@ -468,7 +467,7 @@ class RobustBoard(Board):
     def own_note(self, slug: str) -> dict:
         path = self.own_path(slug)
         listing = sorted(str(p.relative_to(self.board_dir)) for p in self.board_dir.rglob("*")) if self.board_dir.exists() else []
-        self.assertTrue(path.is_file(), f"no note at features/{path.name}: {listing}")
+        self.assertTrue(path.is_file(), f"no note at Features/{path.name}: {listing}")
         return read_note(path)
 
     def state(self) -> dict:
@@ -476,14 +475,14 @@ class RobustBoard(Board):
         return json.loads(self.state_file.read_text())
 
     def old_note(self, slug: str, **over) -> dict:
-        """An own note in the 2.1 form: own name, own machine_id, in `dev-loop-board/`."""
+        """An own note in the 2.1 form: own name, own machine_id, in `Dev Loop Board/`."""
         fields = status_note(feature=slug, machine_id=MACHINE["id"], owner=MACHINE["owner"], machine=MACHINE["machine"],
                              **over)
         put(self.board_dir / self.own_name(slug), note_text(fields))
         return fields
 
     def sdd(self, wt: Path, plan: Path) -> Path:
-        return wt / ".superpowers" / "sdd" / plan.stem
+        return wt / ".superpowers" / "sdd" / plan.parent.name
 
     def native(self, session: str, *items: tuple[str, str]) -> None:
         folder = self.claude_dir / "tasks" / session
