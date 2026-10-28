@@ -399,14 +399,14 @@ class AuditFlow(MigrateCase):
                             ("REPORT.md", REPORT), ("FINDINGS-DETAIL.md", "# Findings\n"),
                             ("NEEDS-VALIDATION.md", "# Needs validation\n")):
             put(run / name, text_)
-        code, recorded = r.devloop("release-record", "--run", str(run))
+        code, recorded = r.devloop("release-record", "--run", str(run), "--base", r.A)
         self.assertEqual(code, 0, recorded)
         text = r.note_path().read_text()
         bullets = [line for line in section(text, "## Release audits") if line.startswith("- ")]
         today = bullets[-1][2:12]
         self.assertIn(today, todays(), bullets)
-        self.assertEqual(bullets[-1], record_line(4, r.B, profile="standard", date=today, confirmed=1, needs=2,
-                                                  hardening=3))
+        self.assertEqual(bullets[-1], record_line(4, r.B, scope=f"{r.A}..{r.B}", profile="standard", date=today,
+                                                  confirmed=1, needs=2, hardening=3))
         deferred = section(text, "## Deferred")
         self.assertEqual(len([line for line in deferred if "(security, confirmed, Run 4): " in line]), 1, deferred)
         self.assertEqual(len([line for line in deferred if "(security, needs-validation, Run 4): " in line]), 2,
