@@ -214,12 +214,12 @@ class SkillStackContractTests(unittest.TestCase):
     def test_framing_and_spec_text(self) -> None:
         cases = [
             (stage_text(1), [
-                "Change or answer", "`$NOTES/answers/<YYYYMMDD> <title>.md`", "`kind: investigation|performance|question`",
-                "two of these four signals", "`$NOTES/maps/<effort>/handoff.md`", "chart the map from",
-                "references/maps.md", "`$NOTES/maps/*/map.md`",
+                "Change or answer", "`$NOTES/Answers/<YYYYMMDD> <title>.md`", "`kind: investigation|performance|question`",
+                "two of these four signals", "`$NOTES/Maps/<Effort Title>/handoff.md`", "chart the map from",
+                "references/maps.md", "`$NOTES/Maps/*/map.md`",
                 "Change or answer, first", "no cap check, no grilling", "Done when the answer note is written",
-                "`<effort>`: lower case words joined by `-`", "docs/agents/issue-tracker.md",
-                "`$NOTES/framing/<YYYYMMDD> <slug>.md`",
+                "docs/agents/issue-tracker.md",
+                "`$NOTES/Features/<YYYYMMDD> <Title>/Framing.md`",
             ]),
             (stage_text(2), ["`wc -w`", "1,500 words", "map decisions"]),
             (stage_text(6), [
@@ -231,7 +231,7 @@ class SkillStackContractTests(unittest.TestCase):
                 "the framing note (SKILL.md Stage 1)",
             ]),
             ((REFERENCES / "maps.md").read_text(), [
-                "Wayfinding operations", "Destination (the map's first section)", "is dropped", "maps/<effort>/map.md", "Blocked by:", "docs/agents/issue-tracker.md", "notes_path.py",
+                "Wayfinding operations", "Destination (the map's first section)", "is dropped", "Maps/<Effort Title>/map.md", "Blocked by:", "docs/agents/issue-tracker.md", "notes_path.py",
             ]),
             ((REFERENCES / "benchmark.md").read_text(), ["sysctl -n hw.ncpu", "performance check", "the Stage 1 answer line added"]),
             (self.claude, ["`mattpocock-skills:wayfinder` SKILL.md", "plugins/cache/"]),
@@ -368,7 +368,7 @@ class TracksContractTests(unittest.TestCase):
 
     def test_stage_4_smart_zone_rule(self) -> None:
         stage = stage_text(4)
-        for value in ["smart zone", "names each file", "no ruling from another task", "split", "`spec: <spec file name>`"]:
+        for value in ["smart zone", "names each file", "no ruling from another task", "split", "`spec: Spec.md`"]:
             with self.subTest(value=value):
                 self.assertIn(value, stage)
 

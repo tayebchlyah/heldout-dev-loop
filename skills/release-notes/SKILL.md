@@ -10,7 +10,7 @@ User asked for release notes: `/release-notes <version>` or `/release-notes --al
 
 1. Mode: `dev-loop.json` `release_notes`, no key: `cliff`. `cliff`: say the mode is `cliff`, change nothing, stop.
 2. Range: from the previous final tag (`vX.Y.Z`, before `<version>`) to `<tag>`, or to `HEAD` while the tag does not exist. No previous final tag: from the first commit.
-3. Sources for the range: the commit subjects (`git log --format=%s <from>..<to>`); the PRs they name (`gh pr view <n> --json title,body,closingIssuesReferences`); their issues (`gh issue view <n>`); the specs in `$NOTES/specs/` whose frontmatter `pr:` is one of these PRs.
+3. Sources for the range: the commit subjects (`git log --format=%s <from>..<to>`); the PRs they name (`gh pr view <n> --json title,body,closingIssuesReferences`); their issues (`gh issue view <n>`); the specs in `$NOTES/Features/*/Spec.md` whose frontmatter `pr:` is one of these PRs.
 4. Write the section in `CHANGELOG.md` (working tree, at the place of its version, newest first). Form:
    - Heading `## [<version>] - <YYYY-MM-DD>`: the version without `v`, the release date (today for a new section).
    - Subsections in this order, each only when it has an item:

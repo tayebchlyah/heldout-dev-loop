@@ -233,3 +233,59 @@ class FeatureWorktreeContractTests(unittest.TestCase):
         self.assertIn("**Shaping**:", glossary)
         self.assertIn("**Delivery**:", glossary)
 
+
+
+class NotesLayoutTextTests(unittest.TestCase):
+    OLD_PATHS = (
+        "$NOTES/specs/",
+        "$NOTES/plans/",
+        "$NOTES/framing/",
+        "$NOTES/answers/",
+        "$NOTES/maps/",
+        "<notes>/plans/",
+        "<notes>/maps/",
+        "security-audit/run-",
+        ".superpowers/sdd/<plan basename>",
+    )
+
+    def test_no_old_notes_paths(self) -> None:
+        from support import PACKAGE_ROOT
+
+        skipped = (PACKAGE_ROOT / "skill/scripts/notes_migrate", PACKAGE_ROOT / "skill/scripts/devloop.py")
+        for folder in ("skill", "skills", "claude", "codex"):
+            for path in (PACKAGE_ROOT / folder).rglob("*"):
+                if not path.is_file() or "__pycache__" in path.parts:
+                    continue
+                if path in skipped or any(parent in skipped for parent in path.parents):
+                    continue
+                try:
+                    text = path.read_text()
+                except UnicodeDecodeError:
+                    continue
+                for old in self.OLD_PATHS:
+                    with self.subTest(path=str(path.relative_to(PACKAGE_ROOT)), old=old):
+                        self.assertNotIn(old, text)
+
+    def test_skill_names_new_layout(self) -> None:
+        text = SKILL.read_text()
+        for name in (
+            "Features/<YYYYMMDD> <Title>/",
+            "Framing.md",
+            "Spec.md",
+            "Plan.md",
+            "Answers/",
+            "Maps/<Effort Title>/",
+            "notes-migrate",
+        ):
+            with self.subTest(name=name):
+                self.assertIn(name, text)
+
+    def test_stage_0_migration_text(self) -> None:
+        from support import PACKAGE_ROOT
+
+        text = SKILL.read_text()
+        stage_0 = text[text.index("## 0 Bootstrap"):text.index("## 1 ")]
+        self.assertIn("dry run", stage_0)
+        self.assertIn("confirm", stage_0)
+        kit = (PACKAGE_ROOT / "reference/kit.md").read_text()
+        self.assertIn("notes-migrate", kit[kit.index("## Upgrade"):])
