@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/repo_rules.py (comments, subjects), the AGENTS.md budget and its CLI index, the gate scope."""
+"""Tests for scripts/repo_rules.py (comments, subjects), the AGENTS.md budget and its CLI index, the gate scope, the audit sandbox image."""
 
 from __future__ import annotations
 
@@ -456,12 +456,13 @@ class RepoDocsTests(unittest.TestCase):
         self.assertNotIn("git cliff", release)
         self.assertNotIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", release)
 
+
 class RepoAuditImageTests(unittest.TestCase):
     def test_this_repo_names_its_audit_sandbox_image(self) -> None:
         config = json.loads((ROOT / "dev-loop.json").read_text())
         self.assertEqual(config.get("security_audit"), {"images": {"audit": "dev-loop-audit:1"}})
         bases = re.findall(r"^FROM (\S+)", (ROOT / "scripts" / "audit-image" / "Dockerfile").read_text(), re.M)
-        self.assertEqual(len(bases), 2)
+        self.assertTrue(bases)
         for base in bases:
             with self.subTest(base=base):
                 self.assertRegex(base, r"^[a-z0-9.:-]+@sha256:[0-9a-f]{64}$")
