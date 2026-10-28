@@ -92,7 +92,7 @@ def slug_from_title(filename: str) -> str:
 
 
 def frontmatter(path: Path) -> dict[str, str]:
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
     fields: dict[str, str] = {}

@@ -152,7 +152,8 @@ class MovePlanTests(unittest.TestCase):
             write(self.notes / rel, text)
 
     def tree(self) -> dict[str, bytes]:
-        return {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*")) if p.is_file() and not p.is_symlink()}
+        return {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*"))
+                if p.is_file() and not p.is_symlink() and ".git" not in p.parts}
 
     def plan(self, kit: str = "2.0.0") -> tuple[list[tuple], list[tuple], list[str]]:
         before = self.tree()
@@ -262,9 +263,25 @@ class MovePlanTests(unittest.TestCase):
         self.assertEqual(self.plan(), ([
             ("dev-loop-board/features/a.md", "Dev Loop Board/Features/a.md", "board-merge", None),
             ("dev-loop-board/features/d.md", "Dev Loop Board/Features/d.md", "board-merge", None),
-            ("Dev Loop Board/Features/e.md", "dev-loop-board/features/e.md", "board-merge", None),
+            ("dev-loop-board/features/e.md", "dev-loop-board/features/e.md", "board-merge", None),
             ("dev-loop-board/c.md", "Dev Loop Board/Features/c.md", "board-merge", None),
         ], [], []))
+
+    def test_board_merge_inside_rename(self) -> None:
+        status = "---\ntype: dev-loop-status\n---\n"
+        renames = [
+            ("dev-loop-board", "Dev Loop Board", "folder", None),
+            ("dev-loop-board/features", "Dev Loop Board/Features", "folder", None),
+        ]
+        rows = [(100, 200, ("dev-loop-board/c.md", "dev-loop-board/c.md")),
+                (200, 100, ("dev-loop-board/c.md", "Dev Loop Board/Features/c.md"))]
+        for root_time, features_time, pick in rows:
+            with self.subTest(root_time=root_time):
+                shutil.rmtree(self.notes)
+                self.put({"dev-loop-board/c.md": status, "dev-loop-board/features/c.md": status})
+                os.utime(self.notes / "dev-loop-board/c.md", (root_time, root_time))
+                os.utime(self.notes / "dev-loop-board/features/c.md", (features_time, features_time))
+                self.assertEqual(self.plan(), ([*renames, (*pick, "board-merge", None)], [], []))
 
     def test_target_exists(self) -> None:
         self.put({**DEMO, "Features/20261019 Demo Work/Spec.md": "x",
@@ -292,29 +309,40 @@ class MovePlanTests(unittest.TestCase):
                 self.assertEqual(self.reasons(), [(rel, "link")])
 
     def test_placeholder_blocks(self) -> None:
-        self.put({**DEMO, "specs/.20261019 Gone.md.icloud": "", "Project Note.md": "x"})
+        self.put({**DEMO, "specs/.20261019 Gone.md.icloud": "", "Project Note.md": "x", "specs/20261023 Evicted.md": ""})
+        (self.notes / "plans/20261022 Latin.md").write_bytes(b"caf\xe9 [[x]]\n")
         real = os.stat
+        reads = []
 
         def stat(path, *args, **kwargs):
             found = real(path, *args, **kwargs)
-            if str(path).endswith("Project Note.md"):
+            if str(path).endswith(("Project Note.md", "Evicted.md")):
                 return SimpleNamespace(st_flags=0x40000000, st_mode=found.st_mode, st_mtime=found.st_mtime)
             return found
 
-        with mock.patch("os.stat", stat):
-            blocked = self.reasons()
+        def read_text(path, *args, **kwargs):
+            reads.append(path.name)
+            return Path.read_bytes(path).decode(*args, **kwargs)
+
+        with mock.patch("os.stat", stat), mock.patch.object(Path, "read_text", read_text):
+            moves, blocked, _ = self.plan()
         self.assertEqual(sorted(blocked), [("Project Note.md", "placeholder"),
-                                           ("specs/.20261019 Gone.md.icloud", "placeholder")])
+                                           ("specs/.20261019 Gone.md.icloud", "placeholder"),
+                                           ("specs/20261023 Evicted.md", "placeholder")])
+        self.assertNotIn("20261023 Evicted.md", reads)
+        self.assertIn(("plans/20261022 Latin.md", "Features/20261022 Latin/Plan.md", "plan", "latin"), moves)
 
     def test_old_kit_worktree(self) -> None:
         self.put(DEMO)
-        rows = [("1.9.0", True), ("2.0.0-rc.1", True), ("2.0.0", False), ("2.1.0", False), (None, False)]
-        for version, blocked in rows:
-            with self.subTest(version=version):
-                other = self.tmp / f"wt-{version}"
-                git_in(self.repo, "worktree", "add", "-q", str(other), "-b", f"feat/{version}")
-                if version:
-                    write(other / ".dev-loop/MANIFEST.json", json.dumps({"version": version}))
+        version = lambda v: json.dumps({"version": v})
+        rows = [(version("1.9.0"), True), (version("2.0.0-rc.1"), True), (version("2.0.0"), False),
+                (version("2.1.0"), False), (None, False), ("[1]", False), ('"1.0.0"', False)]
+        for n, (manifest, blocked) in enumerate(rows):
+            with self.subTest(manifest=manifest):
+                other = self.tmp / f"wt-{n}"
+                git_in(self.repo, "worktree", "add", "-q", str(other), "-b", f"feat/{n}")
+                if manifest:
+                    write(other / ".dev-loop/MANIFEST.json", manifest)
                 expected = [(str(other), "old-kit-worktree")] if blocked else []
                 self.assertEqual(self.reasons(), expected)
                 git_in(self.repo, "worktree", "remove", "--force", str(other))
@@ -357,11 +385,14 @@ class MovePlanTests(unittest.TestCase):
             "specs/No Date.md": "x",
             "plans/20261013 Orphan.md": "x",
             "plans/20261013 Orphan Plan.md": "x",
+            "specs/20261022 Demo Work.md": "x",
+            "Features/20261022 demo work/Notes.md": "x",
         })
         self.assertEqual(sorted(self.reasons()), [
             ("Features/20261013 Orphan/Plan.md", "collision"),
             ("Features/20261020 A#B", "bad-name"),
             ("Features/20261021 C[1]", "bad-name"),
+            ("Features/20261022 Demo Work", "collision"),
             ("specs/No Date.md", "no-date"),
         ])
 

@@ -17,8 +17,8 @@ from notes_migrate.links import _key, find_links, resolve
 class Move(NamedTuple):
     """`src` (a path before the run) goes to `dst` (its final path). A `folder` move carries its whole tree;
     a move listed after the move of a parent folder names its source by the path before that move.
-    `board-merge`: `src` wins over `dst`; when `src` is the note already in the new board folder, `dst`
-    (the old note) is removed, else `src` moves to `dst`, replacing an older note there."""
+    `board-merge`: `src` moves to `dst`, replacing an older note there; `dst == src`: the old note `src` is
+    removed, the newer note already at its target stays."""
 
     src: Path
     dst: Path
@@ -109,8 +109,24 @@ class _Planner:
                 return src / path.relative_to(dst)
         return path
 
+    def case_clash(self, path: Path) -> Path | None:
+        """The first folder of `path` that exists only under a name of another case: a move would land in it."""
+        here = self.notes
+        for part in path.relative_to(self.notes).parts:
+            try:
+                names = {_nfc(name) for name in os.listdir(here)}
+            except OSError:
+                return None
+            if _nfc(part) not in names:
+                return here / part if _nfc(part).lower() in {name.lower() for name in names} else None
+            here = here / part
+        return None
+
     def add(self, src: Path, dst: Path, role: str, slug: str | None) -> None:
-        if self.exact(self.now(dst)):
+        clash = self.case_clash(self.now(dst.parent))
+        if clash is not None:
+            self.block(clash, "collision")
+        elif self.exact(self.now(dst)):
             self.block(dst, "target-exists")
         else:
             self.moves.append(Move(src, dst, role, slug))
@@ -129,7 +145,7 @@ class _Planner:
                 name = f"Run {run[1]}"
             elif top == "dev-loop-board" and name == "features" and kid.is_dir():
                 name = devloop.BOARD_FEATURES
-            elif top == "dev-loop-board" and kid.suffix == ".md" and kid.is_file() \
+            elif top == "dev-loop-board" and kid.suffix == ".md" and kid.is_file() and not _placeholder(kid) \
                     and devloop.frontmatter(kid).get("type") == "dev-loop-status":
                 name = f"{devloop.BOARD_FEATURES}/{name}"
             out.append((kid, name))
@@ -149,7 +165,7 @@ class _Planner:
             kids = self.kids(src, top)
         elif board and src.is_file() and here.is_file():
             newer = src.stat().st_mtime > here.stat().st_mtime
-            self.moves.append(Move(src, dst, "board-merge", None) if newer else Move(dst, src, "board-merge", None))
+            self.moves.append(Move(src, dst if newer else src, "board-merge", None))
             return
         else:
             self.block(dst, "target-exists")
@@ -166,7 +182,9 @@ class _Planner:
 
         def md(name: str) -> list[Path]:
             folder = notes / name
-            return sorted(p for p in folder.iterdir() if p.suffix == ".md" and p.is_file()) if name in live else []
+            if name not in live:
+                return []
+            return sorted(p for p in folder.iterdir() if p.suffix == ".md" and p.is_file() and not _placeholder(p))
 
         specs = [(_slug(spec), spec) for spec in md("specs")]
         paired: dict[Path, list[tuple[str, Path]]] = {spec: [] for _, spec in specs}
@@ -216,7 +234,7 @@ class _Planner:
         """Each other file of the three folders goes to the one feature folder whose moved notes link to it."""
         homes: dict[Path, set[tuple[Path, str | None]]] = {}
         for move in [m for m in self.moves if m.role in ("spec", "plan", "framing")]:
-            for link in find_links(move.src.read_text()):
+            for link in find_links(move.src.read_text(encoding="utf-8", errors="replace")):
                 target = resolve(link, move.src, self.notes, vault, files)
                 if target is not None:
                     homes.setdefault(target, set()).add((move.dst.parent, move.slug))
@@ -293,9 +311,10 @@ def _worktree_guards(planner: _Planner, repo: Path, notes: Path, kit_version: st
             continue
         tree = Path(line.removeprefix("worktree "))
         try:
-            version = json.loads((tree / ".dev-loop" / "MANIFEST.json").read_text()).get("version")
+            manifest = json.loads((tree / ".dev-loop" / "MANIFEST.json").read_text())
         except (OSError, ValueError):
-            version = None
+            manifest = None
+        version = manifest.get("version") if isinstance(manifest, dict) else None
         if version is not None and version_key(version) < version_key(kit_version):
             planner.block(str(tree), "old-kit-worktree")
         for progress in sorted((tree / ".superpowers" / "sdd").glob("*/progress.md")):
