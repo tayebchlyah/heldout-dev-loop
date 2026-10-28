@@ -159,6 +159,10 @@ def ledger(top: Path, plan: Path) -> Path | None:
         if os.path.realpath(top / named) == want:
             progress = marker.parent / "progress.md"
             return progress if progress.is_file() else None
+    folder = top / ".superpowers" / "sdd" / plan.stem
+    if folder.is_dir() and not (folder / "plan-path").exists():
+        progress = folder / "progress.md"
+        return progress if progress.is_file() else None
     return None
 
 
