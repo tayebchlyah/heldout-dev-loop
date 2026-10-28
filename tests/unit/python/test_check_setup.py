@@ -232,9 +232,9 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         events = json.loads((self.repo / ".codex" / "hooks.json").read_text())["hooks"]
         for event, groups in events.items():
             for i, group in enumerate(groups):
-                for j in range(len(group["hooks"])):
+                for j, hook in enumerate(group["hooks"]):
                     key = f"{main}/.codex/hooks.json:{check_setup.snake_case(event)}:{i}:{j}"
-                    lines += [f'[hooks.state."{key}"]', 'trusted_hash = "sha256:test"']
+                    lines += [f'[hooks.state."{key}"]', f'trusted_hash = "{check_setup.codex_hook_hash(event, group, hook)}"']
         write(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         for name in check_setup.CODEX_SKILLS:
             write(self.home / ".agents" / "skills" / name / "SKILL.md", f"name: {name}\n")
@@ -336,6 +336,31 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
         self.assertNotIn("missing trusted Codex hook hash: session_start", result.stdout)
+
+    def test_codex_project_reports_a_hook_whose_stored_hash_differs_from_its_entry(self) -> None:
+        self.init()
+        self.trust_codex()
+        hooks_path = self.repo / ".codex" / "hooks.json"
+        hooks = json.loads(hooks_path.read_text())
+        group = hooks["hooks"]["Stop"][0]
+        group["hooks"][0]["timeout"] = group["hooks"][0].get("timeout", 600) + 1
+        write(hooks_path, json.dumps(hooks))
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
+        self.assertNotIn("missing trusted Codex hook hash: session_start", result.stdout)
+
+    def test_codex_hook_hash_format_is_pinned(self) -> None:
+        literal = (
+            '{"event_name":"pre_tool_use","hooks":[{"async":false,"command":"x.sh",'
+            '"statusMessage":"m","timeout":30,"type":"command"}],"matcher":"Bash"}'
+        )
+        group = {"matcher": "Bash", "hooks": []}
+        hook = {"type": "command", "command": "x.sh", "timeout": 30, "statusMessage": "m"}
+        self.assertEqual(
+            check_setup.codex_hook_hash("PreToolUse", group, hook),
+            "sha256:" + hashlib.sha256(literal.encode()).hexdigest(),
+        )
 
     def test_claude_project_needs_the_hook_events_and_denies(self) -> None:
         self.init("claude")
