@@ -26,7 +26,7 @@ FENCE = re.compile(r"(`{3,}|~{3,})")
 CODE = re.compile(r"(`+).+?\1")
 
 
-def _code_ranges(text: str) -> list[tuple[int, int]]:
+def code_ranges(text: str) -> list[tuple[int, int]]:
     ranges, fence, pos = [], "", 0
     for line in text.splitlines(keepends=True):
         mark = FENCE.match(line.lstrip("> \t"))
@@ -56,7 +56,7 @@ def _split_suffix(target: str) -> tuple[str, str]:
 
 def find_links(text: str) -> list[Link]:
     """Every wikilink and Markdown link of `text` outside code spans and fenced blocks, in text order."""
-    code = _code_ranges(text)
+    code = code_ranges(text)
     found = []
     for m in WIKI.finditer(text):
         if any(a <= m.start() < b for a, b in code):
@@ -77,14 +77,14 @@ def find_links(text: str) -> list[Link]:
     return sorted(found)
 
 
-def _key(rel: str) -> str:
+def key(rel: str) -> str:
     rel = unicodedata.normalize("NFC", rel).lower()
     return rel[:-3] if rel.endswith(".md") else rel
 
 
 def _lookup(path: Path, root: Path, files: dict[str, Path]) -> Path | None:
     try:
-        return files.get(_key(path.relative_to(root).as_posix()))
+        return files.get(key(path.relative_to(root).as_posix()))
     except ValueError:
         return None
 
@@ -94,10 +94,10 @@ def _locate(link: Link, note: Path, notes: Path, vault: Path | None, files: dict
     if link.kind == "md":
         dest = unquote(link.target)
         hit = _lookup(Path(os.path.normpath(note.parent / dest)), root, files)
-        return (hit, True) if hit else (files.get(_key(dest.lstrip("/"))), False)
+        return (hit, True) if hit else (files.get(key(dest.lstrip("/"))), False)
     if link.form == "relative":
         return _lookup(Path(os.path.normpath(note.parent / link.target)), root, files), True
-    want = _key(link.target)
+    want = key(link.target)
     if "/" in want:
         hits = [p for k, p in files.items() if k == want or k.endswith("/" + want)]
     else:
@@ -124,7 +124,7 @@ def _rewritten(text: str, link: Link, note_old: Path, note_new: Path, moved: dic
         path = Path(os.path.relpath(new_target, note_new.parent)).as_posix()
     elif link.kind == "md":
         path = new_target.relative_to(vault or notes).as_posix()
-    elif vault and _key(link.target) == _key(target.relative_to(vault).as_posix()):
+    elif vault and key(link.target) == key(target.relative_to(vault).as_posix()):
         path = new_target.relative_to(vault).as_posix()
     else:
         path = new_target.relative_to(notes).as_posix()
