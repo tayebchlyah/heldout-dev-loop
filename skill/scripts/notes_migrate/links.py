@@ -22,18 +22,21 @@ class Link(NamedTuple):
 
 WIKI = re.compile(r"!?\[\[([^\]]+?)\]\]")
 MD = re.compile(r'\[([^\]]*)\]\((?:<([^>]*)>|([^)\s]+))(\s+"[^"]*")?\)')
-FENCE = re.compile(r"[ \t]*(```|~~~)")
+FENCE = re.compile(r"(`{3,}|~{3,})")
 CODE = re.compile(r"(`+).+?\1")
 
 
 def _code_ranges(text: str) -> list[tuple[int, int]]:
-    ranges, fence, pos = [], False, 0
+    ranges, fence, pos = [], "", 0
     for line in text.splitlines(keepends=True):
-        if FENCE.match(line):
-            fence = not fence
+        mark = FENCE.match(line.lstrip("> \t"))
+        run = mark.group(1) if mark else ""
+        if fence or run:
             ranges.append((pos, pos + len(line)))
-        elif fence:
-            ranges.append((pos, pos + len(line)))
+            if not fence:
+                fence = run
+            elif run.startswith(fence):
+                fence = ""
         else:
             ranges += [(pos + m.start(), pos + m.end()) for m in CODE.finditer(line)]
         pos += len(line)
@@ -41,7 +44,9 @@ def _code_ranges(text: str) -> list[tuple[int, int]]:
 
 
 def _row(text: str, pos: int) -> bool:
-    return text[text.rfind("\n", 0, pos) + 1:].lstrip("> \t").startswith("|")
+    start = text.rfind("\n", 0, pos) + 1
+    end = text.find("\n", pos)
+    return text[start:end if end >= 0 else len(text)].lstrip("> \t").startswith("|")
 
 
 def _split_suffix(target: str) -> tuple[str, str]:
@@ -123,6 +128,7 @@ def _rewritten(text: str, link: Link, note_old: Path, note_new: Path, moved: dic
         path = new_target.relative_to(vault).as_posix()
     else:
         path = new_target.relative_to(notes).as_posix()
+    path = unicodedata.normalize("NFC", path)
     if path.endswith(".md") and not link.target.lower().endswith(".md"):
         path = path[:-3]
     if link.kind == "wiki":
