@@ -368,3 +368,12 @@ def _gitignore_guard(planner: _Planner, notes: Path, present: list[str]) -> None
     for old in ("security-audit", "dev-loop-board"):
         if old in present and ignored(old) and not ignored(RENAMES[old]):
             planner.block(f"{RENAMES[old]}/", "gitignore")
+    audits = "security-audit"
+    runs = sorted((notes / audits).iterdir()) if audits in present and not ignored(audits) else []
+    for run in runs:
+        number = re.fullmatch(r"run-(\d+)", run.name)
+        if not number or not run.is_dir():
+            continue
+        new = f"{RENAMES[audits]}/Run {number[1]}"
+        if ignored(f"{audits}/{run.name}") and not ignored(new):
+            planner.block(f"{new}/", "gitignore")
