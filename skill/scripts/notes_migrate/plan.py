@@ -258,8 +258,9 @@ class _Planner:
 
 
 class Scan(NamedTuple):
-    """One walk of the vault root (else the notes folder), dot folders skipped: `files` keyed for `links.resolve`,
-    the placeholders, and the symbolic-link folders under the notes folder (the walk does not enter them)."""
+    """One walk of the notes folder, then of the rest of the vault root, dot folders skipped: `files` keyed for
+    `links.resolve`, the placeholders, and the symbolic-link folders inside the notes folder (never entered).
+    The notes folder is walked from its own path: a link above it is fine (D13)."""
 
     vault: Path | None
     files: dict[str, Path]
@@ -269,17 +270,17 @@ class Scan(NamedTuple):
 
 def scan(notes: Path) -> Scan:
     vault = next((parent for parent in notes.parents if (parent / ".obsidian").is_dir()), None)
-    keep = {notes, *notes.parents}
     found = Scan(vault, {}, [], [])
-    for root, dirs, names in os.walk(vault or notes):
-        dirs[:] = [d for d in dirs if not d.startswith(".") or Path(root, d) in keep]
-        found.linked.extend(Path(root, d) for d in dirs if Path(root, d).is_relative_to(notes)
-                            and os.path.islink(Path(root, d)))
-        for name in names:
-            path = Path(root, name)
-            if _placeholder(path):
-                found.placeholders.append(path)
-            found.files[key(path.relative_to(vault or notes).as_posix())] = path
+    for top in (notes, vault) if vault else (notes,):
+        for root, dirs, names in os.walk(top):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and Path(root, d) != notes]
+            if top == notes:
+                found.linked.extend(Path(root, d) for d in dirs if os.path.islink(Path(root, d)))
+            for name in names:
+                path = Path(root, name)
+                if _placeholder(path):
+                    found.placeholders.append(path)
+                found.files[key(path.relative_to(vault or notes).as_posix())] = path
     return found
 
 
