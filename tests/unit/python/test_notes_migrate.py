@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -12,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from notes_migrate import links, plan
+from notes_migrate import links, plan, texts
 from support import git_in, make_git_repo, write
 
 NOTES = Path("/v/Notes")
@@ -403,6 +404,161 @@ class MovePlanTests(unittest.TestCase):
             ("specs/20261020 Read.md Files.md", "Features/20261020 Read.md Files/Spec.md", "spec", "read-md-files"),
             ("plans/20261021 Read.md Files.md", "Features/20261020 Read.md Files/Plan.md", "plan", "read-md-files"),
         ])
+
+
+SHA = "a" * 40
+
+
+class TextPlanTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        self.tmp = tmp.resolve()
+        self.repo = make_git_repo(self.tmp, {"dev-loop.json": "{}\n"})
+        self.notes = self.tmp / "notes"
+        self.notes.mkdir()
+
+    def put(self, files: dict[str, str], root: Path | None = None) -> None:
+        for rel, text in files.items():
+            path = (root or self.notes) / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(text.encode())
+
+    def build(self) -> texts.Plan:
+        before = {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*")) if p.is_file() and ".git" not in p.parts}
+        built = texts.build_plan(self.repo, self.notes, "2.0.0")
+        after = {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*")) if p.is_file() and ".git" not in p.parts}
+        self.assertEqual(after, before)
+        return built
+
+    def written(self, built: texts.Plan) -> dict[str, str]:
+        return {w.path.relative_to(self.notes).as_posix(): w.text for w in built.writes}
+
+    def test_frontmatter_roles(self) -> None:
+        self.put({
+            **DEMO,
+            "plans/20261021 Demo Work.md": "---\nspec: 20261020 Demo Work.md\nowner: me\n---\nbody\n",
+            "plans/20261020 Early.md": "---\nspec: 20261020 Demo Work\n---\n",
+            "plans/20261013 Orphan.md": "# o\n",
+        })
+        built = self.build()
+        self.assertEqual(self.written(built), {
+            "Features/20261019 Demo Work/Spec.md": "---\nfeature: demo-work\ntype: spec\n---\n# Demo\n",
+            "Features/20261019 Demo Work/Plan.md":
+                "---\nspec: Spec.md\nowner: me\ntype: plan\nfeature: demo-work\n---\nbody\n",
+            "Features/20261019 Demo Work/20261020 Early.md": "---\nspec: Spec.md\ntype: plan\nfeature: demo-work\n---\n",
+            "Features/20261019 Demo Work/Framing.md": "---\ntype: framing\nfeature: demo-work\n---\n",
+            "Features/20261013 Orphan/Plan.md": "---\ntype: plan\nfeature: orphan\n---\n# o\n",
+        })
+        for write_ in built.writes:
+            old = (self.notes / next(m.src for m in built.moves if m.dst == write_.path)).read_bytes()
+            self.assertEqual((write_.old_sha, write_.new_sha),
+                             (hashlib.sha256(old).hexdigest(), hashlib.sha256(write_.text.encode()).hexdigest()))
+
+    def test_frontmatter_crlf_and_bom_kept(self) -> None:
+        self.put({
+            "specs/20261020 Demo Work.md": "﻿---\r\nfeature: demo-work\r\n---\r\n# Demo\r\n",
+            "plans/20261013 Orphan.md": "﻿# o\r\n",
+        })
+        self.assertEqual(self.written(self.build()), {
+            "Features/20261020 Demo Work/Spec.md": "﻿---\r\nfeature: demo-work\r\ntype: spec\r\n---\r\n# Demo\r\n",
+            "Features/20261013 Orphan/Plan.md": "﻿---\r\ntype: plan\r\nfeature: orphan\r\n---\r\n# o\r\n",
+        })
+
+    def test_unclosed_frontmatter_left_alone(self) -> None:
+        self.put({"specs/20261020 Demo Work.md": "---\nfeature: demo-work\n# Demo\n"})
+        built = self.build()
+        self.assertEqual((len(built.moves), built.writes), (1, []))
+
+    def test_audit_ids(self) -> None:
+        project = (
+            "## Release audits\n"
+            f"- 2026-10-25 run-3 at {SHA}: confirmed 1\n"
+            "## Deferred\n"
+            "### Release audit run-3, 2026-10-25\n"
+            "- 2026-10-25 (security, confirmed, run-3): x\n"
+            "- 2026-10-25 (security, needs-validation, release-security-audit): y\n"
+            "- 2026-10-25 (security, hardening, run-3): see security-audit/run-3/REPORT.md\n"
+            "keep `security-audit/run-3/` and my-security-audit/run-3/\n"
+        )
+        gardener = "- 2026-10-25 (security, hardening, run-3): security-audit/run-3/REPORT.md\n"
+        self.put({"Project Note.md": project, "Gardener Log.md": gardener,
+                  "security-audit/run-3/REPORT.md": "see security-audit/run-3/x\n"})
+        built = self.build()
+        self.assertEqual(self.written(built), {
+            "Project Note.md": (
+                "## Release audits\n"
+                f"- 2026-10-25 Run 3 at {SHA}: confirmed 1\n"
+                "## Deferred\n"
+                "### Release audit Run 3, 2026-10-25\n"
+                "- 2026-10-25 (security, confirmed, Run 3): x\n"
+                "- 2026-10-25 (security, needs-validation, release-security-audit): y\n"
+                "- 2026-10-25 (security, hardening, Run 3): see Security Audit/Run 3/REPORT.md\n"
+                "keep `security-audit/run-3/` and my-security-audit/run-3/\n"
+            ),
+            "Gardener Log.md": "- 2026-10-25 (security, hardening, run-3): Security Audit/Run 3/REPORT.md\n",
+        })
+        self.assertEqual(built.audit_ids, 6)
+
+    def test_outside_links_and_skipped(self) -> None:
+        vault = self.tmp / "vault"
+        self.notes = vault / "Notes"
+        (vault / ".obsidian").mkdir(parents=True)
+        self.put({**DEMO, "Project Note.md": "[[specs/20261020 Demo Work]]\n"})
+        self.put({"Other/Note.md": "a\n[[specs/20261020 Demo Work]] [[Elsewhere]]\n", "Other/.Evicted.md.icloud": "",
+                  "Other/.img.png.icloud": ""}, vault)
+        built = self.build()
+        self.assertEqual(built.outside_links, [{"file": "Other/Note.md", "line": 2, "link": "[[specs/20261020 Demo Work]]"}])
+        self.assertEqual((built.outside_skipped, built.blocked), (["Other/.Evicted.md.icloud"], []))
+        self.assertEqual(built.links, {"files": ["Project Note.md"], "count": 1})
+        self.assertNotIn("Other/Note.md", [w.path.relative_to(vault).as_posix() for w in built.writes])
+
+    def test_outside_scan_skips_dot_folders(self) -> None:
+        vault = self.tmp / "vault"
+        self.notes = vault / "Notes"
+        self.put(DEMO)
+        self.put({".obsidian/app.json": "{}", ".trash/Old.md": "[[specs/20261020 Demo Work]]\n",
+                  ".trash/.Gone.md.icloud": ""}, vault)
+        built = self.build()
+        self.assertEqual((built.outside_links, built.outside_skipped), ([], []))
+
+    def test_linked_note_blocks(self) -> None:
+        self.put(DEMO)
+        elsewhere = self.tmp / "elsewhere"
+        self.put({"Linked.md": "[[specs/20261020 Demo Work]]\n", "Plain.md": "no link\n",
+                  "shared/Note.md": "[[specs/20261020 Demo Work]]\n"}, elsewhere)
+        (self.notes / "Linked.md").symlink_to(elsewhere / "Linked.md")
+        (self.notes / "Plain.md").symlink_to(elsewhere / "Plain.md")
+        (self.notes / "Shared").symlink_to(elsewhere / "shared")
+        built = self.build()
+        self.assertEqual(sorted(built.blocked), [("Linked.md", "link"), ("Shared/Note.md", "link")])
+        self.assertEqual([w for w in built.writes if w.path.parent == self.notes or "Shared" in w.path.parts], [])
+
+    def test_repo_links(self) -> None:
+        self.put({"maps/release-cycle/map.md": "m\n"})
+        for rel, text in {"docs/agents/issue-tracker.md": "x\nsee `maps/release-cycle/map.md`.\n",
+                          "tests/acceptance/x.md": "maps/release-cycle/map.md\n",
+                          "docs/other.md": "roadmaps/release-cycle/x and maps-old/y\n"}.items():
+            write(self.repo / rel, text)
+        (self.repo / "docs/blob.bin").write_bytes(b"\xff\xfe maps/release-cycle/\n")
+        git_in(self.repo, "add", "-A")
+        self.assertEqual(self.build().repo_links, [{"file": "docs/agents/issue-tracker.md", "line": 2}])
+
+    def test_git_case(self) -> None:
+        self.put({"answers/20261020 Q.md": "a\n", "maps/x/map.md": "m\n"})
+        git_in(self.notes, "init", "-q")
+        git_in(self.notes, "config", "core.ignorecase", "true")
+        git_in(self.notes, "add", "answers")
+        index = git_in(self.notes, "ls-files", "--stage")
+        self.assertEqual(self.build().git_case, ["git rm -r --cached answers", "git add Answers"])
+        self.assertEqual(git_in(self.notes, "ls-files", "--stage"), index)
+
+    def test_plan_hash_changes_with_a_new_spec(self) -> None:
+        self.put(DEMO)
+        first = self.build().plan_hash
+        self.assertEqual(self.build().plan_hash, first)
+        self.put({"specs/20261022 New.md": "# n\n"})
+        self.assertNotEqual(self.build().plan_hash, first)
 
 
 if __name__ == "__main__":

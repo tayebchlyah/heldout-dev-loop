@@ -11,7 +11,7 @@ from typing import NamedTuple
 
 import devloop
 from board.store import version_key
-from notes_migrate.links import _key, find_links, resolve
+from notes_migrate.links import find_links, key, resolve
 
 
 class Move(NamedTuple):
@@ -257,18 +257,41 @@ class _Planner:
                         self.add(path, folder / path.relative_to(top), "file", slug)
 
 
-def plan_moves(repo: Path, notes: Path, kit_version: str) -> tuple[list[Move], list[Blocked], list[str]]:
-    """The moves of the notes migration, the items that block it and the ambiguous notes; changes nothing."""
-    planner = _Planner(notes)
+class Scan(NamedTuple):
+    """One walk of the vault root (else the notes folder), dot folders skipped: `files` keyed for `links.resolve`,
+    the placeholders, and the symbolic-link folders under the notes folder (the walk does not enter them)."""
+
+    vault: Path | None
+    files: dict[str, Path]
+    placeholders: list[Path]
+    linked: list[Path]
+
+
+def scan(notes: Path) -> Scan:
     vault = next((parent for parent in notes.parents if (parent / ".obsidian").is_dir()), None)
-    files: dict[str, Path] = {}
-    for root, dirs, names in os.walk(notes):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
+    keep = {notes, *notes.parents}
+    found = Scan(vault, {}, [], [])
+    for root, dirs, names in os.walk(vault or notes):
+        dirs[:] = [d for d in dirs if not d.startswith(".") or Path(root, d) in keep]
+        found.linked.extend(Path(root, d) for d in dirs if Path(root, d).is_relative_to(notes)
+                            and os.path.islink(Path(root, d)))
         for name in names:
             path = Path(root, name)
             if _placeholder(path):
-                planner.block(path, "placeholder")
-            files[_key(path.relative_to(vault or notes).as_posix())] = path
+                found.placeholders.append(path)
+            found.files[key(path.relative_to(vault or notes).as_posix())] = path
+    return found
+
+
+def plan_moves(repo: Path, notes: Path, kit_version: str,
+               found: Scan | None = None) -> tuple[list[Move], list[Blocked], list[str]]:
+    """The moves of the notes migration, the items that block it and the ambiguous notes; changes nothing.
+    `found`: the `scan` of `notes` when the caller already has it."""
+    planner = _Planner(notes)
+    vault, files, placeholders, _ = found or scan(notes)
+    for path in placeholders:
+        if path.is_relative_to(notes):
+            planner.block(path, "placeholder")
     present = [name for name in devloop.old_layout(notes) if name in devloop.OLD_NAMES]
     live = []
     for name in present:
