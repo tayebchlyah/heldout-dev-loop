@@ -56,8 +56,6 @@ def _sha(text: str) -> str:
 
 
 def _frontmatter(text: str, keys: dict[str, str]) -> str:
-    """`text` with each of `keys` set (`feature` only added when missing), every other byte kept; a note with no
-    frontmatter gets a block of `keys`; an unclosed block is left alone."""
     bom = "\ufeff" if text.startswith("\ufeff") else ""
     body = text[len(bom):]
     nl = "\r\n" if body.split("\n", 1)[0].endswith("\r") else "\n"
@@ -98,8 +96,6 @@ def _audit_ids(text: str, project: bool, keep: list[tuple[int, int]]) -> tuple[s
 
 
 def _repo_links(repo: Path, moves: list[Move], notes: Path) -> list[dict]:
-    """Lines of the repo's tracked text files outside `tests/acceptance/` that name the old path of a moved file
-    (with or without `.md`) or of a renamed folder (followed by `/`), as whole path segments."""
     alts = []
     for move in sorted((m for m in moves if m.dst != m.src), key=lambda m: -len(str(m.src))):
         old = move.src.relative_to(notes).as_posix()
@@ -123,7 +119,6 @@ def _repo_links(repo: Path, moves: list[Move], notes: Path) -> list[dict]:
 
 
 def _git_case(notes: Path, moves: list[Move]) -> list[str]:
-    """D11: the commands that make a case-insensitive git index follow each case-only rename of a tracked folder."""
     if devloop.git(notes, "config", "--bool", "core.ignorecase") != "true":
         return []
     commands, listed = [], []
