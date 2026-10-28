@@ -95,6 +95,28 @@ test('upgrade of a 2.1.1 Codex project removes the dead profile tables and print
   assert.ok(!readFileSync(config, 'utf8').includes('dev-implementer'))
 })
 
+const TRUST_LINE = '  Codex: run /hooks in Codex and trust the new or changed dev-loop hooks. Codex skips them until then.'
+
+test('upgrade prints the /hooks trust line once when a Codex hook entry changed, and not when none did', () => {
+  const { home, repo } = setup()
+  run(packageRoot, 'init', repo, home, ['--yes', '--harness=codex'])
+  assert.equal(upgrade(repo, home).split(TRUST_LINE).length - 1, 0)
+  const path = join(repo, '.codex/hooks.json')
+  const hooks = readJson(path)
+  const guards = Object.values(hooks.hooks).flat().flatMap((group) => group.hooks).filter((hook) => hook.command.includes('git-guard.sh'))
+  assert.ok(guards.length > 0)
+  for (const hook of guards) hook.timeout = 5
+  writeFileSync(path, `${JSON.stringify(hooks, null, 2)}\n`)
+  const output = upgrade(repo, home)
+  assert.equal(output.split(TRUST_LINE).length - 1, 1, output)
+})
+
+test('upgrade of a Claude-only project does not print the /hooks trust line', () => {
+  const { home, repo } = setup()
+  run(packageRoot, 'init', repo, home, ['--yes', '--harness=claude'])
+  assert.ok(!upgrade(repo, home).includes('/hooks'))
+})
+
 test('upgrade from 1.5 leaves one SessionStart entry', () => {
   const { home, repo } = setup()
   const older = fakePackage('98.0.0', (root) => {
