@@ -92,4 +92,21 @@ Codex wall timeout upgrade: `upgrade` sets `timeout` 30 on the Codex `git-guard.
 
 Effort upgrade: `upgrade` adds `effortLevel`, `autoCompactWindow`, the Codex root `model_reasoning_effort` and the `worktree-wall.sh` entry, writes `.codex/agents/planner.toml`, and keeps each value the user set.
 
+3.0.0 upgrade (breaking): from 2.1.x, in this order.
+
+1. Ship each in-flight feature first (Seal upgrade).
+2. `npx github:tchlyah/dev-loop#v3.0.0 upgrade` on a branch, one PR, merged to `main`. The output lists each section of `CHANGELOG.md` after the installed version.
+3. Codex: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh` on Stop, SubagentStart and SubagentStop, `acceptance-wall.sh`, the `git-guard.sh` timeout). `upgrade` prints this line; Codex skips each of them until then.
+4. Run `check_setup.py --harness claude|codex --repo .` and act on each line:
+   - a `ui` project: `devloop.py verify-init --base-url <url>`, or `"verify": false` in `dev-loop.json`;
+   - `old-notes-layout`: every machine that shares the notes folder upgrades first, then one runs `devloop.py notes-migrate` (dry run), then `--apply --plan <hash>` (Notes layout upgrade);
+   - the vault `.gitignore` lines for `Dev Loop Board/` and `Security Audit/`, and the Cloudflare `security-audit` skill (Verify after install, item 3).
+5. Restart each open session on the new kit: a session on an older kit than `main` gets `kit_drift` `main-newer` and stops.
+
+What changes for the user after the upgrade:
+
+- The gate also fails on `seal-check` (held-out test commits without their trailers, kit file changes, taint records) and on the file-size ratchet (a new or grown file over 40,000 bytes; `file_size_exempt` lists the files it skips). It reports `weakened` tests.
+- A push of a `v*` tag runs `release-check`: it needs a current `/release-audit` record and no open security item in `## Deferred`. `/release` runs the whole release, audit included.
+- One session per feature: Shaping (Stages 1, 2), then Delivery (Stages 3 to 7) after the effort hand-off. `upgrade` sets the effort defaults only where the user set none (Effort upgrade).
+
 2.0.0 upgrade (breaking): from 1.5.x, `upgrade` on a branch, then the user steps. From 1.4.0: write `dev-loop.local.json`, `uninstall-global` (`--dry-run` first, keep a personal vault guard first), `init`. User steps: remove the user-level denies of `executing-plans`, Pocock `tdd`, Pocock `diagnosing-bugs` from `~/.claude/settings.json`; Codex: install Pocock `tdd`, `diagnosing-bugs`, `pr`, `prototype`; optional `CONTEXT.md` to `GLOSSARY.md`; run `check_setup.py`.
