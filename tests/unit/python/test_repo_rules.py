@@ -456,6 +456,19 @@ class RepoDocsTests(unittest.TestCase):
         self.assertNotIn("git cliff", release)
         self.assertNotIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", release)
 
+class RepoAuditImageTests(unittest.TestCase):
+    def test_this_repo_names_its_audit_sandbox_image(self) -> None:
+        config = json.loads((ROOT / "dev-loop.json").read_text())
+        self.assertEqual(config.get("security_audit"), {"images": {"audit": "dev-loop-audit:1"}})
+        bases = re.findall(r"^FROM (\S+)", (ROOT / "scripts" / "audit-image" / "Dockerfile").read_text(), re.M)
+        self.assertEqual(len(bases), 2)
+        for base in bases:
+            with self.subTest(base=base):
+                self.assertRegex(base, r"^[a-z0-9.:-]+@sha256:[0-9a-f]{64}$")
+        release = (ROOT / "reference" / "release.md").read_text()
+        self.assertIn("docker build -t dev-loop-audit:1 scripts/audit-image", release)
+
+
 class GateScopeTests(unittest.TestCase):
     def test_changed_scope_runs_the_skill_suite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

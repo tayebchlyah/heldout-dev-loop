@@ -15,6 +15,11 @@
     "release_check": "scripts/release-check.sh",
     "release_verify": "scripts/release-verify.sh"
   },
+  "security_audit": {
+    "images": {
+      "audit": "dev-loop-audit:1"
+    }
+  },
   "file_size_exempt": [
     "CHANGELOG.md",
     "tests/unit/python/fixtures/git-guard-asks.json"
