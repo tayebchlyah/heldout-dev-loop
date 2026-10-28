@@ -69,6 +69,9 @@ function printReports(allReports, flags, short) {
       console.log(entry.target.endsWith('.toml') ? `          removed ${removed} from ${short(entry.target)} (Codex never applied it)` : `          - ${removed}`)
     }
   }
+  if (changed.some((entry) => entry.target.endsWith('.codex/hooks.json') && (entry.added.length > 0 || (entry.updated ?? []).length > 0))) {
+    console.log('  Codex: run /hooks in Codex and trust the new or changed dev-loop hooks. Codex skips them until then.')
+  }
   for (const entry of kept) console.log(`  kept ${entry.item ? `${entry.item} ` : ''}${short(entry.target)}`)
 
   // A shape this installer cannot merge (a hand-edited hook group with no
