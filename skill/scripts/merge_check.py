@@ -10,6 +10,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, resolve
 from status import feature_checkout
@@ -95,7 +96,7 @@ def reviewed_head(worktree: Path | None, notes: Path, spec: Path | None) -> str 
         return None
     if spec is not None:
         plan = find_plan(notes, spec)
-        ledger = worktree / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan else None
+        ledger = devloop.ledger(worktree, plan) if plan else None
         found = re.findall(r"^Feature gate: green at (\S+)", ledger.read_text(errors="replace"), re.MULTILINE) \
             if ledger and ledger.is_file() else []
         return found[-1] if found else None

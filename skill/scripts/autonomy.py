@@ -257,9 +257,9 @@ def cmd_pause(args: argparse.Namespace) -> int:
             if target is not None and target.is_file():
                 rows = log_rows(target.read_text())
                 last_decision = rows[-1]["row"] if rows else None
-                plan = find_plan(notes, target) if target.suffix == ".md" and target.parent == notes / "specs" else None
+                plan = find_plan(notes, target) if target.suffix == ".md" and devloop.is_spec(notes, target) else None
                 top = devloop.git(repo, "rev-parse", "--show-toplevel")
-                ledger = Path(top) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and top else None
+                ledger = devloop.ledger(Path(top), plan) if plan and top else None
                 if ledger is not None and ledger.is_file():
                     ledger_last = next((line for line in reversed(ledger.read_text().splitlines()) if line.strip()),
                                        None)

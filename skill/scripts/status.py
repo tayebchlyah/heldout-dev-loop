@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 import autonomy
+import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, resolve
 
@@ -136,14 +137,15 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
     spec = matches[-1]
     fields = frontmatter(spec)
     track = fields.get("track") or None
+    label = spec.parent.name if spec.name == "Spec.md" else spec.name
 
     def at(stage: int | str, check: str, next_: str) -> dict:
         return result(stage, check, next_, slug, track, worktree)
 
     if fields.get("shipped"):
-        return at("shipped", f"spec {spec.name} has shipped: {fields['shipped']}", "none")
+        return at("shipped", f"spec {label} has shipped: {fields['shipped']}", "none")
     if fields.get("review_status") != "approved":
-        return at(2, f"spec {spec.name} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
+        return at(2, f"spec {label} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
     known = branch or remote_branch(repo, slug)
     if known is None and shipped_without_branch(repo, slug):
         return at("shipped", f"no branch for {slug}, its acceptance file or `Acceptance: {slug}` commit is on {DEFAULT_BRANCH}", "none")
@@ -159,13 +161,13 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
                       f"Stage 3 Acceptance: dispatch spec-tester; the commit has the line `Acceptance: {slug}`")
     plan = find_plan(notes, spec)
     if plan is None:
-        return at(4, f"no plan with spec: {spec.name}", "Stage 4 Plan")
-    ledger = worktree / ".superpowers" / "sdd" / plan.stem / "progress.md"
-    if not ledger.is_file():
+        return at(4, f"no plan for {label}", "Stage 4 Plan")
+    ledger = devloop.ledger(worktree, plan)
+    if ledger is None:
         next_ = f"Stage 5 Build: run {plan}"
         if any(line.startswith("+") for line in cherry(repo, branch) or []):
             next_ += ". The branch has commits ahead of origin/main: rebuild the ledger from the plan and git log first"
-        return at(5, f"no ledger {ledger}", next_)
+        return at(5, f"no ledger under {worktree / '.superpowers' / 'sdd'}", next_)
     text = ledger.read_text()
     tasks = sorted({int(n) for n in re.findall(r"^#{2,3} Task (\d+)\b", plan.read_text(), re.MULTILINE)})
     missing = [n for n in tasks if not re.search(rf"^Task {n}: complete", text, re.MULTILINE)]

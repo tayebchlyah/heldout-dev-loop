@@ -24,6 +24,7 @@ class StatusTests(Sandbox):
         put(wt / "tests" / "acceptance" / "api" / "test_widget_flow.py", "def test_flow():\n    pass\n")
 
     def ledger(self, wt: Path, text: str) -> None:
+        put(wt / ".superpowers" / "sdd" / "20261002 Widget Plan" / "plan-path", f"{self.notes / 'plans' / '20261002 Widget Plan.md'}\n")
         put(wt / ".superpowers" / "sdd" / "20261002 Widget Plan" / "progress.md", text)
 
     def built(self) -> Path:
@@ -471,3 +472,34 @@ class KitDriftTests(Sandbox):
         git(self.repo, "update-ref", "refs/heads/origin/main", "HEAD")
         git(self.repo, "reset", "-q", "--hard", "HEAD~1")
         self.assertIsNone(self.drift(wt))
+
+
+class FeatureFolderStatusTests(Sandbox):
+    def worktree(self) -> Path:
+        path = self.root / "wt-widget"
+        git(self.repo, "worktree", "add", "-q", "-b", "feat/widget", str(path), "origin/main")
+        return path.resolve()
+
+    def folder(self) -> Path:
+        folder = self.notes / "Features" / "20261101 Demo Work"
+        put(folder / "Spec.md", frontmatter(feature="widget", track="M", review_status="approved"))
+        return folder
+
+    def test_status_reads_plan_and_marker_ledger(self) -> None:
+        folder = self.folder()
+        put(folder / "Plan.md", "# Plan\n\n### Task 1: one\n")
+        wt = self.worktree()
+        put(wt / "tests" / "acceptance" / "api" / "test_widget_flow.py", "def test_flow():\n    pass\n")
+        sdd = wt / ".superpowers" / "sdd" / "Plan-x"
+        put(sdd / "plan-path", f"{folder / 'Plan.md'}\n")
+        put(sdd / "progress.md", "Task 1: complete\n")
+        self.assertNotEqual(self.status("--feature", "widget", cwd=self.repo)["stage"], 5)
+
+    def test_status_message_names_folder(self) -> None:
+        self.folder()
+        wt = self.worktree()
+        put(wt / "tests" / "acceptance" / "api" / "test_widget_flow.py", "def test_flow():\n    pass\n")
+        out = self.status("--feature", "widget", cwd=self.repo)
+        self.assertEqual(out["stage"], 4)
+        self.assertIn("20261101 Demo Work", out["check"])
+        self.assertNotIn("Spec.md", out["check"])

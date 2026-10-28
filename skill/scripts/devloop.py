@@ -50,6 +50,7 @@ import argparse
 import importlib
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -104,16 +105,60 @@ def frontmatter(path: Path) -> dict[str, str]:
     return {}
 
 
+FEATURES = "Features"
+ANSWERS = "Answers"
+MAPS = "Maps"
+AUDITS = "Security Audit"
+BOARD = "Dev Loop Board"
+BOARD_FEATURES = "Features"
+OLD_NAMES = ("specs", "plans", "framing", "answers", "maps", "security-audit", "dev-loop-board")
+JOURNAL = ".notes-migrate.json"
+
+
+def old_layout(notes: Path) -> list[str]:
+    """The entries of the notes folder the old layout left behind; exact names, so a new `Answers` is not one."""
+    try:
+        names = os.listdir(notes)
+    except OSError:
+        return []
+    return sorted(name for name in names if name in OLD_NAMES or name == JOURNAL)
+
+
 def specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
-    for path in sorted((notes / "specs").glob("*.md")):
-        found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
+    for path in sorted((notes / FEATURES).glob("*/Spec.md")):
+        found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
+    if "specs" in old_layout(notes):
+        for path in sorted((notes / "specs").glob("*.md")):
+            found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
     return found
 
 
+def is_spec(notes: Path, path: Path) -> bool:
+    return any(path == spec for _, spec in specs(notes))
+
+
 def find_plan(notes: Path, spec: Path) -> Path | None:
+    if spec.name == "Spec.md" and spec.parent.parent == notes / FEATURES:
+        plan = spec.parent / "Plan.md"
+        if plan.is_file():
+            return plan
     plans = [p for p in sorted((notes / "plans").glob("*.md")) if frontmatter(p).get("spec") in (spec.name, spec.stem)]
     return plans[-1] if plans else None
+
+
+def ledger(top: Path, plan: Path) -> Path | None:
+    """The `progress.md` of the sdd folder whose `plan-path` marker names this plan; the folder name is free."""
+    want = os.path.realpath(plan)
+    for marker in sorted((top / ".superpowers" / "sdd").glob("*/plan-path")):
+        try:
+            named = Path(marker.read_text().strip())
+        except OSError:
+            continue
+        if os.path.realpath(top / named) == want:
+            progress = marker.parent / "progress.md"
+            return progress if progress.is_file() else None
+    return None
 
 
 def finite_minutes(value: str) -> float:
