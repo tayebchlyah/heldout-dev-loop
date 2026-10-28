@@ -141,7 +141,10 @@ class TextPlanTests(unittest.TestCase):
             "- 2026-10-26 (security, hardening, run-4)\n"
             "plain run-5\n"
         )
-        gardener = "- 2026-10-25 (security, hardening, run-3): security-audit/run-3/REPORT.md\n"
+        gardener = (
+            "- 2026-10-25 (security, hardening, run-3): security-audit/run-3/REPORT.md\n"
+            "[[security-audit/run-3/REPORT]] [[security-audit/run-3/REPORT|security-audit/run-3/]]\n"
+        )
         self.put({"Project Note.md": project, "Gardener Log.md": gardener,
                   "security-audit/run-3/REPORT.md": "see security-audit/run-3/x\n"})
         built = self.build()
@@ -158,9 +161,13 @@ class TextPlanTests(unittest.TestCase):
                 "- 2026-10-26 (security, hardening, Run 4)\n"
                 "plain run-5\n"
             ),
-            "Gardener Log.md": "- 2026-10-25 (security, hardening, run-3): Security Audit/Run 3/REPORT.md\n",
+            "Gardener Log.md": (
+                "- 2026-10-25 (security, hardening, run-3): Security Audit/Run 3/REPORT.md\n"
+                "[[Security Audit/Run 3/REPORT|security-audit/run-3/REPORT]] "
+                "[[Security Audit/Run 3/REPORT|Security Audit/Run 3/]]\n"
+            ),
         })
-        self.assertEqual(built.audit_ids, 7)
+        self.assertEqual(built.audit_ids, 8)
 
     def test_outside_links_and_skipped(self) -> None:
         vault = self.tmp / "vault"

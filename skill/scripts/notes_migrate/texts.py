@@ -81,11 +81,10 @@ def _frontmatter(text: str, keys: dict[str, str]) -> str:
     return bom + "".join(lines)
 
 
-def _audit_ids(text: str, project: bool) -> tuple[str, int]:
-    """D17: the run ids of the project note line kinds, and `security-audit/run-<N>/` paths, outside code."""
+def _audit_ids(text: str, project: bool, keep: list[tuple[int, int]]) -> tuple[str, int]:
     count = 0
     for pattern, repl in (*(PROJECT_IDS if project else ()), (RUN_PATH, r"Security Audit/Run \1/")):
-        code = code_ranges(text)
+        code = code_ranges(text) + keep
 
         def one(match: re.Match) -> str:
             nonlocal count
@@ -165,7 +164,14 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
     for note, under_link in notes_md:
         old = note.read_bytes().decode("utf-8", "surrogateescape")
         new_path = moved.get(note, note)
-        text, links = rewrite(old, note, new_path, moved, notes, vault, files)
+        rel = note.relative_to(notes).as_posix()
+        text, ids = old, 0
+        if not RUN_FOLDER.match(rel):
+            targets = [(link.start, link.end - 2 - len(link.text or "")) if link.kind == "wiki"
+                       else (link.start + 1 + len(link.text), link.end)
+                       for link in find_links(old) if resolve(link, note, notes, vault, files) in moved]
+            text, ids = _audit_ids(old, note == project, targets)
+        text, links = rewrite(text, note, new_path, moved, notes, vault, files)
         front = False
         if note in roles:
             move = roles[note]
@@ -174,10 +180,6 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
                 keys["spec"] = "Spec.md"
             fronted = _frontmatter(text, keys)
             front, text = fronted != text, fronted
-        rel = note.relative_to(notes).as_posix()
-        ids = 0
-        if not RUN_FOLDER.match(rel):
-            text, ids = _audit_ids(text, note == project)
         if text == old:
             continue
         if under_link or os.path.islink(note):
