@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
+import socket
+import subprocess
+import sys
 import tempfile
+import time
 import unicodedata
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from notes_migrate import links, plan, texts
-from support import git_in, make_git_repo, write
+from notes_migrate import apply, links, plan, texts
+from support import SKILL_ROOT, git_in, make_git_repo, write
+
+DEVLOOP = SKILL_ROOT / "scripts" / "devloop.py"
 
 NOTES = Path("/v/Notes")
 SPEC_OLD = NOTES / "specs/20261020 Demo Work.md"
@@ -618,6 +626,170 @@ class TextPlanTests(unittest.TestCase):
         self.assertEqual(self.build().plan_hash, first)
         self.put({"specs/20261022 New.md": "# n\n"})
         self.assertNotEqual(self.build().plan_hash, first)
+
+
+class ApplyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        self.tmp = tmp.resolve()
+        self.repo = make_git_repo(self.tmp, {"dev-loop.json": "{}\n"})
+        self.notes = self.tmp / "notes"
+        self.notes.mkdir()
+        self.log = f"{time.strftime('%Y%m%d')} Notes Migration.md"
+        self.folder = self.notes / "Features/20261019 Demo Work"
+
+    def put(self, files: dict[str, str]) -> None:
+        for rel, text in files.items():
+            write(self.notes / rel, text)
+
+    def tree(self) -> dict[str, bytes]:
+        return {p.relative_to(self.tmp).as_posix(): p.read_bytes() for p in sorted(self.tmp.rglob("*"))
+                if p.is_file() and ".git" not in p.parts}
+
+    def run_cli(self, *args: str) -> tuple[dict, int]:
+        done = subprocess.run([sys.executable, str(DEVLOOP), "notes-migrate", "--repo", str(self.repo), *args],
+                              capture_output=True, text=True, env={**os.environ, "DEV_LOOP_NOTES": str(self.notes)})
+        return json.loads(done.stdout), done.returncode
+
+    def stopped_at_plan(self) -> str:
+        """An `--apply` stopped at the `Plan.md` write."""
+        self.put({**DEMO, "Project Note.md": "[[specs/20261020 Demo Work]]\n",
+                  "specs/20261020 Demo Work.md": "---\nfeature: demo-work\n---\n[note](<../Project Note.md>)\n"})
+        planned = self.run_cli()[0]["plan_hash"]
+        real = os.replace
+
+        def stop(src, dst):
+            if Path(dst).name == "Plan.md":
+                raise OSError("stopped")
+            real(src, dst)
+
+        args = SimpleNamespace(repo=str(self.repo), apply=True, plan=planned)
+        with mock.patch.dict(os.environ, {"DEV_LOOP_NOTES": str(self.notes)}), mock.patch("os.replace", stop), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            code = apply.cmd_notes_migrate(args)
+        self.assertEqual((code, json.loads(out.getvalue())["error"]), (1, "io"))
+        return planned
+
+    def test_dry_run_changes_nothing(self) -> None:
+        self.put(DEMO)
+        before = self.tree()
+        out, code = self.run_cli()
+        self.assertEqual(self.tree(), before)
+        self.assertEqual((code, out["applied"]), (0, False))
+        self.assertEqual(list(out), "applied plan_hash moves frontmatter links audit_ids outside_links outside_skipped "
+                         "repo_links git_case gitignore ambiguous blocked log error".split())
+        self.assertRegex(out["plan_hash"], "^[0-9a-f]{64}$")
+        self.assertEqual(out["moves"], [{"from": src, "to": dst} for src, dst, _, _ in DEMO_MOVES])
+
+    def test_apply_with_plan(self) -> None:
+        self.put(DEMO)
+        out, code = self.run_cli("--apply", "--plan", self.run_cli()[0]["plan_hash"])
+        self.assertEqual((code, out["applied"], out["error"], out["log"]), (0, True, None, self.log))
+        self.assertEqual(sorted(os.listdir(self.notes)), sorted(["Features", self.log]))
+        self.assertEqual(sorted(os.listdir(self.folder)), ["Framing.md", "Plan.md", "Spec.md"])
+        log = (self.notes / self.log).read_text()
+        self.assertTrue(log.startswith("---\ntype: note\n---\n"))
+        for src, dst, _, _ in DEMO_MOVES:
+            self.assertIn(f"`{src}` to `{dst}`", log)
+
+    def test_plan_changed(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        self.put({"specs/20261022 New.md": "# n\n"})
+        before = self.tree()
+        out, code = self.run_cli("--apply", "--plan", planned)
+        self.assertEqual((code, out["error"], out["applied"]), (1, "plan-changed", False))
+        self.assertEqual(self.tree(), before)
+
+    def test_apply_needs_plan(self) -> None:
+        self.put(DEMO)
+        before = self.tree()
+        self.assertEqual(self.run_cli("--apply")[1], 2)
+        self.assertEqual(self.tree(), before)
+
+    def test_resume_from_journal(self) -> None:
+        for extra in ([], ["--plan"]):
+            with self.subTest(plan=bool(extra)):
+                shutil.rmtree(self.notes)
+                self.notes.mkdir()
+                planned = self.stopped_at_plan()
+                folder = self.folder
+                framing = (folder / "Framing.md").read_bytes()
+                out, code = self.run_cli("--apply", *extra, *([planned] if extra else []))
+                self.assertEqual((code, out["applied"], out["plan_hash"]), (0, True, planned))
+                self.assertEqual((folder / "Framing.md").read_bytes(), framing)
+                self.assertIn("spec: Spec.md", (folder / "Plan.md").read_text())
+                self.assertIn("[note](<../../Project Note.md>)", (folder / "Spec.md").read_text())
+                self.assertEqual((self.notes / "Project Note.md").read_text(),
+                                 "[[Features/20261019 Demo Work/Spec|specs/20261020 Demo Work]]\n")
+                self.assertEqual(sorted(os.listdir(self.notes)), sorted(["Features", "Project Note.md", self.log]))
+
+    def test_other_host_journal_locked(self) -> None:
+        planned = self.stopped_at_plan()
+        journal = self.notes / ".notes-migrate.json"
+        journal.write_text(json.dumps({**json.loads(journal.read_text()), "host": "other-host"}))
+        before = self.tree()
+        out, code = self.run_cli("--apply", "--plan", planned)
+        self.assertEqual((code, out["error"]), (1, "locked"))
+        self.assertIn("other-host", out["message"])
+        self.assertEqual(self.tree(), before)
+
+    def test_stale_lock_removed(self) -> None:
+        self.put(DEMO)
+        dead = subprocess.Popen([sys.executable, "-c", ""])
+        dead.wait()
+        (self.notes / ".notes-migrate.lock").write_text(json.dumps({"host": socket.gethostname(), "pid": dead.pid}))
+        out, code = self.run_cli("--apply", "--plan", self.run_cli()[0]["plan_hash"])
+        self.assertEqual((code, out["applied"]), (0, True))
+        self.assertNotIn(".notes-migrate.lock", os.listdir(self.notes))
+
+    def test_changed_note_io(self) -> None:
+        planned = self.stopped_at_plan()
+        spec = self.folder / "Spec.md"
+        spec.write_text("changed\n")
+        out, code = self.run_cli("--apply", "--plan", planned)
+        self.assertEqual((code, out["error"]), (1, "io"))
+        self.assertIn("Features/20261019 Demo Work/Spec.md", out["message"])
+        self.assertEqual(spec.read_text(), "changed\n")
+        self.assertTrue((self.notes / ".notes-migrate.json").is_file())
+
+    def test_second_apply_noop(self) -> None:
+        self.put(DEMO)
+        self.run_cli("--apply", "--plan", self.run_cli()[0]["plan_hash"])
+        before = self.tree()
+        out, code = self.run_cli("--apply", "--plan", self.run_cli()[0]["plan_hash"])
+        self.assertEqual((code, {k: v for k, v in out.items() if v not in ([], 0, None)}),
+                         (0, {"applied": True, "plan_hash": out["plan_hash"], "links": {"files": [], "count": 0}}))
+        self.assertEqual(self.tree(), before)
+
+    def test_second_log_same_day(self) -> None:
+        self.put(DEMO)
+        self.run_cli("--apply", "--plan", self.run_cli()[0]["plan_hash"])
+        first = (self.notes / self.log).read_bytes()
+        self.put({"answers/20261020 Q.md": "a\n"})
+        out, code = self.run_cli("--apply", "--plan", self.run_cli()[0]["plan_hash"])
+        second = self.log.replace(".md", " 2.md")
+        self.assertEqual((code, out["log"]), (0, second))
+        self.assertEqual((self.notes / self.log).read_bytes(), first)
+        self.assertIn("`answers` to `Answers`", (self.notes / second).read_text())
+
+    def test_notes_in_repo(self) -> None:
+        self.notes = self.repo / "notes"
+        self.put(DEMO)
+        before = self.tree()
+        out, code = self.run_cli()
+        self.assertEqual((code, out["error"]), (1, "notes-in-repo"))
+        self.assertEqual(self.tree(), before)
+
+    def test_blocked_changes_nothing(self) -> None:
+        self.put({**DEMO, "specs/img.png": "x"})
+        before = self.tree()
+        out, code = self.run_cli()
+        self.assertEqual((code, out["blocked"]), (1, [{"path": "specs/img.png", "reason": "unknown-entry"}]))
+        out, code = self.run_cli("--apply", "--plan", out["plan_hash"])
+        self.assertEqual((code, out["applied"]), (1, False))
+        self.assertEqual(self.tree(), before)
 
 
 if __name__ == "__main__":
