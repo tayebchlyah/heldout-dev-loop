@@ -272,6 +272,7 @@ class ApplyTests(unittest.TestCase):
         self.notes.mkdir()
         self.log = f"{time.strftime('%Y%m%d')} Notes Migration.md"
         self.folder = self.notes / "Features/20261019 Demo Work"
+        self.home = self.tmp / "home"
 
     def put(self, files: dict[str, str]) -> None:
         for rel, text in files.items():
@@ -281,10 +282,23 @@ class ApplyTests(unittest.TestCase):
         return {p.relative_to(self.tmp).as_posix(): p.read_bytes() for p in sorted(self.tmp.rglob("*"))
                 if p.is_file() and ".git" not in p.parts}
 
+    def env(self) -> dict[str, str]:
+        return {"DEV_LOOP_NOTES": str(self.notes), "HOME": str(self.home)}
+
     def run_cli(self, *args: str) -> tuple[dict, int]:
         done = subprocess.run([sys.executable, str(DEVLOOP), "notes-migrate", "--repo", str(self.repo), *args],
-                              capture_output=True, text=True, env={**os.environ, "DEV_LOOP_NOTES": str(self.notes)})
+                              capture_output=True, text=True, env={**os.environ, **self.env()})
         return json.loads(done.stdout), done.returncode
+
+    def call(self, plan: str, *patches) -> tuple[dict, int]:
+        args = SimpleNamespace(repo=str(self.repo), apply=True, plan=plan)
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.dict(os.environ, self.env()))
+            for patch in patches:
+                stack.enter_context(patch)
+            out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            code = apply.cmd_notes_migrate(args)
+        return json.loads(out.getvalue()), code
 
     def stopped_at_plan(self) -> str:
         """An `--apply` stopped at the `Plan.md` write."""
@@ -298,11 +312,8 @@ class ApplyTests(unittest.TestCase):
                 raise OSError("stopped")
             real(src, dst)
 
-        args = SimpleNamespace(repo=str(self.repo), apply=True, plan=planned)
-        with mock.patch.dict(os.environ, {"DEV_LOOP_NOTES": str(self.notes)}), mock.patch("os.replace", stop), \
-                contextlib.redirect_stdout(io.StringIO()) as out:
-            code = apply.cmd_notes_migrate(args)
-        self.assertEqual((code, json.loads(out.getvalue())["error"]), (1, "io"))
+        out, code = self.call(planned, mock.patch("os.replace", stop))
+        self.assertEqual((code, out["error"]), (1, "io"))
         return planned
 
     def test_dry_run_changes_nothing(self) -> None:
@@ -322,7 +333,8 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual((code, out["applied"], out["error"], out["log"]), (0, True, None, self.log))
         self.assertEqual(sorted(os.listdir(self.notes)), sorted(["Features", self.log]))
         self.assertEqual(sorted(os.listdir(self.folder)), ["Framing.md", "Plan.md", "Spec.md"])
-        log = (self.notes / self.log).read_text()
+        self.assertEqual((self.home / ".config/dev-loop/notes-migrate.key").stat().st_mode & 0o777, 0o600)
+        log =(self.notes / self.log).read_text()
         self.assertTrue(log.startswith("---\ntype: note\n---\n"))
         for src, dst, _, _ in DEMO_MOVES:
             self.assertIn(f"`{src}` to `{dst}`", log)
@@ -368,6 +380,44 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual((code, out["error"]), (1, "locked"))
         self.assertIn("other-host", out["message"])
         self.assertEqual(self.tree(), before)
+
+    def test_tampered_journal_refused(self) -> None:
+        planned = self.stopped_at_plan()
+        secret = self.tmp / "outside/secret.md"
+        write(secret, "secret\n")
+        (self.notes / "Features/out").symlink_to(secret.parent)
+        path = self.notes / ".notes-migrate.json"
+        journal = json.loads(path.read_text())
+        first = journal["moves"][0]
+
+        def forged(dst: str) -> dict:
+            moves = [{**first, "dst": dst}, *journal["moves"][1:]]
+            notes = self.notes
+            return {**journal, "moves": moves, "plan_hash": texts.plan_hash(
+                [(notes / m["src"], notes / m["dst"]) for m in moves],
+                [(notes / w["path"], w["old"], w["new"]) for w in journal["writes"]])}
+
+        rows = [
+            ("not a dict", [], "io"),
+            ("move without role", {**journal, "moves": [{k: v for k, v in first.items() if k != "role"}]}, "io"),
+            ("absolute source", {**journal, "moves": [{**first, "src": str(secret)}]}, "io"),
+            ("dot-dot target", {**journal, "moves": [{**first, "dst": "../outside/k.md"}]}, "io"),
+            ("dot-dot write", {**journal, "writes": [{**journal["writes"][0], "path": "Features/../../outside/secret.md"}]},
+             "io"),
+            ("symlinked parent", {**journal, "moves": [{**first, "dst": "Features/out/k.md"}]}, "io"),
+            ("plan hash not of the steps", {**journal, "plan_hash": planned[::-1]}, "io"),
+            ("forged steps and hash", forged("Features/Evil.md"), "locked"),
+            ("bad hmac", {**journal, "hmac": "0" * 64}, "locked"),
+            ("no hmac", {k: v for k, v in journal.items() if k != "hmac"}, "locked"),
+        ]
+        for name, planted, error in rows:
+            path.write_text(json.dumps(planted))
+            before = self.tree()
+            for args in ([], ["--apply"], ["--apply", "--plan", planned]):
+                with self.subTest(name, args=args):
+                    out, code = self.run_cli(*args)
+                    self.assertEqual((code, out["error"]), (1, error))
+                    self.assertEqual(self.tree(), before)
 
     def test_stale_lock_removed(self) -> None:
         self.put(DEMO)
