@@ -122,6 +122,8 @@ def _rewritten(text: str, link: Link, note_old: Path, note_new: Path, moved: dic
         return old
     if relative:
         path = Path(os.path.relpath(new_target, note_new.parent)).as_posix()
+        if link.kind == "wiki" and not path.startswith("../") and ("/" in path or link.target.startswith("./")):
+            path = "./" + path
     elif link.kind == "md":
         path = new_target.relative_to(vault or notes).as_posix()
     elif vault and key(link.target) == key(target.relative_to(vault).as_posix()):
