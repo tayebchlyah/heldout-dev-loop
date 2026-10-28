@@ -43,7 +43,7 @@ class ReleaseRecordTests(unittest.TestCase):
         self.note = self.notes / "Project Note.md"
         self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n")
         self.today = date.today().isoformat()
-        self.run_dir = self.notes / "security-audit" / "run-2"
+        self.run_dir = self.notes / "Security Audit" / "Run 2"
         self.make_run()
 
     def make_run(self, findings: list | None = None, status: str = "complete", hardening: int = 3, commit: str = SHA) -> None:
@@ -78,7 +78,7 @@ class ReleaseRecordTests(unittest.TestCase):
 
     def test_record_line_with_base(self) -> None:
         out, code = self.record("--base", OLD)
-        want = (f"- {self.today} run-2 at {SHA}: confirmed 1, needs validation 2, hardening 3, "
+        want = (f"- {self.today} Run 2 at {SHA}: confirmed 1, needs validation 2, hardening 3, "
                 f"profile standard, scope {OLD}..{SHA}")
         self.assertEqual((code, out["record"], self.lines()[-1]), (0, want, want))
 
@@ -91,9 +91,9 @@ class ReleaseRecordTests(unittest.TestCase):
         out, code = self.record()
         self.assertEqual((code, len(out["deferred"]), out["skipped"]), (0, 3, []))
         text = self.note.read_text()
-        self.assertIn(f"### Release audit run-2, {self.today}", text)
-        self.assertEqual(sum("(security, confirmed, run-2)" in l for l in out["deferred"]), 1)
-        self.assertEqual(sum("(security, needs-validation, run-2)" in l for l in out["deferred"]), 2)
+        self.assertIn(f"### Release audit Run 2, {self.today}", text)
+        self.assertEqual(sum("(security, confirmed, Run 2)" in l for l in out["deferred"]), 1)
+        self.assertEqual(sum("(security, needs-validation, Run 2)" in l for l in out["deferred"]), 2)
         for fingerprint in ("f-c", "f-n1", "f-n2"):
             self.assertIn(f"Fingerprint `{fingerprint}`", text)
         self.assertIn("Blocker: fact one", out["deferred"][1])
@@ -106,23 +106,23 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertEqual(len(reason["items"]), 3)
 
     def test_open_fingerprint_is_skipped_closed_one_is_not(self) -> None:
-        self.note.write_text(f"## Deferred\n\n- 2026-01-01 (security, needs-validation, run-1): Old. Fingerprint `f-n1`.\n\n## Release audits\n")
+        self.note.write_text(f"## Deferred\n\n- 2026-01-01 (security, needs-validation, Run 1): Old. Fingerprint `f-n1`.\n\n## Release audits\n")
         out, _ = self.record()
         self.assertEqual((len(out["deferred"]), out["skipped"]), (2, ["f-n1"]))
-        self.note.write_text("## Deferred\n\n- 2026-01-01 (security, needs-validation, run-1): Old. Fingerprint `f-n1`.\n  - Ruling 2026-01-02: accept fine\n")
+        self.note.write_text("## Deferred\n\n- 2026-01-01 (security, needs-validation, Run 1): Old. Fingerprint `f-n1`.\n  - Ruling 2026-01-02: accept fine\n")
         out, _ = self.record()
         self.assertEqual((len(out["deferred"]), out["skipped"]), (3, []))
 
     def test_gardener_line(self) -> None:
         out, _ = self.record()
-        want = f"- {self.today} (security, hardening, run-2): 3 hardening notes, see security-audit/run-2/REPORT.md"
+        want = f"- {self.today} (security, hardening, Run 2): 3 hardening notes, see Security Audit/Run 2/REPORT.md"
         self.assertEqual(out["gardener"], want)
         self.assertEqual(self.lines()[self.lines().index("## Gardener") + 1:][:2], [want, ""])
         self.make_run(hardening=0)
         self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n")
         out, _ = self.record()
         self.assertIsNone(out["gardener"])
-        self.assertNotIn("hardening, run-2", self.note.read_text())
+        self.assertNotIn("hardening, Run 2", self.note.read_text())
 
     def test_title_cannot_close_its_own_item(self) -> None:
         self.make_run([{"verdict": "needs_validation", "fingerprint": "f-x", "blockers": ["b"],
@@ -161,7 +161,7 @@ class ReleaseRecordTests(unittest.TestCase):
         self.git("commit", "-q", "-m", name)
         return self.git("rev-parse", "HEAD")
 
-    def with_record(self, sha: str, run: str = "run-1") -> None:
+    def with_record(self, sha: str, run: str = "Run 1") -> None:
         self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n"
                              f"- 2026-01-01 {run} at {sha}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole\n")
 
@@ -228,7 +228,7 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertTrue(text.startswith(original))
         for heading in ("## Deferred", "## Gardener", "## Release audits"):
             self.assertEqual(text.count(heading + "\n"), 1)
-        self.assertEqual(release.current_record(text)["run"], "run-2")
+        self.assertEqual(release.current_record(text)["run"], "Run 2")
         self.assertEqual(len(release.security_items(text)[0]), 3)
 
     def test_existing_lines_stay(self) -> None:
@@ -239,7 +239,7 @@ class ReleaseRecordTests(unittest.TestCase):
             self.assertIn(kept, text)
 
     def test_bad_run_folder(self) -> None:
-        for folder in (self.root / "elsewhere" / "run-2", self.notes / "security-audit" / "other", self.notes / "security-audit" / "run-2" / "sub"):
+        for folder in (self.root / "elsewhere" / "Run 2", self.notes / "Security Audit" / "other", self.notes / "Security Audit" / "Run 2" / "sub"):
             folder.mkdir(parents=True, exist_ok=True)
             before = self.note.read_bytes()
             out, code = self.cli("release-record", "--run", str(folder))
@@ -261,7 +261,7 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertEqual((len(items), unparsed), (5, []))
 
     def test_concurrent_records_both_land(self) -> None:
-        other = self.notes / "security-audit" / "run-3"
+        other = self.notes / "Security Audit" / "Run 3"
         other.mkdir(parents=True)
         for f in self.run_dir.iterdir():
             shutil.copy(f, other / f.name)
@@ -272,3 +272,52 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertEqual([p.wait() for p in procs], [0, 0])
         text = self.note.read_text()
         self.assertEqual(len([l for l in text.splitlines() if RECORD_RE_LINE.match(l)]), 2)
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+class RunFolderTests(unittest.TestCase):
+    setUp = ReleaseRecordTests.setUp
+    make_run = ReleaseRecordTests.make_run
+    cli = ReleaseRecordTests.cli
+    record = ReleaseRecordTests.record
+
+    def commit(self) -> None:
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+
+    def test_plan_creates_run_1(self) -> None:
+        shutil.rmtree(self.notes / "Security Audit")
+        self.commit()
+        out, code = self.cli("release-plan")
+        self.assertEqual((code, out["run"]), (0, "Run 1"))
+        self.assertTrue((self.notes / "Security Audit" / "Run 1").is_dir())
+
+    def test_record_writes_run_ids(self) -> None:
+        out, code = self.record()
+        self.assertEqual(code, 0)
+        self.assertTrue(out["record"].startswith(f"- {self.today} Run 2 at {SHA}:"))
+        self.assertEqual(sum("(security, confirmed, Run 2)" in l for l in out["deferred"]), 1)
+        self.assertIn("Security Audit/Run 2/REPORT.md", out["gardener"])
+        self.commit()
+        checked, _ = self.cli("release-check", "--sha", "HEAD")
+        reason = next(r for r in checked["reasons"] if r["reason"] == "open-security")
+        self.assertEqual(len(reason["items"]), 3)
+
+    def test_record_refuses_old_folder(self) -> None:
+        old = self.root / "elsewhere" / "run-2"
+        shutil.copytree(self.run_dir, old)
+        out, code = self.cli("release-record", "--run", str(old))
+        self.assertEqual((code, out["error"]), (1, "bad-run"))
+
+    def test_release_commands_stop_on_old_audit_folder(self) -> None:
+        self.commit()
+        (self.notes / "security-audit").mkdir()
+        before = sorted(p.name for p in self.notes.iterdir())
+        for args in (("release-check", "--sha", "HEAD"), ("release-plan",), ("release-record", "--run", str(self.run_dir))):
+            out, code = self.cli(*args)
+            self.assertEqual((code, out["error"]), (1, "old-notes-layout"), args)
+        self.assertEqual(sorted(p.name for p in self.notes.iterdir()), before)
+
+    def test_item_with_feature_id_still_parses(self) -> None:
+        text = "## Deferred\n- 2026-10-25 (security, needs-validation, release-security-audit): x\n"
+        items, unparsed = release.security_items(text)
+        self.assertEqual(([i["source"] for i in items], unparsed), (["release-security-audit"], []))

@@ -19,14 +19,14 @@ from pathlib import Path
 
 import ci_skip
 from autonomy import write_atomic
-from devloop import emit
+from devloop import AUDITS, emit, old_layout
 from merge_check import is_test_or_doc
 from notes_path import NotesPathError, resolve
 
-ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+)\): (.+)$")
+ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
 RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) ")
 RECORD_RE = re.compile(
-    r"^- (\d{4}-\d{2}-\d{2}) (run-\d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
+    r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
     r"profile \S+, scope (whole|[0-9a-f]{40}\.\.[0-9a-f]{40})$"
 )
 CLOSING_WORDS = ("accept", "close")
@@ -117,7 +117,7 @@ def run_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
 
 def mismatch(notes: Path, record: dict) -> str | None:
     """Why the run folder of the record does not back it, else None."""
-    path = notes / "security-audit" / record["run"] / "run-metadata.json"
+    path = notes / AUDITS / record["run"] / "run-metadata.json"
     try:
         meta = json.loads(path.read_text())
     except (OSError, ValueError) as exc:
@@ -306,7 +306,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     dirty = [e[3:] for e in status.stdout.split("\0") if e]
     if dirty:
         return {"error": "dirty", "paths": dirty}, 1
-    audits = notes.absolute() / "security-audit"
+    audits = notes.absolute() / AUDITS
     placeholders = sorted(str(p) for p in audits.rglob(".*.icloud")) if audits.is_dir() else []
     if placeholders:
         return {"error": "placeholder", "files": placeholders}, 1
@@ -323,10 +323,10 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         if base is not None:
             exclude = excluded(repo, record["sha"], base, head_sha)
     runs = sorted(
-        (int(p.name[4:]), p) for p in audits.iterdir() if p.is_dir() and re.fullmatch(r"run-\d+", p.name)
+        (int(m.group(1)), p) for p in audits.iterdir() if p.is_dir() and (m := re.fullmatch(r"Run (\d+)", p.name))
     ) if audits.is_dir() else []
     n = runs[-1][0] + 1 if runs else 1
-    out = audits / f"run-{n}"
+    out = audits / f"Run {n}"
     try:
         out.mkdir(parents=True)
     except FileExistsError:
@@ -339,7 +339,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     audit = config.get("security_audit") if isinstance(config, dict) else None
     images = audit.get("images") if isinstance(audit, dict) else None
     return {
-        "run": f"run-{n}",
+        "run": f"Run {n}",
         "output": str(out),
         "head": head_sha,
         "first": first,
@@ -412,8 +412,8 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
     """Validate a finished audit run, then write its Deferred lines, Gardener line and record line in one write of the
     project note. Exit 0, else 1 with `error` and the note untouched."""
     run = run.absolute()
-    audits = (notes / "security-audit").absolute()
-    if run.parent.resolve() != audits.resolve() or not re.fullmatch(r"run-\d+", run.name):
+    audits = (notes / AUDITS).absolute()
+    if run.parent.resolve() != audits.resolve() or not re.fullmatch(r"Run \d+", run.name):
         return {"error": "bad-run"}, 1
     note = project_note(notes)
     if note is None:
@@ -479,11 +479,11 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
                 parts.append(f"Fingerprint `{fingerprint}`.")
             if blocker:
                 parts.append(f"Blocker: {blocker}.")
-            parts.append(f"Details: security-audit/{name}/{detail}.")
+            parts.append(f"Details: {AUDITS}/{name}/{detail}.")
             deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
         counts = {v: sum(1 for r in findings if r.get("verdict") == v) for v in verdicts}
         hardening = hardening_count(run / "REPORT.md")
-        gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see security-audit/{name}/REPORT.md" if hardening else None
+        gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see {AUDITS}/{name}/REPORT.md" if hardening else None
         line = (f"- {today} {name} at {sha}: confirmed {counts['confirmed']}, needs validation {counts['needs_validation']}, "
                 f"hardening {hardening}, profile {profile}, scope {scope}")
         lines = text.split("\n")
@@ -542,6 +542,8 @@ def cmd_release_check(args: argparse.Namespace) -> int:
             notes = resolve(repo, os.environ, Path.home())
         except NotesPathError as exc:
             return emit({"error": str(exc)}, 1)
+    if notes is not None and "security-audit" in old_layout(notes):
+        return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
     return emit(*check(repo, notes, args.tag or args.sha, args.tag))
 
 
@@ -551,6 +553,8 @@ def cmd_release_plan(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
         return emit({"error": str(exc)}, 1)
+    if "security-audit" in old_layout(notes):
+        return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
     return emit(*plan(repo, notes, args.harness, args.profile, args.budget))
 
 
@@ -560,4 +564,6 @@ def cmd_release_record(args: argparse.Namespace) -> int:
         notes = resolve(repo, os.environ, Path.home())
     except NotesPathError as exc:
         return emit({"error": str(exc)}, 1)
+    if "security-audit" in old_layout(notes):
+        return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
     return emit(*record(repo, notes, Path(args.run_folder), args.base, args.harness, os.environ))
