@@ -143,8 +143,7 @@ def is_spec(notes: Path, path: Path) -> bool:
 def find_plan(notes: Path, spec: Path) -> Path | None:
     if spec.name == "Spec.md" and spec.parent.parent == notes / FEATURES:
         plan = spec.parent / "Plan.md"
-        if plan.is_file():
-            return plan
+        return plan if plan.is_file() else None
     plans = [p for p in sorted((notes / "plans").glob("*.md")) if frontmatter(p).get("spec") in (spec.name, spec.stem)]
     return plans[-1] if plans else None
 
