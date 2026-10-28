@@ -350,6 +350,18 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.assertIn("missing trusted Codex hook hash: stop", result.stdout)
         self.assertNotIn("missing trusted Codex hook hash: session_start", result.stdout)
 
+    def test_codex_project_skips_a_hook_that_is_not_a_command_hook(self) -> None:
+        self.init()
+        self.trust_codex()
+        self.install_security_audit()
+        hooks_path = self.repo / ".codex" / "hooks.json"
+        hooks = json.loads(hooks_path.read_text())
+        hooks["hooks"]["Stop"][0]["hooks"].append({"type": "mcp_tool", "server": "s", "tool": "t", "input": {}})
+        write(hooks_path, json.dumps(hooks))
+        result = self.run_checker("codex")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_codex_hook_hash_format_is_pinned(self) -> None:
         literal = (
             '{"event_name":"pre_tool_use","hooks":[{"async":false,"command":"x.sh",'

@@ -539,6 +539,8 @@ def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
     events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
 
     def trusted(event: str, i: int, j: int, group: dict, hook: dict) -> bool:
+        if not isinstance(hook, dict) or hook.get("type", "command") != "command":
+            return True
         value = states.get(f"{hooks_file}:{snake_case(event)}:{i}:{j}")
         return isinstance(value, dict) and value.get("trusted_hash") == codex_hook_hash(event, group, hook)
 
