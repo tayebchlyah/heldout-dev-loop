@@ -20,6 +20,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
+from devloop import old_layout  # noqa: E402
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
@@ -82,6 +83,18 @@ def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) ->
     except NotesPathError as exc:
         return [re.sub(r"^no notes path", "missing notes path", str(exc))]
     return []
+
+
+def check_notes_layout(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    """Nothing when the notes path does not resolve: check_notes already reports that."""
+    try:
+        notes = resolve(repo, os.environ if env is None else env, home)
+    except NotesPathError:
+        return []
+    names = old_layout(notes)
+    if not names:
+        return []
+    return [f"old-notes-layout: {', '.join(names)} in {notes}: run devloop.py notes-migrate (dry run), then --apply --plan <hash>"]
 
 
 def dataview_ready(root: Path) -> bool:
@@ -707,6 +720,7 @@ def main() -> int:
     failures, action_groups = check_project(args.home, args.repo, args.harness)
     failures += check_version(args.harness)
     failures += check_notes(args.home, args.repo)
+    failures += check_notes_layout(args.home, args.repo)
     failures += check_project_config(args.repo)
     second_failures, second_groups = check_second_review(args.repo, args.harness)
     failures += second_failures
