@@ -485,16 +485,6 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         if not path.exists() and (folder / f".{name}.icloud").exists():
             payload["skipped"].append(skip("placeholder", slug))
             continue
-        # D3, D4: an own note in `dev-loop-board/` moves into `features/`; an own name that does not parse (a 2.1.0
-        # YAML block note) is own too. A parsed foreign one stays.
-        legacy = board / name
-        if legacy.is_file() and not legacy.is_symlink():
-            mine = store.read_note(legacy)
-            if mine is None or mine.get("machine_id") == machine["id"] and not mine.get("shipped_at"):
-                if path.exists():
-                    legacy.unlink()
-                else:
-                    os.replace(legacy, path)
         # D3: an own name that parses with another machine_id stays unchanged; one that does not parse is written
         # again from the state.
         owner = store.ownership(path, machine["id"]) if path.exists() else None
@@ -550,7 +540,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     own_names: set[str] = set()
     own_features: set[str] = set()
     shipped: list[tuple[str, Path]] = []
-    for path in [*sorted(folder.glob("*.md")), *sorted(board.glob("*.md"))]:
+    for path in sorted(folder.glob("*.md")):
         if path.name.startswith(".") or path.name == store.BOARD_NOTE or path.is_symlink():
             continue
         fields = store.read_note(path)
@@ -559,10 +549,6 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         if not isinstance(feature, str) or path.name != store.note_name(machine["id"], project, feature):
             continue  # A sync conflict copy is left alone.
-        if path.name in own_names:  # D4: an own note in both folders: the `dev-loop-board/` copy goes.
-            path.unlink()
-            payload["removed"].append(str(path))
-            continue
         own_names.add(path.name)
         entry = ctx.data["features"].get(feature)
         saved = entry if isinstance(entry, dict) and entry.get("head") else fields  # D1: `head` from the state.
@@ -596,7 +582,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     # D1: an entry goes once its feature is out of the write set and has no own-name note in either folder.
     for slug in list(ctx.data["features"]):
         name = store.note_name(machine["id"], project, slug)
-        if slug not in kept and not (folder / name).exists() and not (board / name).exists():
+        if slug not in kept and not (folder / name).exists():
             del ctx.data["features"][slug]
 
     names = own_names | {p.name for p in map(Path, payload["notes"])}

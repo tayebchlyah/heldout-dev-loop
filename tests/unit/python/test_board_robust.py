@@ -204,25 +204,23 @@ class BoardRobustTests(Board):
         state = json.loads((self.repo / ".git" / "dev-loop" / "board-state.json").read_text())
         self.assertEqual(state["last_run"]["skipped"], want)
 
-    def test_own_legacy_note_that_does_not_parse_moves_into_features(self) -> None:
-        """D3, D4: an own note in YAML block form in Dev Loop Board/ (2.1.0) is gone after one run; features/ holds
-        the note with the times of the state. With a features/ copy already there, the legacy file is deleted."""
+    def test_own_note_in_the_board_root_is_left_alone(self) -> None:
+        """Supersedes Board Robustness 32: `board` writes only `Dev Loop Board/Features/`."""
         wt, plan = self.stage5("gadget", "Gadget Export")
         self.ledger(wt, plan, "Task 1: complete")
         self.ok(cwd=wt)
         path = self.board_dir / "Features" / note_name(MACHINE["id"], PROJECT, "gadget")
-        legacy = self.board_dir / path.name
-        before = read_note(path)
         for keep in (False, True):
             with self.subTest(features_copy=keep):
-                if not keep:
-                    path.unlink()
-                legacy.write_text(yaml_block(before))
+                root_copy = self.board_dir / path.name
+                root_copy.write_text(yaml_block(read_note(path)))
+                before = root_copy.read_bytes()
                 self.ok(cwd=wt)
-                self.assertFalse(legacy.exists())
-                after = read_note(path)
-                self.assertEqual(after["stage_times"], before["stage_times"])
-                self.assertEqual(after["tasks"], before["tasks"])
+                self.assertEqual(root_copy.read_bytes(), before)
+                self.assertTrue(path.exists())
+                path.unlink()
+                root_copy.unlink()
+                self.ok(cwd=wt)
 
     def test_crashed_run_is_reported_by_status(self) -> None:
         """A board run that raises: exit 1, last_run saved with reason `error`, `status` reports it."""

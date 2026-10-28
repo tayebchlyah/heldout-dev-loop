@@ -20,7 +20,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
-from devloop import old_layout  # noqa: E402
+from devloop import AUDITS, BOARD, old_layout  # noqa: E402
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
@@ -137,18 +137,18 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
     if local.get("board_dataview") is not False and (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
     if local.get("board_vault_git") != "shared":
-        if (root / ".git").exists() and vault_unignored(root, Path(notes), "Dev Loop Board"):
-            actions.append("add Dev Loop Board/ to the vault .gitignore, unless a partner receives the notes by git")
+        if (root / ".git").exists() and vault_unignored(root, Path(notes), BOARD):
+            actions.append(f"add {BOARD}/ to the vault .gitignore, unless a partner receives the notes by git")
         # D13: the vault git repo is wherever git finds it, with or without an .obsidian folder.
         try:
             top = subprocess.run(["git", "-C", str(notes), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
         except OSError:
             top = None
         if top is not None and top.returncode == 0 and top.stdout.strip():
-            if vault_unignored(Path(top.stdout.strip()), Path(notes), "Security Audit"):
-                actions.append("add Security Audit/ to the vault .gitignore")
+            if vault_unignored(Path(top.stdout.strip()), Path(notes), AUDITS):
+                actions.append(f"add {AUDITS}/ to the vault .gitignore")
     # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
-    note = Path(notes) / "Dev Loop Board" / store.BOARD_NOTE
+    note = Path(notes) / BOARD / store.BOARD_NOTE
     kit = writer.kit_version(repo)
     if note.is_file() and not note.is_symlink():
         have = (store.read_note(note) or {}).get("version")
