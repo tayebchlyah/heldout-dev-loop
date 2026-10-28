@@ -273,6 +273,7 @@ class Board(unittest.TestCase):
         return path
 
     def ledger(self, wt: Path, plan: Path, *lines: str) -> None:
+        put(wt / ".superpowers" / "sdd" / plan.stem / "plan-path", f"{plan}\n")
         put(wt / ".superpowers" / "sdd" / plan.stem / "progress.md", "# Ledger\n" + "".join(f"{line}\n" for line in lines))
 
     def stage5(self, slug: str, title: str, tasks: int = 3, repo: Path | None = None) -> tuple[Path, Path]:

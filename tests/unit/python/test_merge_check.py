@@ -38,6 +38,7 @@ class MergeCheckTests(Sandbox):
         return git(cwd, "rev-parse", "HEAD").strip()
 
     def gate_green(self, wt: Path, *shas: str) -> None:
+        put(wt / ".superpowers" / "sdd" / self.PLAN_NAME / "plan-path", f"{self.notes / 'plans' / (self.PLAN_NAME + '.md')}\n")
         put(wt / ".superpowers" / "sdd" / self.PLAN_NAME / "progress.md",
             "Task 1: complete\n" + "".join(f"Feature gate: green at {sha}\n" for sha in shas))
 

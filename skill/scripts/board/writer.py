@@ -160,7 +160,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         baseline = assumptions
     plan = ctx.dl.find_plan(ctx.notes, spec) if spec else None
     worktree = found["worktree"]
-    ledger = Path(worktree) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and worktree else None
+    ledger = ctx.dl.ledger(Path(worktree), plan) if plan and worktree else None
     saved = entry["tasks"] if isinstance(entry.get("tasks"), dict) else {}
 
     def done_time(n: int, line: str) -> str | None:

@@ -186,6 +186,7 @@ class PauseSandbox(AutonomySandbox):
     def setUp(self) -> None:
         super().setUp()
         put(self.notes / "plans" / SPEC, f"---\nspec: {SPEC}\n---\n\n# Plan\n\n### Task 1: one\n")
+        put(self.wt / ".superpowers" / "sdd" / Path(SPEC).stem / "plan-path", f"{self.notes / 'plans' / SPEC}\n")
         put(self.wt / ".superpowers" / "sdd" / Path(SPEC).stem / "progress.md", "# ledger\nTask 1: complete\n\n")
         self.note = Path(git(self.wt, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "pause.json"
 
