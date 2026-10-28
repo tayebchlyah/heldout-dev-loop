@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import tempfile
 import unicodedata
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
-from notes_migrate import links
+from notes_migrate import links, plan
+from support import git_in, make_git_repo, write
 
 NOTES = Path("/v/Notes")
 SPEC_OLD = NOTES / "specs/20261020 Demo Work.md"
@@ -117,6 +124,254 @@ class LinkTests(unittest.TestCase):
             "[[Features/20261020 Read.md Files/Spec.md|r]]",
             2,
         ))
+
+
+DEMO = {
+    "specs/20261020 Demo Work.md": "---\nfeature: demo-work\n---\n# Demo\n",
+    "plans/20261021 Demo Work.md": "---\nspec: 20261020 Demo Work.md\n---\n",
+    "framing/20261019 demo-work.md": "---\ntype: note\n---\n",
+}
+DEMO_MOVES = [
+    ("specs/20261020 Demo Work.md", "Features/20261019 Demo Work/Spec.md", "spec", "demo-work"),
+    ("plans/20261021 Demo Work.md", "Features/20261019 Demo Work/Plan.md", "plan", "demo-work"),
+    ("framing/20261019 demo-work.md", "Features/20261019 Demo Work/Framing.md", "framing", "demo-work"),
+]
+
+
+class MovePlanTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        self.tmp = tmp.resolve()
+        self.repo = make_git_repo(self.tmp, {"dev-loop.json": "{}\n"})
+        self.notes = self.tmp / "notes"
+        self.notes.mkdir()
+
+    def put(self, files: dict[str, str]) -> None:
+        for rel, text in files.items():
+            write(self.notes / rel, text)
+
+    def tree(self) -> dict[str, bytes]:
+        return {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*")) if p.is_file() and not p.is_symlink()}
+
+    def plan(self, kit: str = "2.0.0") -> tuple[list[tuple], list[tuple], list[str]]:
+        before = self.tree()
+        moves, blocked, ambiguous = plan.plan_moves(self.repo, self.notes, kit)
+        self.assertEqual(self.tree(), before)
+        rel = lambda p: p.relative_to(self.notes).as_posix()
+        return [(rel(m.src), rel(m.dst), m.role, m.slug) for m in moves], [tuple(b) for b in blocked], ambiguous
+
+    def reasons(self, kit: str = "2.0.0") -> list[tuple]:
+        return self.plan(kit)[1]
+
+    def test_three_notes_pair(self) -> None:
+        self.put(DEMO)
+        self.assertEqual(self.plan(), (DEMO_MOVES, [], []))
+
+    def test_two_plans(self) -> None:
+        self.put({
+            "specs/20261020 Demo Work.md": "---\nfeature: demo-work\n---\n",
+            "plans/20261021 First.md": "---\nspec: 20261020 Demo Work.md\n---\n",
+            "plans/20261022 Second.md": "---\nspec: 20261020 Demo Work\n---\n",
+        })
+        self.assertEqual(self.plan()[0], [
+            ("specs/20261020 Demo Work.md", "Features/20261020 Demo Work/Spec.md", "spec", "demo-work"),
+            ("plans/20261021 First.md", "Features/20261020 Demo Work/20261021 First.md", "plan", "demo-work"),
+            ("plans/20261022 Second.md", "Features/20261020 Demo Work/Plan.md", "plan", "demo-work"),
+        ])
+
+    def test_plan_pairing_rules(self) -> None:
+        rows = [
+            ("20261013 Release Tooling Plan.md", "---\ntype: plan\n---\n"),
+            ("20261015 Tooling.md", '---\nspec: "[[20261013 Release Tooling]]"\n---\n'),
+            ("20261015 Tooling.md", '---\nspec: "[[specs/20261013 Release Tooling|the spec]]"\n---\n'),
+            ("20261016 Other.md", "---\nfeature: release-tooling\n---\n"),
+        ]
+        for name, text in rows:
+            with self.subTest(name=name, text=text):
+                shutil.rmtree(self.notes)
+                self.put({"specs/20261013 Release Tooling.md": "# Release\n", f"plans/{name}": text})
+                self.assertIn(
+                    (f"plans/{name}", "Features/20261013 Release Tooling/Plan.md", "plan", "release-tooling"),
+                    self.plan()[0],
+                )
+
+    def test_orphans_get_own_folder(self) -> None:
+        self.put({"plans/20261013 Orphan Work.md": "# x\n", "framing/20261014 lone-idea.md": "# y\n"})
+        self.assertEqual(self.plan(), ([
+            ("plans/20261013 Orphan Work.md", "Features/20261013 Orphan Work/Plan.md", "plan", "orphan-work"),
+            ("framing/20261014 lone-idea.md", "Features/20261014 Lone Idea/Framing.md", "framing", "lone-idea"),
+        ], [], []))
+
+    def test_ambiguous_framing(self) -> None:
+        self.put({
+            "specs/20261020 Twin A.md": "---\nfeature: twin\n---\n",
+            "specs/20261021 Twin B.md": "---\nfeature: twin\n---\n",
+            "framing/20261019 twin.md": "# twin\n",
+        })
+        moves, blocked, ambiguous = self.plan()
+        self.assertIn(("framing/20261019 twin.md", "Features/20261019 Twin/Framing.md", "framing", "twin"), moves)
+        self.assertEqual((blocked, ambiguous), ([], ["framing/20261019 twin.md"]))
+
+    def test_linked_file_moves_unlinked_blocks(self) -> None:
+        self.put({
+            **DEMO,
+            "specs/20261020 Demo Work.md": "---\nfeature: demo-work\n---\n[m](mock.html) ![[shared.png]]\n",
+            "specs/20261001 Other.md": "![[shared.png]]\n",
+            "specs/.DS_Store": "x",
+            "specs/mock.html": "<p>",
+            "specs/img.png": "png",
+            "specs/shared.png": "png",
+        })
+        moves, blocked, _ = self.plan()
+        self.assertIn(("specs/mock.html", "Features/20261019 Demo Work/mock.html", "file", "demo-work"), moves)
+        self.assertFalse([m for m in moves if ".DS_Store" in m[0]])
+        self.assertEqual(blocked, [("specs/img.png", "unknown-entry"), ("specs/shared.png", "unknown-entry")])
+
+    def test_folder_renames(self) -> None:
+        self.put({
+            "answers/20261020 Q.md": "a",
+            "maps/release-cycle/map.md": "m",
+            "security-audit/run-3/REPORT.md": "r",
+            "dev-loop-board/features/x.md": "x",
+        })
+        self.assertEqual(self.plan(), ([
+            ("answers", "Answers", "folder", None),
+            ("maps", "Maps", "folder", None),
+            ("maps/release-cycle", "Maps/Release Cycle", "folder", None),
+            ("security-audit", "Security Audit", "folder", None),
+            ("security-audit/run-3", "Security Audit/Run 3", "folder", None),
+            ("dev-loop-board", "Dev Loop Board", "folder", None),
+            ("dev-loop-board/features", "Dev Loop Board/Features", "folder", None),
+        ], [], []))
+
+    def test_board_merge_newer_wins(self) -> None:
+        status = "---\ntype: dev-loop-status\n---\n"
+        self.put({
+            "dev-loop-board/features/a.md": status,
+            "dev-loop-board/features/d.md": status,
+            "dev-loop-board/features/e.md": status,
+            "dev-loop-board/c.md": status,
+            "Dev Loop Board/Features/b.md": status,
+            "Dev Loop Board/Features/d.md": status,
+            "Dev Loop Board/Features/e.md": status,
+        })
+        for rel, when in [("dev-loop-board/features/d.md", 200), ("Dev Loop Board/Features/d.md", 100),
+                          ("dev-loop-board/features/e.md", 100), ("Dev Loop Board/Features/e.md", 200)]:
+            os.utime(self.notes / rel, (when, when))
+        self.assertEqual(self.plan(), ([
+            ("dev-loop-board/features/a.md", "Dev Loop Board/Features/a.md", "board-merge", None),
+            ("dev-loop-board/features/d.md", "Dev Loop Board/Features/d.md", "board-merge", None),
+            ("Dev Loop Board/Features/e.md", "dev-loop-board/features/e.md", "board-merge", None),
+            ("dev-loop-board/c.md", "Dev Loop Board/Features/c.md", "board-merge", None),
+        ], [], []))
+
+    def test_target_exists(self) -> None:
+        self.put({**DEMO, "Features/20261019 Demo Work/Spec.md": "x",
+                  "security-audit/run-3/REPORT.md": "old", "Security Audit/Run 3/REPORT.md": "new"})
+        self.assertEqual(self.reasons(), [
+            ("Security Audit/Run 3/REPORT.md", "target-exists"),
+            ("Features/20261019 Demo Work/Spec.md", "target-exists"),
+        ])
+
+    def test_link_blocks(self) -> None:
+        elsewhere = self.tmp / "elsewhere"
+        write(elsewhere / "20261020 Demo Work.md", "x")
+        rows = [
+            ("specs", elsewhere, {}),
+            ("specs/20261020 Demo Work.md", elsewhere / "20261020 Demo Work.md", {}),
+            ("Features", elsewhere, {"specs/20261020 Demo Work.md": "x"}),
+        ]
+        for rel, target, files in rows:
+            with self.subTest(rel=rel):
+                shutil.rmtree(self.notes)
+                self.notes.mkdir()
+                self.put(files)
+                (self.notes / rel).parent.mkdir(parents=True, exist_ok=True)
+                (self.notes / rel).symlink_to(target)
+                self.assertEqual(self.reasons(), [(rel, "link")])
+
+    def test_placeholder_blocks(self) -> None:
+        self.put({**DEMO, "specs/.20261019 Gone.md.icloud": "", "Project Note.md": "x"})
+        real = os.stat
+
+        def stat(path, *args, **kwargs):
+            found = real(path, *args, **kwargs)
+            if str(path).endswith("Project Note.md"):
+                return SimpleNamespace(st_flags=0x40000000, st_mode=found.st_mode, st_mtime=found.st_mtime)
+            return found
+
+        with mock.patch("os.stat", stat):
+            blocked = self.reasons()
+        self.assertEqual(sorted(blocked), [("Project Note.md", "placeholder"),
+                                           ("specs/.20261019 Gone.md.icloud", "placeholder")])
+
+    def test_old_kit_worktree(self) -> None:
+        self.put(DEMO)
+        rows = [("1.9.0", True), ("2.0.0-rc.1", True), ("2.0.0", False), ("2.1.0", False), (None, False)]
+        for version, blocked in rows:
+            with self.subTest(version=version):
+                other = self.tmp / f"wt-{version}"
+                git_in(self.repo, "worktree", "add", "-q", str(other), "-b", f"feat/{version}")
+                if version:
+                    write(other / ".dev-loop/MANIFEST.json", json.dumps({"version": version}))
+                expected = [(str(other), "old-kit-worktree")] if blocked else []
+                self.assertEqual(self.reasons(), expected)
+                git_in(self.repo, "worktree", "remove", "--force", str(other))
+
+    def test_open_ledger(self) -> None:
+        self.put(DEMO)
+        link = self.tmp / "link"
+        link.symlink_to(self.notes)
+        sdd = self.repo / ".superpowers/sdd"
+        rows = [
+            (None, True),
+            (str(link / "plans/20261021 Demo Work.md"), True),
+            ("../notes/plans/20261021 Demo Work.md", True),
+            (str(self.notes / "Features/20261019 Demo Work/Plan.md"), False),
+        ]
+        for marker, blocked in rows:
+            with self.subTest(marker=marker):
+                shutil.rmtree(sdd, ignore_errors=True)
+                write(sdd / "20261020 Demo Work/progress.md", "# progress\n")
+                if marker:
+                    write(sdd / "20261020 Demo Work/plan-path", marker + "\n")
+                expected = [(str(sdd / "20261020 Demo Work"), "open-ledger")] if blocked else []
+                self.assertEqual(self.reasons(), expected)
+
+    def test_gitignore(self) -> None:
+        vault = self.tmp / "vault"
+        self.notes = vault / "sub/notes"
+        write(vault / "README.md", "v")
+        git_in(vault, "init", "-q")
+        write(vault / "sub/.gitignore", "security-audit/\n")
+        self.put({"security-audit/run-1/REPORT.md": "r", "dev-loop-board/x.md": "x"})
+        self.assertEqual(self.reasons(), [("Security Audit/", "gitignore")])
+        write(vault / "sub/.gitignore", "security-audit/\nSecurity Audit/\n")
+        self.assertEqual(self.reasons(), [])
+
+    def test_bad_name_no_date_collision(self) -> None:
+        self.put({
+            "specs/20261020 A#B.md": "x",
+            "plans/20261021 C[1].md": "x",
+            "specs/No Date.md": "x",
+            "plans/20261013 Orphan.md": "x",
+            "plans/20261013 Orphan Plan.md": "x",
+        })
+        self.assertEqual(sorted(self.reasons()), [
+            ("Features/20261013 Orphan/Plan.md", "collision"),
+            ("Features/20261020 A#B", "bad-name"),
+            ("Features/20261021 C[1]", "bad-name"),
+            ("specs/No Date.md", "no-date"),
+        ])
+
+    def test_folder_name_keeps_inner_dot_md(self) -> None:
+        self.put({"specs/20261020 Read.md Files.md": "x",
+                  "plans/20261021 Read.md Files.md": "---\nspec: 20261020 Read.md Files\n---\n"})
+        self.assertEqual(self.plan()[0], [
+            ("specs/20261020 Read.md Files.md", "Features/20261020 Read.md Files/Spec.md", "spec", "read-md-files"),
+            ("plans/20261021 Read.md Files.md", "Features/20261020 Read.md Files/Plan.md", "plan", "read-md-files"),
+        ])
 
 
 if __name__ == "__main__":
