@@ -146,7 +146,7 @@ class _Planner:
             elif top == "dev-loop-board" and name == "features" and kid.is_dir():
                 name = devloop.BOARD_FEATURES
             elif top == "dev-loop-board" and kid.suffix == ".md" and kid.is_file() and not _placeholder(kid) \
-                    and devloop.frontmatter(kid).get("type") == "dev-loop-status":
+                    and os.access(kid, os.R_OK) and devloop.frontmatter(kid).get("type") == "dev-loop-status":
                 name = f"{devloop.BOARD_FEATURES}/{name}"
             out.append((kid, name))
         return out
@@ -181,10 +181,15 @@ class _Planner:
         notes = self.notes
 
         def md(name: str) -> list[Path]:
-            folder = notes / name
-            if name not in live:
-                return []
-            return sorted(p for p in folder.iterdir() if p.suffix == ".md" and p.is_file() and not _placeholder(p))
+            found = []
+            for path in sorted((notes / name).iterdir()) if name in live else []:
+                if path.suffix != ".md" or not path.is_file() or _placeholder(path):
+                    continue
+                if os.access(path, os.R_OK):
+                    found.append(path)
+                else:
+                    self.block(path, "unreadable")
+            return found
 
         specs = [(_slug(spec), spec) for spec in md("specs")]
         paired: dict[Path, list[tuple[str, Path]]] = {spec: [] for _, spec in specs}
