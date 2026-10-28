@@ -79,7 +79,7 @@ class GuardTests(unittest.TestCase):
 
     def note(self, audited: bool) -> None:
         if audited:
-            folder = self.notes / "security-audit" / "run-1"
+            folder = self.notes / "Security Audit" / "Run 1"
             put(folder / "run-metadata.json", json.dumps({"source_ref": {"commit": self.A}, "profile": "quick",
                                                           "scope_paths": [], "run_status": "complete"}))
             put(self.notes / "Project Note.md", note_text([record_line(1, self.A)], [], []))
@@ -183,7 +183,7 @@ class SetupTests(unittest.TestCase):
         self.env = base_env(self.home, self.root / "tmp")
         self.vault = self.root / "vault"
         self.notes = self.vault / "Projects" / NOTES_NAME
-        (self.notes / "specs").mkdir(parents=True)
+        (self.notes / "Features").mkdir(parents=True)
         subprocess.run(["git", "init", "-q", str(self.vault)], env=self.env, check=True, capture_output=True)
         self.project = self.root / "acme-widgets"
         self.project.mkdir()
@@ -222,7 +222,7 @@ class SetupTests(unittest.TestCase):
 
     def vault_lines(self, output: str) -> list[str]:
         _, actions = self.split(output)
-        return [line for line in actions if "security-audit/" in line and ".gitignore" in line]
+        return [line for line in actions if "Security Audit/" in line and ".gitignore" in line]
 
     def test_o53_vault_gitignore_line(self) -> None:
         for harness in ("claude", "codex"):
@@ -236,7 +236,7 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(self.vault_lines(output), [], output)
         with self.subTest(case="ignored in the vault"):
             (self.project / "dev-loop.local.json").write_text(json.dumps(self.local, indent=2) + "\n")
-            (self.vault / ".gitignore").write_text("dev-loop-board/\nsecurity-audit/\n")
+            (self.vault / ".gitignore").write_text("Dev Loop Board/\nSecurity Audit/\n")
             output = self.checker()
             self.assertEqual(self.vault_lines(output), [], output)
 

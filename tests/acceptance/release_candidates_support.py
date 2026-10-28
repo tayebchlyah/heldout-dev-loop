@@ -217,7 +217,7 @@ class AuditCase(Scratch):
         return self.commit(self.repo, files, f"B: upgrade to {version}")
 
     def record_at(self, commit: str, run: int = 1) -> None:
-        folder = self.notes / "security-audit" / f"run-{run}"
+        folder = self.notes / "Security Audit" / f"Run {run}"
         put(folder / "run-metadata.json", json.dumps({"source_ref": {"commit": commit}, "profile": "quick",
                                                       "scope_paths": [], "run_status": "complete"}) + "\n")
         put(self.notes / "Project Note.md", note_text([record_line(run, commit)], []))

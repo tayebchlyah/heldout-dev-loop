@@ -118,7 +118,7 @@ class FailurePathTests(CaptureCase):
         home = self.root / "home"
         home.mkdir()
         notes = self.root / "notes"
-        (notes / "specs").mkdir(parents=True)
+        (notes / "Features").mkdir(parents=True)
         shop = self.root / "Tea Shop"
         init_repo(shop, self.env)
         install = subprocess.run(["node", str(INSTALLER), "init", "--yes", "--harness=both", f"--notes={notes}"],

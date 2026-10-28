@@ -17,9 +17,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import (ISO_Z, MACHINE, OTHER, PROJECT, Board, git, note_name, note_text, put, read_note, slow,
                             status_note)
+from feature_folders_support import NewLayout
 
 
-class BoardEventTests(Board):
+class BoardEventTests(NewLayout, Board):
     def test_o20_stop_sets_reply_in_the_session_on_its_feature_only(self) -> None:
         """O20, D16, D17: --event stop in a Stage 5 worktree sets waiting on that feature only."""
         wt_a, _ = self.stage5("alpha", "Alpha Report")
@@ -124,9 +125,9 @@ class BoardEventTests(Board):
         self.assertEqual(self.note("gadget")["stage"], 3)
 
 
-class BoardShipTests(Board):
+class BoardShipTests(NewLayout, Board):
     def ship(self, title: str, day: str = "2026-10-15") -> None:
-        self.set_field(self.notes / "specs" / f"20261001 {title}.md", "shipped", day)
+        self.set_field(self.spec_path(title), "shipped", day)
 
     @slow
     def test_o24_ship_sets_shipped_at_once(self) -> None:
@@ -155,8 +156,8 @@ class BoardShipTests(Board):
     def test_o61_shipped_note_is_never_rewritten(self) -> None:
         """O61, D12: a run does not rewrite an existing own shipped note."""
         self.worktree("tiny", prefix="fix")
-        self.board_dir.mkdir(parents=True)
-        path = self.board_dir / note_name(MACHINE["id"], PROJECT, "old-thing")
+        self.features_dir.mkdir(parents=True)
+        path = self.features_dir / note_name(MACHINE["id"], PROJECT, "old-thing")
         put(path, note_text(status_note(feature="old-thing", machine_id=MACHINE["id"], owner="Robin", machine="lab-mac",
                                         stage=7, shipped_at="2026-10-01T10:00:00Z")))
         before = (path.read_bytes(), path.stat().st_mtime_ns)
@@ -168,8 +169,9 @@ class BoardShipTests(Board):
     @slow
     def test_o26_o62_six_shipped_notes_keep_the_five_latest(self) -> None:
         """O26, O62, D12, amended by board-ledger: 6 own shipped notes in one project: the next run keeps the 5
-        latest shipped_at. Rows: O26, six features shipped one by one; O62, a folder with six shipped notes and a
-        foreign one, where the run deletes the oldest and the foreign note stays."""
+        latest shipped_at. Rows: O26, six features shipped one by one; O62 as Feature Folders replaced it, a
+        `Dev Loop Board` folder with six shipped notes and a foreign one, where the run deletes the oldest and the
+        foreign note stays."""
 
         def shipped_one_by_one() -> set[str]:
             slugs = ["one", "two", "three", "four", "five", "six"]
@@ -189,18 +191,18 @@ class BoardShipTests(Board):
 
         def folder_with_six_shipped() -> set[str]:
             self.worktree("tiny", prefix="fix")
-            self.board_dir.mkdir(parents=True)
+            self.features_dir.mkdir(parents=True)
             shipped = {"north": "2026-10-03", "south": "2026-10-01", "east": "2026-10-04", "west": "2026-10-02",
                        "upper": "2026-10-06", "lower": "2026-10-05"}
             for slug, day in shipped.items():
-                put(self.board_dir / note_name(MACHINE["id"], PROJECT, slug),
+                put(self.features_dir / note_name(MACHINE["id"], PROJECT, slug),
                     note_text(status_note(feature=slug, machine_id=MACHINE["id"], owner="Robin", machine="lab-mac",
                                           stage=7, shipped_at=f"{day}T10:00:00Z")))
-            foreign = self.board_dir / note_name(OTHER["id"], PROJECT, "ancient")
+            foreign = self.features_dir / note_name(OTHER["id"], PROJECT, "ancient")
             put(foreign, note_text(status_note(feature="ancient", shipped_at="2026-09-01T10:00:00Z")))
             foreign_before = (foreign.read_bytes(), foreign.stat().st_mtime_ns)
             out = self.ok()
-            south = self.board_dir / note_name(MACHINE["id"], PROJECT, "south")
+            south = self.features_dir / note_name(MACHINE["id"], PROJECT, "south")
             self.assertIn(str(south), [str(Path(p).resolve()) for p in out["removed"]])
             self.assertEqual((foreign.read_bytes(), foreign.stat().st_mtime_ns), foreign_before)
             return {"north", "east", "west", "upper", "lower", "tiny"}

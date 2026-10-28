@@ -172,7 +172,7 @@ class VerifyInitAndSetupTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.notes = self.root / "notes"
-        (self.notes / "specs").mkdir(parents=True)
+        (self.notes / "Features").mkdir(parents=True)
         self.env = clean_env(HOME=str(self.home))
 
     def checker(self, repo: Path, harnesses: tuple[str, ...] = ("claude", "codex")) -> str:

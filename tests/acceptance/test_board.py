@@ -22,15 +22,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import (BOARD_NOTE, GIT, ISO_Z, MACHINE, OTHER, PROJECT, VERSION, Board, frontmatter_version, git,
                             note_name, note_text, put, read_note, slow, snapshot, status_note)
+from feature_folders_support import NewLayout
 
 
-class BoardWriterTests(Board):
+class BoardWriterTests(NewLayout, Board):
     def test_o1_note_path_type_schema_and_machine_id(self) -> None:
-        """O1, superseded by Board Robustness oracle 1: in a feature worktree, writes
-        <notes>/dev-loop-board/features/<project>-<slug>-<hash>.md."""
+        """O1, superseded by Board Robustness oracle 1, then by Feature Folders: in a feature worktree, writes
+        <notes>/Dev Loop Board/Features/<project>-<slug>-<hash>.md."""
         wt, _ = self.stage5("gadget", "Gadget Export")
         out = self.ok(cwd=wt)
-        path = self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, "gadget")
+        path = self.features_dir / note_name(MACHINE["id"], PROJECT, "gadget")
         self.assertTrue(path.is_file(), sorted(str(p.relative_to(self.board_dir)) for p in self.board_dir.rglob("*")))
         fields = read_note(path)
         self.assertEqual((fields["type"], fields["schema"], fields["machine_id"]), ("dev-loop-status", 1, MACHINE["id"]))
@@ -138,7 +139,8 @@ class BoardWriterTests(Board):
 
     @slow
     def test_o10_note_of_another_machine_never_changes(self) -> None:
-        """O10, D2: a file with another machine_id stays unchanged after any run, also after the ship."""
+        """O10, D2, as Feature Folders replaced it: a file with another machine_id in `Dev Loop Board` stays
+        unchanged after any run, also after the ship."""
         wt, _ = self.stage5("gadget", "Gadget Export")
         self.board_dir.mkdir(parents=True)
         foreign = {
@@ -152,7 +154,7 @@ class BoardWriterTests(Board):
         self.ok(cwd=wt)
         self.event("stop", wt)
         self.event("prompt", wt)
-        self.set_field(self.notes / "specs" / "20261001 Gadget Export.md", "shipped", "2026-10-15")
+        self.set_field(self.spec_path("Gadget Export"), "shipped", "2026-10-15")
         self.ok(cwd=wt)
         self.ok()
         after = snapshot(self.board_dir)
@@ -240,8 +242,8 @@ class BoardWriterTests(Board):
         self.assertLess(elapsed, 10)
 
     def test_o15_link_is_left_unchanged(self) -> None:
-        """O15, D7: a link in the board folder: link and target unchanged, `link` listed. Rows: the
-        `dev-loop-board` folder is a link; an own note path is a link."""
+        """O15, D7, as Feature Folders replaced it: a link in the board folder: link and target unchanged, `link`
+        listed. Rows: the `Dev Loop Board` folder is a link; an own note path is a link."""
 
         def board_folder_link() -> tuple[Path, Path, dict]:
             self.worktree("tiny", prefix="fix")
@@ -277,7 +279,7 @@ class BoardWriterTests(Board):
                     self.doCleanups()
 
     def test_o16_link_above_the_board_folder_works(self) -> None:
-        """O16, D7: a notes path through a link above `dev-loop-board` works."""
+        """O16, D7, as Feature Folders replaced it: a notes path through a link above `Dev Loop Board` works."""
         self.worktree("tiny", prefix="fix")
         link = self.root / "vault-link"
         link.symlink_to(self.vault)
@@ -403,7 +405,7 @@ class BoardWriterTests(Board):
 
     @slow
     def test_o28_writes_only_in_its_own_board_folder(self) -> None:
-        """O28, D1: no write outside <notes>/dev-loop-board/ of its own project."""
+        """O28, D1, as Feature Folders replaced it: no write outside <notes>/Dev Loop Board/ of its own project."""
         other = self.vault / "Projects" / "Other Thing" / "dev-loop-board"
         put(other / "zephyr.md", note_text(status_note(project="other-thing", feature="zephyr")))
         wt, plan = self.stage5("gadget", "Gadget Export")
@@ -419,7 +421,8 @@ class BoardWriterTests(Board):
         after = {k: v for k, v in snapshot(self.root).items() if not k.startswith("remotes")}
         own = str(self.board_dir.relative_to(self.root)) + os.sep
         changed = {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
-        changed.discard(str((wt / ".superpowers" / "sdd" / plan.stem / "progress.md").relative_to(self.root)))
+        for name in ("progress.md", "plan-path"):
+            changed.discard(str((wt / ".superpowers" / "sdd" / plan.stem / name).relative_to(self.root)))
         self.assertTrue(changed)
         self.assertEqual({k for k in changed if not k.startswith(own)}, set())
 

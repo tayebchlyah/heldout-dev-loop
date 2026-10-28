@@ -267,7 +267,7 @@ class ReleaseCheckFlow(ReleaseRepoCase):
         notes = self.root / "notes" / NOTES_NAME
         notes.mkdir(parents=True)
         self.env["DEV_LOOP_NOTES"] = str(notes)
-        put(notes / "security-audit" / "run-1" / "run-metadata.json",
+        put(notes / "Security Audit" / "Run 1" / "run-metadata.json",
             json.dumps({"source_ref": {"commit": self.base}, "profile": "quick", "scope_paths": [],
                         "run_status": "complete"}) + "\n")
         put(notes / "Project Note.md", note_text([record_line(1, self.base)], []))

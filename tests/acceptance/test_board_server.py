@@ -25,9 +25,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import (MACHINE, VERSION, Board, BoardHookFixture, git, health, note_text, put, request, slow,
                             snapshot, status_note)
+from feature_folders_support import NewLayout
 
 
-class BoardServerTests(Board):
+class BoardServerTests(NewLayout, Board):
     """Seam 2: the server that `board` starts. Every test stops it again."""
 
     def setUp(self) -> None:
@@ -167,7 +168,7 @@ class BoardServerTests(Board):
         old = health(self.port)
         assert old is not None
         notes_two = self.root / "vault-two" / "Zephyr"
-        (notes_two / "specs").mkdir(parents=True)
+        (notes_two / "Features").mkdir(parents=True)
         origin_two = self.root / "remotes" / "zephyr-app.git"
         git(self.root, "init", "-q", "--bare", str(origin_two))
         repo_two = self.root / "zephyr-app"
@@ -234,9 +235,9 @@ class BoardServerTests(Board):
                 self.assertNotIn("access-control-allow-origin", headers, path)
 
     def test_o42_o43_f6_f7_api_status_lists_only_status_notes_under_roots(self) -> None:
-        """O42 (superseded by Board Robustness oracle 28), O43, F6, F7: notes in every dev-loop-board folder and
-        its features/ subfolder under the roots; links, dot names, schema 2 and folders outside the roots are
-        left out; schema 2 counts in newer_schema."""
+        """O42 (superseded by Board Robustness oracle 28, then by Feature Folders), O43, F6, F7: notes in every
+        `Dev Loop Board` or `dev-loop-board` folder and its Features/features subfolder under the roots; links,
+        dot names, schema 2 and folders outside the roots are left out; schema 2 counts in newer_schema."""
         other = self.vault / "Projects" / "Other Thing" / "dev-loop-board"
         put(other / "zephyr.md", note_text(status_note(project="other-thing", feature="zephyr-sync")))
         put(other / "features" / "zephyr-two.md", note_text(status_note(project="other-thing", feature="zephyr-two")))

@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import DEVLOOP, REPO_ROOT, Board, git, put
+from feature_folders_support import NewLayout
 
 INSTALLER = REPO_ROOT / "bin" / "install.mjs"
 OPUS = "claude-opus-5-5"
@@ -104,7 +105,7 @@ def agent(tool_id: str, kind: str, description: str) -> dict:
             "input": {"subagent_type": kind, "description": description, "prompt": description}}
 
 
-class EffortCase(Board):
+class EffortCase(NewLayout, Board):
     """The board sandbox, a fixture `CLAUDE_CONFIG_DIR`, no effort or session variable inherited."""
 
     def setUp(self) -> None:
@@ -349,7 +350,7 @@ class OneSessionFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             home, notes, scratch = root / "home", root / "notes", root / "tmp"
-            for folder in (home, notes / "specs", scratch):
+            for folder in (home, notes / "Features", scratch):
                 folder.mkdir(parents=True)
             put(home / ".gitconfig", "[user]\n\tname = Robin Quill\n\temail = robin@example.invalid\n"
                                      "[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n")
@@ -387,7 +388,7 @@ class OneSessionFlowTests(unittest.TestCase):
             self.assertEqual((on_main.get("effort") or {}).get("want"), "high", on_main)
             self.assertEqual(on_main["effort"].get("level"), "high", on_main)
 
-            put(notes / "specs" / "20261027 Kiosk Login.md",
+            put(notes / "Features" / "20261027 Kiosk Login" / "Spec.md",
                 "---\ntype: spec\nreview_status: approved\nfeature: kiosk-login\ntrack: M\nacceptance:\nshipped:\n"
                 "---\n\n# Kiosk Login\n\n## Goal\n\nA login screen for the kiosk.\n")
             wt = root / "worktrees" / "kiosk-app-kiosk-login"

@@ -28,6 +28,7 @@ from pathlib import Path
 # Shared board fixtures live in tests/unit/python; the unit suite never imports this held-out file.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import DEVLOOP, REPO_ROOT, Board, git, put, snapshot
+from feature_folders_support import NewLayout
 
 OPUS = "claude-opus-4-7"
 SONNET = "claude-sonnet-4-6"
@@ -121,7 +122,7 @@ class Transcript:
         put(self.path, "".join(f"{line}\n" for line in self.lines))
 
 
-class MetricsCase(Board):
+class MetricsCase(NewLayout, Board):
     """The board sandbox (a main checkout `acme-widgets`, a bare origin, a notes folder, a sandboxed HOME)
     plus a fixture `CLAUDE_CONFIG_DIR`."""
 
