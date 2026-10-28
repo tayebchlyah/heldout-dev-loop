@@ -346,6 +346,7 @@ class ApplyTests(unittest.TestCase):
         before = self.tree()
         out, code = self.run_cli("--apply", "--plan", planned)
         self.assertEqual((code, out["error"], out["applied"]), (1, "plan-changed", False))
+        self.assertIn(planned, out["message"])
         self.assertEqual(self.tree(), before)
 
     def test_apply_needs_plan(self) -> None:
@@ -404,6 +405,7 @@ class ApplyTests(unittest.TestCase):
             ("dot-dot target", {**journal, "moves": [{**first, "dst": "../outside/k.md"}]}, "io"),
             ("dot-dot write", {**journal, "writes": [{**journal["writes"][0], "path": "Features/../../outside/secret.md"}]},
              "io"),
+            ("absolute log", {**journal, "log": str(secret)}, "io"),
             ("symlinked parent", {**journal, "moves": [{**first, "dst": "Features/out/k.md"}]}, "io"),
             ("plan hash not of the steps", {**journal, "plan_hash": planned[::-1]}, "io"),
             ("forged steps and hash", forged("Features/Evil.md"), "locked"),
@@ -418,6 +420,47 @@ class ApplyTests(unittest.TestCase):
                     out, code = self.run_cli(*args)
                     self.assertEqual((code, out["error"]), (1, error))
                     self.assertEqual(self.tree(), before)
+
+    def test_journal_after_lock_checked(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        real = apply._lock
+
+        def planted(path: Path) -> str | None:
+            (self.notes / ".notes-migrate.json").write_text("[]")
+            return real(path)
+
+        out, code = self.call(planned, mock.patch.object(apply, "_lock", planted))
+        self.assertEqual((code, out["error"]), (1, "io"))
+        self.assertEqual(sorted(os.listdir(self.notes)), [".notes-migrate.json", "framing", "plans", "specs"])
+
+    def test_journal_write_error_is_json(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        before = self.tree()
+
+        def fail(src, dst):
+            raise OSError("disk full")
+
+        out, code = self.call(planned, mock.patch("os.replace", fail))
+        self.assertEqual((code, out["error"]), (1, "io"))
+        self.assertIn("disk full", out["message"])
+        self.assertEqual({k: v for k, v in self.tree().items() if not k.startswith("home/")}, before)
+
+    def test_resume_after_log_writes_one_log(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        real = Path.unlink
+
+        def stop(path: Path, *args, **kwargs) -> None:
+            if path.name == ".notes-migrate.json":
+                raise OSError("stopped")
+            real(path, *args, **kwargs)
+
+        self.assertEqual(self.call(planned, mock.patch.object(Path, "unlink", stop))[0]["error"], "io")
+        out, code = self.run_cli("--apply")
+        self.assertEqual((code, out["log"]), (0, self.log))
+        self.assertEqual(sorted(os.listdir(self.notes)), sorted(["Features", self.log]))
 
     def test_stale_lock_removed(self) -> None:
         self.put(DEMO)
