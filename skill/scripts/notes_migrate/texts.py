@@ -29,6 +29,7 @@ class Write(NamedTuple):
 class Plan(NamedTuple):
     moves: list[Move]
     writes: list[Write]
+    frontmatter: list[str]
     links: dict
     audit_ids: int
     outside_links: list[dict]
@@ -57,7 +58,7 @@ def _sha(text: str) -> str:
 def _frontmatter(text: str, keys: dict[str, str]) -> str:
     """`text` with each of `keys` set (`feature` only added when missing), every other byte kept; a note with no
     frontmatter gets a block of `keys`; an unclosed block is left alone."""
-    bom = "﻿" if text.startswith("﻿") else ""
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
     body = text[len(bom):]
     nl = "\r\n" if body.split("\n", 1)[0].endswith("\r") else "\n"
     lines = body.splitlines(keepends=True)
@@ -74,6 +75,9 @@ def _frontmatter(text: str, keys: dict[str, str]) -> str:
         elif name != "feature":
             ending = lines[at][len(lines[at].rstrip("\r\n")):]
             lines[at] = f"{name}: {value}{ending}"
+            while at + 1 < end and lines[at + 1].startswith((" ", "\t", "-")):
+                del lines[at + 1]
+                end -= 1
     return bom + "".join(lines)
 
 
@@ -94,12 +98,19 @@ def _audit_ids(text: str, project: bool) -> tuple[str, int]:
     return text, count
 
 
-def _repo_links(repo: Path, olds: list[str]) -> list[dict]:
-    """Lines of the repo's tracked text files outside `tests/acceptance/` that name an old path as whole segments."""
-    if not olds:
+def _repo_links(repo: Path, moves: list[Move], notes: Path) -> list[dict]:
+    """Lines of the repo's tracked text files outside `tests/acceptance/` that name the old path of a moved file
+    (with or without `.md`) or of a renamed folder (followed by `/`), as whole path segments."""
+    alts = []
+    for move in sorted((m for m in moves if m.dst != m.src), key=lambda m: -len(str(m.src))):
+        old = move.src.relative_to(notes).as_posix()
+        if move.role == "folder":
+            alts.append(re.escape(old) + "(?=/)")
+        else:
+            alts += [re.escape(path) + r"(?![\w-])" for path in {old, old.removesuffix(".md")}]
+    if not alts:
         return []
-    pattern = re.compile(r"(?:^|(?<=[/ `'\"(]))(?:" + "|".join(map(re.escape, sorted(olds, key=len, reverse=True)))
-                         + r")(?=$|[/. `'\")])")
+    pattern = re.compile(r"(?<![\w.-])(?:" + "|".join(alts) + ")")
     found = []
     for rel in (devloop.git(repo, "ls-files", "-z") or "").split("\0"):
         if not rel or rel.startswith("tests/acceptance/"):
@@ -116,10 +127,13 @@ def _git_case(notes: Path, moves: list[Move]) -> list[str]:
     """D11: the commands that make a case-insensitive git index follow each case-only rename of a tracked folder."""
     if devloop.git(notes, "config", "--bool", "core.ignorecase") != "true":
         return []
-    commands = []
+    commands, listed = [], []
     for move in moves:
         old, new = (path.relative_to(notes).as_posix() for path in (move.src, move.dst))
-        if move.role == "folder" and old != new and old.lower() == new.lower() and devloop.git(notes, "ls-files", "--", old):
+        if move.role != "folder" or old == new or old.lower() != new.lower():
+            continue
+        if not any(move.src.is_relative_to(top) for top in listed) and devloop.git(notes, "ls-files", "--", old):
+            listed.append(move.src)
             commands += [f"git rm -r --cached {shlex.quote(old)}", f"git add {shlex.quote(new)}"]
     return commands
 
@@ -147,17 +161,19 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
     notes_md = [(path, False) for path in sorted(inside) if path.suffix == ".md" and path not in placeholders | gone]
     notes_md += [(Path(root, name), True) for top in found.linked for root, _, names in os.walk(top)
                  for name in sorted(names) if name.endswith(".md")]
-    writes, link_files, link_count, audit_ids = [], [], 0, 0
+    writes, front_files, link_files, link_count, audit_ids = [], [], [], 0, 0
     for note, under_link in notes_md:
         old = note.read_bytes().decode("utf-8", "surrogateescape")
         new_path = moved.get(note, note)
         text, links = rewrite(old, note, new_path, moved, notes, vault, files)
+        front = False
         if note in roles:
             move = roles[note]
             keys = {"type": move.role, "feature": move.slug}
             if move.role == "plan" and move.dst.parent in with_spec:
                 keys["spec"] = "Spec.md"
-            text = _frontmatter(text, keys)
+            fronted = _frontmatter(text, keys)
+            front, text = fronted != text, fronted
         rel = note.relative_to(notes).as_posix()
         ids = 0
         if not RUN_FOLDER.match(rel):
@@ -168,6 +184,8 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
             if Blocked(rel, "link") not in blocked:
                 blocked.append(Blocked(rel, "link"))
             continue
+        if front:
+            front_files.append(new_path.relative_to(notes).as_posix())
         if links:
             link_files.append(new_path.relative_to(notes).as_posix())
         link_count += links
@@ -191,11 +209,12 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
     return Plan(
         moves=moves,
         writes=writes,
+        frontmatter=front_files,
         links={"files": link_files, "count": link_count},
         audit_ids=audit_ids,
         outside_links=outside_links,
         outside_skipped=outside_skipped,
-        repo_links=_repo_links(repo, [m.src.relative_to(notes).as_posix() for m in moves if m.dst != m.src]),
+        repo_links=_repo_links(repo, moves, notes),
         git_case=_git_case(notes, moves),
         gitignore=[item.path for item in blocked if item.reason == "gitignore"],
         ambiguous=ambiguous,

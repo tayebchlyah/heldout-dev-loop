@@ -440,9 +440,11 @@ class TextPlanTests(unittest.TestCase):
             "plans/20261021 Demo Work.md": "---\nspec: 20261020 Demo Work.md\nowner: me\n---\nbody\n",
             "plans/20261020 Early.md": "---\nspec: 20261020 Demo Work\n---\n",
             "plans/20261013 Orphan.md": "# o\n",
+            "Project Note.md": "[[specs/20261020 Demo Work]]\n",
         })
         built = self.build()
         self.assertEqual(self.written(built), {
+            "Project Note.md": "[[Features/20261019 Demo Work/Spec|specs/20261020 Demo Work]]\n",
             "Features/20261019 Demo Work/Spec.md": "---\nfeature: demo-work\ntype: spec\n---\n# Demo\n",
             "Features/20261019 Demo Work/Plan.md":
                 "---\nspec: Spec.md\nowner: me\ntype: plan\nfeature: demo-work\n---\nbody\n",
@@ -450,25 +452,64 @@ class TextPlanTests(unittest.TestCase):
             "Features/20261019 Demo Work/Framing.md": "---\ntype: framing\nfeature: demo-work\n---\n",
             "Features/20261013 Orphan/Plan.md": "---\ntype: plan\nfeature: orphan\n---\n# o\n",
         })
+        self.assertEqual(sorted(built.frontmatter), sorted(set(self.written(built)) - {"Project Note.md"}))
+        sources = {m.dst: m.src for m in built.moves}
         for write_ in built.writes:
-            old = (self.notes / next(m.src for m in built.moves if m.dst == write_.path)).read_bytes()
+            old = sources.get(write_.path, write_.path).read_bytes()
             self.assertEqual((write_.old_sha, write_.new_sha),
                              (hashlib.sha256(old).hexdigest(), hashlib.sha256(write_.text.encode()).hexdigest()))
 
     def test_frontmatter_crlf_and_bom_kept(self) -> None:
         self.put({
-            "specs/20261020 Demo Work.md": "﻿---\r\nfeature: demo-work\r\n---\r\n# Demo\r\n",
-            "plans/20261013 Orphan.md": "﻿# o\r\n",
+            "specs/20261020 Demo Work.md": "\ufeff---\r\nfeature: demo-work\r\n---\r\n# Demo\r\n",
+            "plans/20261013 Orphan.md": "\ufeff# o\r\n",
         })
         self.assertEqual(self.written(self.build()), {
-            "Features/20261020 Demo Work/Spec.md": "﻿---\r\nfeature: demo-work\r\ntype: spec\r\n---\r\n# Demo\r\n",
-            "Features/20261013 Orphan/Plan.md": "﻿---\r\ntype: plan\r\nfeature: orphan\r\n---\r\n# o\r\n",
+            "Features/20261020 Demo Work/Spec.md": "\ufeff---\r\nfeature: demo-work\r\ntype: spec\r\n---\r\n# Demo\r\n",
+            "Features/20261013 Orphan/Plan.md": "\ufeff---\r\ntype: plan\r\nfeature: orphan\r\n---\r\n# o\r\n",
         })
 
     def test_unclosed_frontmatter_left_alone(self) -> None:
         self.put({"specs/20261020 Demo Work.md": "---\nfeature: demo-work\n# Demo\n"})
         built = self.build()
         self.assertEqual((len(built.moves), built.writes), (1, []))
+
+    def test_frontmatter_drops_continuation_of_replaced_key(self) -> None:
+        self.put({
+            "specs/20261020 Demo Work.md": "---\nfeature: demo-work\ntype:\n  - x\n---\n",
+            "plans/20261021 Demo Work.md": '---\nfeature: demo-work\nspec:\n  - "[[20261020 Demo Work]]"\n- y\nowner: me\n---\n',
+        })
+        self.assertEqual(self.written(self.build()), {
+            "Features/20261020 Demo Work/Spec.md": "---\nfeature: demo-work\ntype: spec\n---\n",
+            "Features/20261020 Demo Work/Plan.md": "---\nfeature: demo-work\nspec: Spec.md\nowner: me\ntype: plan\n---\n",
+        })
+
+    def test_board_removal_maps_nothing(self) -> None:
+        status = "---\ntype: dev-loop-status\n---\n"
+        self.put({"dev-loop-board/c.md": status, "dev-loop-board/features/c.md": status,
+                  "Project Note.md": "[[dev-loop-board/c]] [[dev-loop-board/features/c]]\n"})
+        os.utime(self.notes / "dev-loop-board/c.md", (100, 100))
+        os.utime(self.notes / "dev-loop-board/features/c.md", (200, 200))
+        self.assertEqual(self.written(self.build()), {
+            "Project Note.md": "[[dev-loop-board/c]] [[Dev Loop Board/Features/c|dev-loop-board/features/c]]\n",
+        })
+
+    def test_link_above_notes_is_fine(self) -> None:
+        real = self.tmp / "real"
+        rows = [(self.tmp / "vault", self.tmp / "vault/Software", real / "Software", "Software/Notes"),
+                (self.tmp / "vault2", self.tmp / "vault2/Notes", real / "notes", "Notes")]
+        for vault, link, target, notes in rows:
+            with self.subTest(link=link.name):
+                shutil.rmtree(real, ignore_errors=True)
+                (vault / ".obsidian").mkdir(parents=True, exist_ok=True)
+                target.mkdir(parents=True)
+                link.symlink_to(target)
+                self.notes = vault / notes
+                self.put({**DEMO, "Project Note.md": "[[specs/20261020 Demo Work]]\n"})
+                built = self.build()
+                self.assertEqual(built.blocked, [])
+                self.assertIn("Project Note.md", self.written(built))
+                self.assertEqual(len(built.writes), 4)
 
     def test_audit_ids(self) -> None:
         project = (
@@ -480,6 +521,8 @@ class TextPlanTests(unittest.TestCase):
             "- 2026-10-25 (security, needs-validation, release-security-audit): y\n"
             "- 2026-10-25 (security, hardening, run-3): see security-audit/run-3/REPORT.md\n"
             "keep `security-audit/run-3/` and my-security-audit/run-3/\n"
+            "- 2026-10-26 (security, hardening, run-4)\n"
+            "plain run-5\n"
         )
         gardener = "- 2026-10-25 (security, hardening, run-3): security-audit/run-3/REPORT.md\n"
         self.put({"Project Note.md": project, "Gardener Log.md": gardener,
@@ -495,10 +538,12 @@ class TextPlanTests(unittest.TestCase):
                 "- 2026-10-25 (security, needs-validation, release-security-audit): y\n"
                 "- 2026-10-25 (security, hardening, Run 3): see Security Audit/Run 3/REPORT.md\n"
                 "keep `security-audit/run-3/` and my-security-audit/run-3/\n"
+                "- 2026-10-26 (security, hardening, Run 4)\n"
+                "plain run-5\n"
             ),
             "Gardener Log.md": "- 2026-10-25 (security, hardening, run-3): Security Audit/Run 3/REPORT.md\n",
         })
-        self.assertEqual(built.audit_ids, 6)
+        self.assertEqual(built.audit_ids, 7)
 
     def test_outside_links_and_skipped(self) -> None:
         vault = self.tmp / "vault"
@@ -535,23 +580,37 @@ class TextPlanTests(unittest.TestCase):
         self.assertEqual([w for w in built.writes if w.path.parent == self.notes or "Shared" in w.path.parts], [])
 
     def test_repo_links(self) -> None:
-        self.put({"maps/release-cycle/map.md": "m\n"})
-        for rel, text in {"docs/agents/issue-tracker.md": "x\nsee `maps/release-cycle/map.md`.\n",
-                          "tests/acceptance/x.md": "maps/release-cycle/map.md\n",
-                          "docs/other.md": "roadmaps/release-cycle/x and maps-old/y\n"}.items():
-            write(self.repo / rel, text)
+        self.put({**DEMO, "maps/release-cycle/map.md": "m\n"})
+        lines = [
+            ("x", False),
+            ("see `maps/release-cycle/map.md`.", True),
+            ("see specs/20261020 Demo Work.md, then", True),
+            ("[[specs/20261020 Demo Work]]", True),
+            ("<plans/20261021 Demo Work.md>", True),
+            ("- framing/20261019 demo-work.md:", True),
+            ("[m](maps/)", True),
+            ("source maps. the answers", False),
+            ("roadmaps/release-cycle/x and maps-old/y and specs/20261020 Demo Works", False),
+        ]
+        write(self.repo / "docs/agents/issue-tracker.md", "".join(line + "\n" for line, _ in lines))
+        write(self.repo / "tests/acceptance/x.md", "maps/release-cycle/map.md\n")
         (self.repo / "docs/blob.bin").write_bytes(b"\xff\xfe maps/release-cycle/\n")
         git_in(self.repo, "add", "-A")
-        self.assertEqual(self.build().repo_links, [{"file": "docs/agents/issue-tracker.md", "line": 2}])
+        self.assertEqual(self.build().repo_links, [{"file": "docs/agents/issue-tracker.md", "line": n}
+                                                   for n, (_, hit) in enumerate(lines, 1) if hit])
 
     def test_git_case(self) -> None:
-        self.put({"answers/20261020 Q.md": "a\n", "maps/x/map.md": "m\n"})
-        git_in(self.notes, "init", "-q")
-        git_in(self.notes, "config", "core.ignorecase", "true")
-        git_in(self.notes, "add", "answers")
-        index = git_in(self.notes, "ls-files", "--stage")
-        self.assertEqual(self.build().git_case, ["git rm -r --cached answers", "git add Answers"])
-        self.assertEqual(git_in(self.notes, "ls-files", "--stage"), index)
+        both = ["git rm -r --cached answers", "git add Answers", "git rm -r --cached maps", "git add Maps"]
+        for tracked, expected in [(["answers"], both[:2]), (["answers", "maps"], both)]:
+            with self.subTest(tracked=tracked):
+                shutil.rmtree(self.notes)
+                self.put({"answers/20261020 Q.md": "a\n", "maps/auth/map.md": "m\n"})
+                git_in(self.notes, "init", "-q")
+                git_in(self.notes, "config", "core.ignorecase", "true")
+                git_in(self.notes, "add", *tracked)
+                index = git_in(self.notes, "ls-files", "--stage")
+                self.assertEqual(self.build().git_case, expected)
+                self.assertEqual(git_in(self.notes, "ls-files", "--stage"), index)
 
     def test_plan_hash_changes_with_a_new_spec(self) -> None:
         self.put(DEMO)
