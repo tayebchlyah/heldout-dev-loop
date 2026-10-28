@@ -521,19 +521,30 @@ def snake_case(event: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()
 
 
+def codex_hook_hash(event: str, group: dict, hook: dict) -> str:
+    handler = {"type": "command", "command": hook["command"], "timeout": hook.get("timeout", 600), "async": bool(hook.get("async", False))}
+    if hook.get("statusMessage") is not None:
+        handler["statusMessage"] = hook["statusMessage"]
+    ident: dict = {"event_name": snake_case(event), "hooks": [handler]}
+    if group.get("matcher") is not None:
+        ident["matcher"] = group["matcher"]
+    text = json.dumps(ident, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+
+
 def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
-    """The project hook events with a hook entry lacking a trusted hash in ~/.codex/config.toml: Codex skips it without a message. Codex's hash method is unknown, so only the sha256: prefix is checked."""
+    """The project hook events with a hook entry whose trusted_hash in ~/.codex/config.toml is missing or differs from its entry: Codex skips it without a message. Hash: sha256 of the sorted compact JSON of the handler (openai/codex rust-v0.162.1 hooks/src/engine/discovery.rs hook_hash)."""
     hooks_file = f"{main}/.codex/hooks.json"
     states = config.get("hooks", {}).get("state", {})
     events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
 
-    def trusted(event: str, i: int, j: int) -> bool:
-        value = states.get(f"{hooks_file}:{event}:{i}:{j}")
-        return isinstance(value, dict) and str(value.get("trusted_hash", "")).startswith("sha256:")
+    def trusted(event: str, i: int, j: int, group: dict, hook: dict) -> bool:
+        value = states.get(f"{hooks_file}:{snake_case(event)}:{i}:{j}")
+        return isinstance(value, dict) and value.get("trusted_hash") == codex_hook_hash(event, group, hook)
 
     return [
         snake_case(event) for event, groups in events.items()
-        if not all(trusted(snake_case(event), i, j) for i, group in enumerate(groups) for j in range(len(group.get("hooks", []))))
+        if not all(trusted(event, i, j, group, hook) for i, group in enumerate(groups) for j, hook in enumerate(group.get("hooks", [])))
     ]
 
 

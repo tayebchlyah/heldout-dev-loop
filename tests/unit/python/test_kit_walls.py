@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from support import check_setup
 from test_devloop import git, put
 from test_seal_hooks import ROOT, SHELL, patch
 
@@ -323,9 +324,13 @@ class CodexTrustWarningTests(unittest.TestCase):
 
     def start(self, *events: str, hooks: int = 2) -> subprocess.CompletedProcess[str]:
         lines = [f'[projects."{self.repo}"]', 'trust_level = "trusted"']
-        for event in events:
-            for j in range(hooks):
-                lines += [f'[hooks.state."{self.repo}/.codex/hooks.json:{event}:0:{j}"]', 'trusted_hash = "sha256:x"']
+        entries = json.loads((self.repo / ".codex" / "hooks.json").read_text())["hooks"]
+        for name, groups in entries.items():
+            if check_setup.snake_case(name) not in events:
+                continue
+            for j, hook in enumerate(groups[0]["hooks"][:hooks]):
+                key = f"{self.repo}/.codex/hooks.json:{check_setup.snake_case(name)}:0:{j}"
+                lines += [f'[hooks.state."{key}"]', f'trusted_hash = "{check_setup.codex_hook_hash(name, groups[0], hook)}"']
         put(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         return subprocess.run(["sh", str(ROOT / "codex/hooks/session-start.sh")],
                               input=json.dumps({"cwd": str(self.repo)}), capture_output=True, text=True, timeout=60,
