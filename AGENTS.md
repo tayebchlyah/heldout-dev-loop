@@ -37,7 +37,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
 - `tests/unit/python/`: skill suite, one file per subject:
-  - `test_dev_loop.py`: the entry, loads every test class of each test file below; runs in parallel chunks.
+  - `test_dev_loop.py`: the entry, loads each test class of the files below; runs in parallel chunks.
   - `test_devloop.py`: `logged`, `gate`, the project config shape, CLI test helpers.
   - `test_status.py`, `test_merge_check.py`: `status`, `merge-check`.
   - `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: kit text contracts.
@@ -52,7 +52,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_kit_walls.py`: path, kit and `cd` walls, canary script, Codex trust warning.
   - `test_walls.py`, `test_git_guard.py`: deny walls, Codex hooks, git guard.
   - `test_board_robust.py`: board robustness.
-  - `test_notes_migrate.py`: `notes-migrate`.
+  - `test_notes_migrate.py`, `test_notes_migrate_apply.py`: `notes-migrate`.
   - `test_board_layout.py`: board folders, names.
   - `test_board_tasks.py`: board task state, subagents, hook filter.
   - `test_verify.py`: `verify-init`, `drive`, verify checks.
@@ -70,10 +70,10 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_feature_gate.py`: `review-merge`, `acceptance`.
   - `test_upstream_watch.py`: the upstream watch.
   - `test_autonomy.py`: `decide`, `pause`, autonomy hooks.
-  - `test_repo_rules.py`: `scripts/repo_rules.py`, the `AGENTS.md` budget and CLI index, the gate scope.
+  - `test_repo_rules.py`: `repo_rules.py`, `AGENTS.md` budget and CLI index, gate scope.
   - `junit_report.py`: the one JUnit writer.
   - `board_fixtures.py`: board fixtures shared with the held-out oracle.
-  - `support.py`: shared constants and helpers of the skill suite.
+  - `support.py`: shared constants and helpers of this suite.
   - `fixtures/`: test data. No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests (Node test runner, real Chromium).
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
