@@ -16,6 +16,7 @@ from release_candidates_support import CHECKER, MANIFEST, REPO_ROOT, InstallerCa
 # Shared board fixtures live in tests/unit/python; the unit suite never imports this held-out file.
 sys.path.insert(0, str(REPO_ROOT / "tests" / "unit" / "python"))
 from board_fixtures import BOARD_NOTE, RobustBoard, frontmatter_version, git, put
+from feature_folders_support import NewLayout
 
 sys.path.insert(0, str(REPO_ROOT / "skill" / "scripts"))
 
@@ -97,7 +98,7 @@ class VersionKeyTests(unittest.TestCase):
         self.assertEqual(sorted(reversed(order), key=version_key), order)
 
 
-class KitVersionBoard(RobustBoard):
+class KitVersionBoard(NewLayout, RobustBoard):
     """The board sandbox with the kit at `kit` in `dev-loop.json` and the MANIFEST of the main checkout."""
 
     def set_main_kit(self, version: str) -> None:

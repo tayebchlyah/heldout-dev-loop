@@ -10,6 +10,7 @@ the temp repos is invented.
 
 Fixture choices the spec leaves open:
 - Notes path: `DEV_LOOP_NOTES` (release commands), the `init --notes` local file (guard, setup checks).
+- Run folders and ids as Feature Folders replaced them: `Security Audit/Run <N>`, id `Run <N>`.
 - The `security-audit` validators are stub `.cjs` files in a folder named by `DEVLOOP_TEST_SECURITY_AUDIT_DIR`.
 - `findings.json` verdicts are `confirmed`, `needs_validation`, `rejected` (the skill's schema names).
 - `<today>` is the local date or the UTC date (a run at midnight may see either).
@@ -102,7 +103,7 @@ def tools_dir(root: Path, *names: str) -> Path:
 
 def record_line(run: int, sha: str, scope: str = "whole", profile: str = "quick", date: str = "2026-10-25",
                 confirmed: int = 0, needs: int = 0, hardening: int = 0) -> str:
-    return (f"- {date} run-{run} at {sha}: confirmed {confirmed}, needs validation {needs}, "
+    return (f"- {date} Run {run} at {sha}: confirmed {confirmed}, needs validation {needs}, "
             f"hardening {hardening}, profile {profile}, scope {scope}")
 
 
@@ -229,7 +230,7 @@ class GitRepo:
         return path
 
     def run_folder(self, n: int, sha: str, status: str = "complete", profile: str = "quick") -> Path:
-        folder = self.notes / "security-audit" / f"run-{n}"
+        folder = self.notes / "Security Audit" / f"Run {n}"
         folder.mkdir(parents=True, exist_ok=True)
         put(folder / "run-metadata.json", json.dumps({"source_ref": {"commit": sha}, "profile": profile,
                                                       "scope_paths": [], "run_status": status}, indent=2) + "\n")
@@ -315,7 +316,7 @@ class RecordCase(Case):
 
     def new_subsection(self, r: GitRepo) -> list[str]:
         deferred = section(r.note_path().read_text(), "## Deferred")
-        heads = [line for line in deferred if re.fullmatch(r"### Release audit run-2, \d{4}-\d{2}-\d{2}", line)]
+        heads = [line for line in deferred if re.fullmatch(r"### Release audit Run 2, \d{4}-\d{2}-\d{2}", line)]
         self.assertEqual(len(heads), 1, deferred)
         self.assertIn(heads[0].rsplit(", ", 1)[1], todays())
         return [line for line in subsection(deferred, heads[0]) if line.strip()]

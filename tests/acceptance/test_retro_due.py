@@ -30,6 +30,7 @@ from pathlib import Path
 # Shared board fixtures live in tests/unit/python; the unit suite never imports this held-out file.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import DEVLOOP, REPO_ROOT, Board, git, put  # noqa: E402
+from feature_folders_support import NewLayout  # noqa: E402
 
 SKILL = REPO_ROOT / "skill" / "SKILL.md"
 REFS = REPO_ROOT / "skill" / "references"
@@ -65,7 +66,7 @@ def iso(when: datetime, millis: bool = True) -> str:
     return text + (".000Z" if millis else "Z")
 
 
-class RetroCase(Board):
+class RetroCase(NewLayout, Board):
     """The board sandbox (a main checkout `acme-widgets` on `main`, a bare origin, a notes folder, a sandboxed
     HOME), an open spec `feature: demo` with a worktree on `feat/demo`, a fixture `CLAUDE_CONFIG_DIR` and
     a fixture `CODEX_HOME`."""
@@ -400,7 +401,7 @@ class CodexSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             home, notes, project = root / "home", root / "notes", root / "acme-widgets"
-            for folder in (home, notes / "specs", project):
+            for folder in (home, notes / "Features", project):
                 folder.mkdir(parents=True)
             env = {k: v for k, v in os.environ.items() if not k.startswith(("DEV_LOOP", "DEVLOOP", "CLAUDE", "CODEX"))}
             env.update({"HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1"})

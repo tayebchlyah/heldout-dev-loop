@@ -154,7 +154,7 @@ class Project:
         self.notes = root / "notes"
         self.stubs = root / "stubs"
         self.tools = root / "tools"
-        for folder in (self.home, self.tmp, self.notes / "specs", self.stubs, self.tools):
+        for folder in (self.home, self.tmp, self.notes / "Features", self.stubs, self.tools):
             folder.mkdir(parents=True, exist_ok=True)
         for tool in ("git", "python3"):
             found = shutil.which(tool) if tool == "git" else sys.executable

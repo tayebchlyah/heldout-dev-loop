@@ -143,7 +143,7 @@ class SetupAskTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         notes = self.root / "notes"
-        (notes / "specs").mkdir(parents=True)
+        (notes / "Features").mkdir(parents=True)
         tmpdir = self.root / "tmp"
         tmpdir.mkdir()
         self.env = base_env(self.home, tmpdir)

@@ -30,7 +30,7 @@ class ReleaseCheckTests(Case):
         self.assertEqual(payload.get("reasons"), [], payload)
         self.assertEqual(payload.get("target"), r.A, payload)
         self.assertEqual(payload.get("tag"), "v1.0.0", payload)
-        self.assertIn(f"run-1 at {r.A}", payload.get("record") or "", payload)
+        self.assertIn(f"Run 1 at {r.A}", payload.get("record") or "", payload)
 
     def test_o02_no_release_audits_section(self) -> None:
         r = self.repo()
@@ -82,7 +82,7 @@ class ReleaseCheckTests(Case):
         code, payload = self.check(r, "--tag", "v1.0.0")
         self.assertEqual(code, 0, payload)
         self.assertIs(payload.get("ok"), True, payload)
-        self.assertIn("run-2", payload.get("record") or "", payload)
+        self.assertIn("Run 2", payload.get("record") or "", payload)
 
     def test_o07_record_without_a_matching_complete_run_folder(self) -> None:
         for case in ("other commit", "incomplete", "no run folder"):
@@ -111,7 +111,7 @@ class ReleaseCheckTests(Case):
             self.assertTrue([i for i in items if line.lstrip("- ").strip() in i], payload)
 
     def test_o08_needs_validation_rulings(self) -> None:
-        item = "- 2026-10-25 (security, needs-validation, run-1): x"
+        item = "- 2026-10-25 (security, needs-validation, Run 1): x"
         for ruling, still_open in ((None, True), ("  - Ruling 2026-10-26: accept the risk", False),
                                    ("  - Ruling 2026-10-26: close not reachable", False),
                                    ("  - Ruling 2026-10-26: fix in a slice", True)):
@@ -120,7 +120,7 @@ class ReleaseCheckTests(Case):
                 self.assert_open(r, item if still_open else None)
 
     def test_o09_confirmed_item_is_not_closed_by_a_ruling(self) -> None:
-        item = "- 2026-10-25 (security, confirmed, run-1): x"
+        item = "- 2026-10-25 (security, confirmed, Run 1): x"
         r = self.audited([item, "  - Ruling 2026-10-26: accept"])
         self.assert_open(r, item)
 
@@ -212,7 +212,7 @@ class ReleaseCheckTests(Case):
 class ReleasePlanTests(Case):
 
     def audit_dir(self, r: GitRepo) -> Path:
-        return r.notes / "security-audit"
+        return r.notes / "Security Audit"
 
     def listing(self, r: GitRepo) -> list[str]:
         folder = self.audit_dir(r)
@@ -223,8 +223,8 @@ class ReleasePlanTests(Case):
         r.write_note(note_text(None, []))
         code, payload = r.devloop("release-plan")
         self.assertEqual(code, 0, payload)
-        expected = (self.audit_dir(r) / "run-1").resolve()
-        self.assertEqual(payload.get("run"), "run-1", payload)
+        expected = (self.audit_dir(r) / "Run 1").resolve()
+        self.assertEqual(payload.get("run"), "Run 1", payload)
         self.assertIs(payload.get("first"), True, payload)
         self.assertEqual(payload.get("profile"), "quick", payload)
         self.assertEqual(payload.get("budget"), 100, payload)
@@ -235,16 +235,16 @@ class ReleasePlanTests(Case):
         self.assertEqual(payload.get("head"), r.B, payload)
         self.assertTrue(Path(payload.get("output") or "").is_absolute(), payload)
         self.assertEqual(Path(payload["output"]).resolve(), expected, payload)
-        self.assertTrue(expected.is_dir(), "the run-1 folder was not created")
+        self.assertTrue(expected.is_dir(), "the Run 1 folder was not created")
 
     def test_o17_later_audit(self) -> None:
         r = self.repo()
-        (self.audit_dir(r) / "run-1").mkdir(parents=True)
+        (self.audit_dir(r) / "Run 1").mkdir(parents=True)
         r.run_folder(3, r.A)
         r.write_note(note_text([record_line(3, r.A)], []))
         code, payload = r.devloop("release-plan")
         self.assertEqual(code, 0, payload)
-        self.assertEqual(payload.get("run"), "run-4", payload)
+        self.assertEqual(payload.get("run"), "Run 4", payload)
         self.assertIs(payload.get("first"), False, payload)
         self.assertEqual(payload.get("profile"), "standard", payload)
         self.assertIn("budget", payload)
@@ -252,8 +252,8 @@ class ReleasePlanTests(Case):
         self.assertEqual(payload.get("scope"), f"{r.A}..{r.B}", payload)
         self.assertEqual(payload.get("base"), r.A, payload)
         self.assertEqual([Path(p).resolve() for p in payload.get("prior_runs") or []],
-                         [(self.audit_dir(r) / "run-1").resolve(), (self.audit_dir(r) / "run-3").resolve()], payload)
-        self.assertTrue((self.audit_dir(r) / "run-4").is_dir())
+                         [(self.audit_dir(r) / "Run 1").resolve(), (self.audit_dir(r) / "Run 3").resolve()], payload)
+        self.assertTrue((self.audit_dir(r) / "Run 4").is_dir())
 
     def test_o17a_merge_base_and_overrides(self) -> None:
         r = self.repo()
@@ -273,7 +273,7 @@ class ReleasePlanTests(Case):
     def test_o18_icloud_placeholder(self) -> None:
         r = self.repo()
         r.write_note(note_text(None, []))
-        put(self.audit_dir(r) / "run-1" / ".findings.json.icloud", b"\x00")
+        put(self.audit_dir(r) / "Run 1" / ".findings.json.icloud", b"\x00")
         before = self.listing(r)
         code, payload = r.devloop("release-plan")
         self.assertEqual(code, 1, payload)

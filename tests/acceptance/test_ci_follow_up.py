@@ -536,7 +536,7 @@ class SetupTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
         self.home = self.root / "home"
-        for folder in (self.home, self.root / "tmp", self.root / "notes" / "specs"):
+        for folder in (self.home, self.root / "tmp", self.root / "notes" / "Features"):
             folder.mkdir(parents=True)
         self.env = base_env(self.home, self.root / "tmp")
         self.project = self.root / "tea-shop"

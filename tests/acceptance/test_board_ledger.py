@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import (BOARD_NOTE, MACHINE, OTHER, PROJECT, Board, note_name, note_text, put, read_note, slow,
                             status_note)
+from feature_folders_support import NewLayout
 
 # Runs the block once per `pages` step, on a new element each time (a Dataview redraw); a `toggle` step
 # calls the toggle listeners of the last element. Prints the HTML of each run and the final `dlb-open`.
@@ -109,7 +110,7 @@ def text(html: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", html))
 
 
-class BoardLedgerFlows(Board):
+class BoardLedgerFlows(NewLayout, Board):
     def block(self) -> str:
         note = (self.board_dir / BOARD_NOTE).read_text()
         match = re.search(r"```dataviewjs\n(.*?)\n```", note, re.DOTALL)
@@ -118,7 +119,7 @@ class BoardLedgerFlows(Board):
         return match.group(1)
 
     def pages(self) -> list[dict]:
-        paths = [*self.board_dir.glob("features/*.md"), *self.board_dir.glob("*.md")]
+        paths = [*self.features_dir.glob("*.md"), *self.board_dir.glob("*.md")]
         return [read_note(p) for p in sorted(paths) if p.name != BOARD_NOTE]
 
     def obsidian(self, steps: list[dict], storage: list[str] | None = None, machine: str | None = VIEWER) -> dict:
@@ -141,7 +142,7 @@ class BoardLedgerFlows(Board):
         self.ok(cwd=wt)
         time.sleep(1.1)
         now = time.time()
-        put(self.board_dir / "features" / note_name(OTHER["id"], PROJECT, "bench-thing"),
+        put(self.features_dir / note_name(OTHER["id"], PROJECT, "bench-thing"),
             note_text(status_note(feature="bench-thing", title="Bench Thing", stage=5,
                                   stage_times={"1": iso(now - 7200), "5": iso(now - 3600)}, updated=iso(now))))
         project, row_a, row_b = f"project:{PROJECT}", f"{PROJECT}/gadget", f"{PROJECT}/bench-thing"
@@ -175,12 +176,12 @@ class BoardLedgerFlows(Board):
         self.ok(cwd=wt)
         old = {f"old-{n}": f"2026-10-0{n}T10:00:00Z" for n in range(1, 6)}
         for slug, at in old.items():
-            put(self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, slug),
+            put(self.features_dir / note_name(MACHINE["id"], PROJECT, slug),
                 note_text(status_note(feature=slug, title=f"Old {slug[-1]}", machine_id=MACHINE["id"],
                                       owner=MACHINE["owner"], machine=MACHINE["machine"], stage=7,
                                       stage_times={"1": at[:11] + "08:00:00Z", "7": at[:11] + "09:00:00Z"},
                                       shipped_at=at, updated=at)))
-        self.set_field(self.notes / "specs" / "20261001 Gadget Export.md", "shipped", "2026-10-15")
+        self.set_field(self.spec_path("Gadget Export"), "shipped", "2026-10-15")
         self.ok(cwd=wt)
 
         own = self.own_notes()

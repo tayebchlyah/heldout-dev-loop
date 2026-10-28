@@ -33,13 +33,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / 
 from board_fixtures import (CLAUDE_HOOKS, CODEX_HOOKS, DEVLOOP, GIT, ISO_Z, MACHINE, OTHER, PROJECT, REPO_ROOT, SCRIPTS,
                             VERSION, RobustBoard, RobustnessHookFixture, birth, epoch, git, health, note_name,
                             note_text, put, read_note, request, set_time, slow, snapshot, status_note, yaml_block)
+from feature_folders_support import NewLayout
 
 
-class RobustnessStateTests(RobustBoard):
-    """State and notes: oracles 1 to 9 and 32 to 34."""
+class RobustnessStateTests(NewLayout, RobustBoard):
+    """State and notes: oracles 1 to 9, 33 and 34 (Feature Folders removed 32)."""
 
     def test_o1_note_goes_to_the_features_subfolder(self) -> None:
-        """O1, D4: `board` writes the note to <notes>/dev-loop-board/features/<name>.md."""
+        """O1, D4 (Feature Folders): `board` writes the note to <notes>/Dev Loop Board/Features/<name>.md."""
         wt, _ = self.stage5("gadget", "Gadget Export")
         out = self.ok(cwd=wt)
         path = self.own_path("gadget")
@@ -48,14 +49,19 @@ class RobustnessStateTests(RobustBoard):
         self.assertFalse((self.board_dir / path.name).exists())
         self.assertIn(str(path), [str(Path(p).resolve()) for p in out["notes"]])
 
-    def test_o2_own_note_moves_from_the_board_folder_to_features(self) -> None:
-        """O2, D4: an own note in dev-loop-board/ is moved to features/ with the same name; the old file is gone."""
+    def test_o2_own_note_in_the_old_board_folder_is_never_moved(self) -> None:
+        """O2 (Feature Folders, D18): `board` never reads or moves a note in dev-loop-board/; it writes
+        its own note in Dev Loop Board/Features/."""
         self.spec("gadget", "Gadget Export")
         wt = self.worktree("gadget")
-        self.old_note("gadget", title="Gadget Export")
+        old = self.notes / "dev-loop-board"
+        put(old / self.own_name("gadget"), note_text(status_note(
+            feature="gadget", title="Gadget Export", machine_id=MACHINE["id"], owner=MACHINE["owner"],
+            machine=MACHINE["machine"])))
+        before = snapshot(old)
         self.ok(cwd=wt)
         self.assertTrue(self.own_path("gadget").is_file())
-        self.assertFalse((self.board_dir / self.own_name("gadget")).exists())
+        self.assertEqual(snapshot(old), before)
 
     def test_o3_yaml_block_note_is_written_again_as_json_lines(self) -> None:
         """O3, D1, D3: an own note in YAML block style is written again, one JSON value per line, times kept."""
@@ -112,7 +118,8 @@ class RobustnessStateTests(RobustBoard):
         self.assertTrue(self.skipped(out, "foreign", "gadget"), out)
 
     def test_o7_files_with_other_names_stay_unchanged(self) -> None:
-        """O7, D3: a file with another name in dev-loop-board/ or features/ stays unchanged."""
+        """O7, D3 (Feature Folders): a file with another name in Dev Loop Board/ or Features/ stays
+        unchanged."""
         self.spec("gadget", "Gadget Export")
         wt = self.worktree("gadget")
         self.ok(cwd=wt)
@@ -179,18 +186,6 @@ class RobustnessStateTests(RobustBoard):
         self.assertEqual(out["skipped"], [])
         self.assertNotIn("board", self.status())
 
-    def test_o32_note_in_both_folders_keeps_only_features(self) -> None:
-        """O32, D3: an own note in both dev-loop-board/ and features/: after a run, only the features/ one exists."""
-        self.spec("gadget", "Gadget Export")
-        wt = self.worktree("gadget")
-        self.ok(cwd=wt)
-        self.own_note("gadget")
-        old = self.board_dir / self.own_name("gadget")
-        shutil.copy2(self.own_path("gadget"), old)
-        self.ok(cwd=wt)
-        self.assertFalse(old.exists())
-        self.assertTrue(self.own_path("gadget").is_file())
-
     @slow
     def test_o33_format_repair_keeps_updated(self) -> None:
         """O33, D1: the rewrite of oracle 3 keeps `updated` when no other field changes."""
@@ -210,7 +205,7 @@ class RobustnessStateTests(RobustBoard):
         reports it in `board`."""
         self.worktree("tiny", prefix="fix")
         inside = self.repo / "docs" / "notes"
-        (inside / "specs").mkdir(parents=True)
+        (inside / "Features").mkdir(parents=True)
         env = {**self.env, "DEV_LOOP_NOTES": str(inside)}
         out = self.ok(env=env)
         self.assertTrue(self.skipped(out, "notes-in-repo", None), out)
@@ -222,7 +217,7 @@ class RobustnessStateTests(RobustBoard):
         self.assertIn("notes-in-repo", [s.get("reason") for s in board["skipped"]])
 
 
-class RobustnessTimeTests(RobustBoard):
+class RobustnessTimeTests(NewLayout, RobustBoard):
     """Times and task state: oracles 10 to 18 and 35 to 37."""
 
     def test_o10_stage_5_time_is_the_ledger_birth_time(self) -> None:
@@ -371,7 +366,7 @@ class RobustnessTimeTests(RobustBoard):
         self.assertEqual(self.states("gadget")[0], "done")
 
 
-class RobustnessEventTests(RobustBoard):
+class RobustnessEventTests(NewLayout, RobustBoard):
     """Events: oracles 21 to 24."""
 
     def test_o21_post_tool_clears_waiting(self) -> None:
@@ -458,7 +453,7 @@ class RobustnessEventTests(RobustBoard):
         self.assertEqual(read_note(path)["stage"], 5)
 
 
-class RobustnessKitTests(RobustBoard):
+class RobustnessKitTests(NewLayout, RobustBoard):
     """Kit: oracles 26, 27 and 38."""
 
     def drift(self, version: str) -> dict:
@@ -542,7 +537,7 @@ class RobustnessHookTests(RobustnessHookFixture, unittest.TestCase):
                 self.assertEqual([c["label"] for c in calls], ["MAIN"], calls)
 
 
-class RobustnessServerBase(RobustBoard):
+class RobustnessServerBase(NewLayout, RobustBoard):
     """The server that `board` starts, on the test port. Every test stops it again."""
 
     def setUp(self) -> None:
@@ -575,7 +570,8 @@ class RobustnessServerTests(RobustnessServerBase):
     """Server: oracle 28 and flow 6."""
 
     def test_o28_api_lists_both_folders(self) -> None:
-        """O28, D4: GET /api/status lists notes from dev-loop-board/ and from dev-loop-board/features/."""
+        """O28, D4 (Feature Folders): GET /api/status lists notes from both board folder names and
+        their Features/features subfolder."""
         wt = self.worktree("tiny", prefix="fix")
         put(self.board_dir / note_name(OTHER["id"], PROJECT, "zephyr-old"), note_text(status_note(feature="zephyr-old")))
         other = self.vault / "Projects" / "Other Thing" / "dev-loop-board"
@@ -585,9 +581,10 @@ class RobustnessServerTests(RobustnessServerBase):
         self.assertTrue(self.own_path("tiny").is_file())
         self.assertLessEqual({"tiny", "zephyr-old", "yonder", "elder"}, self.api_features())
 
-    def test_f6_upgrade_moves_the_own_note_and_keeps_the_foreign_one(self) -> None:
-        """F6: an old own note and a note of another machine in dev-loop-board/. After one run: the own note is in
-        features/ with its times; the other machine's note is unchanged and still served."""
+    def test_f6_upgrade_keeps_the_own_note_and_the_foreign_one(self) -> None:
+        """F6 (Feature Folders, D18): an own note of an earlier kit in Dev Loop Board/Features/ and a note of
+        another machine in Dev Loop Board/. After one run: the own note keeps its times; the other machine's note is
+        unchanged and still served."""
         wt, plan = self.stage5("gadget", "Gadget Export")
         self.ledger(wt, plan, "Task 1: complete")
         times = {"2": "2026-10-01T08:00:00Z", "3": "2026-10-01T09:00:00Z", "4": "2026-10-01T10:00:00Z",
@@ -611,7 +608,7 @@ class RobustnessServerTests(RobustnessServerBase):
         self.assertLessEqual({"gadget", "widget"}, self.api_features())
 
 
-class RobustnessFlowTests(RobustBoard):
+class RobustnessFlowTests(NewLayout, RobustBoard):
     """Acceptance flows 1 to 5."""
 
     def test_f1_obsidian_rewrite(self) -> None:
