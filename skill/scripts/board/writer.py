@@ -238,7 +238,6 @@ def remember(entry: dict, fields: dict) -> None:
 
 
 def evicted(dl: ModuleType, notes: Path) -> bool:
-    """D5: an iCloud placeholder of a spec, in a feature folder or in `specs/` while it exists."""
     if any((notes / dl.FEATURES).glob("*/.Spec.md.icloud")):
         return True
     return "specs" in dl.old_layout(notes) and any((notes / "specs").glob(".*.icloud"))
@@ -260,7 +259,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     common = Path(dl.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     state_dir = common / "dev-loop"
     now = time.strftime(TIME, time.gmtime())
-    if evicted(dl, notes):  # D5: an evicted spec would drop claims and notes.
+    if evicted(dl, notes):
         payload["skipped"].append(skip("placeholder"))
         state.save_last_run(state_dir, now, payload["skipped"])
         return 0, payload
