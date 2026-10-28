@@ -89,12 +89,14 @@ def _load(notes: Path) -> dict:
         journal = json.loads((notes / devloop.JOURNAL).read_text())
     except (OSError, ValueError) as exc:
         raise Stop("io", f"{devloop.JOURNAL} unreadable ({exc}): {RESTART}") from None
-    if not (_fields(journal, {"host": str, "plan_hash": str, "report": dict, "moves": list, "writes": list})
+    if not (_fields(journal, {"host": str, "plan_hash": str, "report": dict, "moves": list, "writes": list,
+                              "log": (str, type(None))})
             and all(_fields(m, {"src": str, "dst": str, "role": str, "sha": (str, type(None))}) for m in journal["moves"])
             and all(_fields(w, {"path": str, "old": str, "new": str, "text": str}) for w in journal["writes"])):
         raise Stop("io", f"{devloop.JOURNAL} is not a notes-migrate journal: {RESTART}")
     root = Path(os.path.realpath(notes))
-    for rel in [*(m[key] for m in journal["moves"] for key in ("src", "dst")), *(w["path"] for w in journal["writes"])]:
+    for rel in [*(m[key] for m in journal["moves"] for key in ("src", "dst")), *(w["path"] for w in journal["writes"]),
+                *([journal["log"]] if journal["log"] else [])]:
         real = Path(os.path.realpath(notes / rel))
         if os.path.isabs(rel) or ".." in Path(rel).parts or real == root or not real.is_relative_to(root):
             raise Stop("io", f"{devloop.JOURNAL} step {rel!r} is outside the notes folder: {CHECK}")
@@ -123,7 +125,8 @@ def _journal(notes: Path, plan: Plan) -> dict:
     moves = [{"src": rel(m.src), "dst": rel(m.dst), "role": m.role,
               "sha": None if m.role == "folder" or m.src == m.dst else _sha(m.src.read_bytes())} for m in plan.moves]
     writes = [{"path": rel(w.path), "old": w.old_sha, "new": w.new_sha, "text": w.text} for w in plan.writes]
-    return {"host": socket.gethostname(), "plan_hash": plan.plan_hash, "report": report, "moves": moves, "writes": writes}
+    return {"host": socket.gethostname(), "plan_hash": plan.plan_hash, "report": report, "moves": moves, "writes": writes,
+            "log": None}
 
 
 def _put(path: Path, data: bytes) -> None:
@@ -226,13 +229,17 @@ def _clean(notes: Path) -> None:
                 os.rmdir(root)
 
 
-def _log(notes: Path, report: dict) -> str:
+def _log_name(notes: Path) -> str:
     day = time.strftime("%Y%m%d")
     name, n = f"{day} Notes Migration.md", 1
     while _exact(notes / name):
         n += 1
         name = f"{day} Notes Migration {n}.md"
-    lines = ["---", "type: note", "---", f"# Notes Migration {day}", "",
+    return name
+
+
+def _log(notes: Path, name: str, report: dict) -> None:
+    lines = ["---", "type: note", "---", f"# Notes Migration {name[:8]}", "",
              f"Plan `{report['plan_hash']}`. No automatic undo: restore from the vault git history or iCloud.", "",
              "## Moves", ""]
     lines += [f"- `{m['from']}` to `{m['to']}`" if m["from"] != m["to"] else f"- `{m['from']}` removed (older board note)"
@@ -244,7 +251,6 @@ def _log(notes: Path, report: dict) -> str:
     lines += ["", "## Git index case", "", "Run from the notes folder:", ""]
     lines += [f"- `{command}`" for command in report["git_case"]] or ["- none"]
     _put(notes / name, ("\n".join(lines) + "\n").encode())
-    return name
 
 
 def _apply(repo: Path, notes: Path, journal: dict) -> dict:
@@ -253,7 +259,11 @@ def _apply(repo: Path, notes: Path, journal: dict) -> dict:
     _clean(notes)
     report = {**journal["report"], "applied": True}
     if journal["moves"] or journal["writes"]:
-        report["log"] = _log(notes, report)
+        if not journal["log"]:
+            journal["log"] = _log_name(notes)
+            _save(notes / devloop.JOURNAL, journal)
+        report["log"] = journal["log"]
+        _log(notes, journal["log"], report)
     (notes / devloop.JOURNAL).unlink(missing_ok=True)
     return report
 
@@ -295,15 +305,25 @@ def cmd_notes_migrate(args: argparse.Namespace) -> int:
         return devloop.emit(_report(error="locked", message=f"{lock} held by {holder}: run notes-migrate there, or delete "
                                     f"the lock and {devloop.JOURNAL} after checking that host is idle"), 1)
     try:
-        if not resuming:
+        if not resuming and _exact(journal_path):
+            try:
+                journal = _resume(notes, args.plan)
+            except Stop as exc:
+                return devloop.emit(_report(error=exc.code, message=str(exc)), 1)
+        elif not resuming:
             plan = build_plan(repo, notes, version)
             if plan.blocked:
                 return devloop.emit(_plan_report(notes, plan), 1)
             if plan.plan_hash != args.plan:
-                return devloop.emit({**_plan_report(notes, plan), "error": "plan-changed"}, 1)
-            journal = _journal(notes, plan)
-            if plan.moves or plan.writes:
-                _save(journal_path, journal)
+                return devloop.emit({**_plan_report(notes, plan), "error": "plan-changed", "message": f"the plan is now "
+                                     f"{plan.plan_hash}, not {args.plan}: show the user this plan, then apply it"}, 1)
+            try:
+                journal = _journal(notes, plan)
+                if plan.moves or plan.writes:
+                    _save(journal_path, journal)
+            except OSError as exc:
+                return devloop.emit({**_plan_report(notes, plan), "error": "io",
+                                     "message": f"{exc}: nothing changed, run notes-migrate --apply again"}, 1)
         try:
             return devloop.emit(_apply(repo, notes, journal), 0)
         except Stop as exc:
