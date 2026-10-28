@@ -42,11 +42,14 @@ class TextPlanTests(unittest.TestCase):
             path.write_bytes(text.encode())
 
     def build(self) -> texts.Plan:
-        before = {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*")) if p.is_file() and ".git" not in p.parts}
+        before = self.snapshot()
         built = texts.build_plan(self.repo, self.notes, "2.0.0")
-        after = {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*")) if p.is_file() and ".git" not in p.parts}
-        self.assertEqual(after, before)
+        self.assertEqual(self.snapshot(), before)
         return built
+
+    def snapshot(self) -> dict[str, bytes]:
+        return {str(p): p.read_bytes() for p in sorted(self.tmp.rglob("*"))
+                if p.is_file() and ".git" not in p.parts and os.access(p, os.R_OK)}
 
     def written(self, built: texts.Plan) -> dict[str, str]:
         return {w.path.relative_to(self.notes).as_posix(): w.text for w in built.writes}
@@ -181,6 +184,21 @@ class TextPlanTests(unittest.TestCase):
         self.assertEqual((built.outside_skipped, built.blocked), (["Other/.Evicted.md.icloud"], []))
         self.assertEqual(built.links, {"files": ["Project Note.md"], "count": 1})
         self.assertNotIn("Other/Note.md", [w.path.relative_to(vault).as_posix() for w in built.writes])
+
+    def test_unreadable_blocks_inside_skips_outside(self) -> None:
+        vault = self.tmp / "vault"
+        self.notes = vault / "Notes"
+        (vault / ".obsidian").mkdir(parents=True)
+        self.put({**DEMO, "specs/20261022 Locked.md": "# l\n"})
+        (self.notes / "Broken.md").symlink_to(self.tmp / "missing.md")
+        (vault / "Other").mkdir()
+        (vault / "Other/Broken.md").symlink_to(self.tmp / "missing.md")
+        locked = self.notes / "specs/20261022 Locked.md"
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o644)
+        built = self.build()
+        self.assertEqual(sorted(built.blocked), [("Broken.md", "unreadable"), ("specs/20261022 Locked.md", "unreadable")])
+        self.assertEqual(built.outside_skipped, ["Other/Broken.md"])
 
     def test_outside_scan_skips_dot_folders(self) -> None:
         vault = self.tmp / "vault"
