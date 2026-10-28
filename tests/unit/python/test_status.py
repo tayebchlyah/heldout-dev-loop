@@ -503,3 +503,38 @@ class FeatureFolderStatusTests(Sandbox):
         self.assertEqual(out["stage"], 4)
         self.assertIn("20261101 Demo Work", out["check"])
         self.assertNotIn("Spec.md", out["check"])
+
+
+class FindPlanLedgerTests(Sandbox):
+    def test_feature_folder_spec_without_plan_ignores_the_plans_folder(self) -> None:
+        dl = load_devloop()
+        spec = self.notes / "Features" / "20261101 Demo Work" / "Spec.md"
+        put(spec, frontmatter(feature="widget"))
+        put(self.notes / "plans" / "x.md", "---\nspec: Spec.md\n---\n# Plan\n")
+        self.assertIsNone(dl.find_plan(self.notes, spec))
+
+    def test_old_specs_folder_spec_still_matches_the_plans_folder(self) -> None:
+        dl = load_devloop()
+        spec = self.notes / "specs" / "widget.md"
+        put(spec, frontmatter(feature="widget"))
+        plan = self.notes / "plans" / "widget-plan.md"
+        put(plan, "---\nspec: widget.md\n---\n# Plan\n")
+        self.assertEqual(dl.find_plan(self.notes, spec), plan)
+
+    def test_ledger_falls_back_to_a_folder_with_no_marker(self) -> None:
+        dl = load_devloop()
+        top = self.root / "wt"
+        plan = self.notes / "plans" / "widget-plan.md"
+        put(plan, "# Plan\n")
+        put(top / ".superpowers" / "sdd" / "widget-plan" / "progress.md", "Task 1: complete\n")
+        self.assertEqual(dl.ledger(top, plan), top / ".superpowers" / "sdd" / "widget-plan" / "progress.md")
+
+    def test_ledger_ignores_a_folder_with_a_marker_for_another_plan(self) -> None:
+        dl = load_devloop()
+        top = self.root / "wt"
+        plan = self.notes / "plans" / "widget-plan.md"
+        put(plan, "# Plan\n")
+        sdd = top / ".superpowers" / "sdd" / "widget-plan"
+        put(sdd / "progress.md", "Task 1: complete\n")
+        put(sdd / "plan-path", str(self.notes / "plans" / "other.md") + "\n")
+        self.assertIsNone(dl.ledger(top, plan))
