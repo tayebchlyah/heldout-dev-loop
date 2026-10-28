@@ -47,6 +47,30 @@ class NotesCheckTests(unittest.TestCase):
             self.assertEqual(check_setup.check_notes(home, repo, {}), [])
 
 
+class OldNotesLayoutTests(unittest.TestCase):
+    def check(self, entries: list[str]) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            repo = Path(tmp) / "repo"
+            notes = Path(tmp) / "notes"
+            for entry in entries:
+                (notes / entry).mkdir(parents=True, exist_ok=True)
+            write(repo / "dev-loop.json", "{}")
+            return check_setup.check_notes_layout(home, repo, {"DEV_LOOP_NOTES": str(notes)})
+
+    def test_each_old_name_fails(self) -> None:
+        for name in ["specs", "plans", "framing", "answers", "maps", "security-audit", "dev-loop-board", ".notes-migrate.json"]:
+            with self.subTest(name=name):
+                failures = self.check([name])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("old-notes-layout", failures[0])
+                self.assertIn(name, failures[0])
+                self.assertIn("devloop.py notes-migrate", failures[0])
+
+    def test_new_names_pass(self) -> None:
+        self.assertEqual(self.check(["Answers", "Maps"]), [])
+
+
 class ProjectConfigTests(unittest.TestCase):
     def check(self, config: dict) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
