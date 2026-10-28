@@ -24,6 +24,10 @@ First written release: in its release PR, run `/release-notes --all` by hand fro
 2. `commands.release_check` (`scripts/release-check.sh`): after the release commit. Runs `scripts/canary.sh`; for a final version also `scripts/repo_rules.py promoted --tag "$RELEASE_TAG" --sha HEAD` (`promoted --sha`): the commit ships the kit source of its last rc. Its lines go into the release PR body.
 3. `commands.release_verify` (`scripts/release-verify.sh`): after the GitHub Release. A temporary clone of `main` runs `npx github:tchlyah/dev-loop#$RELEASE_TAG upgrade` and must show no diff.
 
+## Audit sandbox
+
+The release audit runs target code only in the image `dev-loop-audit:1` (`dev-loop.json` `security_audit.images.audit`). It holds `python3` 3.14, `git`, `bash`, `jq` and `node` 24: the tools the suites and the hooks need. Build it once per machine, before an audit: `docker build -t dev-loop-audit:1 scripts/audit-image`. A base image change takes a new tag, `dev-loop-audit:<n+1>`, in the Dockerfile build line and in `dev-loop.json`.
+
 ## Release candidate
 
 1. `/release --rc` (Codex `$release --rc`) in the main session, on `main` of the main checkout.
