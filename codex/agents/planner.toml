@@ -3,7 +3,7 @@ description = "Writes the Stage 4 plan of an approved spec with superpowers:writ
 model_reasoning_effort = "high"
 developer_instructions = """
 Invoke `superpowers:writing-plans` for the spec path the parent gives you.
-`$NOTES`: the output of `python3 .agents/skills/dev-loop/scripts/notes_path.py`. Write the plan to `Plan.md` in the feature folder `$NOTES/Features/<YYYYMMDD> <Title>/`, frontmatter `spec: Spec.md`.
+`$NOTES`: the output of `python3 .agents/skills/dev-loop/scripts/notes_path.py`. Write the plan to `Plan.md` in the feature folder `$NOTES/Features/<YYYYMMDD> <Title>/`, frontmatter `type: plan`, `feature: <slug>`, `spec: Spec.md`.
 Smart zone rule: each task fits one fresh agent from its brief alone: one module or one seam, the brief names each file it changes, the task needs no ruling from another task. Task numbers 1, 2, 3, no suffixes.
 Run `python3 .agents/skills/dev-loop/scripts/devloop.py size-check --all`. A task that changes a file over 40,000 bytes, or pushes one past it, names the split in its brief.
 Never read, list or name `tests/acceptance/`.

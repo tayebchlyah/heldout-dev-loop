@@ -244,6 +244,8 @@ class NotesLayoutTextTests(unittest.TestCase):
         "$NOTES/maps/",
         "<notes>/plans/",
         "<notes>/maps/",
+        "<notes folder>/plans/",
+        "spec: <spec file name>",
         "security-audit/run-",
         ".superpowers/sdd/<plan basename>",
     )
@@ -289,3 +291,18 @@ class NotesLayoutTextTests(unittest.TestCase):
         self.assertIn("confirm", stage_0)
         kit = (PACKAGE_ROOT / "reference/kit.md").read_text()
         self.assertIn("notes-migrate", kit[kit.index("## Upgrade"):])
+
+    def test_planner_texts_name_plan_in_feature_folder(self) -> None:
+        from support import PACKAGE_ROOT
+
+        for rel in ("skill/references/claude.md", "codex/agents/planner.toml"):
+            text = (PACKAGE_ROOT / rel).read_text()
+            for needle in ("Plan.md", "spec: Spec.md", "type: plan", "feature: <slug>"):
+                with self.subTest(file=rel, needle=needle):
+                    self.assertIn(needle, text)
+        self.assertIn("type: framing", SKILL.read_text())
+
+    def test_skill_links_notes_migrate_reference(self) -> None:
+        self.assertIn("(references/notes-migrate.md)", SKILL.read_text())
+        self.assertTrue((SKILL_ROOT / "references/notes-migrate.md").is_file())
+        self.assertNotIn("reference/cli/notes-migrate.md", SKILL.read_text())
