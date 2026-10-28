@@ -51,6 +51,13 @@ PROJECT_IDS = (
 )
 
 
+def plan_hash(moves: list[tuple[Path, Path]], writes: list[tuple[Path, str, str]]) -> str:
+    """The D9 `plan_hash`: sha256 of each move and of the old and new sha256 of each write, so a resume can check it."""
+    return hashlib.sha256(json.dumps(sorted(
+        [["move", str(src), str(dst)] for src, dst in moves] + [["write", str(path), old, new] for path, old, new in writes]
+    )).encode()).hexdigest()
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()
 
@@ -209,9 +216,6 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
                 continue
             outside_links += [{"file": rel, "line": text.count("\n", 0, link.start) + 1, "link": text[link.start:link.end]}
                               for link in find_links(text) if resolve(link, path, notes, vault, files) in moved]
-    plan_hash = hashlib.sha256(json.dumps(sorted(
-        [["move", str(m.src), str(m.dst)] for m in moves] + [["write", str(w.path), w.old_sha, w.new_sha] for w in writes]
-    )).encode()).hexdigest()
     return Plan(
         moves=moves,
         writes=writes,
@@ -225,5 +229,5 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
         gitignore=[item.path for item in blocked if item.reason == "gitignore"],
         ambiguous=ambiguous,
         blocked=blocked,
-        plan_hash=plan_hash,
+        plan_hash=plan_hash([(m.src, m.dst) for m in moves], [(w.path, w.old_sha, w.new_sha) for w in writes]),
     )

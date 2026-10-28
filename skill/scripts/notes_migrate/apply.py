@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
+import hmac
 import json
 import os
+import secrets
 import socket
 import time
 import unicodedata
@@ -14,7 +16,7 @@ from pathlib import Path
 
 import devloop
 from board.writer import inside, worktrees
-from notes_migrate.texts import Plan, build_plan
+from notes_migrate.texts import Plan, build_plan, plan_hash
 from notes_path import NotesPathError, resolve
 
 LOCK = ".notes-migrate.lock"
@@ -22,6 +24,8 @@ TMP = ".notes-migrate-tmp"
 LISTS = ("moves", "frontmatter", "outside_links", "outside_skipped", "repo_links", "git_case", "gitignore",
          "ambiguous", "blocked")
 RESTART = "restore the planned text, or delete .notes-migrate.json and start a new dry run"
+CHECK = "check it, then delete .notes-migrate.json and start a new dry run"
+KEY = Path(".config", "dev-loop", "notes-migrate.key")
 
 
 class Stop(Exception):
@@ -55,6 +59,62 @@ def _plan_report(notes: Path, plan: Plan) -> dict:
                    outside_links=plan.outside_links, outside_skipped=plan.outside_skipped,
                    repo_links=plan.repo_links, git_case=plan.git_case, gitignore=plan.gitignore,
                    ambiguous=plan.ambiguous, blocked=[{"path": b.path, "reason": b.reason} for b in plan.blocked])
+
+
+def _sign(journal: dict) -> str:
+    path = Path.home() / KEY
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(secrets.token_bytes(32))
+    body = json.dumps({k: v for k, v in journal.items() if k != "hmac"}, sort_keys=True).encode()
+    return hmac.new(path.read_bytes(), body, hashlib.sha256).hexdigest()
+
+
+def _save(path: Path, journal: dict) -> None:
+    _put(path, json.dumps({**journal, "hmac": _sign(journal)}).encode())
+
+
+def _fields(item: object, types: dict) -> bool:
+    return isinstance(item, dict) and all(isinstance(item.get(key), kind) for key, kind in types.items())
+
+
+def _load(notes: Path) -> dict:
+    try:
+        journal = json.loads((notes / devloop.JOURNAL).read_text())
+    except (OSError, ValueError) as exc:
+        raise Stop("io", f"{devloop.JOURNAL} unreadable ({exc}): {RESTART}") from None
+    if not (_fields(journal, {"host": str, "plan_hash": str, "report": dict, "moves": list, "writes": list})
+            and all(_fields(m, {"src": str, "dst": str, "role": str, "sha": (str, type(None))}) for m in journal["moves"])
+            and all(_fields(w, {"path": str, "old": str, "new": str, "text": str}) for w in journal["writes"])):
+        raise Stop("io", f"{devloop.JOURNAL} is not a notes-migrate journal: {RESTART}")
+    root = Path(os.path.realpath(notes))
+    for rel in [*(m[key] for m in journal["moves"] for key in ("src", "dst")), *(w["path"] for w in journal["writes"])]:
+        real = Path(os.path.realpath(notes / rel))
+        if os.path.isabs(rel) or ".." in Path(rel).parts or real == root or not real.is_relative_to(root):
+            raise Stop("io", f"{devloop.JOURNAL} step {rel!r} is outside the notes folder: {CHECK}")
+    if journal["plan_hash"] != plan_hash([(notes / m["src"], notes / m["dst"]) for m in journal["moves"]],
+                                         [(notes / w["path"], w["old"], w["new"]) for w in journal["writes"]]):
+        raise Stop("io", f"{devloop.JOURNAL} plan_hash is not the hash of its steps: {CHECK}")
+    if journal["host"] != socket.gethostname():
+        raise Stop("locked", f"{devloop.JOURNAL} of {journal['host']}: resume it on that host, or delete it and the lock "
+                   "after checking that host is idle")
+    if not hmac.compare_digest(str(journal.get("hmac")), _sign(journal)):
+        raise Stop("locked", f"{devloop.JOURNAL} was not written by notes-migrate on this machine (key ~/{KEY}): {CHECK}")
+    return journal
+
+
+def _resume(notes: Path, planned: str | None) -> dict:
+    journal = _load(notes)
+    if planned and planned != journal["plan_hash"]:
+        raise Stop("plan-changed", f"--plan {planned} is not the plan {journal['plan_hash']} of {devloop.JOURNAL}: "
+                   "resume with no --plan, or check it, delete it and start a new dry run")
+    return journal
 
 
 def _journal(notes: Path, plan: Plan) -> dict:
@@ -214,9 +274,9 @@ def cmd_notes_migrate(args: argparse.Namespace) -> int:
         return devloop.emit({"error": "--apply needs --plan <plan_hash> of a dry run"}, 2)
     if resuming:
         try:
-            journal = json.loads(journal_path.read_text())
-        except (OSError, ValueError) as exc:
-            return devloop.emit(_report(error="io", message=f"{devloop.JOURNAL} unreadable ({exc}): {RESTART}"), 1)
+            journal = _resume(notes, args.plan)
+        except Stop as exc:
+            return devloop.emit(_report(error=exc.code, message=str(exc)), 1)
         if not args.apply:
             return devloop.emit(journal["report"], 0)
     else:
@@ -235,13 +295,7 @@ def cmd_notes_migrate(args: argparse.Namespace) -> int:
         return devloop.emit(_report(error="locked", message=f"{lock} held by {holder}: run notes-migrate there, or delete "
                                     f"the lock and {devloop.JOURNAL} after checking that host is idle"), 1)
     try:
-        if resuming:
-            if journal.get("host") != socket.gethostname():
-                return devloop.emit(_report(error="locked", message=f"{devloop.JOURNAL} of {journal.get('host')}: resume it "
-                                            "on that host, or delete it and the lock after checking that host is idle"), 1)
-            if args.plan and args.plan != journal["plan_hash"]:
-                return devloop.emit({**journal["report"], "error": "plan-changed"}, 1)
-        else:
+        if not resuming:
             plan = build_plan(repo, notes, version)
             if plan.blocked:
                 return devloop.emit(_plan_report(notes, plan), 1)
@@ -249,7 +303,7 @@ def cmd_notes_migrate(args: argparse.Namespace) -> int:
                 return devloop.emit({**_plan_report(notes, plan), "error": "plan-changed"}, 1)
             journal = _journal(notes, plan)
             if plan.moves or plan.writes:
-                _put(journal_path, json.dumps(journal).encode())
+                _save(journal_path, journal)
         try:
             return devloop.emit(_apply(repo, notes, journal), 0)
         except Stop as exc:

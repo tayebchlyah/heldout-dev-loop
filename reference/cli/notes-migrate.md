@@ -7,16 +7,16 @@
 
 ## Apply, journal and log
 
-- `--apply` takes `$NOTES/.notes-migrate.lock` (exclusive create, `{"host", "pid"}`; a lock of this host whose pid is not running is stale and removed), then writes `$NOTES/.notes-migrate.json` (host, `plan_hash`, each step with the sha256 it expects before and after, each new note text, the report) before the first change.
+- `--apply` takes `$NOTES/.notes-migrate.lock` (exclusive create, `{"host", "pid"}`; a lock of this host whose pid is not running is stale and removed), then writes `$NOTES/.notes-migrate.json` (host, `plan_hash`, each step with the sha256 it expects before and after, each new note text, the report, `hmac`) before the first change. `hmac`: HMAC-SHA256 of the journal with the machine key `~/.config/dev-loop/notes-migrate.key` (32 random bytes, mode 0600, made on first use, never in `$NOTES`): a journal another machine or a vault sync wrote never verifies.
 - Order: folder renames, feature moves, note writes. A move never overwrites: its target must not exist. A rename that changes only the case goes through `<name>.notes-migrate-tmp` in the same parent. The note writes hold the `decide` lock (`<git-common-dir>/dev-loop/decide.lock`). Emptied old folders are removed with their `.DS_Store`.
 - At the end, when the run changed a file: `$NOTES/<YYYYMMDD> Notes Migration.md` (`Notes Migration 2.md` and so on on the same day; `type: note`) lists each move, each `outside_links`, `repo_links` and `git_case` item: the record for a manual undo (no automatic undo: the vault git history or iCloud) and the follow-up. Then the journal and the lock are removed.
 
 ## Recovery
 
-- A run that finds the journal resumes it: it runs the journal's plan, not a new one, needs no `--plan` (a `--plan` other than the journal's: `plan-changed`), and skips the guards. Each step is idempotent: a move whose source is gone and whose target has the expected sha256 is done; a note whose file already has the new sha256 is done.
+- A run that finds the journal resumes it: it runs the journal's plan, not a new one, needs no `--plan` (a `--plan` other than the journal's: `plan-changed`), and skips the plan guards. First it checks the journal, the same in a dry run and in `--apply`: its shape (`io`); each move source, target and write path is relative, with no `..` part, inside the real path of `$NOTES` after following the existing parents (`io`, naming the step); `plan_hash` equal to the hash of its steps (`io`); its host (`locked`); its `hmac` with this machine's key (`locked`). On any of these nothing changes: check the journal, then delete it and start a new dry run. Each step is idempotent: a move whose source is gone and whose target has the expected sha256 is done; a note whose file already has the new sha256 is done.
 - `io` (the journal stays): a file with neither sha256, or a target that synced in after the plan. Restore the planned text (or move the target away) and run `--apply` again, or delete `.notes-migrate.json` and start a new dry run.
 - `locked`: a live lock, or a journal or lock of another host. The message names the host. Run `notes-migrate --apply` on that host, or delete the lock and the journal after checking that host is idle.
-- A dry run with a journal present prints the journal's report.
+- A dry run with a journal present prints the journal's report, once the journal passes the checks above.
 
 ## Stage 0
 
