@@ -80,6 +80,8 @@ Each other job:
 
 Upgrade: `npx github:tchlyah/dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tchlyah/dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither. `uninstall-global` removes a 1.4 install from its own frozen lists (files, 1.4 and 1.5 hook commands).
 
+Notes layout upgrade: `notes-migrate` moves a notes folder in the old layout to the feature folder layout (`reference/cli/notes-migrate.md`). Every machine sharing the notes folder upgrades the kit first, then one runs it.
+
 Board upgrade from 2.1.0: after the kit upgrade lands on `main`, restart each in-flight Delivery from the main checkout (an old-kit worktree runs the 2.1.0 writer: wrong-time duplicate in `dev-loop-board/`). Codex: trust the new PostToolUse hook with `/hooks`.
 
 Seal upgrade: ship each in-flight feature before merging the kit upgrade. A Stage 3 commit made before has no `Dev-Loop-Seal` trailer, and `seal-check` reports it `unsealed`. Codex: trust the new hooks (`seal.sh`, `acceptance-wall.sh`) with `/hooks`. `upgrade` removes the three dead Codex profile tables (`dev-implementer`, `dev-spec-tester`, `dev-read-only`) from `.codex/config.toml` when unchanged, and refreshes dev-loop's own hook entries in place (a user field added to a dev-loop hook is lost).

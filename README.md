@@ -87,7 +87,7 @@ Rollback: `git revert` the upgrade commit, then `npx github:tchlyah/dev-loop#v1.
 
 ## Notes folder
 
-Specs and plans live in a notes folder, any local folder. `skill/scripts/notes_path.py` finds it, first match wins:
+Feature folders (`Features/<YYYYMMDD> <Title>/` with `Framing.md`, `Spec.md`, `Plan.md`) live in a notes folder, any local folder. `skill/scripts/notes_path.py` finds it, first match wins:
 
 1. `DEV_LOOP_NOTES` environment variable.
 2. `notes` in `dev-loop.local.json` in the current worktree, then in the main worktree. This file is gitignored: each person and each machine sets its own path. A new worktree has no copy, so it uses the main worktree's file.

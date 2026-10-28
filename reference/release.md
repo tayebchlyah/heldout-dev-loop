@@ -8,7 +8,7 @@ At rc.1 of a cycle, the agent proposes major, minor or patch from the changes af
 
 ## When to cut a release candidate
 
-After a merge, the Stage 7 report has one line `rc: now|later: <reason>`. The agent compares the kit-source commits after the last tag (rc or final) with the planned work: open GitHub issues, specs in `$NOTES/specs/` with no `shipped:`, framing notes with no spec, open `## Deferred` items. `now`: a planned item needs the change in the kit before it starts; the reason names it. `later`: no planned item needs it now. Judgment, no script. The user decides to cut.
+After a merge, the Stage 7 report has one line `rc: now|later: <reason>`. The agent compares the kit-source commits after the last tag (rc or final) with the planned work: open GitHub issues, specs in `$NOTES/Features/*/Spec.md` with no `shipped:`, framing notes with no spec, open `## Deferred` items. `now`: a planned item needs the change in the kit before it starts; the reason names it. `later`: no planned item needs it now. Judgment, no script. The user decides to cut.
 
 ## Changelog
 

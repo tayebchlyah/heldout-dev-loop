@@ -1,6 +1,6 @@
 # Spec template
 
-Stage 2 writes the spec from this template to `$NOTES/specs/`. Size target: 1,500 words for Goal, Non-goals, Interfaces and seams, Acceptance oracle, Acceptance flows and Supersedes (SKILL.md Stage 2). Then the builder check. Track L: threat model too. A one-way door in the spec: doubt review. Licenses at the end.
+Stage 2 writes the spec from this template to `Spec.md` in the feature folder `$NOTES/Features/<YYYYMMDD> <Title>/`. Size target: 1,500 words for Goal, Non-goals, Interfaces and seams, Acceptance oracle, Acceptance flows and Supersedes (SKILL.md Stage 2). Then the builder check. Track L: threat model too. A one-way door in the spec: doubt review. Licenses at the end.
 
 ## Template
 
