@@ -26,7 +26,7 @@ First written release: in its release PR, run `/release-notes --all` by hand fro
 
 ## Audit sandbox
 
-The release audit runs target code only in the image `dev-loop-audit:1` (`dev-loop.json` `security_audit.images.audit`). It holds `python3` 3.14, `git`, `bash`, `jq` and `node` 24: the tools the suites and the hooks need. Build it once per machine, before an audit: `docker build -t dev-loop-audit:1 scripts/audit-image`. A base image change takes a new tag, `dev-loop-audit:<n+1>`, in the Dockerfile build line and in `dev-loop.json`.
+The release audit runs target code only in the image `dev-loop-audit:1` (`dev-loop.json` `security_audit.images.audit`). It holds `python3` 3.14, `git`, `bash`, `jq` and the `node` 24 binary: enough for the Python suites, the hooks and the `node --test` files that need no browser. It has no `npm`, no `npx` and no Chromium. Run the audit from the main checkout: in a linked worktree, `.git` points to a host path the sandbox does not mount. Build it once per machine, before an audit: `docker build -t dev-loop-audit:1 scripts/audit-image`. A Dockerfile change takes a new tag, `dev-loop-audit:<n+1>`, in the build line above, in `dev-loop.json` and in `RepoAuditImageTests`.
 
 ## Release candidate
 
