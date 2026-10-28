@@ -243,6 +243,57 @@ class GateTests(Sandbox):
         self.assertTrue(Path(out["log"]).is_file())
 
 
+class LayoutLookupTests(Sandbox):
+    def test_specs_lists_feature_folders(self) -> None:
+        dl = load_devloop()
+        put(self.notes / "Features" / "20261101 Demo Work" / "Spec.md", frontmatter(feature="demo-work"))
+        path = self.notes / "Features" / "20261101 Demo Work" / "Spec.md"
+        self.assertEqual(dl.specs(self.notes), [("demo-work", path)])
+        put(path, frontmatter(track="M"))
+        self.assertEqual(dl.specs(self.notes), [("demo-work", path)])
+
+    def test_specs_reads_old_layout_during_transition(self) -> None:
+        dl = load_devloop()
+        put(self.notes / "Features" / "20261101 Demo Work" / "Spec.md", frontmatter(feature="demo-work"))
+        put(self.notes / "specs" / "20261020 Old.md", frontmatter(feature="old"))
+        self.assertEqual({slug for slug, _ in dl.specs(self.notes)}, {"demo-work", "old"})
+
+    def test_find_plan_in_folder_and_old_layout(self) -> None:
+        dl = load_devloop()
+        folder = self.notes / "Features" / "20261101 Demo Work"
+        put(folder / "Spec.md", frontmatter(feature="demo-work"))
+        put(folder / "Plan.md", "# Plan\n")
+        self.assertEqual(dl.find_plan(self.notes, folder / "Spec.md"), folder / "Plan.md")
+        old = self.notes / "specs" / "20261020 Old.md"
+        put(old, frontmatter(feature="old"))
+        put(self.notes / "plans" / "x.md", "---\nspec: 20261020 Old.md\n---\n")
+        self.assertEqual(dl.find_plan(self.notes, old), self.notes / "plans" / "x.md")
+
+    def test_ledger_by_marker_real_path(self) -> None:
+        dl = load_devloop()
+        top = self.root / "top"
+        plan_dir = self.root / "plans-real"
+        put(plan_dir / "Plan.md", "# Plan\n")
+        link = self.root / "plans-link"
+        link.symlink_to(plan_dir)
+        sdd = top / ".superpowers" / "sdd"
+        put(sdd / "Plan" / "plan-path", str(self.root / "other" / "Plan.md") + "\n")
+        put(sdd / "Plan" / "progress.md", "other\n")
+        put(sdd / "Plan-x" / "plan-path", str(link / "Plan.md") + "\n")
+        put(sdd / "Plan-x" / "progress.md", "mine\n")
+        self.assertEqual(dl.ledger(top, plan_dir / "Plan.md"), sdd / "Plan-x" / "progress.md")
+        self.assertIsNone(dl.ledger(top, self.root / "nowhere" / "Plan.md"))
+
+    def test_old_layout_exact_names(self) -> None:
+        dl = load_devloop()
+        for name in ("Answers", "Maps", "specs"):
+            (self.notes / name).mkdir(exist_ok=True)
+        put(self.notes / ".notes-migrate.json", "{}")
+        (self.notes / "plans").rmdir()
+        self.assertEqual(dl.old_layout(self.notes), [".notes-migrate.json", "specs"])
+        self.assertEqual(dl.old_layout(self.root / "missing"), [])
+
+
 SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
 REPO_ROOT = SKILL_ROOT.parent
 
