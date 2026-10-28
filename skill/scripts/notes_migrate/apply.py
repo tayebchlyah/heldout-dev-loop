@@ -25,8 +25,6 @@ RESTART = "restore the planned text, or delete .notes-migrate.json and start a n
 
 
 class Stop(Exception):
-    """An `--apply` error: `code` is the D9 `error`, the message says what to do."""
-
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
@@ -43,7 +41,6 @@ def _sha(data: bytes) -> str:
 
 
 def _exact(path: Path) -> bool:
-    """`path` exists under its exact name: the macOS file system ignores case."""
     try:
         names = {unicodedata.normalize("NFC", name) for name in os.listdir(path.parent)}
     except OSError:
@@ -61,7 +58,6 @@ def _plan_report(notes: Path, plan: Plan) -> dict:
 
 
 def _journal(notes: Path, plan: Plan) -> dict:
-    """Everything a resume needs: the steps with their sha256, and the report the log note is made of."""
     rel = lambda path: path.relative_to(notes).as_posix()
     report = _plan_report(notes, plan)
     moves = [{"src": rel(m.src), "dst": rel(m.dst), "role": m.role,
@@ -80,7 +76,6 @@ def _put(path: Path, data: bytes) -> None:
 
 
 def _lock(path: Path) -> str | None:
-    """Take the lock; a lock of this host whose pid is not running is stale and removed. Returns the holder, if any."""
     for _ in range(2):
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
@@ -106,7 +101,6 @@ def _lock(path: Path) -> str | None:
 
 
 def _move_all(notes: Path, journal: dict) -> None:
-    """The moves in plan order; a child names its source before the run, so it goes through the folder moves done."""
     done: list[tuple[str, str]] = []
     after = {w["path"]: w["new"] for w in journal["writes"]}
     for step in journal["moves"]:
@@ -142,7 +136,6 @@ def _move_all(notes: Path, journal: dict) -> None:
 
 
 def _write_all(repo: Path, notes: Path, journal: dict) -> None:
-    """The note writes, under the `decide` lock: they change the project note and the specs."""
     common = devloop.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
     lock = Path(common or repo) / "dev-loop" / "decide.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
@@ -162,7 +155,6 @@ def _write_all(repo: Path, notes: Path, journal: dict) -> None:
 
 
 def _clean(notes: Path) -> None:
-    """Remove the emptied old folders, with their `.DS_Store`; anything else left stays."""
     for name in os.listdir(notes):
         if name not in devloop.OLD_NAMES or not (notes / name).is_dir():
             continue
@@ -175,7 +167,6 @@ def _clean(notes: Path) -> None:
 
 
 def _log(notes: Path, report: dict) -> str:
-    """The `<YYYYMMDD> Notes Migration.md` record for a manual undo and the follow-up; ` 2` and so on on the same day."""
     day = time.strftime("%Y%m%d")
     name, n = f"{day} Notes Migration.md", 1
     while _exact(notes / name):
