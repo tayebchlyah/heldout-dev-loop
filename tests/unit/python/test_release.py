@@ -33,7 +33,7 @@ class ReleaseParseTests(unittest.TestCase):
         return release.security_items(text)
 
     def test_needs_validation_rulings(self) -> None:
-        item = "- 2026-10-25 (security, needs-validation, run-1): x"
+        item = "- 2026-10-25 (security, needs-validation, Run 1): x"
         cases = [
             ([], True),
             (["  - Ruling 2026-10-26: accept the risk"], False),
@@ -48,14 +48,14 @@ class ReleaseParseTests(unittest.TestCase):
                 self.assertEqual([i["line"] for i in found], [item] if is_open else [])
 
     def test_confirmed_is_never_closed_by_a_ruling(self) -> None:
-        item = "- 2026-10-25 (security, confirmed, run-1): x"
+        item = "- 2026-10-25 (security, confirmed, Run 1): x"
         found, _ = self.items(deferred(item, "  - Ruling 2026-10-26: accept"))
-        self.assertEqual([(i["verdict"], i["source"]) for i in found], [("confirmed", "run-1")])
+        self.assertEqual([(i["verdict"], i["source"]) for i in found], [("confirmed", "Run 1")])
 
     def test_checkbox_and_subsection_and_fingerprint(self) -> None:
-        text = "## Deferred\n### Some gate\n- [ ] 2026-10-25 (security, needs-validation, my-feature): y. Fingerprint `abc123`. Blocker: z.\n- [x] 2026-10-25 (security, confirmed, run-2): w\n"
+        text = "## Deferred\n### Some gate\n- [ ] 2026-10-25 (security, needs-validation, my-feature): y. Fingerprint `abc123`. Blocker: z.\n- [x] 2026-10-25 (security, confirmed, Run 2): w\n"
         found, unparsed = self.items(text)
-        self.assertEqual([(i["source"], i["fingerprint"]) for i in found], [("my-feature", "abc123"), ("run-2", None)])
+        self.assertEqual([(i["source"], i["fingerprint"]) for i in found], [("my-feature", "abc123"), ("Run 2", None)])
         self.assertEqual(unparsed, [])
 
     def test_unparsed_lines(self) -> None:
@@ -64,22 +64,22 @@ class ReleaseParseTests(unittest.TestCase):
         self.assertEqual((found, unparsed), ([], ["- Security: the token is logged"]))
 
     def test_column_zero_ruling_is_unparsed(self) -> None:
-        item = "- 2026-10-25 (security, needs-validation, run-1): x"
+        item = "- 2026-10-25 (security, needs-validation, Run 1): x"
         ruling = "- Ruling 2026-10-26: accept the security risk"
         found, unparsed = self.items(deferred(item, ruling))
         self.assertEqual(([i["line"] for i in found], unparsed), ([item], [ruling]))
 
     def test_crlf_note(self) -> None:
-        text = deferred("- 2026-10-25 (security, needs-validation, run-1): x", "\t- Ruling 2026-10-26: close fine").replace("\n", "\r\n")
+        text = deferred("- 2026-10-25 (security, needs-validation, Run 1): x", "\t- Ruling 2026-10-26: close fine").replace("\n", "\r\n")
         self.assertEqual(self.items(text), ([], []))
 
     def test_current_record_is_the_last_match(self) -> None:
-        line = lambda n, sha: f"- 2026-10-2{n} run-{n} at {sha}: confirmed 0, needs validation 3, hardening 1, profile quick, scope whole"
+        line = lambda n, sha: f"- 2026-10-2{n} Run {n} at {sha}: confirmed 0, needs validation 3, hardening 1, profile quick, scope whole"
         text = f"## Release audits\n{line(1, OLD)}\nnot a record\n{line(2, SHA)}\n"
         rec = release.current_record(text)
-        self.assertEqual((rec["run"], rec["sha"], rec["scope"], rec["line"]), ("run-2", SHA, "whole", line(2, SHA)))
+        self.assertEqual((rec["run"], rec["sha"], rec["scope"], rec["line"]), ("Run 2", SHA, "whole", line(2, SHA)))
         self.assertIsNone(release.current_record("## Release audits\n- junk\n"))
-        ranged = f"## Release audits\n- 2026-10-25 run-3 at {SHA}: confirmed 0, needs validation 0, hardening 0, profile standard, scope {OLD}..{SHA}\n"
+        ranged = f"## Release audits\n- 2026-10-25 Run 3 at {SHA}: confirmed 0, needs validation 0, hardening 0, profile standard, scope {OLD}..{SHA}\n"
         self.assertEqual(release.current_record(ranged)["scope"], f"{OLD}..{SHA}")
 
     def test_project_note(self) -> None:
@@ -94,7 +94,7 @@ class ReleaseParseTests(unittest.TestCase):
 
 
 DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
-RECORD = "- 2026-10-25 run-1 at {sha}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
+RECORD = "- 2026-10-25 Run 1 at {sha}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
 
 
 class ReleaseCheckTests(unittest.TestCase):
@@ -130,7 +130,7 @@ class ReleaseCheckTests(unittest.TestCase):
         (self.notes / name).write_text(text)
 
     def run_folder(self, run: str, sha: str, status: str = "complete") -> None:
-        folder = self.notes / "security-audit" / run
+        folder = self.notes / "Security Audit" / run
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "run-metadata.json").write_text(json.dumps({"source_ref": {"commit": sha}, "run_status": status}))
 
@@ -146,7 +146,7 @@ class ReleaseCheckTests(unittest.TestCase):
     def audited(self, sha: str | None = None, deferred: str = "") -> None:
         sha = sha or self.a
         self.note(RECORD.format(sha=sha), deferred)
-        self.run_folder("run-1", sha)
+        self.run_folder("Run 1", sha)
 
     def test_tag_on_audited_commit_is_ok(self) -> None:
         self.git("tag", "v1.0.0", self.a)
@@ -186,9 +186,9 @@ class ReleaseCheckTests(unittest.TestCase):
         self.assertNotEqual(child, doc)
 
     def test_last_record_is_current(self) -> None:
-        old = f"- 2026-10-24 run-1 at {self.b}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
-        self.note(old + "\n" + RECORD.format(sha=self.a).replace("run-1", "run-2"))
-        self.run_folder("run-2", self.a)
+        old = f"- 2026-10-24 Run 1 at {self.b}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
+        self.note(old + "\n" + RECORD.format(sha=self.a).replace("Run 1", "Run 2"))
+        self.run_folder("Run 2", self.a)
         self.assertEqual(self.check("--sha", self.a)[0]["ok"], True)
 
     def test_non_ancestor_with_an_empty_diff_is_stale(self) -> None:
@@ -215,13 +215,13 @@ class ReleaseCheckTests(unittest.TestCase):
 
     def test_record_mismatch(self) -> None:
         for label, make in (
-            ("other commit", lambda: self.run_folder("run-1", self.b)),
-            ("incomplete", lambda: self.run_folder("run-1", self.a, "incomplete")),
+            ("other commit", lambda: self.run_folder("Run 1", self.b)),
+            ("incomplete", lambda: self.run_folder("Run 1", self.a, "incomplete")),
             ("no folder", lambda: None),
-            ("bad json", lambda: (self.notes / "security-audit" / "run-1").mkdir(parents=True) or
-             (self.notes / "security-audit" / "run-1" / "run-metadata.json").write_text("[")),
-            ("not an object", lambda: (self.notes / "security-audit" / "run-1").mkdir(parents=True) or
-             (self.notes / "security-audit" / "run-1" / "run-metadata.json").write_text("[1]")),
+            ("bad json", lambda: (self.notes / "Security Audit" / "Run 1").mkdir(parents=True) or
+             (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text("[")),
+            ("not an object", lambda: (self.notes / "Security Audit" / "Run 1").mkdir(parents=True) or
+             (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text("[1]")),
         ):
             with self.subTest(label):
                 self.note(RECORD.format(sha=self.a))
@@ -229,16 +229,16 @@ class ReleaseCheckTests(unittest.TestCase):
                 out, code, _ = self.check("--sha", self.a)
                 self.assertEqual(([r["reason"] for r in out["reasons"]], code), (["record-mismatch"], 1))
                 self.assertTrue(out["reasons"][0]["detail"])
-                subprocess.run(["rm", "-rf", str(self.notes / "security-audit")], check=True)
+                subprocess.run(["rm", "-rf", str(self.notes / "Security Audit")], check=True)
 
     def test_open_and_unparsed_security(self) -> None:
-        item = "- 2026-10-25 (security, needs-validation, run-1): x"
+        item = "- 2026-10-25 (security, needs-validation, Run 1): x"
         cases = [
             (item, ["open-security"]),
             (item + "\n  - Ruling 2026-10-26: accept the risk", []),
             (item + "\n  - Ruling 2026-10-26: close not reachable", []),
             (item + "\n  - Ruling 2026-10-26: fix in a slice", ["open-security"]),
-            ("- 2026-10-25 (security, confirmed, run-1): x\n  - Ruling 2026-10-26: accept", ["open-security"]),
+            ("- 2026-10-25 (security, confirmed, Run 1): x\n  - Ruling 2026-10-26: accept", ["open-security"]),
             ("### Some gate\n- [ ] 2026-10-25 (security, needs-validation, review-wave-measurement): y", ["open-security"]),
             ("- Security: the token is logged", ["unparsed-security"]),
             ("- Insecurely named thing", []),
@@ -260,7 +260,7 @@ class ReleaseCheckTests(unittest.TestCase):
                          (True, "not-a-release-tag", "release-1", self.b, [], 0))
 
     def test_project_note_fallback_and_errors(self) -> None:
-        self.run_folder("run-1", self.a)
+        self.run_folder("Run 1", self.a)
         self.note(RECORD.format(sha=self.a), name="Demo.md")
         self.assertEqual(self.check("--sha", self.a)[1], 0)
         self.note(None, name="Project Note.md")
@@ -332,21 +332,21 @@ class PlanRepo(unittest.TestCase):
 class ReleasePlanTests(PlanRepo):
     def test_first_plan_creates_run_folder(self) -> None:
         out, code = self.plan()
-        folder = self.notes / "security-audit" / "run-1"
+        folder = self.notes / "Security Audit" / "Run 1"
         self.assertEqual((code, out["run"], out["first"], out["profile"], out["budget"], out["scope"], out["base"], out["prior_runs"], out["head"]),
-                         (0, "run-1", True, "quick", 100, "whole", None, [], self.b))
+                         (0, "Run 1", True, "quick", 100, "whole", None, [], self.b))
         self.assertEqual(out["output"], str(folder))
         self.assertTrue(folder.is_dir())
 
     def test_next_plan_scopes_from_record(self) -> None:
         for n in (1, 3):
-            (self.notes / "security-audit" / f"run-{n}").mkdir(parents=True)
+            (self.notes / "Security Audit" / f"Run {n}").mkdir(parents=True)
         self.record(self.a)
         out, code = self.plan()
-        base = self.notes / "security-audit"
+        base = self.notes / "Security Audit"
         self.assertEqual((code, out["run"], out["first"], out["profile"], out["budget"], out["scope"], out["base"]),
-                         (0, "run-4", False, "standard", None, f"{self.a}..{self.b}", self.a))
-        self.assertEqual(out["prior_runs"], [str(base / "run-1"), str(base / "run-3")])
+                         (0, "Run 4", False, "standard", None, f"{self.a}..{self.b}", self.a))
+        self.assertEqual(out["prior_runs"], [str(base / "Run 1"), str(base / "Run 3")])
 
     def test_base_is_merge_base_when_record_not_ancestor(self) -> None:
         self.git("checkout", "-q", "-b", "side", self.a)
@@ -362,22 +362,22 @@ class ReleasePlanTests(PlanRepo):
         self.assertEqual(self.plan("--budget", "0")[1], 2)
 
     def test_placeholder_blocks_and_creates_nothing(self) -> None:
-        run = self.notes / "security-audit" / "run-1"
+        run = self.notes / "Security Audit" / "Run 1"
         run.mkdir(parents=True)
         (run / ".findings.json.icloud").write_text("")
         out, code = self.plan()
         self.assertEqual((code, out["error"], len(out["files"])), (1, "placeholder", 1))
         self.assertIn(".findings.json.icloud", out["files"][0])
-        self.assertEqual([p.name for p in run.parent.iterdir()], ["run-1"])
+        self.assertEqual([p.name for p in run.parent.iterdir()], ["Run 1"])
 
     def test_dirty_tracked_file_blocks_untracked_does_not(self) -> None:
         (self.repo / "untracked.txt").write_text("u")
         self.assertEqual(self.plan()[1], 0)
-        (self.notes / "security-audit" / "run-1").rmdir()
+        (self.notes / "Security Audit" / "Run 1").rmdir()
         (self.repo / "a.txt").write_text("changed")
         out, code = self.plan()
         self.assertEqual((code, out["error"], out["paths"]), (1, "dirty", ["a.txt"]))
-        self.assertFalse((self.notes / "security-audit").exists() and any((self.notes / "security-audit").iterdir()))
+        self.assertFalse((self.notes / "Security Audit").exists() and any((self.notes / "Security Audit").iterdir()))
 
     def test_no_project_note(self) -> None:
         (self.notes / "Project Note.md").unlink()
@@ -411,7 +411,7 @@ class ReleasePlanTests(PlanRepo):
         self.assertEqual((code, out["error"], sorted(out["paths"])), (1, "dirty", ["a.txt", "c.txt"]))
 
     def test_relative_notes_give_absolute_paths(self) -> None:
-        (self.notes / "security-audit" / "run-1").mkdir(parents=True)
+        (self.notes / "Security Audit" / "Run 1").mkdir(parents=True)
         old = os.getcwd()
         os.chdir(self.root)
         self.addCleanup(os.chdir, old)
@@ -449,7 +449,7 @@ class ReleasePlanExcludeTests(PlanRepo):
         self.run_folder()
 
     def run_folder(self) -> None:
-        folder = self.notes / "security-audit" / "run-1"
+        folder = self.notes / "Security Audit" / "Run 1"
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "run-metadata.json").write_text(json.dumps({"source_ref": {"commit": self.a}, "run_status": "complete"}))
 
