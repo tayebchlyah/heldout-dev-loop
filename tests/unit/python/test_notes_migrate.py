@@ -66,11 +66,19 @@ class LinkTests(unittest.TestCase):
         )
 
     def test_relative_wikilinks(self) -> None:
-        self.assertEqual(
-            self.rewrite("[[../specs/20261020 Demo Work]]", PLAN_OLD, PLAN_NEW),
-            ("[[Spec|../specs/20261020 Demo Work]]", 1),
-        )
-        self.assertEqual(self.rewrite("[[../Project Note]]", SPEC_OLD, SPEC_NEW), ("[[../../Project Note]]", 1))
+        img_old, img_new = NOTES / "specs/img/a.png", NOTES / "Features/20261019 Demo Work/img/a.png"
+        moved = {**MOVED, img_old: img_new}
+        rows = [
+            ("[[../specs/20261020 Demo Work]]", PLAN_OLD, PLAN_NEW, "[[Spec|../specs/20261020 Demo Work]]"),
+            ("[[../Project Note]]", SPEC_OLD, SPEC_NEW, "[[../../Project Note]]"),
+            ("![[./img/a.png]]", SPEC_OLD, SPEC_NEW, "![[./img/a.png|./img/a.png]]"),
+            ("[[../specs/img/a.png]]", PLAN_OLD, PLAN_NEW, "[[./img/a.png|../specs/img/a.png]]"),
+            ("[[../plans/20261021 Demo Work]]", PROJECT.parent / "answers/Q.md", NOTES / "Answers/Q.md",
+             "[[../Features/20261019 Demo Work/Plan|../plans/20261021 Demo Work]]"),
+        ]
+        for text, note_old, note_new, expected in rows:
+            with self.subTest(text=text):
+                self.assertEqual(self.rewrite(text, note_old, note_new, moved, extra=[img_old]), (expected, 1))
 
     def test_table_row_escape(self) -> None:
         for prefix in ("", "> "):
