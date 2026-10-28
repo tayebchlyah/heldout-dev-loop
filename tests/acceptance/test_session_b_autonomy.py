@@ -27,6 +27,7 @@ from pathlib import Path
 # Shared board fixtures live in tests/unit/python; the unit suite never imports this held-out file.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
 from board_fixtures import CLAUDE_HOOKS, DEVLOOP, REPO_ROOT, SCRIPTS, Board, git, put
+from feature_folders_support import NewLayout
 
 SKILL = REPO_ROOT / "skill"
 CHECKER = SCRIPTS / "check_setup.py"
@@ -64,7 +65,7 @@ def denied(result: subprocess.CompletedProcess[str]) -> bool:
     return decision in ("deny", "block")
 
 
-class AutonomyCase(Board):
+class AutonomyCase(NewLayout, Board):
     """The board sandbox (a main checkout with `dev-loop.json`, a bare origin, a notes folder, a sandboxed
     HOME), the kit committed on `main` (the skill under `.agents/skills/dev-loop`, the Claude hooks under
     `.dev-loop/hooks/claude`), a spec `feature: demo` with no `## Decision log`, and a worktree on `feat/demo`."""
@@ -82,7 +83,7 @@ class AutonomyCase(Board):
         git(self.repo, "commit", "-q", "-m", "kit")
         git(self.repo, "push", "-q", "origin", "main")
         git(self.repo, "fetch", "-q", "origin")
-        self.spec_path = self.notes / "specs" / "20261024 Demo.md"
+        self.spec_path = self.notes / "Features" / "20261024 Demo" / "Spec.md"
         put(self.spec_path, "---\ntype: spec\nreview_status: approved\nfeature: demo\ntrack: M\nacceptance:\nshipped:\n"
                             "---\n\n# Demo\n\n## Goal\n\nA demo feature for the widget shop.\n\n## Decisions\n\n"
                             "| ID | Topic | Decision |\n| --- | --- | --- |\n| D1 | Format | Plain text. |\n")
@@ -278,7 +279,7 @@ class InstallTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.notes = self.root / "notes"
-        (self.notes / "specs").mkdir(parents=True)
+        (self.notes / "Features").mkdir(parents=True)
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("DEV_LOOP", "DEVLOOP", "CLAUDE_", "CODEX_"))}
         self.env.update(HOME=str(self.home), GIT_CONFIG_NOSYSTEM="1", PYTHONDONTWRITEBYTECODE="1")

@@ -8,9 +8,9 @@ repos with a bare `origin`, and the `codex/agents/*.toml` files of this repo. Ev
 repos is invented. HOME is always a temporary folder.
 
 Fixture choices the spec leaves open (taken from the documented loop):
-- The notes folder comes from `DEV_LOOP_NOTES`; the spec sits in `<notes>/specs/`, the plan in
-  `<notes>/plans/` with `spec: <spec file name>`, the ledger in `.superpowers/sdd/<plan stem>/progress.md`
-  of the feature worktree (untracked).
+- The notes folder comes from `DEV_LOOP_NOTES`; as Feature Folders replaced it, the spec sits in
+  `<notes>/Features/<name>/Spec.md`, the plan in `Plan.md` beside it with `spec: Spec.md`, the ledger in
+  `.superpowers/sdd/Plan/progress.md` with its `plan-path` file, in the feature worktree (untracked).
 - A Track S feature has no spec and lives on branch `fix/<slug>`.
 """
 
@@ -24,6 +24,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from feature_folders_support import write_ledger
 
 try:
     import tomllib
@@ -68,8 +70,7 @@ class Project:
         self.home = root / "home"
         self.home.mkdir()
         self.notes = root / "notes"
-        (self.notes / "specs").mkdir(parents=True)
-        (self.notes / "plans").mkdir()
+        (self.notes / "Features").mkdir(parents=True)
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("GIT_", "DEV_LOOP", "DEVLOOP", "CLAUDE_", "CODEX_"))}
         self.env.update({"HOME": str(self.home), "DEV_LOOP_NOTES": str(self.notes), "GIT_CONFIG_NOSYSTEM": "1",
@@ -115,7 +116,7 @@ class Project:
 
     def feature(self, slug: str, track: str | None, prefix: str = "feat") -> Path:
         if track is not None:
-            put(self.notes / "specs" / f"20261024 {TITLE}.md",
+            put(self.notes / "Features" / f"20261024 {TITLE}" / "Spec.md",
                 f"---\ntype: spec\nfeature: {slug}\ntrack: {track}\nreview_status: approved\nacceptance:\nshipped:\n"
                 f"---\n\n# {TITLE}\n")
         self.git(self.repo, "fetch", "-q", "origin")
@@ -124,12 +125,12 @@ class Project:
         return wt.resolve()
 
     def gate_green(self, wt: Path, sha: str | None) -> None:
-        plan = self.notes / "plans" / f"20261024 {TITLE} Plan.md"
-        put(plan, f"---\nspec: 20261024 {TITLE}.md\n---\n\n# Plan\n\n### Task 1: Build it\n")
+        plan = self.notes / "Features" / f"20261024 {TITLE}" / "Plan.md"
+        put(plan, "---\ntype: plan\nspec: Spec.md\n---\n\n# Plan\n\n### Task 1: Build it\n")
         lines = ["# Ledger", "Task 1: complete (tests green)"]
         if sha is not None:
             lines.append(f"Feature gate: green at {sha}")
-        put(wt / ".superpowers" / "sdd" / plan.stem / "progress.md", "\n".join(lines) + "\n")
+        write_ledger(wt, plan, "\n".join(lines) + "\n")
 
     def review_done(self, wt: Path, sha: str) -> Path:
         git_dir = Path(self.git(wt, "rev-parse", "--absolute-git-dir"))

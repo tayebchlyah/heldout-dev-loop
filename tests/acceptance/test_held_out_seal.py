@@ -151,7 +151,7 @@ class SealRepo(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
         self.notes = self.root / "notes"
-        put(self.notes / "specs" / "20261024 Widget.md",
+        put(self.notes / "Features" / "20261024 Widget" / "Spec.md",
             "---\nfeature: widget\ntrack: M\nreview_status: approved\n---\n\n# Widget\n")
         self.transcripts = self.root / "transcripts"
         self.transcripts.mkdir()

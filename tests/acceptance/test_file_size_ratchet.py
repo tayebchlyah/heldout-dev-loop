@@ -75,7 +75,7 @@ class Project:
         self.home = root / "home"
         self.home.mkdir()
         self.notes = root / "notes"
-        put(self.notes / "specs" / "20261026 Widget.md",
+        put(self.notes / "Features" / "20261026 Widget" / "Spec.md",
             "---\ntype: spec\nfeature: widget\ntrack: M\nreview_status: approved\nacceptance:\nshipped:\n---\n\n"
             "# Widget\n")
         self.env = {key: value for key, value in os.environ.items()

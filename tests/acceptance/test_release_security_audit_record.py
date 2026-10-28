@@ -31,7 +31,7 @@ class ReleaseRecordTests(RecordCase):
         today = self.today_of(bullets[-1])
         self.assertEqual(bullets[-1], record_line(2, r.A, scope=f"{r.Z}..{r.A}", profile="standard", date=today,
                                                   confirmed=1, needs=2, hardening=3))
-        self.assertIn(f"run-2 at {r.A}", payload.get("record") or "", payload)
+        self.assertIn(f"Run 2 at {r.A}", payload.get("record") or "", payload)
 
     def test_o22_record_line_without_base(self) -> None:
         r, run = self.setup_record()
@@ -46,17 +46,17 @@ class ReleaseRecordTests(RecordCase):
         self.assertEqual(code, 0, payload)
         lines = self.new_subsection(r)
         self.assertEqual(len(lines), 3, lines)
-        confirmed = [line for line in lines if "(security, confirmed, run-2): " in line]
-        needs = [line for line in lines if "(security, needs-validation, run-2): " in line]
+        confirmed = [line for line in lines if "(security, confirmed, Run 2): " in line]
+        needs = [line for line in lines if "(security, needs-validation, Run 2): " in line]
         self.assertEqual((len(confirmed), len(needs)), (1, 2), lines)
         for line in lines:
-            self.assertRegex(line, r"^- \d{4}-\d{2}-\d{2} \(security, (confirmed|needs-validation), run-2\): ")
+            self.assertRegex(line, r"^- \d{4}-\d{2}-\d{2} \(security, (confirmed|needs-validation), Run 2\): ")
         self.assertIn("Fingerprint `f-c`", confirmed[0])
-        self.assertIn("security-audit/run-2/FINDINGS-DETAIL.md", confirmed[0])
+        self.assertIn("Security Audit/Run 2/FINDINGS-DETAIL.md", confirmed[0])
         self.assertTrue([line for line in needs if "Fingerprint `f-n1`" in line], needs)
         self.assertTrue([line for line in needs if "Fingerprint `f-n2`" in line], needs)
         self.assertIn("Blocker: fact one", needs[0])
-        self.assertIn("security-audit/run-2/NEEDS-VALIDATION.md", needs[0])
+        self.assertIn("Security Audit/Run 2/NEEDS-VALIDATION.md", needs[0])
         self.assertFalse([line for line in lines if "f-r" in line or "colour cache" in line], lines)
         self.assertEqual(len(payload.get("deferred") or []), 3, payload)
         code, check = r.devloop("release-check", "--sha", r.A)
@@ -66,7 +66,7 @@ class ReleaseRecordTests(RecordCase):
         self.assertEqual(len(found[0].get("items") or []), 3, check)
 
     def test_o24_fingerprint_already_open(self) -> None:
-        old = "- 2026-10-20 (security, needs-validation, run-1): Upload path join. Fingerprint `f-n1`. Blocker: x."
+        old = "- 2026-10-20 (security, needs-validation, Run 1): Upload path join. Fingerprint `f-n1`. Blocker: x."
         with self.subTest(case="open"):
             r, run = self.setup_record(note=note_text([], [old], []))
             code, payload = self.record(r, run)
@@ -84,10 +84,10 @@ class ReleaseRecordTests(RecordCase):
         r, run = self.setup_record()
         code, payload = self.record(r, run)
         self.assertEqual(code, 0, payload)
-        gardener = [line for line in section(r.note_path().read_text(), "## Gardener") if "run-2" in line]
+        gardener = [line for line in section(r.note_path().read_text(), "## Gardener") if "Run 2" in line]
         self.assertEqual(len(gardener), 1, gardener)
         today = self.today_of(gardener[0])
-        expected = f"- {today} (security, hardening, run-2): 3 hardening notes, see security-audit/run-2/REPORT.md"
+        expected = f"- {today} (security, hardening, Run 2): 3 hardening notes, see Security Audit/Run 2/REPORT.md"
         self.assertEqual(gardener[0], expected)
         self.assertIn(expected.lstrip("- "), payload.get("gardener") or "", payload)
         with self.subTest(case="no hardening bullet"):
@@ -96,7 +96,7 @@ class ReleaseRecordTests(RecordCase):
             self.assertEqual(code, 0, payload)
             self.assertIn("gardener", payload)
             self.assertIsNone(payload.get("gardener"), payload)
-            self.assertNotIn("(security, hardening, run-2)", r.note_path().read_text())
+            self.assertNotIn("(security, hardening, Run 2)", r.note_path().read_text())
 
     def test_o26_title_cannot_close_its_own_item(self) -> None:
         findings = [dict(f) for f in FINDINGS]
@@ -157,7 +157,7 @@ class ReleaseRecordTests(RecordCase):
         for where in ("outside", "bad name"):
             with self.subTest(where=where):
                 r, run = self.setup_record()
-                target = r.root / "elsewhere" / "run-2" if where == "outside" else run.parent / "latest"
+                target = r.root / "elsewhere" / "Run 2" if where == "outside" else run.parent / "latest"
                 shutil.copytree(run, target)
                 shutil.rmtree(run)
                 self.assert_refused(r, target, "bad-run")
@@ -188,7 +188,7 @@ class AuditFlowTests(RecordCase):
         r.write_note(BASE_NOTE)
         code, plan = r.devloop("release-plan")
         self.assertEqual(code, 0, plan)
-        self.assertEqual((plan.get("run"), plan.get("profile"), plan.get("scope")), ("run-1", "quick", "whole"), plan)
+        self.assertEqual((plan.get("run"), plan.get("profile"), plan.get("scope")), ("Run 1", "quick", "whole"), plan)
         output = Path(plan["output"])
         self.fill_run(output, plan["head"], plan["profile"], FINDINGS)
 
@@ -203,10 +203,10 @@ class AuditFlowTests(RecordCase):
         lines = r.note_path().read_text().splitlines()
         kept = []
         for line in lines:
-            if "(security, confirmed, run-1)" in line:
+            if "(security, confirmed, Run 1)" in line:
                 continue
             kept.append(line)
-            if "(security, needs-validation, run-1)" in line:
+            if "(security, needs-validation, Run 1)" in line:
                 kept.append("  - Ruling 2026-10-26: accept the risk, behind the admin login")
         r.write_note("\n".join(kept) + "\n")
         code, check = r.devloop("release-check", "--sha", "HEAD")

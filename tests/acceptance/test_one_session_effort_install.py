@@ -73,7 +73,7 @@ class InstallCase(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
         self.home, self.notes, scratch = self.root / "home", self.root / "notes", self.root / "tmp"
-        for folder in (self.home, self.notes / "specs", scratch):
+        for folder in (self.home, self.notes / "Features", scratch):
             folder.mkdir(parents=True)
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("DEV_LOOP", "DEVLOOP", "CLAUDE", "CODEX", "GIT_"))}

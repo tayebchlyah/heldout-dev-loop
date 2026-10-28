@@ -20,6 +20,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from feature_folders_support import write_ledger
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTS = REPO_ROOT / "AGENTS.md"
 REFERENCE = REPO_ROOT / "reference"
@@ -485,11 +487,11 @@ class ReviewGateTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name).resolve()
         notes = root / "notes"
-        put(notes / "specs" / "20261026 Palette.md",
+        put(notes / "Features" / "20261026 Palette" / "Spec.md",
             "---\ntype: spec\nfeature: palette\ntrack: M\nreview_status: approved\nacceptance:\nshipped:\n"
             "---\n\n# Palette\n")
-        put(notes / "plans" / "20261026 Palette Plan.md",
-            "---\nspec: 20261026 Palette.md\n---\n\n# Plan\n\n### Task 1: Build it\n")
+        put(notes / "Features" / "20261026 Palette" / "Plan.md",
+            "---\ntype: plan\nspec: Spec.md\n---\n\n# Plan\n\n### Task 1: Build it\n")
         scratch = Scratch(root, {
             "dev-loop.json": json.dumps({"version": "2.1.1", "harnesses": ["claude", "codex"]}, indent=2) + "\n",
             "GLOSSARY.md": "# Glossary\n\n**Palette**:\nA set of colours.\n",
@@ -500,8 +502,8 @@ class ReviewGateTests(unittest.TestCase):
         scratch.commit({"tests/acceptance/test_palette.py": "def test_flow():\n    assert True\n"},
                        "✅(acceptance) Add the palette tests")
         reviewed = scratch.commit({"src/app.py": APP_BASE.replace("'blue'", "'navy'")}, "✨(palette) Build it")
-        put(scratch.repo / ".superpowers" / "sdd" / "20261026 Palette Plan" / "progress.md",
-            f"# Ledger\nTask 1: complete (tests green)\nFeature gate: green at {reviewed}\n")
+        write_ledger(scratch.repo, notes / "Features" / "20261026 Palette" / "Plan.md",
+                     f"# Ledger\nTask 1: complete (tests green)\nFeature gate: green at {reviewed}\n")
         put(scratch.repo / ".git" / "info" / "exclude", ".superpowers/\n")
         late = scratch.commit({"reference/cli/status.md": status_doc + "\nOne more sentence.\n"},
                               "📝(status) Extend the contract")
