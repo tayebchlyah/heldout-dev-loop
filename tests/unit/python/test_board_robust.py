@@ -44,25 +44,25 @@ class BoardRobustTests(Board):
         git(self.repo, "branch", "-D", "fix/ghost")
         ghost = own["ghost"]
         ghost.write_text(ghost.read_text().replace("stage: 5\n", "stage: [5\n"))
-        put(self.board_dir / "features" / "plain.md", "Just some words.\n")
+        put(self.board_dir / "Features" / "plain.md", "Just some words.\n")
         copy = f"{own['tiny'].stem} 2.md"
-        put(self.board_dir / "features" / copy, own["tiny"].read_text())
+        put(self.board_dir / "Features" / copy, own["tiny"].read_text())
         names = [ghost.name, "plain.md", copy]
-        before = snapshot(self.board_dir / "features")
+        before = snapshot(self.board_dir / "Features")
         self.ok()
-        after = snapshot(self.board_dir / "features")
+        after = snapshot(self.board_dir / "Features")
         for name in names:
             self.assertEqual(after.get(name), before[name], name)
 
     def test_spec_without_goal_or_assumptions_and_plan_without_tasks(self) -> None:
         """Review Focus 4: no `## Goal`, no `## Assumptions`, no task heading: empty description, decisions, tasks."""
-        spec = self.notes / "specs" / "20261001 Bare Thing.md"
+        spec = self.notes / "Features" / "Bare Thing" / "Spec.md"
         put(spec, "---\ntype: spec\nreview_status: approved\nfeature: bare\ntrack: M\nshipped: \n---\n\n# Bare Thing\n")
         wt = self.worktree("bare")
         self.acceptance(wt, "bare")
-        put(self.notes / "plans" / "20261002 Bare Thing Plan.md", f"---\nspec: {spec.name}\n---\n\n# Plan\n\nNo tasks.\n")
+        put(spec.parent / "Plan.md", f"---\nspec: Spec.md\n---\n\n# Plan\n\nNo tasks.\n")
         self.ok(cwd=wt)
-        note = read_note(self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, "bare"))
+        note = read_note(self.board_dir / "Features" / note_name(MACHINE["id"], PROJECT, "bare"))
         self.assertEqual((note["stage"], note["title"]), (5, "Bare Thing"))
         self.assertEqual((note["description"], note["decisions"], note["tasks"]), ("", [], []))
 
@@ -195,7 +195,7 @@ class BoardRobustTests(Board):
     def test_catch_up_pass_reports_a_skip_once(self) -> None:
         """A per-feature skip seen by two passes is listed once in the payload and in last_run."""
         self.worktree("tiny", prefix="fix")
-        put(self.board_dir / "features" / f".{note_name(MACHINE['id'], PROJECT, 'tiny')}.icloud", "")
+        put(self.board_dir / "Features" / f".{note_name(MACHINE['id'], PROJECT, 'tiny')}.icloud", "")
         holder = self.slow_holder(self.repo)
         self.queue_stop()
         out = self.finish(holder)
@@ -205,12 +205,12 @@ class BoardRobustTests(Board):
         self.assertEqual(state["last_run"]["skipped"], want)
 
     def test_own_legacy_note_that_does_not_parse_moves_into_features(self) -> None:
-        """D3, D4: an own note in YAML block form in dev-loop-board/ (2.1.0) is gone after one run; features/ holds
+        """D3, D4: an own note in YAML block form in Dev Loop Board/ (2.1.0) is gone after one run; features/ holds
         the note with the times of the state. With a features/ copy already there, the legacy file is deleted."""
         wt, plan = self.stage5("gadget", "Gadget Export")
         self.ledger(wt, plan, "Task 1: complete")
         self.ok(cwd=wt)
-        path = self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, "gadget")
+        path = self.board_dir / "Features" / note_name(MACHINE["id"], PROJECT, "gadget")
         legacy = self.board_dir / path.name
         before = read_note(path)
         for keep in (False, True):
@@ -227,7 +227,7 @@ class BoardRobustTests(Board):
     def test_crashed_run_is_reported_by_status(self) -> None:
         """A board run that raises: exit 1, last_run saved with reason `error`, `status` reports it."""
         self.worktree("tiny", prefix="fix")
-        put(self.board_dir / "features", "not a folder\n")
+        put(self.board_dir / "Features", "not a folder\n")
         code, payload = self.board()
         self.assertEqual(code, 1, payload)
         result = subprocess.run([sys.executable, str(DEVLOOP), "status"], cwd=self.repo, env=self.env,
@@ -254,7 +254,7 @@ class BoardRobustTests(Board):
         """Review Focus 3: an iCloud placeholder of an own note in features/: skip `placeholder`, no note written."""
         self.worktree("tiny", prefix="fix")
         name = note_name(MACHINE["id"], PROJECT, "tiny")
-        put(self.board_dir / "features" / f".{name}.icloud", "")
+        put(self.board_dir / "Features" / f".{name}.icloud", "")
         out = self.ok()
         self.assertTrue(self.skipped(out, "placeholder", "tiny"), out)
         self.assertEqual(sorted(self.board_dir.glob("features/*.md")), [])
@@ -304,7 +304,7 @@ class BoardRobustTests(Board):
         """D2: a board note at 3.0.0-rc.1 is older than kit 3.0.0-rc.2: written again with the kit version."""
         from board import writer
 
-        folder = self.board_dir / "features"
+        folder = self.board_dir / "Features"
         for have, kit, rewritten in [("3.0.0-rc.1", "3.0.0-rc.2", True), ("3.0.0-rc.2", "3.0.0-rc.2", False),
                                      ("3.0.0-rc.2", "3.0.0-rc.1", False)]:
             with self.subTest(have=have, kit=kit):
@@ -330,7 +330,7 @@ class BoardRobustTests(Board):
         paths = []
         for day in range(1, 7):
             slug = f"done{day}"
-            path = self.board_dir / "features" / note_name(MACHINE["id"], PROJECT, slug)
+            path = self.board_dir / "Features" / note_name(MACHINE["id"], PROJECT, slug)
             put(path, note_text(status_note(feature=slug, machine_id=MACHINE["id"], owner=MACHINE["owner"],
                                             machine=MACHINE["machine"], shipped_at=f"2026-10-0{day}T12:00:00Z")))
             paths.append(path)
@@ -359,7 +359,7 @@ class BoardRobustTests(Board):
                "| 2026-10-25T10:02Z | 5 |  | discovery |  | Port busy | other run | log |  |\n")
         wt, plan = self.stage5("logged", "Logged Thing")
         self.ledger(wt, plan, "started")
-        spec = self.notes / "specs" / "20261001 Logged Thing.md"
+        spec = self.notes / "Features" / "Logged Thing" / "Spec.md"
         spec.write_text(spec.read_text() + log)
         self.ok(cwd=wt)
         spec.write_text(spec.read_text().replace("- Widgets are blue.\n", "- Widgets are blue.\n- Keep v1\n"))
@@ -474,7 +474,7 @@ class BoardRobustTests(Board):
         data["features"]["alpha"]["updated"] = "2026-10-01T00:00:00Z"
         state.write_text(json.dumps(data))
         path.write_text("---\nstage: [5\n---\n")
-        spec = self.notes / "specs" / "20261001 Alpha Report.md"
+        spec = self.notes / "Features" / "Alpha Report" / "Spec.md"
         spec.write_text(spec.read_text().replace("# Alpha Report", "# Alpha Summary"))
         self.ok(cwd=wt)
         note = read_note(path)

@@ -15,7 +15,7 @@ from support import CHECKER, check_setup, checker_env, write
 
 
 class BoardVaultCheckTests(unittest.TestCase):
-    GITIGNORE_LINE = "add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git"
+    GITIGNORE_LINE = "add Dev Loop Board/ to the vault .gitignore, unless a partner receives the notes by git"
 
     def setup_vault(self, tmp: str, dataview: bool, js: bool, git: bool, ignore: bool) -> tuple[Path, Path, Path]:
         home = Path(tmp) / "home"
@@ -32,7 +32,7 @@ class BoardVaultCheckTests(unittest.TestCase):
         if git:
             subprocess.run(["git", "init", "-q", str(vault)], check=True)
             if ignore:
-                write(vault / ".gitignore", "dev-loop-board/\nsecurity-audit/\n")
+                write(vault / ".gitignore", "Dev Loop Board/\nSecurity Audit/\n")
         return home, repo, vault
 
     def actions(self, **kw: bool) -> list[str]:
@@ -53,7 +53,7 @@ class BoardVaultCheckTests(unittest.TestCase):
 
     def test_vault_git_without_the_board_ignore_is_reported(self) -> None:
         lines = self.actions(dataview=True, js=True, git=True, ignore=False)
-        self.assertEqual(lines, [self.GITIGNORE_LINE, "add security-audit/ to the vault .gitignore"])
+        self.assertEqual(lines, [self.GITIGNORE_LINE, "add Security Audit/ to the vault .gitignore"])
 
     def test_ready_vault_has_no_lines(self) -> None:
         self.assertEqual(self.actions(dataview=True, js=True, git=True, ignore=True), [])
@@ -99,7 +99,7 @@ class BoardVaultCheckTests(unittest.TestCase):
             with self.subTest(text=text[:30]), tempfile.TemporaryDirectory() as tmp:
                 home, repo, vault = self.setup_vault(tmp, dataview=True, js=True, git=False, ignore=False)
                 write(repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "2.1.0", "files": {}}))
-                write(vault / "Project" / "dev-loop-board" / "Dev Loop Board.md", text)
+                write(vault / "Project" / "Dev Loop Board" / "Dev Loop Board.md", text)
                 self.assertEqual(check_setup.check_board_vault(home, repo, {}), expected)
 
     def test_older_release_candidate_board_note_is_not_reported(self) -> None:
@@ -110,7 +110,7 @@ class BoardVaultCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home, repo, vault = self.setup_vault(tmp, dataview=True, js=True, git=False, ignore=False)
             write(repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "3.0.0-rc.2", "files": {}}))
-            write(vault / "Project" / "dev-loop-board" / "Dev Loop Board.md", planted)
+            write(vault / "Project" / "Dev Loop Board" / "Dev Loop Board.md", planted)
             self.assertEqual(check_setup.check_board_vault(home, repo, {}), [])
 
     def test_lines_print_under_user_actions_not_as_failures(self) -> None:

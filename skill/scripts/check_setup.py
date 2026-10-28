@@ -124,18 +124,18 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
     if local.get("board_dataview") is not False and (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
     if local.get("board_vault_git") != "shared":
-        if (root / ".git").exists() and vault_unignored(root, Path(notes), "dev-loop-board"):
-            actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
+        if (root / ".git").exists() and vault_unignored(root, Path(notes), "Dev Loop Board"):
+            actions.append("add Dev Loop Board/ to the vault .gitignore, unless a partner receives the notes by git")
         # D13: the vault git repo is wherever git finds it, with or without an .obsidian folder.
         try:
             top = subprocess.run(["git", "-C", str(notes), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
         except OSError:
             top = None
         if top is not None and top.returncode == 0 and top.stdout.strip():
-            if vault_unignored(Path(top.stdout.strip()), Path(notes), "security-audit"):
-                actions.append("add security-audit/ to the vault .gitignore")
+            if vault_unignored(Path(top.stdout.strip()), Path(notes), "Security Audit"):
+                actions.append("add Security Audit/ to the vault .gitignore")
     # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
-    note = Path(notes) / "dev-loop-board" / store.BOARD_NOTE
+    note = Path(notes) / "Dev Loop Board" / store.BOARD_NOTE
     kit = writer.kit_version(repo)
     if note.is_file() and not note.is_symlink():
         have = (store.read_note(note) or {}).get("version")
