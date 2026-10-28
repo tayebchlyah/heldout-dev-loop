@@ -380,11 +380,20 @@ class MovePlanTests(unittest.TestCase):
         self.notes = vault / "sub/notes"
         write(vault / "README.md", "v")
         git_in(vault, "init", "-q")
-        write(vault / "sub/.gitignore", "security-audit/\n")
         self.put({"security-audit/run-1/REPORT.md": "r", "dev-loop-board/x.md": "x"})
-        self.assertEqual(self.reasons(), [("Security Audit/", "gitignore")])
-        write(vault / "sub/.gitignore", "security-audit/\nSecurity Audit/\n")
-        self.assertEqual(self.reasons(), [])
+        rows = [
+            ("sub/.gitignore", "security-audit/\n", [("Security Audit/", "gitignore")]),
+            ("sub/.gitignore", "security-audit/\nSecurity Audit/\n", []),
+            ("sub/notes/.gitignore", "security-audit/*\n", [("Security Audit/", "gitignore")]),
+            ("sub/notes/.gitignore", "security-audit/run-*/\n", [("Security Audit/Run 1/", "gitignore")]),
+            ("sub/notes/.gitignore", "security-audit/run-*/\nSecurity Audit/Run */\n", []),
+        ]
+        for where, lines, expected in rows:
+            with self.subTest(where=where, lines=lines):
+                for other in ("sub/.gitignore", "sub/notes/.gitignore"):
+                    (vault / other).unlink(missing_ok=True)
+                write(vault / where, lines)
+                self.assertEqual(self.reasons(), expected)
 
     def test_bad_name_no_date_collision(self) -> None:
         self.put({
