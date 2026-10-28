@@ -162,9 +162,14 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
                  for name in sorted(names) if name.endswith(".md")]
     writes, front_files, link_files, link_count, audit_ids = [], [], [], 0, 0
     for note, under_link in notes_md:
-        old = note.read_bytes().decode("utf-8", "surrogateescape")
-        new_path = moved.get(note, note)
         rel = note.relative_to(notes).as_posix()
+        try:
+            old = note.read_bytes().decode("utf-8", "surrogateescape")
+        except OSError:
+            if Blocked(rel, "unreadable") not in blocked:
+                blocked.append(Blocked(rel, "unreadable"))
+            continue
+        new_path = moved.get(note, note)
         text, ids = old, 0
         if not RUN_FOLDER.match(rel):
             targets = [(link.start, link.end - 2 - len(link.text or "")) if link.kind == "wiki"
@@ -202,7 +207,11 @@ def build_plan(repo: Path, notes: Path, kit_version: str) -> Plan:
             if (path.name[1:-len(".icloud")] if path.name.endswith(".icloud") else path.name).endswith(".md"):
                 outside_skipped.append(rel)
         elif path.suffix == ".md":
-            text = path.read_text(encoding="utf-8", errors="replace")
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                outside_skipped.append(rel)
+                continue
             outside_links += [{"file": rel, "line": text.count("\n", 0, link.start) + 1, "link": text[link.start:link.end]}
                               for link in find_links(text) if resolve(link, path, notes, vault, files) in moved]
     plan_hash = hashlib.sha256(json.dumps(sorted(
