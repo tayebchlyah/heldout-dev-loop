@@ -178,7 +178,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         born = sources.birth(ledger) if ledger else None
         if born is not None:
             times["5"] = iso(born)
-        elif stage == 6 or (ledger is None and stage == 5):
+        elif stage == 6 or (plan is None and stage == 5):
             times["5"] = now
     if stage >= 6 and "6" not in times and task_list and all(t["state"] == "done" for t in task_list):
         times["6"] = max(t["done"] for t in task_list)
