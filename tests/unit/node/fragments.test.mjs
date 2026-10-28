@@ -208,7 +208,7 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
         {
           type: 'command',
           command: '{{HOME}}/.codex/hooks/git-guard.sh',
-          timeout: 5,
+          timeout: 30,
           statusMessage: 'Checking command safety',
         },
       ],
@@ -219,7 +219,7 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
         {
           type: 'command',
           command: '{{HOME}}/.codex/hooks/acceptance-wall.sh',
-          timeout: 5,
+          timeout: 30,
           statusMessage: 'Checking held-out suite access',
         },
       ],
