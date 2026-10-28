@@ -72,7 +72,12 @@ class LinkTests(unittest.TestCase):
             self.assertEqual((count, new.replace("\\|", "").count("|")), (1, 3))
 
     def test_code_untouched(self) -> None:
-        text = "`[[specs/20261020 Demo Work]]`\n```\n[[specs/20261020 Demo Work]]\n```\n~~~\n[x](plans/demo.md)\n~~~\n"
+        link = "[[specs/20261020 Demo Work]]"
+        text = (
+            f"`{link}`\n```\n{link}\n```\n~~~\n[x](plans/demo.md)\n~~~\n"
+            f"````\n```\n{link}\n```\n{link}\n````\n"
+            f"> ```\n> {link}\n> ```\n"
+        )
         self.assertEqual(self.rewrite(text), (text, 0))
 
     def test_unmoved_target_untouched(self) -> None:
@@ -95,7 +100,7 @@ class LinkTests(unittest.TestCase):
         nfd_new = NOTES / unicodedata.normalize("NFD", "Features/20261020 Café/Spec.md")
         text = unicodedata.normalize("NFC", "[[20261020 Café]]")
         new, count = self.rewrite(text, moved={nfd_old: nfd_new}, extra=[nfd_old])
-        self.assertEqual((new, count), (f"[[{nfd_new.relative_to(NOTES).as_posix()[:-3]}|20261020 Café]]", 1))
+        self.assertEqual((new, count), (unicodedata.normalize("NFC", "[[Features/20261020 Café/Spec|20261020 Café]]"), 1))
 
     def test_crlf_kept(self) -> None:
         text = "a\r\n```\r\n[[specs/20261020 Demo Work]]\r\n```\r\n[[specs/20261020 Demo Work|s]]\r\n"
