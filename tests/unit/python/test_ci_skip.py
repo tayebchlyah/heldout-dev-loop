@@ -120,9 +120,9 @@ class CiSkipTests(unittest.TestCase):
         _, out = self.check({**RELEASE, "pyproject.toml": 'version = "2.2.0"\n'}, {"pyproject.toml": 'version = "2.1.1"\n'})
         self.assertEqual((out["skip"], out["blocking"]), (False, ["pyproject.toml"]))
 
-    def test_kit_upgrade_skips(self) -> None:
+    def test_kit_upgrade_without_kit_source_blocks(self) -> None:
         _, out = self.check(UPGRADE)
-        self.assertEqual((out["skip"], out["kind"], out["blocking"]), (True, "kit-upgrade", []))
+        self.assertEqual((out["skip"], out["kind"], out["blocking"]), (False, None, [KIT_A, KIT_B, ".dev-loop/MANIFEST.json"]))
 
     def test_commands_change_blocks(self) -> None:
         _, out = self.check({**UPGRADE, "dev-loop.json": config(version="2.2.0", commands={"gate": "true"})})
@@ -133,21 +133,23 @@ class CiSkipTests(unittest.TestCase):
         files = {KIT_A: "a2\n", KIT_B: "b2\n", "src/app.py": "x = 2\n"}
         _, out = self.check({**UPGRADE, "src/app.py": "x = 2\n", ".dev-loop/MANIFEST.json": manifest("2.2.0", files)},
                             {"src/app.py": "x = 1\n"})
-        self.assertEqual((out["skip"], out["blocking"]), (False, ["src/app.py"]))
+        self.assertFalse(out["skip"])
+        self.assertIn("src/app.py", out["blocking"])
 
     def test_merged_config_blocks(self) -> None:
         _, out = self.check({**UPGRADE, ".claude/settings.json": "{}\n"})
         self.assertFalse(out["skip"])
         self.assertIn(".claude/settings.json", out["blocking"])
 
-    def test_deleted_kit_copy_allowed(self) -> None:
+    def test_deleted_kit_copy_without_kit_source_blocks(self) -> None:
         _, out = self.check({KIT_B: None, ".dev-loop/MANIFEST.json": manifest("2.2.0", {KIT_A: "a1\n"}),
                              "dev-loop.json": config(version="2.2.0")})
-        self.assertEqual((out["skip"], out["blocking"]), (True, []))
+        self.assertFalse(out["skip"])
+        self.assertIn(KIT_B, out["blocking"])
 
     def test_release_and_upgrade_together(self) -> None:
         _, out = self.check({**RELEASE, **UPGRADE})
-        self.assertEqual((out["skip"], out["kind"]), (True, "release"))
+        self.assertEqual((out["skip"], out["blocking"]), (False, [KIT_A, KIT_B, ".dev-loop/MANIFEST.json"]))
 
     def test_no_change(self) -> None:
         self.base = self.commit(BASE)
@@ -179,7 +181,8 @@ class CiSkipTests(unittest.TestCase):
 
     def test_hand_edited_kit_copy_blocks(self) -> None:
         _, out = self.check({**UPGRADE, KIT_B: "b2 edited\n"})
-        self.assertEqual((out["skip"], out["blocking"]), (False, [KIT_B]))
+        self.assertFalse(out["skip"])
+        self.assertIn(KIT_B, out["blocking"])
 
     def test_kit_hashes_without_version_change_block(self) -> None:
         _, out = self.check({**UPGRADE, ".dev-loop/MANIFEST.json": manifest("2.1.1", {KIT_A: "a2\n", KIT_B: "b2\n"})})

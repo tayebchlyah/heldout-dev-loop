@@ -318,38 +318,6 @@ def kit_matches(repo: Path, commit: str, among: set[str], ref: dict[str, tuple[s
     return found
 
 
-def kit_copies(repo: Path, commit: str, among: set[str]) -> set[str]:
-    data = manifest_at(repo, commit)
-    files = data.get("files") if data else None
-    if not isinstance(files, dict):
-        return set()
-    tree = run_git(repo, "ls-tree", "-r", "-z", "--full-tree", commit)
-    entries = {}
-    for line in tree.stdout.split("\0") if tree.returncode == 0 else []:
-        meta, _, path = line.partition("\t")
-        if path:
-            mode, _, blob = meta.split(" ")
-            entries[path] = (mode, blob)
-    copies = {MANIFEST}
-    for path, expected in files.items():
-        if not (isinstance(expected, str) and path in among and path.startswith(KIT_ROOTS) and path in entries):
-            continue
-        mode, blob = entries[path]
-        if mode not in ("100644", "100755", "120000"):
-            continue
-        read = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True)
-        if read.returncode != 0:
-            continue
-        content = read.stdout
-        if mode == "120000":
-            actual = "link:" + content.decode("utf-8", "replace")
-        else:
-            actual = "sha256:" + hashlib.sha256(content).hexdigest()
-        if expected == actual:
-            copies.add(path)
-    return copies
-
-
 def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
     if base != record_sha:
         return []
@@ -370,7 +338,10 @@ def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
         touched = run_git(repo, "rev-list", f"{base}..{head}", "--", path)
         return touched.returncode == 0 and all(upgraded(c) for c in touched.stdout.split())
 
-    return sorted(p for p in kit_copies(repo, head, changed) & changed if only_upgrades(p))
+    ref = kit_reference(repo, base)
+    if ref is None:
+        return []
+    return sorted(p for p in kit_matches(repo, head, changed, ref) & changed if only_upgrades(p))
 
 
 def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:
