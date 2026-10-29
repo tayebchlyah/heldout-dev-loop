@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
-from test_devloop import GIT, git, put
+from test_devloop import GIT, frontmatter, git, put, run_cli
 from test_merge_check import MergeCheckCase
 
 
@@ -72,3 +73,39 @@ class MergeBindingTests(MergeCheckCase):
                     sha = self.head(wt)
                 out = self.ok(self.repo, "--feature", "demo")
                 self.assertEqual((out["branch"], out["head"]), ("feat/demo", sha))
+
+    def no_env(self) -> None:
+        self.env = {k: v for k, v in self.env.items() if k != "DEV_LOOP_NOTES"}
+
+    def test_notes_come_from_the_main_worktree(self) -> None:
+        for row in ("worktree local file", "branch dev-loop.json"):
+            with self.subTest(row):
+                self.fresh()
+                self.no_env()
+                fake = self.root / "fake"
+                put(self.notes / "specs" / "20261001 Demo.md", frontmatter(feature="demo", track="L"))
+                put(fake / "specs" / "20261001 Demo.md", frontmatter(feature="demo", track="M"))
+                if row == "worktree local file":
+                    put(self.repo / "dev-loop.local.json", json.dumps({"notes": str(self.notes)}))
+                    wt, _ = self.tree("b-feat", "feat/demo", "src/app.py", True)
+                    put(wt / "dev-loop.local.json", json.dumps({"notes": str(fake)}))
+                else:
+                    self.main_config({"version": "2.0.0", "notes": str(self.notes)})
+                    wt, _ = self.tree("b-feat", "feat/demo", "dev-loop.json", True)
+                    self.commit(wt, "dev-loop.json", json.dumps({"version": "2.0.0", "notes": str(fake)}))
+                out = self.ok(wt)
+                self.assertEqual(out["track"], "L")
+                self.assertIn({"reason": "track-l"}, out["reasons"])
+
+    def test_tracked_local_file_stops_merge_check_and_status(self) -> None:
+        notes_env = dict(self.env)
+        self.no_env()
+        wt, _ = self.tree("b-feat", "feat/demo", "src/app.py", True)
+        put(self.repo / "dev-loop.local.json", json.dumps({"notes": str(self.notes)}))
+        git(self.repo, "add", "-f", "dev-loop.local.json")
+        git(self.repo, "commit", "-q", "-m", "local")
+        for command in ("merge-check", "status"):
+            code, out = run_cli(command, cwd=wt, env=self.env)
+            self.assertEqual((code, "error" in out), (1, True), out)
+        code, out = run_cli("merge-check", cwd=wt, env=notes_env)
+        self.assertEqual(code, 0, out)

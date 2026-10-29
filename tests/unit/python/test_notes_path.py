@@ -57,12 +57,13 @@ class NotesPathTests(unittest.TestCase):
     def set_local(self, repo: Path, target: Path | str) -> None:
         write(repo / "dev-loop.local.json", json.dumps({"notes": str(target)}))
 
-    def test_each_source_wins_over_every_later_source(self) -> None:
+    def test_sources_in_order(self) -> None:
         linked = self.linked()
+        self.set_local(linked, self.folder("tree"))
+        write(linked / "dev-loop.json", json.dumps({"notes": str(self.folder("branch"))}))
         steps = [
-            (lambda: write(linked / "dev-loop.json", json.dumps({"notes": str(self.folder("shared"))})), self.folder("shared")),
+            (lambda: write(self.repo / "dev-loop.json", json.dumps({"notes": str(self.folder("shared"))})), self.folder("shared")),
             (lambda: self.set_local(self.repo, self.folder("main")), self.folder("main")),
-            (lambda: self.set_local(linked, self.folder("tree")), self.folder("tree")),
             (lambda: self.env.update(DEV_LOOP_NOTES=str(self.folder("env"))), self.folder("env")),
         ]
         for apply, expected in steps:
@@ -74,11 +75,17 @@ class NotesPathTests(unittest.TestCase):
         self.set_local(self.repo, self.folder("main"))
         self.assertEqual(self.resolve(linked), self.folder("main"))
 
-    def test_local_file_in_linked_worktree_wins_over_main_file(self) -> None:
+    def test_linked_worktree_files_are_never_read(self) -> None:
         linked = self.linked()
-        self.set_local(self.repo, self.folder("main"))
         self.set_local(linked, self.folder("tree"))
-        self.assertEqual(self.resolve(linked), self.folder("tree"))
+        result = self.run_main(None, repo=linked)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(str(self.repo / "dev-loop.local.json"), result.stderr)
+        (self.repo / "n").mkdir()
+        (linked / "x").mkdir()
+        write(self.repo / "dev-loop.json", json.dumps({"notes": "n"}))
+        write(linked / "dev-loop.json", json.dumps({"notes": "x"}))
+        self.assertEqual(self.resolve(linked), self.repo / "n")
 
     def test_tilde_expands_against_home(self) -> None:
         (self.home / "x").mkdir()
@@ -91,9 +98,9 @@ class NotesPathTests(unittest.TestCase):
         (linked / "n").mkdir()
         write(self.repo / "dev-loop.local.json", json.dumps({"notes": "n"}))
         self.assertEqual(self.resolve(linked), self.repo / "n")
-        write(linked / "dev-loop.json", json.dumps({"notes": "n"}))
+        write(self.repo / "dev-loop.json", json.dumps({"notes": "n"}))
         (self.repo / "dev-loop.local.json").unlink()
-        self.assertEqual(self.resolve(linked), linked / "n")
+        self.assertEqual(self.resolve(linked), self.repo / "n")
         self.env["DEV_LOOP_NOTES"] = "n"
         self.assertEqual(self.resolve(linked), linked / "n")
 
@@ -128,17 +135,6 @@ class NotesPathTests(unittest.TestCase):
             f" Create it or change the path in {self.repo / 'dev-loop.local.json'}",
         )
 
-    def test_bad_local_file_raises_naming_the_file(self) -> None:
-        target = self.repo / "dev-loop.local.json"
-        write(target, "{not json")
-        with self.assertRaises(notes_path.NotesPathError) as ctx:
-            self.resolve()
-        self.assertTrue(str(ctx.exception).startswith(f"invalid {target}: "))
-        write(target, json.dumps({"other": 1}))
-        with self.assertRaises(notes_path.NotesPathError) as ctx:
-            self.resolve()
-        self.assertTrue(str(ctx.exception).startswith(f"invalid {target}: "))
-
     def test_folder_that_is_not_a_git_repository(self) -> None:
         plain = self.root / "plain"
         plain.mkdir()
@@ -154,9 +150,6 @@ class NotesPathTests(unittest.TestCase):
         write(self.repo / "dev-loop.local.json", "{not json")
         self.env["DEV_LOOP_NOTES"] = str(self.folder("env"))
         self.assertEqual(self.resolve(linked), self.folder("env"))
-        del self.env["DEV_LOOP_NOTES"]
-        self.set_local(linked, self.folder("tree"))
-        self.assertEqual(self.resolve(linked), self.folder("tree"))
 
     def test_shared_file_without_notes_falls_through(self) -> None:
         write(self.repo / "dev-loop.json", json.dumps({"other": 1}))
@@ -172,13 +165,13 @@ class NotesPathTests(unittest.TestCase):
             self.resolve()
         self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
 
-    def run_main(self, env_notes: str | None) -> subprocess.CompletedProcess:
+    def run_main(self, env_notes: str | None, repo: Path | None = None) -> subprocess.CompletedProcess:
         env = {**os.environ, "HOME": str(self.home)}
         env.pop("DEV_LOOP_NOTES", None)
         if env_notes is not None:
             env["DEV_LOOP_NOTES"] = env_notes
         return subprocess.run(
-            [sys.executable, str(NOTES_PATH), "--repo", str(self.repo)],
+            [sys.executable, str(NOTES_PATH), "--repo", str(repo or self.repo)],
             capture_output=True,
             text=True,
             env=env,
@@ -193,3 +186,25 @@ class NotesPathTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
         self.assertTrue(result.stderr.startswith(f"no notes path for {self.repo}."))
+
+    def test_main_local_file_errors(self) -> None:
+        target = self.repo / "dev-loop.local.json"
+        for row in ("tracked", "tracked with env", "not JSON", "no notes key"):
+            with self.subTest(row):
+                git_in(self.repo, "rm", "-q", "--cached", "--ignore-unmatch", "dev-loop.local.json")
+                if row.startswith("tracked"):
+                    self.set_local(self.repo, self.folder("main"))
+                    git_in(self.repo, "add", "-f", "dev-loop.local.json")
+                    git_in(self.repo, "commit", "-q", "--allow-empty", "-m", "local")
+                else:
+                    write(target, "{not json" if row == "not JSON" else json.dumps({"other": 1}))
+                result = self.run_main(str(self.folder("env")) if row == "tracked with env" else None)
+                if row == "tracked with env":
+                    self.assertEqual((result.returncode, result.stdout), (0, f"{self.folder('env')}\n"))
+                    continue
+                self.assertEqual(result.returncode, 1)
+                if row == "tracked":
+                    for needle in ("dev-loop.local.json", "tracked", "git rm --cached"):
+                        self.assertIn(needle, result.stderr)
+                else:
+                    self.assertTrue(result.stderr.startswith(f"invalid {target}: "), result.stderr)
