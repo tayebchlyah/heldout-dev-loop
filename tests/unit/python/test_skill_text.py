@@ -381,7 +381,7 @@ class TracksContractTests(unittest.TestCase):
             "Right after the merge: write `shipped: <merge date>`", "`pr: <PR url>`",
             "into the spec frontmatter in the notes folder", "Track S: no spec, skip",
             "scripts/devloop.py merge-check", "`merge` `auto`", "merge_human_paths",
-            "no `--feature`", "`head` not equal to `<sha>`: the PR waits for the user",
+            "no `--feature`", "When `head` is not `<sha>`, the PR waits for the user",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, stage)
