@@ -13,7 +13,7 @@ from pathlib import Path
 import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, resolve
-from status import feature_checkout
+from status import rebasing
 
 
 def main_ref(repo: Path) -> str | None:
@@ -26,6 +26,24 @@ def main_ref(repo: Path) -> str | None:
 
 
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
+
+
+def slug_branches(repo: Path, slug: str) -> list[str]:
+    """Every branch of `refs/heads` whose lower-case name ends with `/<slug>`, sorted."""
+    names = (git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") or "").splitlines()
+    return sorted(n.removeprefix("refs/heads/") for n in names if n.lower().endswith(f"/{slug}"))
+
+
+def branch_worktree(repo: Path, branch: str) -> Path | None:
+    """The worktree that has the branch checked out, or rewrites it in a rebase in progress, else None."""
+    worktree: Path | None = None
+    for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
+        if line.startswith("worktree "):
+            worktree = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{branch}" or (line == "detached" and worktree
+                                                         and rebasing(worktree) == branch):
+            return worktree
+    return None
 
 
 def is_test_or_doc(path: str) -> bool:
@@ -116,14 +134,21 @@ def cmd_merge_check(args: argparse.Namespace) -> int:
 def merge_check(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     slug = args.feature.lower() if args.feature else None
+    worktree: Path | None
     if slug is None:
+        top = git(repo, "rev-parse", "--show-toplevel")
         branch = git(repo, "symbolic-ref", "--short", "-q", "HEAD") or ""
-        if "/" not in branch:
+        if not top or "/" not in branch:
             return emit({"error": "no feature: run merge-check on a feature branch or pass --feature"}, 1)
-        slug = branch.rsplit("/", 1)[1].lower()
-    worktree, branch = feature_checkout(repo, slug)
-    if branch is None:
-        return emit({"error": f"no feature {slug}: no branch <prefix>/{slug}"}, 1)
+        worktree, slug = Path(top), branch.rsplit("/", 1)[1].lower()
+    else:
+        branches = slug_branches(repo, slug)
+        if not branches:
+            return emit({"error": f"no feature {slug}: no branch <prefix>/{slug}"}, 1)
+        if len(branches) > 1:
+            return emit({"error": f"feature {slug} matches more than one branch: {', '.join(branches)}"}, 1)
+        branch = branches[0]
+        worktree = branch_worktree(repo, branch)
     head = (git_out(worktree, "rev-parse", "HEAD") if worktree
             else git_out(repo, "rev-parse", f"refs/heads/{branch}")).strip()
     try:
@@ -202,4 +227,4 @@ def merge_check(args: argparse.Namespace) -> int:
             if pid and pid not in landing and commit not in upstream:
                 reasons.append({"reason": "dropped", "commit": commit})
     return emit({"merge": "human" if reasons else "auto", "reasons": reasons, "reviewed": reviewed,
-                 "unreviewed_minor": minor, "feature": slug, "track": track}, 0)
+                 "head": head, "branch": branch, "unreviewed_minor": minor, "feature": slug, "track": track}, 0)

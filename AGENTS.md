@@ -39,7 +39,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `tests/unit/python/`: skill suite, one file per subject:
   - `test_dev_loop.py`: the entry: loads the files below, in chunks.
   - `test_devloop.py`: `logged`, `gate`, the project config shape, CLI test helpers.
-  - `test_status.py`, `test_merge_check.py`: `status`, `merge-check`.
+  - `test_status.py`, `test_merge_check.py`, `test_merge_binding.py`: `status`, `merge-check`.
   - `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: kit text contracts.
   - `test_check_setup.py`, `test_setup_checks.py`: `check_setup.py`.
   - `test_notes_path.py`: `notes_path.py`.
