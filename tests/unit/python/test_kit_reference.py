@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -120,6 +121,82 @@ class KitReferenceTests(KitFixture):
             else:
                 os.environ["TMPDIR"] = saved
         self.assertEqual(list(scratch.iterdir()), [])
+
+
+class KitMatchesTests(KitFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        write_source(self.repo)
+        self.commit()
+        self.project = self.tmp / "project"
+        self.install("init", self.project)
+        git(self.project, "add", "-A")
+        git(self.project, "commit", "-q", "-m", "init")
+        self.base = git(self.project, "rev-parse", "HEAD")
+        write_source(self.repo, version="3.0.1")
+        skill = self.repo / "skill" / "SKILL.md"
+        skill.write_text(skill.read_text() + "\nMore.\n")
+        self.ref = release.kit_reference(self.repo, self.commit())
+        self.install("upgrade", self.project)
+        git(self.project, "add", "-A")
+        git(self.project, "commit", "-q", "-m", "upgrade")
+        self.head = git(self.project, "rev-parse", "HEAD")
+        diff = git(self.project, "diff", "--name-only", self.base, self.head)
+        self.among = set(diff.splitlines())
+
+    def amend(self, change) -> str:
+        change()
+        git(self.project, "add", "-A")
+        git(self.project, "commit", "-q", "-m", "edit")
+        return git(self.project, "rev-parse", "HEAD")
+
+    def matches(self, commit: str, among: set[str] | None = None, ref: dict | None = None) -> set[str]:
+        return release.kit_matches(self.project, commit, among or self.among, ref or self.ref)
+
+    def rehash(self, path: str, text: str) -> None:
+        (self.project / path).write_text(text)
+        manifest = self.project / release.MANIFEST
+        data = json.loads(manifest.read_text())
+        data["files"][path] = "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+        manifest.write_text(json.dumps(data, indent=2) + "\n")
+
+    def test_upgrade_copies_match(self) -> None:
+        kit = {p for p in self.among if p.startswith(release.KIT_ROOTS)}
+        self.assertIn(".agents/skills/dev-loop/SKILL.md", kit)
+        self.assertEqual(self.matches(self.head), kit | {release.MANIFEST})
+
+    def test_edited_copy_and_rewritten_hash(self) -> None:
+        path = ".agents/skills/dev-loop/SKILL.md"
+        found = self.matches(self.amend(lambda: self.rehash(path, "evil\n")), self.among | {path, release.MANIFEST})
+        self.assertNotIn(path, found)
+        self.assertNotIn(release.MANIFEST, found)
+        rest = {p for p in self.among if p.startswith(release.KIT_ROOTS)} - {path}
+        self.assertEqual(found, rest)
+
+    def test_mode_flip(self) -> None:
+        path = ".dev-loop/hooks/claude/git-guard.sh"
+        head = self.amend(lambda: os.chmod(self.project / path, 0o644))
+        self.assertNotIn(path, self.matches(head, self.among | {path}))
+
+    def test_link_target_changed(self) -> None:
+        def retarget() -> None:
+            (self.project / LINK).unlink()
+            (self.project / LINK).symlink_to("../../elsewhere")
+        head = self.amend(retarget)
+        self.assertNotIn(LINK, self.matches(head, self.among | {LINK}))
+
+    def test_extra_manifest_key(self) -> None:
+        def extend() -> None:
+            manifest = self.project / release.MANIFEST
+            data = json.loads(manifest.read_text())
+            data["files"][".agents/skills/dev-loop/extra.md"] = "sha256:" + "0" * 64
+            manifest.write_text(json.dumps(data, indent=2) + "\n")
+        self.assertNotIn(release.MANIFEST, self.matches(self.amend(extend)))
+
+    def test_outside_kit_roots(self) -> None:
+        head = self.amend(lambda: (self.project / "src").mkdir() or (self.project / "src" / "app.py").write_text("x\n"))
+        entry = "sha256:" + hashlib.sha256(b"x\n").hexdigest()
+        self.assertEqual(self.matches(head, {"src/app.py"}, {"src/app.py": (entry, "100644")}), set())
 
 
 if __name__ == "__main__":
