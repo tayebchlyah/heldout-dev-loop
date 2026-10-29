@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve the notes folder for a repo from env or local files."""
+"""Resolve the notes folder for a repo from env or the main worktree files."""
 
 from __future__ import annotations
 
@@ -14,6 +14,10 @@ from typing import Mapping
 
 class NotesPathError(Exception):
     pass
+
+
+class TrackedLocalFile(NotesPathError):
+    """The main worktree `dev-loop.local.json` is tracked by git: a branch could change it."""
 
 
 def git_path(repo: Path, *args: str) -> Path | None:
@@ -53,21 +57,29 @@ def worktrees(repo: Path) -> tuple[Path, Path]:
     return worktree, common.parent if common else worktree
 
 
+def tracked(main: Path) -> bool:
+    try:
+        return subprocess.run(["git", "-C", str(main), "ls-files", "--error-unmatch", "dev-loop.local.json"],
+                              capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
 def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
+    """`DEV_LOOP_NOTES` (relative to the repo worktree), else `dev-loop.local.json`, then `notes` in
+    `dev-loop.json`, both of the main worktree. A feature worktree's own files are never read."""
     worktree, main = worktrees(repo)
     found: tuple[str, Path, str] | None = None
     if env.get("DEV_LOOP_NOTES"):
         found = (env["DEV_LOOP_NOTES"], worktree, "DEV_LOOP_NOTES")
-    for root, name, strict in (
-        (worktree, "dev-loop.local.json", True),
-        (main, "dev-loop.local.json", True),
-        (worktree, "dev-loop.json", False),
-    ):
+    elif tracked(main):
+        raise TrackedLocalFile(f"{main / 'dev-loop.local.json'} is tracked by git: run git rm --cached dev-loop.local.json")
+    for name, strict in (("dev-loop.local.json", True), ("dev-loop.json", False)):
         if found:
             break
-        value = read_notes(root / name, strict)
+        value = read_notes(main / name, strict)
         if value:
-            found = (value, root, str(root / name))
+            found = (value, main, str(main / name))
     if not found:
         raise NotesPathError(f'no notes path for {repo}. Write {{"notes": "<path>"}} to {main / "dev-loop.local.json"}')
     path, source = expand(found[0], found[1], home), found[2]

@@ -10,6 +10,7 @@ Endpoints: `/` (page.html with render.js inline), `/api/status` (status notes un
 from __future__ import annotations
 
 import argparse
+import contextlib
 import http.client
 import json
 import os
@@ -31,11 +32,13 @@ else:  # Run as a script by `start`: the board folder is sys.path[0].
 
 HERE = Path(__file__).resolve().parent
 NAME = "dev-loop board"
-FOLDER = "dev-loop-board"
+FOLDERS = ("Dev Loop Board", "dev-loop-board")
+SUBFOLDERS = ("Features", "features")
 MAX_BYTES = 65536
 MAX_NOTES = 500
 WALK_EVERY = 60
 LOG = Path(tempfile.gettempdir()) / "dev-loop-board.log"
+LOG_BYTES = 65536
 
 
 class Index:
@@ -50,16 +53,24 @@ class Index:
         for root in self.roots:
             for folder, dirs, _ in os.walk(root, followlinks=False):
                 dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(folder, d))]
-                if os.path.basename(folder) == FOLDER:
+                if os.path.basename(folder) in FOLDERS:
                     found.append(folder)
         return found
 
     def notes(self, folders: list[str]) -> list[Path]:
         found: list[Path] = []
+        seen: set[tuple[int, int]] = set()
         for board in folders:
-            for folder in (board, os.path.join(board, "features")):
+            for folder in (board, *(os.path.join(board, sub) for sub in SUBFOLDERS)):
                 if os.path.islink(folder):  # B2: a cached folder swapped for a link is not listed.
                     continue
+                try:
+                    info = os.stat(folder)
+                except OSError:
+                    continue
+                if (info.st_dev, info.st_ino) in seen:  # One folder under two spellings (a case-folding disk).
+                    continue
+                seen.add((info.st_dev, info.st_ino))
                 try:
                     names = sorted(os.listdir(folder))
                 except OSError:
@@ -187,6 +198,9 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
            "--me", me]
     for root in roots:
         cmd += ["--root", str(root)]
+    with contextlib.suppress(OSError):
+        if LOG.stat().st_size > LOG_BYTES:
+            LOG.replace(LOG.with_name(f"{LOG.name}.1"))
     with open(LOG, "a") as log:
         proc = subprocess.Popen(cmd, start_new_session=True, cwd="/", stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=log)
