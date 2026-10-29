@@ -23,11 +23,14 @@ import devloop
 from devloop import emit, git
 import gate
 import merge_check
+from seal import ACCEPTANCE_DIR
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
 CLASSES = {"correctness", "security", "spec", "standards"}
 ACCEPTANCE_HINT = ("No JUnit XML read in {folder}. The acceptance command writes JUnit XML into $DEVLOOP_REPORT_DIR "
                    "(the dev-loop JUnit standard).")
+SHORT_HINT = ("ran {cases} of {floor} cases (full run at {head}). A full run that executes fewer cases than an "
+              "earlier full run since the newest seal is never green: the user rules.")
 CASES_HINT = ("No executed test case in the JUnit XML in {folder}: no testcase, or every testcase skipped. A run with "
               "no executed case is never green.")
 
@@ -170,7 +173,7 @@ def known(run: dict) -> bool:
 
 def green(run: dict) -> bool:
     return (run["counted"] and run["mode"] == "full" and run["exit"] == 0 and run["failing"] == 0
-            and (run.get("cases") or 0) > 0)
+            and (run.get("cases") or 0) > 0 and not run.get("short"))
 
 
 def guard(runs: list[dict]) -> dict | None:
@@ -187,6 +190,8 @@ def guard(runs: list[dict]) -> dict | None:
     verdict = {"verdict": "continue", "reason": None, "ids": [], "counts": counts}
     if not known(this):
         return {**verdict, "verdict": "unknown"}
+    if this.get("short"):
+        return {**verdict, "verdict": "stop", "reason": "short", "floor": this["floor"]}
     if len(loop) >= 4:
         stuck = set.intersection(*(set(r["ids"]) for r in loop[-4:]))
         if stuck:
@@ -194,6 +199,23 @@ def guard(runs: list[dict]) -> dict | None:
     if len(counts) >= 3 and counts[-2] >= counts[-3] and counts[-1] >= counts[-2]:
         return {**verdict, "verdict": "stop", "reason": "no-progress"}
     return verdict
+
+
+def case_floor(top: Path, runs: list[dict]) -> tuple[int | None, str | None]:
+    """The most cases of an earlier full run since the newest commit under the held-out suite, and its head."""
+    seal = devloop.git(top, "log", "--first-parent", "-1", "--format=%H", "HEAD", "--", ACCEPTANCE_DIR) or None
+    floor, floor_head = None, None
+    for run in runs:
+        cases, head = run.get("cases"), run.get("head")
+        if (run["mode"] != "full" or type(cases) is not int or not isinstance(head, str)
+                or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head)):
+            continue
+        check = ["merge-base", "--is-ancestor", seal, head] if seal else ["cat-file", "-e", f"{head}^{{commit}}"]
+        if subprocess.run(["git", "-C", str(top), *check], capture_output=True).returncode != 0:
+            continue
+        if floor is None or cases >= floor:
+            floor, floor_head = cases, head
+    return floor, floor_head
 
 
 def read_record(path: Path) -> list[dict] | None:
@@ -295,17 +317,22 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
-    runs.append({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "head": head,
-                 "mode": "failed" if failed else "full", "exit": payload["exit"], "failing": failing, "ids": ids,
-                 "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases})
+    floor, floor_head = (None, None) if failed else case_floor(top, runs)
+    this = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "head": head,
+            "mode": "failed" if failed else "full", "exit": payload["exit"], "failing": failing, "ids": ids,
+            "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases, "floor": floor}
+    this["short"] = green(this) and floor is not None and cases < floor
+    runs.append(this)
     write_record(record, runs)
-    payload.update(mode=runs[-1]["mode"], head=head, failing=failing, ids=ids, cases=cases, stale=stale,
-                   counted=counted, guard=guard(runs), record=str(record))
-    if failing is None:
+    payload.update(mode=this["mode"], head=head, failing=failing, ids=ids, cases=cases, floor=floor,
+                   short=this["short"], stale=stale, counted=counted, guard=guard(runs), record=str(record))
+    if this["short"]:
+        payload["hint"] = SHORT_HINT.format(cases=cases, floor=floor, head=floor_head[:12])
+    elif failing is None:
         payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
     elif cases == 0:
         payload["hint"] = CASES_HINT.format(folder=reports)
-    return payload, 0 if payload["exit"] == 0 and counted and cases else 1
+    return payload, 0 if payload["exit"] == 0 and counted and cases and not this["short"] else 1
 
 
 def cmd_review_merge(args: argparse.Namespace) -> int:
