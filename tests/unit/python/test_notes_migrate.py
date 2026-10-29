@@ -431,10 +431,13 @@ class MovePlanTests(unittest.TestCase):
             "Security Audit/Run 1/STRASSE.md": "keep",
             "security-audit/run-2/spec.md": "r",
             "Security Audit/Run 2/ſpec.md": "keep",
+            "security-audit/run-3/\u0399\u0308\u0301 notes.md": "r",
+            "Security Audit/Run 3/\u0390 notes.md": "keep",
         })
         self.assertEqual(sorted(self.reasons()), [
             ("Security Audit/Run 1/straße.md", "collision"),
             ("Security Audit/Run 2/spec.md", "collision"),
+            ("Security Audit/Run 3/\u0399\u0308\u0301 notes.md", "collision"),
         ])
 
     def test_folder_name_keeps_inner_dot_md(self) -> None:
