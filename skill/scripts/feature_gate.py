@@ -201,20 +201,14 @@ def guard(runs: list[dict]) -> dict | None:
     return verdict
 
 
-def case_floor(top: Path, runs: list[dict]) -> tuple[int | None, str | None]:
-    """The most cases of an earlier full run since the newest commit under the held-out suite, and its head."""
-    seal = devloop.git(top, "log", "--first-parent", "-1", "--format=%H", "HEAD", "--", ACCEPTANCE_DIR) or None
+def case_floor(runs: list[dict], suite: str | None) -> tuple[int | None, str | None]:
     floor, floor_head = None, None
     for run in runs:
-        cases, head = run.get("cases"), run.get("head")
-        if (run["mode"] != "full" or type(cases) is not int or not isinstance(head, str)
-                or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head)):
-            continue
-        check = ["merge-base", "--is-ancestor", seal, head] if seal else ["cat-file", "-e", f"{head}^{{commit}}"]
-        if subprocess.run(["git", "-C", str(top), *check], capture_output=True).returncode != 0:
+        cases = run.get("cases")
+        if run["mode"] != "full" or type(cases) is not int or "suite" not in run or run["suite"] != suite:
             continue
         if floor is None or cases >= floor:
-            floor, floor_head = cases, head
+            floor, floor_head = cases, run.get("head")
     return floor, floor_head
 
 
@@ -317,10 +311,12 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
-    floor, floor_head = (None, None) if failed else case_floor(top, runs)
+    suite = devloop.git(top, "rev-parse", f"HEAD:{ACCEPTANCE_DIR}")
+    floor, floor_head = (None, None) if failed else case_floor(runs, suite)
     this = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "head": head,
             "mode": "failed" if failed else "full", "exit": payload["exit"], "failing": failing, "ids": ids,
-            "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases, "floor": floor}
+            "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases, "floor": floor,
+            "suite": suite}
     this["short"] = green(this) and floor is not None and cases < floor
     runs.append(this)
     write_record(record, runs)
