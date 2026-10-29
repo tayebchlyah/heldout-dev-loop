@@ -26,6 +26,8 @@ def main_ref(repo: Path) -> str | None:
 
 
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
+CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
+DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
@@ -47,9 +49,19 @@ def branch_worktree(repo: Path, branch: str) -> Path | None:
 
 
 def is_test_or_doc(path: str) -> bool:
-    """A segment `tests`, `test` or `docs`, or a test or doc file name. Kit Markdown is code: it is behaviour."""
+    """In order: a folder `.github`: code. A folder `tests` or `test`: test. A config file type: code. A folder
+    `docs` and a doc file type: doc. A test or doc file name: test or doc. Else code, kit Markdown too: it is
+    behaviour. Folder matches are case-sensitive, file types are not."""
     *dirs, name = path.split("/")
-    return bool({"tests", "test", "docs"} & set(dirs)) or any(fnmatch.fnmatchcase(name, p) for p in TEST_OR_DOC_NAMES)
+    if ".github" in dirs:
+        return False
+    if {"tests", "test"} & set(dirs):
+        return True
+    if name.lower().endswith(CONFIG_TYPES):
+        return False
+    if "docs" in dirs and name.lower().endswith(DOC_TYPES):
+        return True
+    return any(fnmatch.fnmatchcase(name, p) for p in TEST_OR_DOC_NAMES)
 
 
 def read_config(repo: Path, rev: str) -> dict | None:
