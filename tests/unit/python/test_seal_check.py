@@ -132,6 +132,12 @@ class SealCheckTests(SealRepo):
         data = f"{ACCEPTANCE_DIR}/x/data.json"
         self.seal(data, "{}\n")
         cases = [
+            ("garden skill file, untracked, flag", [lambda: new(".agents/skills/garden/x.md")], ("--uncommitted",),
+             [".agents/skills/garden/x.md"]),
+            ("release skill file, committed", [lambda: new(".agents/skills/release/extra.md"), self.stage], (),
+             [".agents/skills/release/extra.md"]),
+            ("release-notes skill edit, committed", [lambda: put(self.repo / NOTES_SKILL, "edited\n"), self.stage], (),
+             [NOTES_SKILL]),
             ("untracked bytecode", f"{ACCEPTANCE_DIR}/x/__pycache__/x.pyc", False),
             ("untracked fixture", f"{ACCEPTANCE_DIR}/x/fixture.json", False),
             ("untracked test_*.py", f"{ACCEPTANCE_DIR}/x/test_new.py", True),
@@ -291,6 +297,7 @@ KIT_LINK = ".claude/skills/dev-loop"
 
 
 NEW_KIT_FILE = ".agents/skills/dev-loop/scripts/seal/new.py"
+NOTES_SKILL = ".agents/skills/release-notes/SKILL.md"
 
 
 class KitChangedTests(SealRepo):
@@ -302,10 +309,11 @@ class KitChangedTests(SealRepo):
         put(self.repo / "dev-loop.json", '{"version": "2.2.0"}\n')
         put(self.repo / KIT_FILE, "def check(): pass\n")
         put(self.repo / KIT_AGENT, "agent\n")
+        put(self.repo / NOTES_SKILL, "notes\n")
         os.makedirs(self.repo / ".claude/skills")
         os.symlink("../../.agents/skills/dev-loop", self.repo / KIT_LINK)
         self.entries = {KIT_FILE: sha("def check(): pass\n"), KIT_AGENT: sha("agent\n"),
-                        KIT_LINK: "link:../../.agents/skills/dev-loop"}
+                        KIT_LINK: "link:../../.agents/skills/dev-loop", NOTES_SKILL: sha("notes\n")}
         self.manifest()
         self.main = self.commit(".claude/agents/mine.md", "mine\n", "kit")
         git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
@@ -363,6 +371,12 @@ class KitChangedTests(SealRepo):
              [".agents/skills/continue/SKILL.md"]),
             ("pause skill file, committed", [lambda: new(".agents/skills/pause/agents/openai.yaml"), self.stage], (),
              [".agents/skills/pause/agents/openai.yaml"]),
+            ("garden skill file, untracked, flag", [lambda: new(".agents/skills/garden/x.md")], ("--uncommitted",),
+             [".agents/skills/garden/x.md"]),
+            ("release skill file, committed", [lambda: new(".agents/skills/release/extra.md"), self.stage], (),
+             [".agents/skills/release/extra.md"]),
+            ("release-notes skill edit, committed", [lambda: put(self.repo / NOTES_SKILL, "edited\n"), self.stage], (),
+             [NOTES_SKILL]),
             ("untracked bytecode", [lambda: new(".agents/skills/dev-loop/scripts/__pycache__/x.pyc")],
              ("--uncommitted",), []),
             ("no MANIFEST at base nor HEAD", [self.no_manifest, self.stage], ("--uncommitted",), []),
