@@ -463,3 +463,28 @@ class MergeCheckTests(MergeCheckCase):
                 self.gate_green(wt, self.head(wt))
                 out = self.ok(wt)
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
+
+    def test_commands_change(self) -> None:
+        m = {"version": "2.1.0", "commands": {"acceptance": "sh run.sh"}}
+        rows = [
+            ("acceptance to true", m, {**m, "commands": {"acceptance": "true"}}, True),
+            ("commands removed", m, {"version": "2.1.0"}, True),
+            ("gate added", m, {**m, "commands": {"acceptance": "sh run.sh", "gate": "true"}}, True),
+            ("same commands", m, {**m, "version": "2.2.0"}, False),
+            ("branch adds commands", {"version": "2.1.0"}, {"version": "2.1.0", "commands": {"acceptance": "true"}}, True),
+            ("branch drops the file", m, None, True),
+        ]
+        for name, main, branch, changed in rows:
+            with self.subTest(name):
+                self.tearDown()
+                self.setUp()
+                self.main_config(main)
+                wt = self.feature()
+                if branch is None:
+                    git(wt, "rm", "-q", "dev-loop.json")
+                    git(wt, "commit", "-q", "-m", "drop")
+                else:
+                    self.commit(wt, "dev-loop.json", json.dumps(branch))
+                self.gate_green(wt, self.head(wt))
+                out = self.ok(wt)
+                self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
