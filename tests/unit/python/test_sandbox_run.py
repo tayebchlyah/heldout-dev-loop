@@ -143,7 +143,7 @@ class SandboxRunTests(unittest.TestCase):
         script = "for p in /target/x /x /etc/x /tmp/x; do touch $p 2>/dev/null && echo WROTE $p; done; echo ok > /scratch/a"
         done, scratch = self.run_sandbox("sh", "-c", script)
         self.assertEqual((done.returncode, done.stdout), (0, ""), done.stderr)
-        self.assertEqual((scratch / "a").read_text(), "ok\n")
+        self.assertEqual((scratch / "a.txt").read_text(), "ok\n")
         self.assertFalse((self.target / "x").exists())
 
     def test_resource_limits(self) -> None:
@@ -165,7 +165,7 @@ class SandboxRunTests(unittest.TestCase):
         big = "dd if=/dev/zero of=/scratch/f bs=1048576 count=8 2>/dev/null; echo rc=$?"
         done, scratch = self.run_sandbox("sh", "-c", big, opts=("--file-size", "4194304"))
         self.assertNotEqual(done.stdout.strip(), "rc=0", done.stderr)
-        self.assertLessEqual((scratch / "f").stat().st_size, 4194304)
+        self.assertLessEqual((scratch / "f.txt").stat().st_size, 4194304)
 
     def test_scratch_copy_rules(self) -> None:
         done, scratch = self.run_sandbox("sh", "-c", "head -c 2097152 /dev/zero > /scratch/big",
@@ -178,14 +178,25 @@ class SandboxRunTests(unittest.TestCase):
         before = sorted(p.name for p in self.tmp.iterdir())
         done, scratch = self.run_sandbox("sh", "-c", plant)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual([p.name for p in scratch.iterdir()], ["f"])
-        self.assertEqual((scratch / "f").read_text(), "x\n")
+        self.assertEqual([p.name for p in scratch.iterdir()], ["f.txt"])
+        self.assertEqual((scratch / "f.txt").read_text(), "x\n")
         self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), sorted([*before, scratch.name]))
 
         private = "mkdir -m 700 /scratch/d && echo s > /scratch/d/f && chmod 600 /scratch/d/f"
         done, scratch = self.run_sandbox("sh", "-c", private)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual((scratch / "d" / "f").read_text(), "s\n")
+        self.assertEqual((scratch / "d" / "f.txt").read_text(), "s\n")
+
+        layouts = ("mkdir -p /scratch/r/.git /scratch/b/objects /scratch/b/refs && echo x > /scratch/r/.git/HEAD"
+                   " && echo x > /scratch/r/.git/config && echo x > /scratch/b/HEAD && echo x > /scratch/b/config"
+                   " && echo x > /scratch/b/objects/k && echo x > /scratch/b/refs/k")
+        done, scratch = self.run_sandbox("sh", "-c", layouts)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        files = [p for p in scratch.rglob("*") if p.is_file()]
+        self.assertEqual(len(files), 4)
+        for p in files:
+            self.assertNotIn(".git", p.relative_to(scratch).parts)
+            self.assertTrue(p.name.endswith(".txt"), p)
 
     def test_environment_is_empty(self) -> None:
         env = {**os.environ, "DEVLOOP_PROBE": "secret"}
@@ -239,14 +250,14 @@ class SandboxRunTests(unittest.TestCase):
                   "cat /target/evil.tar > /proc/$p/fd/1; kill -CONT $p) >/dev/null 2>&1 & echo real > /scratch/real")
         done, scratch = self.run_sandbox("sh", "-c", inject, limit=60)
         files = {p.name: p.stat().st_size for p in scratch.rglob("*") if p.is_file()}
-        self.assertTrue(done.returncode == 125 or files == {"real": 5}, (done.returncode, files, done.stderr))
+        self.assertTrue(done.returncode == 125 or files == {"real.txt": 5}, (done.returncode, files, done.stderr))
         self.assertLessEqual(sum(files.values()), 5)
 
         stopper = "(while :; do p=$(pidof tar) && kill -STOP $p; done) >/dev/null 2>&1 & echo real > /scratch/real"
         start = time.monotonic()
         done, scratch = self.run_sandbox("sh", "-c", stopper, opts=("--timeout", "5"), limit=40)
         self.assertLess(time.monotonic() - start, 30)
-        self.assertEqual([p.name for p in scratch.iterdir()], ["real"], done.stderr)
+        self.assertEqual([p.name for p in scratch.iterdir()], ["real.txt"], done.stderr)
 
     def test_signal_removes_container(self) -> None:
         scratch = Path(tempfile.mkdtemp(dir=self.tmp))
@@ -298,7 +309,7 @@ class SandboxExtractTests(unittest.TestCase):
                                member("/abs", data=b"abs"), member("p", tarfile.FIFOTYPE)):
                 tar.addfile(info, data)
         cases = [
-            ("mixed", out.getvalue(), {"scratch/ok/f": b"safe"}),
+            ("mixed", out.getvalue(), {"scratch/ok/f.txt": b"safe"}),
             ("sparse", sparse_tar(), {}),
         ]
         for label, data, expected in cases:
@@ -308,11 +319,12 @@ class SandboxExtractTests(unittest.TestCase):
                 sandbox_run.extract(data, self.scratch, 1 << 20)
                 self.assertEqual(self.written(), expected)
 
-    def test_copy_back_makes_no_repository_and_no_note(self) -> None:
+    def test_copy_back_makes_no_repository_and_only_inert_names(self) -> None:
         out = io.BytesIO()
-        names = ["r/.git/HEAD", "r/.git/config", "r/.git/objects/k", "c/.GIT/hooks/x", ".git",
-                 "b/HEAD", "b/config", "b/objects/k", "b/refs/k", "d/head",
-                 "n/x.md", "n/Y.MD", "n/c.canvas", "n/v.base", "ok/f"]
+        long = "a" * 252
+        names = ["r/.git/HEAD", "r/.git/config", "c/.GIT/hooks/x", ".git", ".gitattributes", "g/.gitignore",
+                 "b/HEAD", "b/config", "b/objects/k", "b/refs/k", "d/head", "h/.hg/hgrc",
+                 "n/x.md", "n/Y.MD", "n/x.svg", "evidence/check-01.txt", "evidence/UP.TXT", f"l/{long}", "l/after"]
         with tarfile.open(fileobj=out, mode="w", format=tarfile.GNU_FORMAT) as tar:
             for name in names:
                 info = tarfile.TarInfo(name)
@@ -320,11 +332,15 @@ class SandboxExtractTests(unittest.TestCase):
                 tar.addfile(info, io.BytesIO(b"x"))
         sandbox_run.extract(out.getvalue(), self.scratch, 1 << 20)
         self.assertEqual(sorted(self.written()), [
-            "scratch/b/config", "scratch/b/objects/k", "scratch/b/refs/k", "scratch/n/Y.MD.txt",
-            "scratch/n/c.canvas.txt", "scratch/n/v.base.txt", "scratch/n/x.md.txt", "scratch/ok/f"])
-        for folder in (self.scratch, self.scratch / "b"):
+            "scratch/.gitattributes.txt", "scratch/b/HEAD.txt", "scratch/b/config.txt", "scratch/b/objects/k.txt",
+            "scratch/b/refs/k.txt", "scratch/d/head.txt", "scratch/evidence/UP.TXT",
+            "scratch/evidence/check-01.txt", "scratch/g/.gitignore.txt", "scratch/h/.hg/hgrc.txt",
+            "scratch/l/after.txt", "scratch/n/Y.MD.txt", "scratch/n/x.md.txt", "scratch/n/x.svg.txt"])
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", GIT_CEILING_DIRECTORIES=str(self.tmp))
+        for folder in (self.scratch, self.scratch / "b", self.scratch / "d", self.scratch / "h"):
             found = subprocess.run(["git", "-C", str(folder), "rev-parse", "--git-dir"], capture_output=True,
-                                   text=True, env={**os.environ, "GIT_CEILING_DIRECTORIES": str(self.tmp)})
+                                   text=True, env=env)
             self.assertNotEqual(found.returncode, 0, found.stdout)
 
     def test_size_headers_over_the_cap_write_nothing(self) -> None:
