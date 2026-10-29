@@ -38,6 +38,10 @@ RENAMES = {"answers": devloop.ANSWERS, "maps": devloop.MAPS, "security-audit": d
 SF_DATALESS = 0x40000000
 
 
+def _fold(name: str) -> str:
+    return unicodedata.normalize("NFC", name).casefold()
+
+
 def _nfc(name: str) -> str:
     return unicodedata.normalize("NFC", name)
 
@@ -107,7 +111,7 @@ class _Planner:
                 return src / path.relative_to(dst)
         return path
 
-    def case_clash(self, path: Path, own: Path | None = None) -> Path | None:
+    def case_clash(self, path: Path, skip: Path | None = None) -> Path | None:
         here = self.notes
         for part in path.relative_to(self.notes).parts:
             try:
@@ -115,8 +119,8 @@ class _Planner:
             except OSError:
                 return None
             if _nfc(part) not in names:
-                others = {name.lower() for name in names if own is None or here / name != own}
-                return here / part if _nfc(part).lower() in others else None
+                others = {_fold(name) for name in names if here / name != skip}
+                return here / part if _fold(part) in others else None
             here = here / part
         return None
 
@@ -151,8 +155,9 @@ class _Planner:
     def place(self, src: Path, dst: Path, board: bool, top: str | None) -> None:
         here = self.now(dst)
         if not self.exact(here):
-            if self.case_clash(here, own=src.parent / _nfc(src.name)) is not None:
-                self.block(dst, "collision")
+            clash = self.case_clash(here, skip=src.parent / _nfc(src.name))
+            if clash is not None:
+                self.block(clash, "collision")
                 return
             if not src.is_dir():
                 self.moves.append(Move(src, dst, "board-merge" if board else "file", None))
@@ -319,7 +324,7 @@ def plan_moves(repo: Path, notes: Path, kit_version: str,
                     break
                 if os.path.islink(planner.now(step)):
                     planner.block(planner.now(step), "link")
-        key = _nfc(move.dst.relative_to(notes).as_posix()).lower()
+        key = _fold(move.dst.relative_to(notes).as_posix())
         if key in seen:
             planner.block(move.dst, "collision")
         seen.add(key)

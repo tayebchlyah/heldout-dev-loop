@@ -449,6 +449,40 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual((self.folder / "plan.md").read_text(), "keep")
         self.assertTrue((self.notes / "plans/20261021 Demo Work.md").is_file())
 
+    def test_log_name_skips_case_variant(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        write(self.notes / self.log.lower(), "keep")
+        out, code = self.call(planned)
+        self.assertEqual(code, 0)
+        self.assertNotEqual(out["log"].lower(), self.log.lower())
+        self.assertEqual((self.notes / self.log.lower()).read_text(), "keep")
+
+    def test_parent_case_variant_synced_in_after_plan(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        real = apply._move_all
+
+        def synced(notes: Path, journal: dict) -> None:
+            write(self.notes / "Features/20261019 demo work/Other.md", "keep")
+            real(notes, journal)
+
+        out, code = self.call(planned, mock.patch.object(apply, "_move_all", synced))
+        self.assertEqual((code, out["error"]), (1, "io"))
+        self.assertEqual((self.notes / "Features/20261019 demo work/Other.md").read_text(), "keep")
+        self.assertTrue((self.notes / "specs/20261020 Demo Work.md").is_file())
+
+    def test_resume_rename_blocked_by_synced_in_variant(self) -> None:
+        write(self.notes / f"Features/A/spec.md{apply.TMP}", "tmp")
+        write(self.notes / "Features/A/SPEC.md", "keep")
+        journal = {"moves": [{"src": "Features/A/spec.md", "dst": "Features/A/Spec.md", "role": "file",
+                              "sha": None}], "writes": []}
+        with self.assertRaises(apply.Stop) as caught:
+            apply._move_all(self.notes, journal)
+        self.assertEqual(caught.exception.code, "io")
+        self.assertEqual((self.notes / "Features/A/SPEC.md").read_text(), "keep")
+        self.assertTrue((self.notes / f"Features/A/spec.md{apply.TMP}").is_file())
+
     def test_journal_write_error_is_json(self) -> None:
         self.put(DEMO)
         planned = self.run_cli()[0]["plan_hash"]
