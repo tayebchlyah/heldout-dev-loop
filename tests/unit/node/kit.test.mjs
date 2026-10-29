@@ -72,6 +72,18 @@ test('the kit holds no Python cache and uses forward slashes', () => {
   }
 })
 
+test('a .DS_Store under skill/ or skills/<name>/ is not in the kit', () => {
+  const root = tempDir('kit-')
+  cpSync(join(packageRoot, 'skill'), join(root, 'skill'), { recursive: true })
+  cpSync(join(packageRoot, 'claude'), join(root, 'claude'), { recursive: true })
+  cpSync(join(packageRoot, 'codex'), join(root, 'codex'), { recursive: true })
+  cpSync(join(packageRoot, 'skills'), join(root, 'skills'), { recursive: true })
+  writeFileSync(join(root, 'skill', 'references', '.DS_Store'), 'x')
+  writeFileSync(join(root, 'skills', 'pause', '.DS_Store'), 'x')
+  const kit = buildKit({ packageRoot: root, harnesses: ['claude', 'codex'] })
+  assert.ok(!kit.files.some((file) => file.path.endsWith('.DS_Store')))
+})
+
 test('the kit has no test_*.py filter: a skill/scripts/test_x.py is included', () => {
   const root = tempDir('kit-')
   cpSync(join(packageRoot, 'skill'), join(root, 'skill'), { recursive: true })
