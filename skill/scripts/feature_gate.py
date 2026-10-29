@@ -265,9 +265,15 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
         return {"error": "not a git repository"}, 1
     top = Path(top_out)
     key = "acceptance_failed" if failed else "acceptance"
-    command = gate.mapped_command(top, key)
-    if command is None:
-        return {"error": f"no commands.{key} in dev-loop.json"}, 1
+    ref = merge_check.main_ref(top)
+    if ref is None:
+        return {"error": "no refs/remotes/origin/main and no refs/heads/main"}, 1
+    trusted = (merge_check.read_config(top, ref) or {}).get("commands")
+    command = trusted.get(key) if isinstance(trusted, dict) else None
+    if not isinstance(command, str) or not command:
+        return {"error": f"no commands.{key} in dev-loop.json at {ref}"}, 1
+    if gate.mapped_command(top, key) != command:
+        return {"error": f"commands.{key} in dev-loop.json differs from {ref}"}, 1
     record = Path(git_dir) / "dev-loop" / "acceptance.json"
     runs = read_record(record)
     if runs is None:
