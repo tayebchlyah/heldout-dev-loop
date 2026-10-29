@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
@@ -115,6 +119,95 @@ def make_git_repo(root: Path, files: dict[str, str]) -> Path:
     git_in(repo, "add", "-A")
     git_in(repo, "commit", "-q", "-m", "base")
     return repo
+
+
+STUBS = {
+    "ok": 'print(json.dumps({"ok": True, "reasons": []}))',
+    "fail": 'print(json.dumps({"ok": False, "reasons": [{"reason": "no-audit"}, {"reason": "open-security", "items": []}]})); sys.exit(1)',
+    "slow": "time.sleep(10)",
+    "quote": 'sys.stderr.write("bad \\"quote\\" and \\\\ here\\nsecond line\\n"); sys.exit(1)',
+}
+
+
+class GuardRepo:
+    """The git guard fixture: a scratch repo (main A B C, tags v1.0.0 and release-1 at A, origin/main at C, feat/x checked out,
+    remote origin), a stub release-check CLI, and both git-guard.sh copies run on hook JSON."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.a = self.commit("a")
+        self.git("tag", "-a", "v1.0.0", "-m", "v1.0.0")
+        self.git("tag", "release-1")
+        self.b = self.commit("b")
+        self.c = self.commit("c")
+        self.git("update-ref", "refs/remotes/origin/main", self.c)
+        self.git("checkout", "-q", "-b", "feat/x")
+        self.git("remote", "add", "origin", "https://example.invalid/o/r.git")
+        self.cli = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
+        self.calls = Path(tmp.name) / "calls.txt"
+        self.tmp = Path(tmp.name)
+
+    def git(self, *args: str) -> str:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+    def commit(self, name: str) -> str:
+        (self.repo / name).write_text(name)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "HEAD")
+
+    def stub(self, mode: str | None) -> None:
+        if mode is None:
+            self.cli.unlink(missing_ok=True)
+            return
+        self.cli.parent.mkdir(parents=True, exist_ok=True)
+        self.cli.write_text("import json, sys, time\n"
+                            f"open({str(self.calls)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n" + STUBS[mode] + "\n")
+
+    def guard(self, harness: str, command: str, env: dict[str, str] | None = None, **extra: str) -> tuple[str, str, float]:
+        """(decision, reason, seconds). Claude exit 2 is a deny with the stderr text."""
+        payload = json.dumps({"cwd": str(self.repo), "tool_name": "Bash", "tool_input": {"command": command}, **extra})
+        start = time.monotonic()
+        done = subprocess.run([shutil.which({"claude": "bash", "codex": "sh"}[harness]), str(PACKAGE_ROOT / harness / "hooks" / "git-guard.sh")],
+                              input=payload, capture_output=True, text=True, timeout=60, env=env)
+        seconds = time.monotonic() - start
+        if done.returncode == 2:
+            return "deny", done.stderr, seconds
+        if not done.stdout:
+            return "allow", "", seconds
+        out = json.loads(done.stdout)["hookSpecificOutput"]
+        return out["permissionDecision"], out["permissionDecisionReason"], seconds
+
+    def runs(self, command: str, env: dict[str, str] | None) -> list[tuple[str, dict, tuple[str, str, float]]]:
+        cases = [(h, extra) for h in ("claude", "codex") for extra in ({}, {"agent_id": "a1"})]
+        with ThreadPoolExecutor(8) as pool:
+            results = list(pool.map(lambda case: self.guard(case[0], command, env, **case[1]), cases))
+        return [(h, extra, r) for (h, extra), r in zip(cases, results)]
+
+    def assert_refused(self, commands: list[str], *parts: str, env: dict[str, str] | None = None) -> None:
+        """Claude main asks with every part in the reason, a Claude subagent is denied, Codex denies both."""
+        for command in commands:
+            for harness, extra, (decision, reason, _) in self.runs(command, env):
+                with self.subTest(command=command, harness=harness, **extra):
+                    if harness == "claude" and not extra:
+                        self.assertEqual(decision, "ask", reason)
+                        for part in parts:
+                            self.assertIn(part, reason)
+                    else:
+                        self.assertEqual(decision, "deny", reason)
+                        if harness == "claude":
+                            self.assertIn("a subagent cannot ask for it", reason)
+
+    def assert_allowed(self, commands: list[str], env: dict[str, str] | None = None) -> None:
+        for command in commands:
+            for harness, extra, (decision, reason, _) in self.runs(command, env):
+                with self.subTest(command=command, harness=harness, **extra):
+                    self.assertEqual(decision, "allow", reason)
 
 
 MODULE_BASE = """LIMIT = 1

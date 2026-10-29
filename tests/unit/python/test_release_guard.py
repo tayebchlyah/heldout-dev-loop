@@ -4,78 +4,19 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import tempfile
-import time
 import unittest
 import unittest.mock
 from pathlib import Path
 
-from test_release import HERE
+from support import GuardRepo
 
 import check_setup  # noqa: E402
 
 
-STUBS = {
-    "ok": 'print(json.dumps({"ok": True, "reasons": []}))',
-    "fail": 'print(json.dumps({"ok": False, "reasons": [{"reason": "no-audit"}, {"reason": "open-security", "items": []}]})); sys.exit(1)',
-    "slow": "time.sleep(10)",
-    "quote": 'sys.stderr.write("bad \\"quote\\" and \\\\ here\\nsecond line\\n"); sys.exit(1)',
-}
-
-
-class ReleaseGuardTests(unittest.TestCase):
+class ReleaseGuardTests(GuardRepo, unittest.TestCase):
     """Both git-guard.sh copies, fed hook JSON on stdin, with a stub release-check CLI in the main worktree."""
-
-    def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.repo = Path(tmp.name) / "repo"
-        self.repo.mkdir()
-        self.git("init", "-q", "-b", "main")
-        self.a = self.commit("a")
-        self.git("tag", "-a", "v1.0.0", "-m", "v1.0.0")
-        self.git("tag", "release-1")
-        self.b = self.commit("b")
-        self.c = self.commit("c")
-        self.git("update-ref", "refs/remotes/origin/main", self.c)
-        self.git("checkout", "-q", "-b", "feat/x")
-        self.cli = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
-        self.calls = Path(tmp.name) / "calls.txt"
-        self.tmp = Path(tmp.name)
-
-    def git(self, *args: str) -> str:
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
-
-    def commit(self, name: str) -> str:
-        (self.repo / name).write_text(name)
-        self.git("add", "-A")
-        self.git("commit", "-q", "-m", name)
-        return self.git("rev-parse", "HEAD")
-
-    def stub(self, mode: str | None) -> None:
-        if mode is None:
-            self.cli.unlink(missing_ok=True)
-            return
-        self.cli.parent.mkdir(parents=True, exist_ok=True)
-        self.cli.write_text("import json, sys, time\n"
-                            f"open({str(self.calls)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n" + STUBS[mode] + "\n")
-
-    def guard(self, harness: str, command: str, **extra: str) -> tuple[str, str, float]:
-        """(decision, reason, seconds). Claude exit 2 is a deny with the stderr text."""
-        payload = json.dumps({"cwd": str(self.repo), "tool_name": "Bash", "tool_input": {"command": command}, **extra})
-        start = time.monotonic()
-        done = subprocess.run([shutil.which({"claude": "bash", "codex": "sh"}[harness]), str(HERE.parents[2] / harness / "hooks" / "git-guard.sh")],
-                              input=payload, capture_output=True, text=True, timeout=60)
-        seconds = time.monotonic() - start
-        if done.returncode == 2:
-            return "deny", done.stderr, seconds
-        if not done.stdout:
-            return "allow", "", seconds
-        out = json.loads(done.stdout)["hookSpecificOutput"]
-        return out["permissionDecision"], out["permissionDecisionReason"], seconds
 
     def test_a_release_tag_push_carries_the_release_check_verdict(self) -> None:
         # Oracle 46, 47, 49, 50, 51, 52.
