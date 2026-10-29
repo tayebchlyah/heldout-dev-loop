@@ -37,24 +37,72 @@ fi
 # A heredoc body is text, not commands: every check below reads the line without it.
 # A body whose line names a shell (bash, sh, zsh, ssh, eval) stays. If this step
 # fails, the checks read the whole text.
-case "$CMD" in *'<<'*) BODYLESS=$(CMD="$CMD" python3 - <<'PY'
+case "$CMD" in *'<<'*) BODYLESS=$(CMD="$CMD" python3 -I - <<'PY'
 import os, re
 
 RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
-HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
+# allow-comment: dependency, bash 3.2 counts quotes in a heredoc inside a command substitution, so these marks come from chr().
+SQ, DQ, BS, BT, DL = chr(39), chr(34), chr(92), chr(96), chr(36)
+NAME = r"([A-Za-z_][\w.-]*)"
+HEREDOC = re.compile("<<(-?)[ \t]*(?:" + SQ + NAME + SQ + "|" + DQ + NAME + DQ + "|" + NAME + r")(?=$|[\s;&|()<>])")
+UNMODELLED = (BT, DL + "{", "((", DL + "((")
+
+
+def operators(line, stack):
+    marks, k, dollar = [], 0, False
+    while k < len(line):
+        c, top, was_dollar, dollar = line[k], stack[-1] if stack else "", dollar, False
+        if top in (SQ, DL + SQ):
+            if c == BS and top == DL + SQ:
+                k += 1
+            elif c == SQ:
+                stack.pop()
+        elif c == BS:
+            k += 1
+        elif line.startswith(UNMODELLED, k):
+            return None
+        elif top == DQ:
+            if c == DQ:
+                stack.pop()
+            elif line.startswith(DL + "(", k):
+                stack.append("(")
+                k += 1
+        elif c == "#" and (k == 0 or line[k - 1] in " \t;&|()"):
+            break
+        elif c in (SQ, DQ):
+            stack.append(DL + SQ if c == SQ and was_dollar else c)
+        elif c == "(":
+            stack.append("(")
+        elif c == ")":
+            if top != "(":
+                return None
+            stack.pop()
+        elif line.startswith("<<<", k):
+            k += 2
+        elif line.startswith("<<", k):
+            marks.append(k)
+            k += 1
+        else:
+            dollar = c == DL
+        k += 1
+    return marks
 
 
 def strip_heredocs(cmd):
-    # Drops each heredoc body and its end line, so prose with apostrophes or git words
-    # is not read as commands. A body whose line names a shell stays. A heredoc with
-    # no end line keeps the rest of the text.
-    lines, out, i = cmd.split("\n"), [], 0
+    lines, out, i, stack = cmd.split("\n"), [], 0, []
     while i < len(lines):
         line = lines[i]
+        marks = operators(line, stack)
+        if marks is None or marks and ((stack and stack[-1] != "(") or line.endswith(BS)):
+            return "\n".join(out + lines[i:])
         out.append(line)
         i += 1
         feeds = any(os.path.basename(w) in RUNNERS for w in re.split(r"[\s;&|()]+", line))
-        for dash, _, end in HEREDOC.findall(line):
+        for k in marks:
+            m = HEREDOC.match(line, k)
+            if not m:
+                return "\n".join(out + lines[i:])
+            dash, end = m.group(1), m.group(2) or m.group(3) or m.group(4)
             j = i
             while j < len(lines) and (lines[j].lstrip("\t") if dash else lines[j]) != end:
                 j += 1
@@ -80,7 +128,7 @@ if [ "$AGENT" = "$TESTER" ]; then
   has "${RUN}${G}commit([^[:alnum:]_-]|\$)" && block "Blocked: spec-tester commits only through devloop.py seal: python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>."
 else
   # Exit 1 (also a crash or unbalanced quotes) means a seal run: fail closed.
-  case "$CMD" in *devloop*seal*) printf '%s' "$CMD" | python3 -c 'import shlex, sys
+  case "$CMD" in *devloop*seal*) printf '%s' "$CMD" | python3 -I -c 'import shlex, sys
 PUNCT = ";&|()<>" + chr(96)
 READ = {"grep", "rg", "cat", "less", "head", "tail", "ls", "find", "echo", "printf"}
 lex = shlex.shlex(sys.stdin.read().replace("\n", ";"), posix=True, punctuation_chars=PUNCT)
