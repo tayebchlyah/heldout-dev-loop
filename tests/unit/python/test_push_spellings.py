@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 
 from support import GuardRepo
@@ -59,3 +61,37 @@ class PushSpellingTests(GuardRepo, unittest.TestCase):
         self.git("branch", "v2")
         self.git("tag", "v2")
         self.assert_refused(["git push origin v2"], "a tag push")
+
+    def test_remote_push_config_reaches_a_named_refspec(self) -> None:
+        self.git("config", "remote.origin.push", "refs/heads/feat/x:refs/heads/main")
+        self.assert_refused(["git push origin feat/x"], "a push whose remote config can reach other branches")
+        self.assert_allowed(["git push origin feat/x:refs/heads/feat/x"])
+
+    def test_branch_merge_off_a_feature_branch_refuses_a_bare_push(self) -> None:
+        self.git("config", "push.default", "upstream")
+        self.git("config", "branch.feat/x.merge", "refs/tags/v9")
+        self.assert_refused(["git push"], "a bare push whose remote config can reach other branches")
+        self.git("config", "branch.feat/x.merge", "refs/heads/feat/x")
+        self.assert_allowed(["git push"])
+
+    def test_follow_tags_in_the_repo_config(self) -> None:
+        self.git("config", "push.followTags", "true")
+        commands = ["git push", "git push origin feat/x", "git push -u origin feat/x", "git push --no-follow origin feat/x"]
+        self.assert_refused(commands, "push.followTags")
+        for command in commands:
+            self.assertNotIn("release-check", self.guard("claude", command)[1], command)
+        self.assert_allowed(["git push --no-follow-tags origin feat/x"])
+
+    def test_follow_tags_from_the_global_config_or_a_bad_value(self) -> None:
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        env = {k: v for k, v in os.environ.items() if k != "GIT_CONFIG_GLOBAL"} | {"HOME": home.name, "XDG_CONFIG_HOME": home.name}
+        nope = f"git -C {self.repo}/nope push origin feat/x"
+        self.assert_allowed([nope], env=env)
+        with open(os.path.join(home.name, ".gitconfig"), "w") as config:
+            config.write("[push]\n\tfollowTags = true\n")
+        self.assert_refused(["git push origin feat/x", nope], "push.followTags", env=env)
+        self.git("config", "push.followTags", "maybe")
+        self.assert_refused(["git push origin feat/x"], "push.followTags")
+        self.git("config", "push.followTags", "false")
+        self.assert_allowed(["git push origin feat/x"])

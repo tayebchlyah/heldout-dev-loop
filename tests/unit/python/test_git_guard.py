@@ -374,7 +374,7 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
     def test_remote_config_that_reaches_other_branches_asks(self) -> None:
         subprocess.run(["git", "-C", self.repo, "config", "remote.origin.push", "+refs/heads/*:refs/heads/*"], check=True)
         self.assertEqual(self.decision("git push"), "ask")
-        self.assertEqual(self.decision("git push origin feat"), "allow")
+        self.assertEqual(self.decision("git push origin feat"), "ask")
 
     def test_a_push_alias_asks(self) -> None:
         subprocess.run(["git", "-C", self.repo, "config", "alias.p", "push --force"], check=True)
