@@ -13,7 +13,7 @@ board() {
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] || { board; exit 0; }
 cd "$cwd" 2>/dev/null || { board; exit 0; }
-gate=$(python3 -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
+gate=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$gate" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
 [ -n "$(git status --porcelain 2>/dev/null)" ] || { board; exit 0; }
 

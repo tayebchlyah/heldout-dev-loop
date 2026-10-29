@@ -107,6 +107,21 @@ class ClaudeGateTests(unittest.TestCase):
             result = self.hook("gate.sh", repo, {"hook_event_name": "Stop"})
             self.assertIn("mapped scope=changed", json.loads(result.stdout)["reason"])
 
+    def test_a_stdlib_name_in_the_project_runs_no_code(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            marker = repo / "ran"
+            write(repo / "json.py", f"open({str(marker)!r}, 'a').write('json')\nraise SystemExit\n")
+            for command, payload, env in (
+                    (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
+                    (["sh", str(CODEX_ASSETS / "hooks" / "gate.sh")], {"hook_event_name": "Stop", "cwd": str(repo)}, {})):
+                marker.unlink(missing_ok=True)
+                with self.subTest(hook=command[1]):
+                    result = subprocess.run(command, input=json.dumps(payload), text=True, capture_output=True,
+                                            check=False, env={**os.environ, **env})
+                    self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
+                    self.assertFalse(marker.exists())
+
 
 class BoardHookLaunchTests(unittest.TestCase):
     """D1, D12, O1: how board.sh and gate.sh start `devloop.py board`. Hooks run from a kit layout copy;

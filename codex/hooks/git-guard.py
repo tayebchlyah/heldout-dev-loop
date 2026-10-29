@@ -525,6 +525,8 @@ def check_git(args, cwds, drift, fed):
         repos = repos | {None}
     if sub == "send-pack" or (sub == "subtree" and "push" in args[i + 1:]):
         ask("a send-pack or subtree push")
+    if fed and (not sub or sub[0] in "<>"):
+        ask("a git command whose subcommand comes from another command")
     if sub != "push":
         # The alias may live in any repo the line can be in. From a folder the guard
         # cannot follow, any command that may be an alias asks.

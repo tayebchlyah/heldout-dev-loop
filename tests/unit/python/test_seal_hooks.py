@@ -271,6 +271,7 @@ class GuardTests(unittest.TestCase):
                 (main, f"python3.12 {cli} seal --feature x --message y", True),
                 (main, f"uv run python {cli} seal --feature x --message y", True),
                 (implementer, f"python3 -I {cli} seal --feature x --message y", True),
+                (implementer, f'echo "<<true"\n{seal}\ntrue', True),
                 # D11: only a run counts, within one segment: a read-only tool that names both passes.
                 (main, "grep -n seal skill/scripts/devloop.py", False),
                 (main, 'rg "devloop.py seal" skill/', False),
