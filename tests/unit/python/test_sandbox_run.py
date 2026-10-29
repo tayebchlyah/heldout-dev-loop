@@ -358,16 +358,16 @@ class SandboxExtractTests(unittest.TestCase):
 
 
 class KillLeftoversTests(unittest.TestCase):
-    """The leftover wait alone, on a fake clock and a stub docker: no Docker."""
-
-    def wait(self, exits_at: float) -> list[str]:
+    def run_wait(self, exits_at: float, top_fails: bool = False) -> None:
         now = [0.0]
-        calls = []
 
         def docker(*args: str) -> subprocess.CompletedProcess:
-            calls.append(args[0])
-            out = "PID STAT\n1 S\n" + ("" if now[0] >= exits_at else "7 D\n")
-            return subprocess.CompletedProcess(args, 0 if args[0] == "top" else 1, out if args[0] == "top" else "", "")
+            if args[0] != "top":
+                return subprocess.CompletedProcess(args, 1, "", "")
+            if top_fails:
+                return subprocess.CompletedProcess(args, 1, "", "warning\nError: No such container: c\n")
+            rows = "PID STAT\n416411 S\n415501 Z\n" + ("" if now[0] >= exits_at else "415501 D\n")
+            return subprocess.CompletedProcess(args, 0, rows, "")
 
         def sleep(seconds: float) -> None:
             now[0] += seconds
@@ -376,14 +376,22 @@ class KillLeftoversTests(unittest.TestCase):
         timing = unittest.mock.patch.multiple(sandbox_run.time, monotonic=lambda: now[0], sleep=sleep)
         with stub, timing:
             sandbox_run.kill_leftovers("c")
-        return calls
 
-    def test_a_slow_exit_inside_the_deadline_is_waited_for(self) -> None:
-        self.assertIn("top", self.wait(exits_at=5.0))
-
-    def test_a_process_past_the_deadline_is_named(self) -> None:
-        with self.assertRaisesRegex(sandbox_run.RunnerError, "leftover processes: 7 D"):
-            self.wait(exits_at=60.0)
+    def test_kill_leftovers(self) -> None:
+        rows = [
+            ("a slow exit inside the deadline", dict(exits_at=5.0), None),
+            ("a process that never exits", dict(exits_at=60.0),
+             "leftover processes \\(init included\\): 416411 S; 415501 D$"),
+            ("docker top failing", dict(exits_at=0.0, top_fails=True),
+             "docker top failed: Error: No such container: c$"),
+        ]
+        for name, args, error in rows:
+            with self.subTest(name):
+                if error is None:
+                    self.run_wait(**args)
+                else:
+                    with self.assertRaisesRegex(sandbox_run.RunnerError, error):
+                        self.run_wait(**args)
 
 
 if __name__ == "__main__":
