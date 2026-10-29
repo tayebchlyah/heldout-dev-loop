@@ -2,7 +2,7 @@
 # Run as python3 -I git-guard.py, with the env CMD (the command line), CWD (the hook cwd),
 # RAW (set when the heredoc pass failed) and AGENT_ID (set for a subagent).
 # Prints nothing, or the rule on line 1 and the release-check suffix on line 2.
-import fnmatch, json, os, re, shlex, subprocess, sys
+import fnmatch, json, os, re, shlex, subprocess, sys, urllib.parse
 
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
          "--all", "--branches", "--prune", "--tags", "--follow-tags"}
@@ -29,6 +29,13 @@ WRAPPER_VALUE = {"sudo": {"-u", "--user", "-g", "--group", "-C", "--close-from"}
                  "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
                  "nice": {"-n", "--adjustment"}, "timeout": {"-s", "--signal", "-k", "--kill-after"}}
 SHELL_WORDS = {"!", "{", "if", "then", "elif", "else", "do", "while", "until"}
+# #89 D4: the gh 2.103.2 api flags, True for a flag that takes a value.
+API_FLAGS = {**dict.fromkeys(["-i", "--include", "--paginate", "--slurp", "--silent", "--verbose",
+                              "--allow-escape-sequences"], False),
+             **dict.fromkeys(["-X", "--method", "-f", "--raw-field", "-F", "--field", "-H", "--header", "-q", "--jq",
+                              "-t", "--template", "-p", "--preview", "--hostname", "--cache", "--input"], True)}
+# #89: the characters a single-quoted string keeps literal that unreadable() would read as shell syntax.
+MASK = "$" + chr(96) + "{},*?["
 # Commands that run a string or a heredoc body as shell commands.
 RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
 EXPANDS = set("${}*?[~" + chr(96))
@@ -236,6 +243,77 @@ def next_word(args, i):
     return i
 
 
+def mask_quoted(cmd):
+    out, state, i = [], None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if c == "\\" and state != "'":
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if c == "'" and state != '"':
+            state = None if state else "'"
+        elif c == '"' and state != "'":
+            state = None if state else '"'
+        elif state == "'" and c in MASK:
+            c = chr(0xE000 + MASK.index(c))
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def unmask(word):
+    return "".join(MASK[ord(c) - 0xE000] if 0xE000 <= ord(c) < 0xE000 + len(MASK) else c for c in word)
+
+
+def gh_api(args, masked):
+    # #89 D4: args the real words after api, masked the same words with single-quoted text masked.
+    flags, pos, j = [], [], 0
+    while j < len(args):
+        a = args[j]
+        j += 1
+        if a == "--":
+            pos += args[j:]
+            break
+        if a.startswith("--"):
+            name, eq, value = a.partition("=")
+            if name not in API_FLAGS or API_FLAGS[name] and not eq and j == len(args):
+                ask(CANNOT)
+            if API_FLAGS[name] and not eq:
+                value, j = args[j], j + 1
+            flags.append((name, value))
+        elif a.startswith("-") and len(a) > 1:
+            for k in range(1, len(a)):
+                name = "-" + a[k]
+                if name not in API_FLAGS:
+                    ask(CANNOT)
+                if not API_FLAGS[name]:
+                    flags.append((name, ""))
+                    continue
+                value = a[k + 1:].removeprefix("=")
+                if not a[k + 1:]:
+                    if j == len(args):
+                        ask(CANNOT)
+                    value, j = args[j], j + 1
+                flags.append((name, value))
+                break
+        else:
+            pos.append(a)
+    if len(pos) > 1:
+        ask(CANNOT)
+    endpoint = pos[0] if pos else ""
+    methods = [v.upper() for n, v in flags if n in ("-X", "--method")]
+    fields = [(n, v) for n, v in flags if n in ("-f", "--raw-field", "-F", "--field")]
+    graphql_read = ((endpoint == "graphql" or urllib.parse.urlsplit(endpoint).path.endswith("/graphql"))
+                    and not any("mutation" in a.lower() for a in args)
+                    and not any(n in ("-F", "--field") and v.partition("=")[2].startswith("@") for n, v in fields))
+    if (any(m not in ("GET", "HEAD") for m in methods) or any(n == "--input" for n, _ in flags)
+            or fields and "GET" not in methods and not graphql_read):
+        ask("a gh api write")
+    if any(unreadable(a) for a in masked):
+        ask(CANNOT)
+
+
 def gh_command(args, cwds, fed):
     # #89: the remote effect of a gh command. Reads return, writes ask.
     if fed:
@@ -245,20 +323,23 @@ def gh_command(args, cwds, fed):
         ask(CANNOT)
     if i == len(args):
         return
-    word = args[i]
+    real = [unmask(a) for a in args]
+    word = real[i]
     if word not in GH_BUILTINS:
         ask(CANNOT)
     if word == "copilot":
         ask("a gh extension or agent run")
+    if word == "api":
+        gh_api(real[i + 1:], args[i + 1:])
     j = next_word(args, i + 1)
-    sub = args[j] if j < len(args) else None
+    sub = real[j] if j < len(args) else None
     if word in ("release", "pr", "extension") and any(unreadable(a) for a in args[i + 1:j + 1]):
         if word == "release":
             ask("a gh release command", "; release-check failed: a gh release command the guard cannot read")
         ask(CANNOT)
     if word == "release" and sub is not None and sub not in GH_RELEASE_READ:
         if sub in ("create", "new"):
-            check_release(args[j + 1:], cwds)
+            check_release(real[j + 1:], cwds)
         ask(f"a gh release {sub}")
     if word == "extension" and sub == "exec":
         ask("a gh extension or agent run")
@@ -432,14 +513,15 @@ def check(cmd, cwds, drift, top=False):
     # for the whole line when unreliable() finds a quote, escape, comment, heredoc
     # or case that can fool the parser: a cd then only adds its targets.
     try:
-        segs = list(segments(cmd))
+        segs = list(segments(mask_quoted(cmd)))
     except ValueError:
         # Unbalanced quotes. Only a line that may push asks.
         if re.search(r"(?<![\w.-])git(?![\w.-]).*(\bpush\b|send-pack)", cmd):
             ask("a push the guard cannot parse")
         return
     subshells, seen, lost, prev = [], set(cwds), unreliable(cmd, segs), ""
-    for seg, sep in segs:
+    for masked, sep in segs:
+        seg = [unmask(t) for t in masked]
         if any(os.path.basename(w) in RUNNERS for w in seg):
             for tok in seg:
                 if any(c in tok for c in " \t;&|"):
@@ -489,10 +571,10 @@ def check(cmd, cwds, drift, top=False):
                     check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
                 if os.path.basename(tok) == "gh" and any(
                         os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k]):
-                    gh_command(seg[k + 1:], cwds, True)
+                    gh_command(masked[k + 1:], cwds, True)
             c = command_index(seg)
             if c is not None and os.path.basename(seg[c]) == "gh":
-                gh_command(strip_redirects(seg[c + 1:]), cwds, False)
+                gh_command(strip_redirects(masked[c + 1:]), cwds, False)
         for c in sep:
             if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
                 # A union, not a swap: a ) that closes no subshell (a case pattern,
