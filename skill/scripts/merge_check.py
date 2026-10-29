@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import fnmatch
 import json
 import os
@@ -212,12 +213,15 @@ def merge_check(args: argparse.Namespace) -> int:
         base = git(repo, "merge-base", reviewed, ref)
         reviewed_pids = {c: patch_id(repo, c) for c in
                          git_out(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed).split()}
-        seen = set(reviewed_pids.values()) - {None, ""}
+        left = collections.Counter(p for p in reviewed_pids.values() if p)
         landing: set[str | None] = set()
         for commit in git_out(repo, "rev-list", "--reverse", f"{ref}..{head}").split():
             pid = patch_id(repo, commit)
             landing.add(pid)
-            if pid == "" or pid in seen:
+            if pid == "":
+                continue
+            if pid is not None and left[pid] > 0:
+                left[pid] -= 1
                 continue
             if pid is None:  # Fail closed: a diff git cannot compute is unreviewed, whatever its paths.
                 try:
