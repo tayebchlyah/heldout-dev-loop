@@ -1,5 +1,5 @@
 #!/bin/bash
-# PreToolUse(Bash) wall: the git push rule, git reset --hard and rm -rf /.
+# PreToolUse(Bash) wall: the git push and gh write rules, git reset --hard and rm -rf /.
 # Codex copy of claude/hooks/git-guard.sh: only deny() and ask() differ, because Codex
 # parses permissionDecision "ask" but does not support it (the call would run), so every
 # ask becomes a deny that names the rule.
