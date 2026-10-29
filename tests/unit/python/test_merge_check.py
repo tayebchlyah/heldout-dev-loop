@@ -10,14 +10,14 @@ from pathlib import Path
 from test_devloop import PLAN, Sandbox, frontmatter, git, load_script, put, run_cli
 
 
-class MergeCheckTests(Sandbox):
-    """`devloop.py merge-check` as a process: config from the main ref, human paths, patch-id review check."""
+class MergeCheckCase(Sandbox):
+    """A main checkout with `dev-loop.json` on origin/main, and helpers for a feature worktree under review."""
 
     PLAN_NAME = "20261002 Widget Plan"
 
     def setUp(self) -> None:
         super().setUp()
-        put(self.repo / ".git" / "info" / "exclude", ".superpowers/\n")
+        put(self.repo / ".git" / "info" / "exclude", ".superpowers/\ndev-loop.local.json\n")
         self.main_config({"version": "2.0.0"})
 
     def main_config(self, config: object, raw: str | None = None) -> None:
@@ -60,6 +60,10 @@ class MergeCheckTests(Sandbox):
     def reasons(self, out: dict, name: str) -> list[dict]:
         return [r for r in out["reasons"] if r["reason"] == name]
 
+
+class MergeCheckTests(MergeCheckCase):
+    """`devloop.py merge-check` as a process: config from the main ref, human paths, patch-id review check."""
+
     def test_clean_track_m_is_auto(self) -> None:
         wt, sha = self.reviewed_feature()
         self.commit(self.repo, "other.txt", "x\n")
@@ -68,8 +72,8 @@ class MergeCheckTests(Sandbox):
         git(wt, "rebase", "-q", "origin/main")
         self.assertNotEqual(self.head(wt), sha)
         out = self.ok(wt)
-        self.assertEqual(out, {"merge": "auto", "reasons": [], "reviewed": sha, "unreviewed_minor": [],
-                               "feature": "widget", "track": "M"})
+        self.assertEqual(out, {"merge": "auto", "reasons": [], "reviewed": sha, "head": self.head(wt),
+                               "branch": "feat/widget", "unreviewed_minor": [], "feature": "widget", "track": "M"})
 
     def test_track_s_reads_the_review_done_marker(self) -> None:
         git(self.repo, "switch", "-q", "-c", "fix/tiny")
