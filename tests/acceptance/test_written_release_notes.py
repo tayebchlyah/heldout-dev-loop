@@ -182,14 +182,16 @@ class CiSkipFlow(ReleaseRepoCase):
         self.assertIn("package.json", payload.get("blocking") or [], payload)
 
     def test_f3_kit_upgrade_skips_ci_a_hook_config_change_does_not(self) -> None:
-        """F3 (oracle 15, 18): kit copies that match the head MANIFEST, the MANIFEST with a new `version` and
-        `dev-loop.json` with only `version` changed: `skip` true, `kind` kit-upgrade; plus a change to
-        `.claude/settings.json`: `skip` false, that path blocking."""
+        """F3 (oracle 15 as amended by kit-copy-reference, 18): in this repo with no kit source, kit copies that
+        match the head MANIFEST, the MANIFEST with a new `version` and `dev-loop.json` with only `version` changed:
+        `skip` false, every changed kit path in `blocking`; plus a change to `.claude/settings.json`: `skip` false,
+        that path blocking."""
         upgrade = {**KIT_NEW, MANIFEST: manifest("2.2.0", KIT_NEW),
                    "dev-loop.json": config("2.2.0", version_files=["package.json"])}
         payload = self.ci_skip(self.head("upgrade", upgrade))
-        self.assertEqual((payload.get("skip"), payload.get("kind"), payload.get("blocking")),
-                         (True, "kit-upgrade", []), payload)
+        self.assertIs(payload.get("skip"), False, payload)
+        for path in (K1, K2):
+            self.assertIn(path, payload.get("blocking") or [], payload)
         hooked = self.head("upgrade-and-hooks", {**upgrade, ".claude/settings.json": '{"hooks": {"Stop": []}}\n'})
         payload = self.ci_skip(hooked)
         self.assertIs(payload.get("skip"), False, payload)
@@ -276,16 +278,20 @@ class ReleaseCheckFlow(ReleaseRepoCase):
         return self.devloop(self.repo, "release-check", "--sha", rev)
 
     def test_f6_audit_once_tag_the_release_commit(self) -> None:
-        """F6 (oracle 24c, 24d): the release commit B after the record at A (new `## [3.0.0]` section, the
-        `package.json` version, kit copies that match the B MANIFEST, a new MANIFEST `version`, `dev-loop.json`
-        `version` only): `ok` true; the same commit plus `src/app.py`: `stale-audit` whose `paths` hold
-        `src/app.py`, the version file, the kit copies, the MANIFEST and `dev-loop.json`."""
+        """F6 (oracle 24c as amended by kit-copy-reference, 24d): in this repo with no kit source, the release
+        commit B after the record at A (new `## [3.0.0]` section, the `package.json` version, kit copies that match
+        the B MANIFEST, a new MANIFEST `version`, `dev-loop.json` `version` only): `stale-audit` with the kit copies
+        in `paths`; the same commit plus `src/app.py`: `stale-audit` whose `paths` hold `src/app.py`, the version
+        file, the kit copies, the MANIFEST and `dev-loop.json`."""
         release = {"CHANGELOG.md": new_changelog("3.0.0"), "package.json": PACKAGE % ("3.0.0", "4.17.20"),
                    **KIT_NEW, MANIFEST: manifest("3.0.0", KIT_NEW),
                    "dev-loop.json": config("3.0.0", version_files=["package.json"])}
         code, payload = self.release_check(self.head("release", release))
-        self.assertEqual(code, 0, payload)
-        self.assertIs(payload.get("ok"), True, payload)
+        self.assertEqual(code, 1, payload)
+        stale = [r for r in payload.get("reasons") or [] if isinstance(r, dict) and r.get("reason") == "stale-audit"]
+        self.assertEqual(len(stale), 1, payload)
+        for path in (K1, K2):
+            self.assertIn(path, stale[0].get("paths") or [], payload)
         code, payload = self.release_check(self.head("release-and-code",
                                                      {**release, "src/app.py": "def colour():\n    return 'blue'\n"}))
         self.assertEqual(code, 1, payload)
