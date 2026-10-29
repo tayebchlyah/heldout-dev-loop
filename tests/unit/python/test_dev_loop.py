@@ -37,6 +37,8 @@ if not any(
         f"GIT_CONFIG_VALUE_{_GIT_CONFIG_COUNT}": "false",
         "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
     })
+# A hook test finds the kit CLI through CLAUDE_PROJECT_DIR too (#91): a session's own project must not leak in.
+os.environ.pop("CLAUDE_PROJECT_DIR", None)
 
 SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
 # The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
@@ -67,6 +69,7 @@ wire("test_review_text")
 wire("test_seal")
 wire("test_seal_check")
 wire("test_search_wall")
+wire("test_search_hooks")
 wire("test_size")
 wire("test_seal_hooks")
 wire("test_kit_walls")
