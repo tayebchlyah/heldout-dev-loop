@@ -12,6 +12,10 @@ Fixture choices the spec leaves open:
   `inspect <id> ...`) and ignores any other flag. `ps -q` gives 12-character ids; `inspect` gives the full id.
 - A failing `docker` call exits 1 with a message on stderr, for every call.
 - Every name in the temp repos is invented. HOME is a temporary folder.
+- Merge Check Binding amends O8 to O19 and O21: `dev-loop.json` holds the same `commands.acceptance` at the main ref
+  and in the worktree. The repo runs on `main` and commits its `dev-loop.json` before the first run, so both match.
+- Merge Check Binding amends O12 and O13: green, and the `--failed` `continue`, also need executed cases; each such
+  run here has one passing case, `cases` 1.
 """
 
 from __future__ import annotations
@@ -328,11 +332,13 @@ class AcceptanceLoopTests(Sandbox):
             self.assertEqual(code, 0, run)
             self.assertEqual(run.get("mode"), "failed")
             self.assertEqual(self.guard(run).get("verdict"), "continue")
+            self.assertEqual(run.get("cases"), 1, run)
 
         code, run, _ = self.accept([], 0)
         with self.subTest(oracle=12, step="green"):
             self.assertEqual(code, 0, run)
             self.assertEqual(self.guard(run).get("verdict"), "green")
+            self.assertEqual(run.get("cases"), 1, run)
 
         _, run, _ = self.accept(["c::t1", "c::t2", "c::t3", "c::t4", "c::t5"], 1)
         with self.subTest(oracle=12, step="first run of the new loop"):
