@@ -308,6 +308,25 @@ class SandboxExtractTests(unittest.TestCase):
                 sandbox_run.extract(data, self.scratch, 1 << 20)
                 self.assertEqual(self.written(), expected)
 
+    def test_copy_back_makes_no_repository_and_no_note(self) -> None:
+        out = io.BytesIO()
+        names = ["r/.git/HEAD", "r/.git/config", "r/.git/objects/k", "c/.GIT/hooks/x", ".git",
+                 "b/HEAD", "b/config", "b/objects/k", "b/refs/k", "d/head",
+                 "n/x.md", "n/Y.MD", "n/c.canvas", "n/v.base", "ok/f"]
+        with tarfile.open(fileobj=out, mode="w", format=tarfile.GNU_FORMAT) as tar:
+            for name in names:
+                info = tarfile.TarInfo(name)
+                info.size = 1
+                tar.addfile(info, io.BytesIO(b"x"))
+        sandbox_run.extract(out.getvalue(), self.scratch, 1 << 20)
+        self.assertEqual(sorted(self.written()), [
+            "scratch/b/config", "scratch/b/objects/k", "scratch/b/refs/k", "scratch/n/Y.MD.txt",
+            "scratch/n/c.canvas.txt", "scratch/n/v.base.txt", "scratch/n/x.md.txt", "scratch/ok/f"])
+        for folder in (self.scratch, self.scratch / "b"):
+            found = subprocess.run(["git", "-C", str(folder), "rev-parse", "--git-dir"], capture_output=True,
+                                   text=True, env={**os.environ, "GIT_CEILING_DIRECTORIES": str(self.tmp)})
+            self.assertNotEqual(found.returncode, 0, found.stdout)
+
     def test_size_headers_over_the_cap_write_nothing(self) -> None:
         small = tarfile.TarInfo("a")
         small.size = 3
