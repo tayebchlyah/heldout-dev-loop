@@ -2,11 +2,11 @@
 
 ## Purpose
 
-dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Shaping: Stages 1, 2, to spec approval. Delivery: Stages 3 to 7, autonomy grant. Same session. Track S: no spec, no plan. `status` detects the stage.
+dev-loop: stage-driven development loop skill for Claude Code and Codex, plus its installer. Tracks S, M, L. Shaping: Stages 1, 2, to spec approval. Delivery: Stages 3 to 7, autonomy grant. Same session. Track S: no spec, no plan. `status` detects stage.
 
 ## Repo map
 
-Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Else edited normally.
+Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Else edit normally.
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
@@ -37,23 +37,23 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
 - `tests/unit/python/`: skill suite, one file per subject:
-  - `test_dev_loop.py`: the entry, loads each test class of the files below; runs in parallel chunks.
+  - `test_dev_loop.py`: the entry: loads the classes of the files below, in parallel chunks.
   - `test_devloop.py`: `logged`, `gate`, the project config shape, CLI test helpers.
   - `test_status.py`, `test_merge_check.py`: `status`, `merge-check`.
   - `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: kit text contracts.
   - `test_check_setup.py`, `test_setup_checks.py`: `check_setup.py`.
   - `test_notes_path.py`: `notes_path.py`.
   - `test_mutation.py`: `select_mutants.py`, mutation setup and contract.
-  - `test_hooks.py`: board hook launch, Claude gate hook.
+  - `test_hooks.py`: board hook launch, gate hook.
   - `test_seal.py`: `seal`, `audit`.
   - `test_seal_check.py`: `seal-check`, `kit-changed`, `weakened`.
-  - `test_size.py`: `size-check`, seams, size in `gate` and `seal`.
-  - `test_seal_hooks.py`: seal hooks, guard, spec-tester and Codex walls.
-  - `test_kit_walls.py`: path, kit and `cd` walls, canary script, Codex trust warning.
+  - `test_size.py`: `size-check`, seams, size in `gate`, `seal`.
+  - `test_seal_hooks.py`: seal hooks, guard, spec-tester, Codex walls.
+  - `test_kit_walls.py`: path, kit, `cd` walls, canary script, Codex trust warning.
   - `test_walls.py`, `test_git_guard.py`: deny walls, Codex hooks, git guard.
   - `test_board_robust.py`: board robustness.
   - `test_notes_migrate.py`, `test_notes_migrate_apply.py`: `notes-migrate`.
-  - `test_board_layout.py`: board folders, names.
+  - `test_board_layout.py`: board folders.
   - `test_board_tasks.py`: board task state, subagents, hook filter.
   - `test_verify.py`: `verify-init`, `drive`, verify checks.
   - `test_capture.py`: `capture`.
@@ -61,17 +61,17 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_release.py`: `release-check`, `release-plan`, `release-notes`.
   - `test_release_record.py`: `release-record`.
   - `test_release_guard.py`: release guards, setup, kit, text.
-  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, fail with `DEVLOOP_REQUIRE_DOCKER=1`, set in CI).
+  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails it, set in CI).
   - `test_metrics.py`: `metrics`.
   - `test_ci.py`: `ci wait` (stub `gh` on `PATH`).
   - `test_ci_skip.py`: `ci-skip`.
-  - `test_kit_reference.py`: `kit_reference`, `kit_matches`.
+  - `test_kit_reference.py`: kit reference.
   - `test_gardener.py`: the `garden` skill, kit text, harness names.
   - `test_retro.py`: `review_due`, `sessions`.
   - `test_feature_gate.py`: `review-merge`, `acceptance`.
   - `test_upstream_watch.py`: the upstream watch.
   - `test_autonomy.py`: `decide`, `pause`, autonomy hooks.
-  - `test_repo_rules.py`: `repo_rules.py`, `AGENTS.md` budget and CLI index, gate scope.
+  - `test_repo_rules.py`: `repo_rules.py`, `AGENTS.md` budget, CLI index, gate scope.
   - `junit_report.py`: the one JUnit writer.
   - `board_fixtures.py`: board fixtures shared with the held-out oracle.
   - `support.py`: shared constants and helpers of this suite.
@@ -83,7 +83,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `scripts/canary.sh`: live canary before a release (this repo only).
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
 - `scripts/repo_rules.py`: repo checks `comments` (allowed comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source), this repo only.
-- `scripts/upstream_watch.py`, `upstream.json`: weekly watch of the outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
+- `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
 - `reference/cli/<command>.md`: full contract per `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
 - `reference/release.md`: the release steps.
@@ -132,7 +132,7 @@ npm test                                    # node suite: installer, board rende
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
-Skill suite: test ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default one per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: JUnit `skill.xml` there; a dead chunk errors each of its ids. Argument (a test name): plain unittest, no report.
+Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default one per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: JUnit `skill.xml` there; a dead chunk errors each of its ids. Argument (a test name): plain unittest, no report.
 
 `scripts/gate.sh` (full gate, both suites) fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
 

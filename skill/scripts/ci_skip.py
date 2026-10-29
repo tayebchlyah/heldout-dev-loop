@@ -76,8 +76,9 @@ def released(repo: Path, head: str) -> str | None:
 
 def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
     """The sorted paths of `paths` that no rule allows: `CHANGELOG.md`, a version-only change of a `version_files`
-    path, a `dev-loop.json` change of `version` only, a kit copy of a kit upgrade. `base` and `head` are commit shas;
-    contents compare from their merge base. Raises ConfigError."""
+    path, a `dev-loop.json` change of `version` only, a kit copy of a kit upgrade that equals the kit the merge
+    base's own installer builds (none in a repo without the kit source). `base` and `head` are commit shas; contents
+    compare from their merge base. Raises ConfigError."""
     listed = version_files(repo, head)
     merged = release.run_git(repo, "merge-base", base, head)
     if merged.returncode != 0:
@@ -100,13 +101,12 @@ def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
         if old == new:
             allowed.add("dev-loop.json")
     was, now = release.version_at(repo, mb), release.version_at(repo, head)
-    if was and now and was != now:
-        allowed |= release.kit_copies(repo, head, set(paths))
+    ref = release.kit_reference(repo, mb) if was and now and was != now else None
+    if ref is not None:
+        allowed |= release.kit_matches(repo, head, set(paths), ref)
         tree = release.run_git(repo, "ls-tree", "-r", "-z", "--name-only", "--full-tree", head)
         present = set(tree.stdout.split("\0"))
-        files = (release.manifest_at(repo, mb) or {}).get("files")
-        if isinstance(files, dict):
-            allowed |= {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in files}
+        allowed |= {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p not in ref}
     return sorted(p for p in paths if p not in allowed or p in MERGED)
 
 

@@ -17,8 +17,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 import release  # noqa: E402
-sys.path.insert(1, str(HERE))
-from board_fixtures import slow  # noqa: E402
 
 SHA = "a" * 40
 OLD = "b" * 40
@@ -439,7 +437,7 @@ GATE = ".dev-loop/hooks/claude/gate.sh"
 
 
 class ReleasePlanExcludeTests(PlanRepo):
-    """Record at A (MANIFEST `3.0.0-rc.1`), B an upgrade to `3.0.0-rc.2`: the kit copies B changed leave the audit."""
+    """Record at A (MANIFEST `3.0.0-rc.1`), B an upgrade to `3.0.0-rc.2` in a repo without the kit source."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -485,56 +483,10 @@ class ReleasePlanExcludeTests(PlanRepo):
     def upgrade(self, version: str = "3.0.0-rc.2", files: dict | None = None, **kw) -> str:
         return self.state(version, {ONE: "2", TWO: "2", "src/app.py": "b", "dev-loop.json": '{"v": 2}', **(files or {})}, **kw)
 
-    @slow
-    def test_exclude(self) -> None:
-        sha = lambda text: "sha256:" + hashlib.sha256(text.encode()).hexdigest()
-        cases = [
-            ("upgrade", {}, [ONE, TWO, MANIFEST]),
-            ("copy differs from its hash", {"entries": {ONE: sha("other")}}, [TWO, MANIFEST]),
-            ("same version", {"version": "3.0.0-rc.1"}, []),
-            ("product path in the MANIFEST", {"entries": {"src/app.py": sha("b")}}, [ONE, TWO, MANIFEST]),
-            ("deleted copy", {"files": {GONE: None}, "entries": {GONE: sha("g")}}, [ONE, TWO, MANIFEST]),
-            ("merged configs", {"files": {".claude/settings.json": "{1}", ".codex/hooks.json": "{1}"},
-                                "entries": {".claude/settings.json": sha("{1}"), ".codex/hooks.json": sha("{1}")}},
-             [ONE, TWO, MANIFEST]),
-            ("directory and missing entries", {"entries": {".agents/skills/k": sha(""), ".agents/skills/k/no.md": sha("")}},
-             [ONE, TWO, MANIFEST]),
-            ("links", {"links": {".claude/skills/k": "../../.agents/skills/k", ".claude/skills/w": "../x"},
-                       "entries": {".claude/skills/w": "link:../y"}}, [ONE, TWO, ".claude/skills/k", MANIFEST]),
-            ("no MANIFEST at HEAD", {"version": None}, []),
-            ("submodule entry", {"entries": {SUB: sha("")}, "gitlink": True}, [ONE, TWO, MANIFEST]),
-            ("unreadable blob", {"files": {LOST: "x"}, "entries": {LOST: sha("")}, "lose": True}, [ONE, TWO, MANIFEST]),
-            ("hook copy", {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")}}, [ONE, TWO, MANIFEST, GATE]),
-            ("hook edited after the upgrade", {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
-                                               "then": [{"files": {GATE: "g2"}, "entries": {GATE: sha("g2")}}]}, [ONE, TWO]),
-            ("copy edited after the upgrade", {"then": [{"files": {ONE: "3"}}]}, [TWO]),
-            ("second upgrade", {"then": [{"version": "3.0.0-rc.3", "files": {ONE: "3"}}]}, [ONE, TWO, MANIFEST]),
-            ("hook edited with the MANIFEST deleted, then re-added",
-             {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
-              "then": [{"version": None, "files": {GATE: "g2"}}, {"entries": {GATE: sha("g2")}}]}, [ONE, TWO]),
-            ("hook edited as the deleted MANIFEST comes back",
-             {"files": {GATE: "g1"}, "entries": {GATE: sha("g1")},
-              "then": [{"version": None}, {"files": {GATE: "g2"}, "entries": {GATE: sha("g2")}}]}, [ONE, TWO]),
-        ]
-        start = self.git("rev-parse", "HEAD")
-        for label, change, expected in cases:
-            with self.subTest(label):
-                self.git("reset", "-q", "--hard", start)
-                gitlink, lose, then = change.pop("gitlink", False), change.pop("lose", False), change.pop("then", [])
-                head = self.upgrade(**change)
-                for step in then:
-                    head = self.state(step.pop("version", "3.0.0-rc.2"), step.pop("files", {}), **step)
-                if gitlink:
-                    (self.repo / SUB).mkdir(exist_ok=True)
-                    self.git("update-index", "--add", "--cacheinfo", f"160000,{start},{SUB}")
-                    self.git("commit", "-q", "--amend", "--no-edit")
-                    head = self.git("rev-parse", "HEAD")
-                if lose:
-                    blob = self.git("rev-parse", f"HEAD:{LOST}")
-                    (self.repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
-                out, code = self.plan()
-                self.assertEqual((code, out["scope"], out["exclude"]), (0, f"{self.a}..{head}", expected))
-                shutil.rmtree(out["output"])
+    def test_no_exclude_without_kit_source(self) -> None:
+        head = self.upgrade(entries={ONE: "sha256:" + hashlib.sha256(b"2").hexdigest()})
+        out, code = self.plan()
+        self.assertEqual((code, out["scope"], out["exclude"]), (0, f"{self.a}..{head}", []))
 
     def test_no_exclude_without_the_record_as_base(self) -> None:
         self.upgrade()
@@ -587,8 +539,8 @@ class ReleaseCommitTests(PlanRepo):
     def config(version: str, files: object = ("package.json",)) -> str:
         return json.dumps({"version": version, "version_files": files})
 
-    def release(self, files: dict | None = None) -> str:
-        return self.state("3.0.0", {ONE: "2", TWO: "2", "dev-loop.json": self.config("3.0.0"),
+    def release(self, files: dict | None = None, version: str = "3.0.0-rc.1") -> str:
+        return self.state(version, {"dev-loop.json": self.config("3.0.0"),
                                     "package.json": '{"version": "3.0.0"}\n',
                                     "CHANGELOG.md": "# Changelog\n\n## [3.0.0] - 2026-11-01\n\n## [2.1.1] - 2026-10-16\n",
                                     **(files or {})})
@@ -606,8 +558,12 @@ class ReleaseCommitTests(PlanRepo):
     def test_code_next_to_release_commit_is_stale(self) -> None:
         out, code, _ = self.check(self.release({"src/app.py": "b"}))
         self.assertEqual((out["reasons"], code), (
-            [{"reason": "stale-audit",
-              "paths": [ONE, TWO, MANIFEST, "dev-loop.json", "package.json", "src/app.py"]}], 1))
+            [{"reason": "stale-audit", "paths": ["dev-loop.json", "package.json", "src/app.py"]}], 1))
+
+    def test_kit_upgrade_without_kit_source_is_stale(self) -> None:
+        out, code, _ = self.check(self.release({ONE: "2", TWO: "2"}, version="3.0.0"))
+        self.assertEqual((out["reasons"], code), (
+            [{"reason": "stale-audit", "paths": [ONE, TWO, MANIFEST, "dev-loop.json", "package.json"]}], 1))
 
     def test_bad_version_files_is_stale(self) -> None:
         out, code, err = self.check(self.release({"dev-loop.json": self.config("3.0.0", "package.json")}))
