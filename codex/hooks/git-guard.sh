@@ -40,7 +40,7 @@ fi
 case "$CMD" in *'<<'*) BODYLESS=$(CMD="$CMD" python3 -I - <<'PY'
 import os, re
 
-RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
+RUNNERS = {"sh", "bash", "zsh", "dash", "ksh", "eval", "ssh", "su", "source", ".", "xargs", "$SHELL"}
 # allow-comment: dependency, bash 3.2 counts quotes in a heredoc inside a command substitution, so these marks come from chr().
 SQ, DQ, BS, BT, DL = chr(39), chr(34), chr(92), chr(96), chr(36)
 NAME = r"([A-Za-z_][\w.-]*)"
@@ -77,10 +77,12 @@ def operators(line, stack):
             if top != "(":
                 return None
             stack.pop()
+            for mark in marks:
+                mark[3] = mark[3] or mark[4] > len(stack)
         elif line.startswith("<<<", k):
             k += 2
         elif line.startswith("<<", k):
-            marks.append(k)
+            marks.append([k, bool(stack) and stack[-1] == "(", len(stack) > 1 and stack[-2] == DQ, False, len(stack)])
             k += 1
         else:
             dollar = c == DL
@@ -88,17 +90,21 @@ def operators(line, stack):
     return marks
 
 
+def runs(word):
+    return os.path.basename(word.replace(SQ, "").replace(DQ, "")) in RUNNERS
+
+
 def strip_heredocs(cmd):
     lines, out, i, stack = cmd.split("\n"), [], 0, []
     while i < len(lines):
         line = lines[i]
         marks = operators(line, stack)
-        if marks is None or marks and ((stack and stack[-1] != "(") or line.endswith(BS)):
+        if marks is None or marks and ((stack and stack[-1] != "(") or line.endswith(BS) or any(m[3] for m in marks)):
             return "\n".join(out + lines[i:])
         out.append(line)
         i += 1
-        feeds = any(os.path.basename(w) in RUNNERS for w in re.split(r"[\s;&|()]+", line))
-        for k in marks:
+        feeds = any(runs(w) for w in re.split(r"[\s;&|()]+", line))
+        for k, framed, in_dq, _, _ in marks:
             m = HEREDOC.match(line, k)
             if not m:
                 return "\n".join(out + lines[i:])
@@ -108,10 +114,16 @@ def strip_heredocs(cmd):
                 j += 1
             if j == len(lines):
                 return "\n".join(out + lines[i:])
-            if feeds:
+            if framed and (any(ln.lstrip("\t").startswith(end + ")") for ln in lines[i:j + 1])
+                           or not in_dq and any(")" in ln for ln in lines[i:j])):
+                return "\n".join(out + lines[i:])
+            plain = [re.sub(r"\\.", "", ln) for ln in lines[i:j]]
+            if feeds or m.group(4) and any(DL + "(" in ln or BT in ln for ln in plain):
                 out += lines[i:j + 1]
             i = j + 1
-    return "\n".join(out)
+    text = "\n".join(out)
+    sinks = re.split(r"(?<!\|)\|(?!\|)", text)[1:]
+    return cmd if any(runs(w) for sink in sinks for w in sink.replace("(", " ").replace("{", " ").split()[:1]) else text
 
 
 print(strip_heredocs(os.environ["CMD"]), end="")

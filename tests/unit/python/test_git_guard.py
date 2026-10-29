@@ -325,6 +325,30 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         "cat > n.md <<'EOF'\nit's the git push origin main step\nEOF")):
             self.assertEqual(got, "allow", command)
 
+    def test_a_heredoc_that_gets_no_body_or_runs_its_body_asks(self) -> None:
+        """A marker in a substitution that closes on its line gets no body in bash and dash; bash 3.2 ends a body at
+        a line EOF) and at a body line holding a paren; an unquoted delimiter keeps $(...) live; a shell word may
+        sit on a later line."""
+        push, nl = "git push --force origin HEAD:main", "\n"
+        feed = f"{nl}push --force origin HEAD:main{nl}EOF"
+        for command, got in self.decisions((
+                f"echo $(cat <<EOF){nl}{push}{nl}EOF", f"x=$(cat <<EOF;){nl}{push}{nl}EOF",
+                f'echo "$(cat <<EOF)"{nl}{push}{nl}EOF', f"cat <(cat <<EOF){nl}{push}{nl}EOF",
+                f"echo $(cat <<A) $(cat <<B){nl}{push}{nl}A{nl}B",
+                f"x=$(cat <<EOF{nl}EOF){nl}{push}{nl}EOF", f"x=\"$(cat <<'EOF'{nl}EOF)\"{nl}{push}{nl}EOF",
+                f"x=$(cat <<EOF{nl}a){nl}{push}{nl}EOF{nl})", f"echo $(cat <<true{nl}); {push}{nl}true",
+                f"cat <<EOF{nl}$({push}){nl}EOF", f"cat <<EOF{nl}`{push}`{nl}EOF",
+                f"{{ cat <<EOF{nl}{push}{nl}EOF{nl}}} | bash",
+                f"dash <<EOF{nl}{push}{nl}EOF", f"/bin/ksh <<EOF{nl}{push}{nl}EOF",
+                f"source /dev/stdin <<EOF{nl}{push}{nl}EOF", f". /dev/stdin <<EOF{nl}{push}{nl}EOF",
+                f"'bash' <<EOF{nl}{push}{nl}EOF", f'"$SHELL" <<EOF{nl}{push}{nl}EOF',
+                f"xargs -L1 git <<EOF{feed}",
+                f"cat <<true \\{nl}; git push origin HEAD:main{nl}true",
+                f'cat <<true "{nl}"; git push origin HEAD:main{nl}true')):
+            self.assertIn(got, ("ask", "deny"), command)
+        command = "git commit -m \"$(cat <<'EOF'\nmsg: git push origin main (with parens)\nEOF\n)\""
+        self.assertEqual(self.decision(command), "allow", command)
+
     def test_a_stdlib_name_in_the_hook_cwd_runs_no_code(self) -> None:
         planted = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, planted)
