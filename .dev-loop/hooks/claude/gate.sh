@@ -15,7 +15,7 @@ board() {
 }
 [ "$(echo "$IN" | jq -r '.stop_hook_active // false')" = "true" ] && { board; exit 0; }
 cd "${CLAUDE_PROJECT_DIR:-.}" || { board; exit 0; }
-GATE=$(python3 -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
+GATE=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$GATE" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
 [ -z "$(git status --porcelain 2>/dev/null)" ] && { board; exit 0; }
 if [ "$(echo "$IN" | jq -r '.hook_event_name // empty')" = "SubagentStop" ]; then

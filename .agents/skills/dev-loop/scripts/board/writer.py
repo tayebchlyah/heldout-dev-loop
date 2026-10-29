@@ -13,12 +13,15 @@ from pathlib import Path
 from types import ModuleType
 from typing import Callable
 
+import autonomy  # the scripts folder, on sys.path wherever the board package loads
+from status import cherry, detect_feature, rebasing
+
 from . import sources, state, store
 
 TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
                 5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
-FEATURES = "features"
+SHIPPED_KEPT = 5
 TEMPLATE = Path(__file__).with_name("board-note.md")
 
 
@@ -59,8 +62,8 @@ def worktrees(dl: ModuleType, repo: Path) -> dict[Path, str | None]:
             continue
         elif line.startswith("branch refs/heads/") and "/" in line[len("branch refs/heads/"):]:
             found[path] = line.rsplit("/", 1)[1].lower()
-        elif line == "detached" and "/" in (dl.rebasing(path) or ""):
-            found[path] = (dl.rebasing(path) or "").rsplit("/", 1)[1].lower()
+        elif line == "detached" and "/" in (rebasing(path) or ""):
+            found[path] = (rebasing(path) or "").rsplit("/", 1)[1].lower()
     return found
 
 
@@ -83,9 +86,13 @@ def iso(stamp: float) -> str:
 
 def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: int, doing: set[int],
           briefs: set[int], done_time: Callable[[int, str], str | None]) -> list[dict]:
-    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`), then
-    the briefs, else at Stage 5 the first task not done. `saved`: the task times of the state entry, by `str(n)`;
-    `done_time(n, line)`: the file time of a done task, else None."""
+    """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`) plus
+    each briefed task before one of them (in review), else the first task with a brief (SDD may write every brief
+    up front), else at Stage 5 the first task not done. `saved`: the task times of the state entry, by `str(n)`;
+    `done_time(n, line)`: the file time of a done task, else None. A saved start is never changed. Else a task in the
+    native list's doing set starts `now` (hooks run on each TaskUpdate), else the brief birth time, raised to the
+    previous task's done time when the brief is older (briefs written up front), else `now` for an active task, else
+    the previous done time."""
     if plan is None:
         return []
     titles: dict[int, str] = {}
@@ -95,10 +102,14 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
     if ledger is not None and ledger.is_file():
         for line in re.findall(r"^Task \d+: complete.*$", ledger.read_text(), re.MULTILINE):
             complete.setdefault(int(line.split(":", 1)[0][len("Task "):]), line)
-    active = {n for n in titles if n not in complete and (n in doing or n in briefs)}
-    if not active and stage == 5:
-        active = {n for n in titles if n not in complete}
-        active = {min(active)} if active else set()
+    active = {n for n in titles if n not in complete and n in doing}
+    if active:  # A briefed task before a doing one is still open (in review): doing too.
+        active |= {n for n in titles if n not in complete and n in briefs and n < max(active)}
+    else:
+        pool = {n for n in titles if n not in complete and n in briefs}
+        if not pool and stage == 5:
+            pool = {n for n in titles if n not in complete}
+        active = {min(pool)} if pool else set()
     out: list[dict] = []
     previous_done = None
     for n in sorted(titles):
@@ -107,8 +118,15 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
         task: dict = {"n": n, "title": titles[n], "state": "todo"}
         if n in complete or n in active:
             brief = sources.birth(ledger.parent / f"task-{n}-brief.md") if ledger is not None else None
-            started = seen.get("started") or (iso(brief) if brief is not None else None) or (
-                now if n in active else previous_done)
+            briefed = iso(brief) if brief is not None else None
+            started = seen.get("started")
+            if not started:
+                if n in doing and n not in complete:
+                    started = now
+                elif briefed:
+                    started = max(briefed, previous_done) if previous_done else briefed
+                else:
+                    started = now if n in active else previous_done
             if started:
                 task["started"] = started
             if n in complete:
@@ -118,6 +136,12 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
         previous_done = task.get("done")
         out.append(task)
     return out
+
+
+def log_decisions(text: str) -> list[str]:
+    """Each `decision` row of the decision log as `<Decision>: <Why>`, `Risk: ` on a risk row."""
+    return [("Risk: " if r["risk"] == "risk" else "") + f"{r['decision']}: {r['why']}"
+            for r in autonomy.log_rows(text) if r["kind"] == "decision"]
 
 
 def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, now: str, waiting: str) -> dict:
@@ -135,7 +159,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         baseline = assumptions
     plan = ctx.dl.find_plan(ctx.notes, spec) if spec else None
     worktree = found["worktree"]
-    ledger = Path(worktree) / ".superpowers" / "sdd" / plan.stem / "progress.md" if plan and worktree else None
+    ledger = ctx.dl.ledger(Path(worktree), plan) if plan and worktree else None
     saved = entry["tasks"] if isinstance(entry.get("tasks"), dict) else {}
 
     def done_time(n: int, line: str) -> str | None:
@@ -154,7 +178,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         born = sources.birth(ledger) if ledger else None
         if born is not None:
             times["5"] = iso(born)
-        elif stage == 6 or (ledger is None and stage == 5):
+        elif stage == 6 or (plan is None and stage == 5):
             times["5"] = now
     if stage >= 6 and "6" not in times and task_list and all(t["state"] == "done" for t in task_list):
         times["6"] = max(t["done"] for t in task_list)
@@ -162,6 +186,11 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         times.setdefault(str(stage), now)
     # A1: a Track S branch with commits ahead records its last commit, so a ship is seen once the branch is gone.
     head = ctx.dl.git(Path(worktree), "rev-parse", "HEAD") if spec is None and worktree and stage in (6, 7) else None
+    log = text
+    if spec is None and worktree:  # Track S: the log lives in the worktree git dir.
+        git_dir = ctx.dl.git(Path(worktree), "rev-parse", "--absolute-git-dir")
+        path = Path(git_dir) / "dev-loop" / "decisions.md" if git_dir else None
+        log = path.read_text() if path is not None and path.is_file() else ""
     return {
         "type": "dev-loop-status",
         "schema": 1,
@@ -178,7 +207,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         "stage_times": times,
         "tasks": task_list,
         "waiting": waiting,
-        "decisions": [a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else [],
+        "decisions": ([a for a in assumptions if a not in baseline] if stage >= 3 or seen_late else []) + log_decisions(log),
         "assumptions_baseline": baseline,
         **({"head": head} if head else {}),
         "shipped_at": "",
@@ -208,8 +237,15 @@ def remember(entry: dict, fields: dict) -> None:
     entry["fields_digest"] = state.digest(fields)
 
 
+def evicted(dl: ModuleType, notes: Path) -> bool:
+    if any((notes / dl.FEATURES).glob("*/.Spec.md.icloud")):
+        return True
+    return "specs" in dl.old_layout(notes) and any((notes / "specs").glob(".*.icloud"))
+
+
 def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | None, hook_cwd: Path | None,
-        hook_session: str | None, claim: str | None) -> tuple[int, dict]:
+        hook_session: str | None, claim: str | None, hook_agent: str | None = None,
+        hook_transcript: str | None = None) -> tuple[int, dict]:
     payload: dict = {"notes": [], "removed": [], "board_note": None, "skipped": []}
     top = dl.git(repo, "rev-parse", "--show-toplevel")
     if top is None or not (Path(top) / "dev-loop.json").is_file():
@@ -223,14 +259,14 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     common = Path(dl.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     state_dir = common / "dev-loop"
     now = time.strftime(TIME, time.gmtime())
-    if any((notes / "specs").glob(".*.icloud")):  # D5: an evicted spec would drop claims and notes.
+    if evicted(dl, notes):
         payload["skipped"].append(skip("placeholder"))
         state.save_last_run(state_dir, now, payload["skipped"])
         return 0, payload
     specs = dict(dl.specs(notes))
     claim = claim.lower() if claim else None
     if claim and claim not in specs:
-        return 1, {"error": f"no spec for {claim} in {notes / 'specs'}"}
+        return 1, {"error": f"no spec for {claim} in {notes / dl.FEATURES}"}
 
     trees = worktrees(dl, repo)
     notes_real = notes.resolve()
@@ -247,7 +283,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                 return 1, {"error": "board lock busy, claim not saved"}
             # D2, D13: the lock holder applies it; a run without an event queues `null`, a refresh.
             line = json.dumps({"event": event, "cwd": str(hook_cwd or repo), "session_id": hook_session,
-                               "at": time.strftime(TIME, time.gmtime())})
+                               "agent_id": hook_agent, "transcript_path": hook_transcript, "at": time.strftime(TIME, time.gmtime())})
             fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
             with os.fdopen(fd, "a") as handle:
                 handle.write(line + "\n")
@@ -257,7 +293,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
 
         def detect(slug: str) -> dict:
             if slug not in found:
-                found[slug] = dl.detect_feature(repo, slug, notes)
+                found[slug] = detect_feature(repo, slug, notes)
             return found[slug]
 
         claims_file = state_dir / "board-claims.json"
@@ -278,24 +314,25 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             return pass_specs, pass_trees, pass_claims
 
         specs, trees, claims = refresh(True)
-        folder = notes_real / "dev-loop-board"
+        folder = notes_real / dl.BOARD
         if folder.is_symlink():
             payload["skipped"].append(skip("link"))
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         folder.mkdir(exist_ok=True)
-        if (folder / FEATURES).is_symlink():
+        if (folder / dl.BOARD_FEATURES).is_symlink():
             payload["skipped"].append(skip("link"))
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
-        (folder / FEATURES).mkdir(exist_ok=True)
-        events = [*drain(queue), *([(event, hook_cwd.resolve(), hook_session)] if event and hook_cwd else [])]
+        (folder / dl.BOARD_FEATURES).mkdir(exist_ok=True)
+        events = [*drain(queue),
+                  *([(event, hook_cwd.resolve(), hook_session, hook_agent, hook_transcript)] if event and hook_cwd else [])]
         claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
                       state.load(state_dir), claude)
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
-            if any((notes / "specs").glob(".*.icloud")):
+            if evicted(dl, notes):
                 # D5: a spec evicted during this write would drop claims and notes in a catch-up pass. The queue
                 # waits for a run that sees every spec.
                 payload["skipped"].append(skip("placeholder"))
@@ -318,7 +355,7 @@ def merged_head(ctx: Context, fields: dict, found: dict) -> bool:
     head = fields.get("head")
     if found["stage"] != 1 or not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head):
         return False
-    lines = ctx.dl.cherry(ctx.repo, head)
+    lines = cherry(ctx.repo, head)
     return lines is not None and not any(line.startswith("+") for line in lines)
 
 
@@ -335,9 +372,9 @@ def take(lock, wait: float) -> bool:
             time.sleep(0.1)
 
 
-def drain(queue: Path) -> list[tuple[str | None, Path, str | None]]:
-    """The queued events in order, as (event, resolved cwd, session_id); the queue file is deleted. Bad lines are
-    dropped."""
+def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, str | None]]:
+    """The queued events in order, as (event, resolved cwd, session_id, agent_id, transcript_path); the queue file is
+    deleted. Bad lines are dropped."""
     taken = queue.with_name(f".{queue.name}.{os.getpid()}.drain")
     try:
         os.replace(queue, taken)  # An append after the rename lands in a new queue file.
@@ -349,9 +386,11 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None]]:
     for line in text.splitlines():
         try:
             item = json.loads(line)
-            session = item.get("session_id")
+            session, agent, log = item.get("session_id"), item.get("agent_id"), item.get("transcript_path")
             events.append((None if item["event"] is None else str(item["event"]), Path(str(item["cwd"])).resolve(),
-                           session if isinstance(session, str) and session else None))
+                           session if isinstance(session, str) and session else None,
+                           agent if isinstance(agent, str) and agent else None,
+                           log if isinstance(log, str) and log else None))
         except (ValueError, TypeError, KeyError, AttributeError):
             continue
     return events
@@ -389,11 +428,11 @@ def board_note(top: Path, folder: Path, payload: dict) -> None:
 
 
 def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], claims: list[str], detect,
-          payload: dict, events: list[tuple[str | None, Path, str | None]]) -> None:
+          payload: dict, events: list[tuple[str | None, Path, str | None, str | None]]) -> None:
     stamp = time.time()
     now = time.strftime(TIME, time.gmtime(stamp))
     board, machine, project = ctx.folder, ctx.machine, ctx.project
-    folder = board / FEATURES
+    folder = board / ctx.dl.BOARD_FEATURES
     tree_slugs = [s for s in dict.fromkeys(trees.values()) if s]
 
     def scope(cwd: Path) -> tuple[str | None, list[str]]:
@@ -407,9 +446,17 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         return slug, [slug] if slug else claims if root == next(iter(trees)) else []
 
     scoped: list[tuple[str, list[str]]] = []
-    for event, cwd, session in events:
+    for event, cwd, session, agent, log in events:
         if event is None:  # D13: a refresh, no scope and no session mapping.
             continue
+        # A Stop while a subagent of the session runs (SubagentStart seen, no SubagentStop): the session waits for
+        # it, not for the user. A subagent runs while its transcript moved in the last AGENT_IDLE_MINUTES.
+        if event == "subagent-start":
+            state.agent_started(ctx.data, session, agent, now, stamp, log)
+        elif event == "subagent-stop":
+            state.agent_stopped(ctx.data, session, agent)
+        elif event == "stop" and state.running_agents(ctx.data, session, stamp):
+            event = "stop-busy"
         # D12: an event in a feature worktree maps its session to that feature (the latest such event wins, so
         # PB-O22 holds for one session in two worktrees); a mapped event elsewhere scopes the mapped feature.
         tree, features = scope(cwd)
@@ -437,16 +484,6 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         if not path.exists() and (folder / f".{name}.icloud").exists():
             payload["skipped"].append(skip("placeholder", slug))
             continue
-        # D3, D4: an own note in `dev-loop-board/` moves into `features/`; an own name that does not parse (a 2.1.0
-        # YAML block note) is own too. A parsed foreign one stays.
-        legacy = board / name
-        if legacy.is_file() and not legacy.is_symlink():
-            mine = store.read_note(legacy)
-            if mine is None or mine.get("machine_id") == machine["id"] and not mine.get("shipped_at"):
-                if path.exists():
-                    legacy.unlink()
-                else:
-                    os.replace(legacy, path)
         # D3: an own name that parses with another machine_id stays unchanged; one that does not parse is written
         # again from the state.
         owner = store.ownership(path, machine["id"]) if path.exists() else None
@@ -465,14 +502,14 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue  # D12: a shipped note is never rewritten.
         waiting = str(entry.get("waiting") or "")
         if slug in claims and stage == 3 and result["worktree"] is None:
-            waiting = "start Session B"
+            waiting = "start Delivery"
         else:
-            if waiting == "start Session B":  # D6: its condition no longer holds.
+            if waiting == "start Delivery":  # D6: its condition no longer holds.
                 waiting = ""
             for event, features in scoped:
                 if slug in features and event == "stop":
                     waiting = STOP_WAITING.get(stage, waiting)
-                elif slug in features and event in ("prompt", "session-start", "post-tool"):
+                elif slug in features and event in ("prompt", "session-start", "post-tool", "stop-busy"):
                     waiting = ""
         fields = merge(ctx, entry, slug, result, specs.get(slug), now, waiting)
         before = {k: v for k, v in entry.items() if k != "updated"}
@@ -502,7 +539,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     own_names: set[str] = set()
     own_features: set[str] = set()
     shipped: list[tuple[str, Path]] = []
-    for path in [*sorted(folder.glob("*.md")), *sorted(board.glob("*.md"))]:
+    for path in sorted(folder.glob("*.md")):
         if path.name.startswith(".") or path.name == store.BOARD_NOTE or path.is_symlink():
             continue
         fields = store.read_note(path)
@@ -511,10 +548,6 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         if not isinstance(feature, str) or path.name != store.note_name(machine["id"], project, feature):
             continue  # A sync conflict copy is left alone.
-        if path.name in own_names:  # D4: an own note in both folders: the `dev-loop-board/` copy goes.
-            path.unlink()
-            payload["removed"].append(str(path))
-            continue
         own_names.add(path.name)
         entry = ctx.data["features"].get(feature)
         saved = entry if isinstance(entry, dict) and entry.get("head") else fields  # D1: `head` from the state.
@@ -539,8 +572,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         path.unlink()
         payload["removed"].append(str(path))
-    # D12: keep the own shipped notes of the 3 latest shipped_at in this project.
-    for _, path in sorted(shipped, reverse=True)[3:]:
+    for _, path in sorted(shipped, reverse=True)[SHIPPED_KEPT:]:
         path.unlink()
         payload["removed"].append(str(path))
     features = [f for f in features if f in kept or f in own_features]
@@ -549,7 +581,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     # D1: an entry goes once its feature is out of the write set and has no own-name note in either folder.
     for slug in list(ctx.data["features"]):
         name = store.note_name(machine["id"], project, slug)
-        if slug not in kept and not (folder / name).exists() and not (board / name).exists():
+        if slug not in kept and not (folder / name).exists():
             del ctx.data["features"][slug]
 
     names = own_names | {p.name for p in map(Path, payload["notes"])}

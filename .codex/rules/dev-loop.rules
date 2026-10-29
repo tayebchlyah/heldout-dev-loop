@@ -6,6 +6,20 @@ prefix_rule(
     not_match=["git status", "git pull"],
 )
 prefix_rule(
+    pattern=[["gh", "/usr/bin/gh", "/opt/homebrew/bin/gh"], "api"],
+    decision="prompt",
+    justification="Global rule: gh api can write refs, releases and branch protection, so it needs explicit permission each time.",
+    match=["gh api -X POST repos/o/r/releases", "/opt/homebrew/bin/gh api repos/o/r"],
+    not_match=["gh pr view 7", "gh release list"],
+)
+prefix_rule(
+    pattern=[["gh", "/usr/bin/gh", "/opt/homebrew/bin/gh"], "release"],
+    decision="prompt",
+    justification="Global rule: gh release can create, edit or delete a release, so it needs explicit permission each time.",
+    match=["gh release delete v1.0.0", "/usr/bin/gh release create v9.9.9"],
+    not_match=["gh pr view 7", "gh api repos/o/r"],
+)
+prefix_rule(
     pattern=["git", "-C"],
     decision="prompt",
     justification="Git with a directory override needs review because later arguments can hide a push or destructive write.",

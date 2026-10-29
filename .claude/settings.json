@@ -30,16 +30,38 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/git-guard.sh\"",
+            "timeout": 5,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny-acceptance-to-subagents.sh\"",
+            "timeout": 5,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny-ask.sh\"",
             "timeout": 5
           }
         ]
       },
       {
-        "matcher": "Read|Edit|Write|Grep|Glob|Bash",
+        "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny-acceptance-to-subagents.sh\"",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/worktree-wall.sh\"",
             "timeout": 5
           }
         ]
@@ -52,6 +74,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/gate.sh\"",
             "timeout": 600
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/seal.sh\" turn",
+            "timeout": 120
           }
         ]
       }
@@ -63,6 +90,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/gate.sh\"",
             "timeout": 600
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/seal.sh\" stop",
+            "timeout": 120
           }
         ]
       }
@@ -110,6 +142,18 @@
           }
         ]
       }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "rate_limit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/pause.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
   "permissions": {
@@ -125,5 +169,7 @@
       "Agent(caveman:cavecrew-builder)",
       "Agent(caveman:cavecrew-investigator)"
     ]
-  }
+  },
+  "effortLevel": "high",
+  "autoCompactWindow": 400000
 }

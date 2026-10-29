@@ -1,6 +1,6 @@
 {
   "name": "dev-loop",
-  "version": "2.1.1",
+  "version": "3.0.0-rc.1",
   "private": true,
   "description": "Stage-driven development loop skill for Claude Code and Codex, with its installer.",
   "type": "module",
