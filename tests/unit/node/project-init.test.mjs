@@ -16,6 +16,7 @@ test('init --yes writes every path of the layout, and the manifest agrees with t
     'dev-loop.json', '.gitignore', '.dev-loop/MANIFEST.json',
     '.dev-loop/hooks/claude/gate.sh', '.dev-loop/hooks/claude/gate-snapshot.sh', '.dev-loop/hooks/claude/tree-hash.sh',
     '.dev-loop/hooks/claude/deny-path.sh', '.dev-loop/hooks/claude/deny-acceptance-to-subagents.sh', '.dev-loop/hooks/claude/git-guard.sh',
+    '.dev-loop/hooks/claude/git-guard.py', '.dev-loop/hooks/codex/git-guard.py',
     '.dev-loop/hooks/codex/gate.sh', '.dev-loop/hooks/codex/deny-path.sh', '.dev-loop/hooks/codex/git-guard.sh', '.dev-loop/hooks/codex/session-start.sh',
     '.agents/skills/dev-loop/SKILL.md',
     '.claude/agents/implementer.md', '.claude/agents/spec-tester.md', '.claude/settings.json',
