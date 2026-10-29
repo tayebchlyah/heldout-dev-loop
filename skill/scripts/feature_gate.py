@@ -28,6 +28,8 @@ COLUMNS = ("file", "line", "finding", "class", "verdict")
 CLASSES = {"correctness", "security", "spec", "standards"}
 ACCEPTANCE_HINT = ("No JUnit XML read in {folder}. The acceptance command writes JUnit XML into $DEVLOOP_REPORT_DIR "
                    "(the dev-loop JUnit standard).")
+CASES_HINT = ("No executed test case in the JUnit XML in {folder}: no testcase, or every testcase skipped. A run with "
+              "no executed case is never green.")
 
 
 class TableError(Exception):
@@ -142,29 +144,34 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
     return merge(tables), 0
 
 
-def junit_failures(folder: Path) -> tuple[int | None, list[str] | None]:
+def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None]:
+    """Failing count, failing ids and executed cases (a `testcase` with no `skipped` child) of every XML there."""
     files = sorted(folder.glob("*.xml"))
     if not files:
-        return None, None
+        return None, None, None
     ids: set[str] = set()
+    cases = 0
     for path in files:
         try:
             root = ET.parse(path).getroot()
         except ET.ParseError:
-            return None, None
+            return None, None, None
         for case in root.iter("testcase"):
+            cases += case.find("skipped") is None
             if case.find("failure") is not None or case.find("error") is not None:
                 name, classname = case.get("name", ""), case.get("classname")
                 ids.add(f"{classname}::{name}" if classname else name)
-    return len(ids), sorted(ids)
+    return len(ids), sorted(ids), cases
 
 
 def known(run: dict) -> bool:
-    return run["counted"] and run["failing"] is not None and not (run["exit"] != 0 and run["failing"] == 0)
+    return (run["counted"] and run["failing"] is not None and not (run["exit"] != 0 and run["failing"] == 0)
+            and (run.get("cases") or 0) > 0)
 
 
 def green(run: dict) -> bool:
-    return run["counted"] and run["mode"] == "full" and run["exit"] == 0 and run["failing"] in (0, None)
+    return (run["counted"] and run["mode"] == "full" and run["exit"] == 0 and run["failing"] == 0
+            and (run.get("cases") or 0) > 0)
 
 
 def guard(runs: list[dict]) -> dict | None:
@@ -285,19 +292,21 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     reports.mkdir()
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
     payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
-    failing, ids = junit_failures(reports)
+    failing, ids, cases = junit_failures(reports)
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
     runs.append({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "head": head,
                  "mode": "failed" if failed else "full", "exit": payload["exit"], "failing": failing, "ids": ids,
-                 "stale": stale["state"], "counted": counted, "log": str(log)})
+                 "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases})
     write_record(record, runs)
-    payload.update(mode=runs[-1]["mode"], head=head, failing=failing, ids=ids, stale=stale, counted=counted,
-                   guard=guard(runs), record=str(record))
+    payload.update(mode=runs[-1]["mode"], head=head, failing=failing, ids=ids, cases=cases, stale=stale,
+                   counted=counted, guard=guard(runs), record=str(record))
     if failing is None:
         payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
-    return payload, 0 if payload["exit"] == 0 and counted else 1
+    elif cases == 0:
+        payload["hint"] = CASES_HINT.format(folder=reports)
+    return payload, 0 if payload["exit"] == 0 and counted and cases else 1
 
 
 def cmd_review_merge(args: argparse.Namespace) -> int:

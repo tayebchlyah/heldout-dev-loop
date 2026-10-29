@@ -137,11 +137,12 @@ RUN_TAGS = itertools.count()
 
 
 def run(failing: int | None, ids: list[str] | None = None, exit: int | None = None, mode: str = "full",
-        counted: bool = True) -> dict:
+        counted: bool = True, cases: int | None = None) -> dict:
     tag = next(RUN_TAGS)
     ids = ids if ids is not None else ([f"t::{tag}-{i}" for i in range(failing)] if failing is not None else None)
+    cases = cases if cases is not None else (failing + 1 if failing is not None else None)
     return {"failing": failing, "ids": ids, "exit": exit if exit is not None else int(bool(failing)), "mode": mode,
-            "counted": counted}
+            "counted": counted, "cases": cases}
 
 
 class ProgressGuardTests(unittest.TestCase):
@@ -158,7 +159,22 @@ class ProgressGuardTests(unittest.TestCase):
     def test_green_then_new_loop(self) -> None:
         self.assertEqual(guard([run(3), run(0)]), {"verdict": "green", "reason": None, "ids": [], "counts": []})
         self.assertEqual(guard([run(3), run(0), run(5)])["counts"], [5])
-        self.assertEqual(guard([run(None, exit=0)])["verdict"], "green")
+        self.assertEqual(guard([run(None, exit=0)])["verdict"], "unknown")
+
+    def test_executed_cases_rule(self) -> None:
+        old = run(0)
+        del old["cases"]
+        rows = [
+            ("no executed case", [run(0, cases=0)], "unknown", None),
+            ("old run without cases", [old, run(2)], "continue", [2]),
+            ("failed mode, no executed case", [run(0, mode="failed", cases=0)], "unknown", None),
+        ]
+        for name, runs, verdict, counts in rows:
+            with self.subTest(name):
+                out = guard(runs)
+                self.assertEqual(out["verdict"], verdict)
+                if counts is not None:
+                    self.assertEqual(out["counts"], counts)
 
     def test_failed_mode_green_is_continue(self) -> None:
         self.assertEqual(guard([run(2), run(0, mode="failed")])["verdict"], "continue")
@@ -184,9 +200,10 @@ exit $(cat exit.txt 2>/dev/null || echo 0)
 """
 
 
-def junit(failing: list[tuple[str, str]], passing: int = 1, kind: str = "failure") -> str:
+def junit(failing: list[tuple[str, str]], passing: int = 1, kind: str = "failure", skipped: int = 0) -> str:
     cases = "".join(f'<testcase classname="{c}" name="{n}"><{kind} message="x"/></testcase>' for c, n in failing)
     cases += "".join(f'<testcase classname="ok" name="p{i}"/>' for i in range(passing))
+    cases += "".join(f'<testcase classname="skip" name="s{i}"><skipped/></testcase>' for i in range(skipped))
     return f'<?xml version="1.0"?><testsuites><testsuite name="s">{cases}</testsuite></testsuites>'
 
 
@@ -225,13 +242,15 @@ class AcceptanceCommandTests(RepoCase):
         code, out, err = self.devloop("acceptance", cwd=repo)
         self.assertEqual(code, 1)
         self.assertEqual((out["failing"], out["ids"], out["counted"], out["mode"]), (2, ["t::a", "t::b"], True, "full"))
+        self.assertEqual(out["cases"], 3)
         self.assertEqual(out["stale"]["state"], "skipped")
         self.assertIn(f"acceptance log: {out['log']}", err)
         self.assertTrue(Path(out["log"]).is_file())
         self.assertEqual(out["head"], git(repo, "rev-parse", "HEAD"))
         self.assertEqual(out["record"], str(self.record(repo)))
         runs = json.loads(self.record(repo).read_text())["runs"]
-        self.assertEqual(set(runs[0]), {"at", "head", "mode", "exit", "failing", "ids", "stale", "counted", "log"})
+        self.assertEqual(set(runs[0]), {"at", "head", "mode", "exit", "failing", "ids", "stale", "counted", "log",
+                                        "cases"})
         self.assertEqual(runs[0]["stale"], "skipped")
         self.assertRegex(runs[0]["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertEqual(out["guard"]["verdict"], "continue")
@@ -299,6 +318,40 @@ class AcceptanceCommandTests(RepoCase):
         code, out, _ = self.devloop("acceptance", cwd=repo)
         self.assertEqual((code, out["guard"]["verdict"], out["counted"]), (0, "green", True))
         self.assertEqual(len(json.loads(self.record(repo).read_text())["runs"]), 2)
+
+    def test_executed_cases(self) -> None:
+        rows = [
+            ("no testcase", '<testsuites><testsuite name="s"/></testsuites>', 0, (), 1, 0, "unknown", True),
+            ("all skipped", junit([], passing=0, skipped=2), 0, (), 1, 0, "unknown", True),
+            ("three passing", junit([], passing=3), 0, (), 0, 3, "green", False),
+            ("failed mode", junit([], passing=1), 0, ("--failed",), 0, 1, "continue", False),
+            ("failing and skipped", junit([("t", "a")], passing=0, skipped=2), 1, (), 1, 1, "continue", False),
+        ]
+        for name, xml, exit, args, code, cases, verdict, hint in rows:
+            with self.subTest(name):
+                shutil.rmtree(self.tmp)
+                self.tmp.mkdir()
+                repo = self.make_repo({"acceptance": "./run.sh", "acceptance_failed": "./run.sh"})
+                (repo / "fixture.xml").write_text(xml)
+                (repo / "exit.txt").write_text(str(exit))
+                got, out, _ = self.devloop("acceptance", *args, cwd=repo)
+                self.assertEqual((got, out["cases"], out["guard"]["verdict"], "hint" in out), (code, cases, verdict, hint))
+                self.assertEqual(json.loads(self.record(repo).read_text())["runs"][-1]["cases"], cases)
+                if name == "three passing":
+                    self.assertEqual(out["failing"], 0)
+
+    def test_old_record_runs_are_read(self) -> None:
+        repo = self.make_repo({"acceptance": "./run.sh"})
+        base = {"at": "2026-10-01T00:00:00Z", "head": "x", "mode": "full", "stale": "skipped", "counted": True,
+                "log": "x.log"}
+        self.record(repo).parent.mkdir(parents=True)
+        self.record(repo).write_text(json.dumps({"runs": [
+            {**base, "exit": 1, "failing": 3, "ids": ["t::a", "t::b", "t::c"]},
+            {**base, "exit": 0, "failing": 0, "ids": []}]}))
+        (repo / "fixture.xml").write_text(junit([("t", "a"), ("t", "b")]))
+        (repo / "exit.txt").write_text("1")
+        _, out, _ = self.devloop("acceptance", cwd=repo)
+        self.assertEqual((out["guard"]["verdict"], out["guard"]["counts"]), ("continue", [2]))
 
     def test_not_a_git_repo(self) -> None:
         code, out, _ = self.devloop("acceptance", cwd=self.tmp)
