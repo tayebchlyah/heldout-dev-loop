@@ -220,14 +220,19 @@ class DenyWallScopeTests(unittest.TestCase):
                  lambda p: "deny" in self.run_codex(p, held).stdout)
         allowed = (f"cat > brief.md <<'EOF'\nNever read {held}.\nEOF", f"git diff -- . ':!{held}'",
                    f"git log -- ':(exclude){held}'", f"grep -rn --exclude-dir={held} foo .",
-                   f"grep -rn foo . | grep -v {held}", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"')
+                   f"grep -rn foo . | grep -v {held}", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"',
+                   f"rg -g '!{held}/**' make", "rg --glob='!**/acceptance/**' make .", f"rg --iglob '!{held}' make",
+                   f"find . -path ./{held} -prune -o -name '*.py' -print", f"find . -not -path '*/{held}/*' -name '*.py'",
+                   f"find . ! -path '*/{held}/*'")
         blocked = (f"git diff -- . ':!x' {held}/a.py", f"cat > f <<'EOF'\nx\nEOF\ncat {held}/a.py",
-                   f"grep -v x {held}/a.py")
+                   f"grep -v x {held}/a.py", f"rg -g '{held}/**' make", f"find . -name x -o -path ./{held}")
         for wall in walls:
             for command in allowed:
                 self.assertFalse(wall(self.subagent({"command": command})), command)
             for command in blocked:
                 self.assertTrue(wall(self.subagent({"command": command})), command)
+            for glob, deny in (("!" + held + "/**", False), (held + "/**", True)):
+                self.assertEqual(wall(self.subagent({"pattern": "make", "path": ".", "glob": glob})), deny, glob)
 
     def test_the_wall_ignores_a_controller_call(self) -> None:
         result = self.run_claude(
