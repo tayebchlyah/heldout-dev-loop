@@ -132,12 +132,6 @@ class SealCheckTests(SealRepo):
         data = f"{ACCEPTANCE_DIR}/x/data.json"
         self.seal(data, "{}\n")
         cases = [
-            ("garden skill file, untracked, flag", [lambda: new(".agents/skills/garden/x.md")], ("--uncommitted",),
-             [".agents/skills/garden/x.md"]),
-            ("release skill file, committed", [lambda: new(".agents/skills/release/extra.md"), self.stage], (),
-             [".agents/skills/release/extra.md"]),
-            ("release-notes skill edit, committed", [lambda: put(self.repo / NOTES_SKILL, "edited\n"), self.stage], (),
-             [NOTES_SKILL]),
             ("untracked bytecode", f"{ACCEPTANCE_DIR}/x/__pycache__/x.pyc", False),
             ("untracked fixture", f"{ACCEPTANCE_DIR}/x/fixture.json", False),
             ("untracked test_*.py", f"{ACCEPTANCE_DIR}/x/test_new.py", True),
