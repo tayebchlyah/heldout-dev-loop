@@ -118,6 +118,16 @@ def claude_transcript(*outputs: str) -> str:
     return "".join(json.dumps(line) + "\n" for line in lines)
 
 
+def search_transcript(command: str, output: str) -> str:
+    """A Claude transcript with one `Bash` search call and its `tool_result` (O17 as amended by Kit And Search Walls)."""
+    lines = [{"type": "user", "message": {"role": "user", "content": "Build task 1 of the plan."}},
+             {"type": "assistant", "message": {"role": "assistant", "content": [
+                 {"type": "tool_use", "id": "toolu_search", "name": "Bash", "input": {"command": command}}]}},
+             {"type": "user", "message": {"role": "user", "content": [
+                 {"type": "tool_result", "tool_use_id": "toolu_search", "content": output}]}}]
+    return "".join(json.dumps(line) + "\n" for line in lines)
+
+
 def codex_rollout(*outputs: str) -> str:
     lines = [{"timestamp": "2026-10-24T09:00:00Z", "type": "session_meta", "payload": {"id": "rollout-1"}}]
     for n, text in enumerate(outputs):
@@ -328,6 +338,14 @@ class ReadWallTests(SealRepo):
                 result = self.hook("claude", "deny-acceptance-to-subagents.sh",
                                    self.pre_tool(tool, tool_input, "implementer"))
                 self.assertTrue(denied(result), result.stdout + result.stderr)
+        self.install_kit()
+        put(self.repo / HELD_OUT / "test_x.py", "def test_x():\n    assert True\n")
+        for command, deny in ((f"rg -g '!{HELD_OUT}/**' assert", False), ("grep -rn assert .", True)):
+            with self.subTest(oracle="O2 amended by Kit And Search Walls", command=command):
+                result = self.hook("claude", "deny-acceptance-to-subagents.sh",
+                                   self.pre_tool("Bash", {"command": command}, "implementer"))
+                self.assertEqual(denied(result), deny, result.stdout + result.stderr)
+                self.assertEqual(allowed(result), not deny, result.stdout + result.stderr)
 
         # O4: Codex subagents by agent_type.
         cat_suite = self.hook("codex", "acceptance-wall.sh",
@@ -536,6 +554,11 @@ class ImplementerAuditTests(SealRepo):
         code, out = self.audit("impl-3", "implementer", self.transcript("impl-3.jsonl", claude_transcript(
             f"    {ACC3}\n    {ACC4}\n")))
         self.assertEqual((code, out["taint"]), (0, None), out)
+        self.start("impl-4", "implementer")
+        code, out = self.audit("impl-4", "implementer", self.transcript("impl-4.jsonl", search_transcript(
+            "grep -rn frobnicate .", f"./{HELD_OUT}/test_widget.py:1:def test_widget():\n")))
+        self.assertEqual(code, 0, out)
+        self.assertIsNotNone(out["taint"], out)
 
         # O28: a rebase that changes the sha keeps the record open.
         git(self.repo, "checkout", "-q", "main")
