@@ -55,7 +55,7 @@ test('every Codex agent is present', () => {
   }
 })
 
-test('codex default.rules ships only dev-loop git/rm safety rules', () => {
+test('codex default.rules ships only dev-loop git/gh/rm safety rules', () => {
   const rulesPath = join(repoRoot, 'codex/rules/default.rules')
   const text = readFileSync(rulesPath, 'utf8')
 
@@ -71,7 +71,7 @@ test('codex default.rules ships only dev-loop git/rm safety rules', () => {
     .map((block) => block.trim())
     .filter((block) => block.length > 0)
 
-  assert.equal(blocks.length, 4, 'default.rules must contain exactly four rule blocks')
+  assert.equal(blocks.length, 6, 'default.rules must contain exactly six rule blocks')
 
   // Extract the justification string from each block
   const justifications = blocks.map((block) => {
@@ -85,12 +85,26 @@ test('codex default.rules ships only dev-loop git/rm safety rules', () => {
     'Git with a directory override needs review because later arguments can hide a push or destructive write.',
     'Hard reset can destroy uncommitted work.',
     'Recursive deletion of filesystem root is never allowed.',
+    'Global rule: gh api can write refs, releases and branch protection, so it needs explicit permission each time.',
+    'Global rule: gh release can create, edit or delete a release, so it needs explicit permission each time.',
   ]
   assert.deepEqual(
     new Set(justifications),
     new Set(expectedJustifications),
-    'default.rules must contain exactly the four dev-loop git/rm safety justifications',
+    'default.rules must contain exactly the six dev-loop git/gh/rm safety justifications',
   )
+})
+
+test('the gh prompt rules name their pattern and examples', () => {
+  const blocks = readFileSync(join(repoRoot, 'codex/rules/default.rules'), 'utf8').split(/\n(?=prefix_rule\()/)
+  for (const [word, example] of [['api', 'gh api -X POST repos/o/r/releases'], ['release', 'gh release delete v1.0.0']]) {
+    const block = blocks.find((b) => b.includes(`"${word}"]`))
+    assert.ok(block, word)
+    assert.ok(block.includes('decision="prompt"'), word)
+    assert.ok(block.includes(`pattern=[["gh", "/usr/bin/gh", "/opt/homebrew/bin/gh"], "${word}"]`), word)
+    assert.ok(block.match(/\n    match=\[[^\n]*/)[0].includes(example), word)
+    assert.ok(block.match(/not_match=\[[^\n]*/)[0].includes('gh pr view 7'), word)
+  }
 })
 
 function trackedTexts(keep = () => true) {
