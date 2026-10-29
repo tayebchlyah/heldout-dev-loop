@@ -143,6 +143,50 @@ class SearchWallTests(unittest.TestCase):
                 if expected is not None:
                     self.assertEqual(json.loads(result.stdout), expected)
 
+    def test_expansions_options_folders_and_exclusions(self) -> None:
+        held = HELD
+        deny = ['grep -rn foo "$PWD"', 'rg foo "$(git rev-parse --show-toplevel)"', "find $PWD -type f",
+                'git grep foo -- "$PWD"', "find `pwd` -type f", 'cd src && grep -rn foo "${OLDPWD}"',
+                "rg --color never foo", "grep -r --binary-files text foo", "grep -rn --bogus x src",
+                "git grep --bogus x -- src", "rg --bogus x src",
+                "(cd src); grep -rn make .", "cd src; cd -; grep -rn make src", "cd src; popd; grep -rn make src",
+                'cd "$OLDPWD" && grep -rn make src', 'pushd "$X"; rg make src', "cd src | true; grep -rn make .",
+                "x=$(cd src); grep -rn make .", "`cd src`; grep -rn make .",
+                f"find . -path ./TESTS/ACCEPTANCE -prune -o -print", f"git grep foo -- . ':!TESTS/ACCEPTANCE'",
+                f"find . -name zz -path ./{held} -prune -o -print", f"find . ! -path './{held}/*' -o -print",
+                f"find ./ -path ./{held} -prune -o -print", f"find . -print -not -path './{held}/*'",
+                f"find . -depth -path ./{held} -prune -o -print", "rg -g '!acceptance/**' make",
+                f"rg -g '!{held}/**' -g '*.py' make", f"cd src && rg -g '!{held}/**' make ..",
+                "grep -rn foo src/*/../..", "grep -rn make " + "".join("{a,b}" for _ in range(9))]
+        allow = ['grep -rn "$pat" src', "grep -rn make ~/repo/src", "echo . | xargs grep -rn make",
+                 "rg --color never foo src", "grep -r --binary-files text foo src", "grep -rn --bogus=x make src",
+                 "rg --hidden make src", "rg --pre-glob '*.gz' make src", "rg --context-separator xx make src",
+                 "(cd tests/unit && grep -rn make .)", "cd src && grep -rn make .", "cd src && (cd ..); grep -rn make .",
+                 f"find . -path ./{held} -prune -o -print", f"find . -iname ACCEPTANCE -prune -o -print",
+                 f"git grep foo -- . ':(icase,exclude)TESTS/ACCEPTANCE'", f"rg -g '*.py' -g '!{held}/**' make",
+                 "rg -g '!acceptance' make", "grep -rn make {src,README.md}", "rg make /nonexistent"]
+        for command, expected in [(c, DENY) for c in deny] + [(c, ALLOW) for c in allow]:
+            with self.subTest(command=command):
+                self.assertEqual(decide(payload(self.top, "Bash", {"command": command}), {"HOME": str(self.top.parent)}),
+                                 expected)
+        for tool_input, expected in [({"path": ".", "glob": "!acceptance/**"}, DENY),
+                                     ({"path": ".", "glob": f"!{held}/** *.py"}, DENY),
+                                     ({"path": "$HOME"}, DENY), ({"path": ".", "glob": f"!{held}/**"}, ALLOW)]:
+            with self.subTest(tool_input=tool_input):
+                self.assertEqual(decide(payload(self.top, "Grep", {"pattern": "make", **tool_input}), {}), expected)
+        self.assertEqual(decide(payload(self.top, "Glob", {"pattern": "*.py", "path": "$HOME"}), {}), DENY)
+
+    def test_symlinks_resolve(self) -> None:
+        link, tests_link = self.tmp / "link", self.tmp / "tests-link"
+        link.symlink_to(self.top)
+        tests_link.symlink_to(self.top / "tests")
+        rows = [(link, "grep -rn make ."), (self.top, f"grep -rn make {tests_link}"), (link, "rg make tests")]
+        for cwd, command in rows:
+            with self.subTest(cwd=cwd, command=command):
+                self.assertEqual(decide(payload(cwd, "Bash", {"command": command}), {}), DENY)
+        self.assertEqual(decide(payload(link, "Bash", {"command": "grep -rn make src"}), {}), ALLOW)
+
+
 
 if __name__ == "__main__":
     unittest.main()
