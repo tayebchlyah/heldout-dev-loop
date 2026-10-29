@@ -557,6 +557,21 @@ class GitGuardParityTests(unittest.TestCase):
     def test_codex_guard_matches_claude_guard(self) -> None:
         self.assertEqual(self.body(CODEX_ASSETS / "hooks" / "git-guard.sh"), self.body(CLAUDE_HOOKS / "git-guard.sh"))
 
+    def test_codex_checker_matches_claude_checker(self) -> None:
+        self.assertEqual((CODEX_ASSETS / "hooks" / "git-guard.py").read_bytes(), (CLAUDE_HOOKS / "git-guard.py").read_bytes())
+
+    def test_a_guard_without_its_checker_asks(self) -> None:
+        for shell, hooks, decision in (("bash", CLAUDE_HOOKS, "ask"), ("sh", CODEX_ASSETS / "hooks", "deny")):
+            with tempfile.TemporaryDirectory() as tmp:
+                shutil.copy(hooks / "git-guard.sh", tmp)
+                result = subprocess.run(
+                    [shell, str(Path(tmp) / "git-guard.sh")], text=True, capture_output=True, check=False,
+                    input=json.dumps({"cwd": tmp, "tool_input": {"command": "git push origin feat"}}),
+                )
+                out = json.loads(result.stdout)["hookSpecificOutput"]
+                self.assertEqual(out["permissionDecision"], decision, shell)
+                self.assertIn("a push the guard failed to check", out["permissionDecisionReason"], shell)
+
     def test_a_git_write_in_the_old_vault_folder_is_allowed(self) -> None:
         # The kit holds no vault rule: a vault key in the config changes nothing.
         with tempfile.TemporaryDirectory() as home:
