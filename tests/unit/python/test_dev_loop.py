@@ -61,6 +61,7 @@ def wire(name: str) -> None:
 wire("test_devloop")
 wire("test_status")
 wire("test_merge_check")
+wire("test_merge_binding")
 wire("test_skill_text")
 wire("test_review_text")
 wire("test_seal")
