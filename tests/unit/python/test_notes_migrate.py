@@ -425,6 +425,18 @@ class MovePlanTests(unittest.TestCase):
             ("Security Audit/Run 1/REPORT.md", "collision"),
         ])
 
+    def test_full_case_fold_collision(self) -> None:
+        self.put({
+            "security-audit/run-1/straße.md": "r",
+            "Security Audit/Run 1/STRASSE.md": "keep",
+            "security-audit/run-2/spec.md": "r",
+            "Security Audit/Run 2/ſpec.md": "keep",
+        })
+        self.assertEqual(sorted(self.reasons()), [
+            ("Security Audit/Run 1/straße.md", "collision"),
+            ("Security Audit/Run 2/spec.md", "collision"),
+        ])
+
     def test_folder_name_keeps_inner_dot_md(self) -> None:
         self.put({"specs/20261020 Read.md Files.md": "x",
                   "plans/20261021 Read.md Files.md": "---\nspec: 20261020 Read.md Files\n---\n"})
