@@ -65,6 +65,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_metrics.py`: `metrics`.
   - `test_ci.py`: `ci wait` (stub `gh` on `PATH`).
   - `test_ci_skip.py`: `ci-skip`.
+  - `test_kit_reference.py`: `kit_reference`, `kit_matches`.
   - `test_gardener.py`: the `garden` skill, kit text, harness names.
   - `test_retro.py`: `review_due`, `sessions`.
   - `test_feature_gate.py`: `review-merge`, `acceptance`.
