@@ -17,6 +17,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import uuid
 from pathlib import Path
 
@@ -354,6 +355,35 @@ class SandboxExtractTests(unittest.TestCase):
             sandbox_run.extract(data, self.scratch, 1 << 20)
         self.assertEqual(str(err.exception), f"scratch over {1 << 20} bytes")
         self.assertEqual(self.written(), {})
+
+
+class KillLeftoversTests(unittest.TestCase):
+    """The leftover wait alone, on a fake clock and a stub docker: no Docker."""
+
+    def wait(self, exits_at: float) -> list[str]:
+        now = [0.0]
+        calls = []
+
+        def docker(*args: str) -> subprocess.CompletedProcess:
+            calls.append(args[0])
+            out = "PID STAT\n1 S\n" + ("" if now[0] >= exits_at else "7 D\n")
+            return subprocess.CompletedProcess(args, 0 if args[0] == "top" else 1, out if args[0] == "top" else "", "")
+
+        def sleep(seconds: float) -> None:
+            now[0] += seconds
+
+        stub = unittest.mock.patch.multiple(sandbox_run, docker=docker)
+        timing = unittest.mock.patch.multiple(sandbox_run.time, monotonic=lambda: now[0], sleep=sleep)
+        with stub, timing:
+            sandbox_run.kill_leftovers("c")
+        return calls
+
+    def test_a_slow_exit_inside_the_deadline_is_waited_for(self) -> None:
+        self.assertIn("top", self.wait(exits_at=5.0))
+
+    def test_a_process_past_the_deadline_is_named(self) -> None:
+        with self.assertRaisesRegex(sandbox_run.RunnerError, "leftover processes: 7 D"):
+            self.wait(exits_at=60.0)
 
 
 if __name__ == "__main__":
