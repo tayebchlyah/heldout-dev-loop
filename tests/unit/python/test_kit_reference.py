@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -39,7 +42,6 @@ def write_source(repo: Path, harnesses: list[str] | None = None, name: str = "de
 
 
 def rehash(project: Path, path: str, text: str) -> None:
-    """Write `text` to a kit copy and the hash of it into the MANIFEST, as a PR author would."""
     (project / path).write_text(text)
     manifest = project / release.MANIFEST
     data = json.loads(manifest.read_text())
@@ -224,7 +226,6 @@ class KitSourceFlowTests(KitFixture):
             json.dumps({"source_ref": {"commit": self.a}, "run_status": "complete"}))
 
     def stale_base(self) -> str:
-        """A commit whose kit copy and MANIFEST version are older: the upgrade that follows restores the A build."""
         manifest = self.repo / release.MANIFEST
         data = json.loads(manifest.read_text())
         manifest.write_text(json.dumps({**data, "version": "2.9.0"}) + "\n")
@@ -234,7 +235,6 @@ class KitSourceFlowTests(KitFixture):
         return self.commit()
 
     def release(self, edit: bool = False) -> str:
-        """The release commit B: version files and changelog for 3.0.1, then the upgrade."""
         package = json.loads((self.repo / "package.json").read_text())
         (self.repo / "package.json").write_text(json.dumps({**package, "version": "3.0.1"}) + "\n")
         (self.repo / "CHANGELOG.md").write_text("# Changelog\n\n## [3.0.1] - 2026-11-01\n\n## [3.0.0] - 2026-10-01\n")
@@ -284,6 +284,103 @@ class KitSourceFlowTests(KitFixture):
     def test_release_plan_exclude_with_edit(self) -> None:
         exclude = self.plan_from_stale_record(True)
         self.assertEqual(exclude, [COPY])
+
+    def dropped_after_upgrade(self, path: str, in_manifest: bool) -> dict:
+        (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.repo / path).write_text("old\n")
+        if in_manifest:
+            manifest = self.repo / release.MANIFEST
+            data = json.loads(manifest.read_text())
+            data["files"][path] = "sha256:" + hashlib.sha256(b"old\n").hexdigest()
+            manifest.write_text(json.dumps(data) + "\n")
+        base = self.stale_base()
+        self.install("upgrade", self.repo)
+        (self.repo / path).unlink(missing_ok=True)
+        return self.devloop("ci-skip", "--base", base, "--head", self.commit())
+
+    def test_ci_skip_deleting_a_project_file_under_a_kit_root_blocks(self) -> None:
+        for path in (".codex/rules/project.rules", ".dev-loop/hooks/claude/custom-wall.sh"):
+            with self.subTest(path=path):
+                self.assertIn(path, self.dropped_after_upgrade(path, in_manifest=False)["blocking"])
+
+    def test_ci_skip_deleting_a_dropped_kit_copy_is_allowed(self) -> None:
+        out = self.dropped_after_upgrade(".agents/skills/dev-loop/old.md", in_manifest=True)
+        self.assertEqual((out["skip"], out["blocking"]), (True, []))
+
+    def head_after(self, *steps) -> list[str]:
+        stale = self.stale_base()
+        (self.notes / "Project Note.md").write_text(RECORD.format(sha=stale))
+        (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text(
+            json.dumps({"source_ref": {"commit": stale}, "run_status": "complete"}))
+        self.release()
+        for step in steps:
+            step()
+            self.commit()
+        return self.devloop("release-plan")["exclude"]
+
+    def test_release_plan_exclude_drops_a_copy_touched_by_a_later_non_upgrade_commit(self) -> None:
+        def edit() -> None:
+            (self.repo / COPY).write_text("hand edit\n")
+
+        def restore() -> None:
+            git(self.repo, "checkout", "HEAD~1", "--", COPY)
+        self.assertEqual(self.head_after(edit, restore), [release.MANIFEST])
+
+    def test_release_plan_exclude_keeps_a_copy_across_a_second_upgrade(self) -> None:
+        def bump() -> None:
+            package = json.loads((self.repo / "package.json").read_text())
+            (self.repo / "package.json").write_text(json.dumps({**package, "version": "3.0.2"}) + "\n")
+            self.install("upgrade", self.repo)
+        self.assertEqual(self.head_after(bump), [COPY, release.MANIFEST])
+
+    def test_release_plan_exclude_drops_a_manifest_deleted_then_re_added(self) -> None:
+        manifest = self.repo / release.MANIFEST
+        saved = []
+
+        def delete() -> None:
+            saved.append(manifest.read_text())
+            manifest.unlink()
+
+        def readd() -> None:
+            manifest.write_text(saved[0])
+        self.assertEqual(self.head_after(delete, readd), [COPY])
+
+    def test_kit_reference_on_python_without_extraction_filters(self) -> None:
+        real = tarfile.TarFile.extractall
+
+        def old_python(tar, path=".", members=None, *, numeric_owner=False, **kwargs):
+            if kwargs:
+                raise TypeError("extractall() got an unexpected keyword argument 'filter'")
+            return real(tar, path, members, numeric_owner=numeric_owner)
+        with unittest.mock.patch.object(tarfile.TarFile, "extractall", old_python):
+            self.assertIsNotNone(release.kit_reference(self.repo, self.a))
+
+    def test_kit_reference_refuses_an_unsafe_archive(self) -> None:
+        real = subprocess.run
+        for name, kind, target in (("/abs.txt", tarfile.REGTYPE, ""), ("a/../../up.txt", tarfile.REGTYPE, ""),
+                                   ("link", tarfile.SYMTYPE, "../../out"), ("hard", tarfile.LNKTYPE, "../out")):
+            with self.subTest(name=name):
+                buffer = io.BytesIO()
+                with tarfile.open(fileobj=buffer, mode="w") as tar:
+                    info = tarfile.TarInfo(name)
+                    info.type, info.linkname = kind, target
+                    tar.addfile(info, io.BytesIO(b"") if kind == tarfile.REGTYPE else None)
+                done = subprocess.CompletedProcess([], 0, stdout=buffer.getvalue())
+
+                def archive_only(cmd, *args, **kwargs):
+                    return done if "archive" in cmd else real(cmd, *args, **kwargs)
+                with unittest.mock.patch.object(release.subprocess, "run", archive_only):
+                    self.assertIsNone(release.kit_reference(self.repo, self.a))
+
+    def test_kit_reference_none_when_node_hangs(self) -> None:
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(shutil.which("git"))
+        (bin_dir / "node").write_text("#!/bin/sh\nsleep 30\n")
+        (bin_dir / "node").chmod(0o755)
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(bin_dir)}), \
+                unittest.mock.patch.object(release, "NODE_TIMEOUT", 1):
+            self.assertIsNone(release.kit_reference(self.repo, self.a))
 
 
 if __name__ == "__main__":

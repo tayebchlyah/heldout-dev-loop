@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -239,6 +240,7 @@ def version_at(repo: Path, commit: str) -> str | None:
 
 
 KIT_SOURCE = ("lib", "skill", "skills", "claude", "codex", "package.json")
+NODE_TIMEOUT = 120
 KIT_SCRIPT = """
 import { pathToFileURL } from 'node:url'
 const [root, harnesses] = process.argv.slice(1)
@@ -251,6 +253,18 @@ console.log(JSON.stringify({
   links: kit.links.map((l) => l.path),
 }))
 """
+
+
+def check_archive(tar: tarfile.TarFile) -> None:
+    for member in tar.getmembers():
+        name = posixpath.normpath(member.name)
+        if name.startswith("/") or name == ".." or name.startswith("../") or not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
+            raise ValueError(member.name)
+        if member.issym() or member.islnk():
+            origin = posixpath.dirname(name) if member.issym() else ""
+            target = posixpath.normpath(posixpath.join(origin, member.linkname))
+            if member.linkname.startswith("/") or target == ".." or target.startswith("../"):
+                raise ValueError(member.name)
 
 
 def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
@@ -273,16 +287,17 @@ def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
         if archive.returncode != 0:
             return None
         with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
-            tar.extractall(tmp, filter="data")
+            check_archive(tar)
+            tar.extractall(tmp)
         built = subprocess.run(["node", "--input-type=module", "-e", KIT_SCRIPT, tmp, json.dumps(harnesses)],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, timeout=NODE_TIMEOUT)
         if built.returncode != 0:
             return None
         data = json.loads(built.stdout)
         executable, links = set(data["exec"]), set(data["links"])
         return {path: (entry, "120000" if path in links else "100755" if path in executable else "100644")
                 for path, entry in data["files"].items()}
-    except (OSError, ValueError, KeyError, tarfile.TarError):
+    except (OSError, ValueError, KeyError, tarfile.TarError, subprocess.TimeoutExpired):
         return None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

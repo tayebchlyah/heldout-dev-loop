@@ -106,7 +106,9 @@ def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
         allowed |= release.kit_matches(repo, head, set(paths), ref)
         tree = release.run_git(repo, "ls-tree", "-r", "-z", "--name-only", "--full-tree", head)
         present = set(tree.stdout.split("\0"))
-        allowed |= {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p not in ref}
+        old_files = (release.manifest_at(repo, mb) or {}).get("files")
+        dropped = old_files if isinstance(old_files, dict) else {}
+        allowed |= {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in dropped and p not in ref}
     return sorted(p for p in paths if p not in allowed or p in MERGED)
 
 

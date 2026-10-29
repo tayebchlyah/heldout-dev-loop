@@ -430,10 +430,8 @@ class ReleasePlanTests(PlanRepo):
         self.assertEqual((code, out["error"]), (1, "run-folder-exists"))
 
 
-ONE, TWO, GONE = ".agents/skills/k/one.md", ".agents/skills/k/two.md", ".agents/skills/k/gone.md"
+ONE, TWO = ".agents/skills/k/one.md", ".agents/skills/k/two.md"
 MANIFEST = ".dev-loop/MANIFEST.json"
-SUB, LOST = ".agents/skills/sub", ".agents/skills/k/lost.md"
-GATE = ".dev-loop/hooks/claude/gate.sh"
 
 
 class ReleasePlanExcludeTests(PlanRepo):
@@ -441,8 +439,7 @@ class ReleasePlanExcludeTests(PlanRepo):
 
     def setUp(self) -> None:
         super().setUp()
-        self.a = self.state("3.0.0-rc.1", {ONE: "1", TWO: "1", GONE: "g", "src/app.py": "a", "dev-loop.json": "{}",
-                                          ".claude/settings.json": "{}", ".codex/hooks.json": "{}"})
+        self.a = self.state("3.0.0-rc.1", {ONE: "1", TWO: "1", "src/app.py": "a", "dev-loop.json": "{}"})
         self.record(self.a)
         self.run_folder()
 
@@ -451,10 +448,9 @@ class ReleasePlanExcludeTests(PlanRepo):
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "run-metadata.json").write_text(json.dumps({"source_ref": {"commit": self.a}, "run_status": "complete"}))
 
-    def state(self, version: str | None, files: dict[str, str | None], links: dict[str, str] | None = None,
-              entries: dict[str, str] | None = None) -> str:
-        """Write `files` (None deletes) and `links`, then a MANIFEST of the files under `.agents` and the links under
-        `.claude/skills` as they are, with `entries` over them; `version` None removes it. Commit, return the sha."""
+    def state(self, version: str | None, files: dict[str, str | None], entries: dict[str, str] | None = None) -> str:
+        """Write `files` (None deletes), then a MANIFEST of the files under `.agents`
+        as they are, with `entries` over them; `version` None removes it. Commit, return the sha."""
         for path, text in files.items():
             target = self.repo / path
             if text is None:
@@ -462,18 +458,12 @@ class ReleasePlanExcludeTests(PlanRepo):
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text)
-        for path, dest in (links or {}).items():
-            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
-            (self.repo / path).symlink_to(dest)
         manifest = self.repo / MANIFEST
         if version is None:
             manifest.unlink()
         else:
             found = {str(p.relative_to(self.repo)): "sha256:" + hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in (self.repo / ".agents").rglob("*") if p.is_file()}
-            skills = self.repo / ".claude" / "skills"
-            found.update({str(p.relative_to(self.repo)): f"link:{os.readlink(p)}"
-                          for p in (skills.iterdir() if skills.is_dir() else []) if p.is_symlink()})
             manifest.parent.mkdir(parents=True, exist_ok=True)
             manifest.write_text(json.dumps({"version": version, "files": {**found, **(entries or {})}}))
         self.git("add", "-A")
