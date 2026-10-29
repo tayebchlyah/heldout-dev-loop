@@ -442,6 +442,11 @@ def check_push(repo, args, drift):
         else:
             pos.append(a)
         j += 1
+    # #89 D15: push.followTags makes every push a tag push. "/" reads the global and system scopes
+    # for a folder made earlier in the line.
+    rc, follow = git(repo if os.path.isdir(repo) else "/", "config", "--type=bool", "--get", "push.followTags")
+    if (follow == "true" or rc not in (0, 1)) and "--no-follow-tags" not in args:
+        ask("a tag push (push.followTags is set)")
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     remote, rest, specs = (pos[0] if pos else ""), pos[1:], []
     while rest:
@@ -451,10 +456,11 @@ def check_push(repo, args, drift):
         ask("a push of HEAD after a command that moves it")
     if not specs:
         r = remote or git(repo, "config", f"branch.{branch}.remote")[1] or "origin"
+        merge = git(repo, "config", f"branch.{branch}.merge")[1]
         if (git(repo, "config", "--get-all", f"remote.{r}.push")[1]
                 or git(repo, "config", f"remote.{r}.mirror")[1] == "true"
                 or git(repo, "config", "push.default")[1] == "matching"
-                or git(repo, "config", f"branch.{branch}.merge")[1].removeprefix("refs/heads/") in ("main", "master")):
+                or merge and (not merge.startswith("refs/heads/") or merge.removeprefix("refs/heads/") in ("", "main", "master"))):
             ask("a bare push whose remote config can reach other branches")
         specs = ["HEAD"]
     if lease and ("--force-with-lease" not in lease or "/" not in branch or os.environ["AGENT_ID"]
@@ -472,6 +478,8 @@ def check_push(repo, args, drift):
     for spec in specs:
         if spec.startswith(("+", ":")) or "*" in spec:
             ask("a forced, deleting or wildcard refspec")
+        if ":" not in spec and remote and git(repo, "config", "--get-all", f"remote.{remote}.push")[1]:
+            ask("a push whose remote config can reach other branches")
         src, dst = refspec(repo, spec, branch)
         if not src and ":" not in spec and "head" in drift:
             # #89: a command earlier in the line (checkout -b) may make the branch this push names.
