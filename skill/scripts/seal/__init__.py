@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
 ACCEPTANCE_DIR = "tests/acceptance"
 SEAL_TRAILER = "Dev-Loop-Seal"
 PATCH_TRAILER = "Dev-Loop-Seal-Patch"
+SEARCH_WORD = re.compile(r"(?<![\w.-])(?:[efr]?grep|rg|find)(?![\w.-])")
 
 
 def run_git(repo: Path, *args: str, stdin: str | None = None,
