@@ -187,10 +187,10 @@ class GuardTests(unittest.TestCase):
     """The PreToolUse guards of the kit source, fed hook JSON on stdin."""
 
     def guard(self, harness: str, script: str, payload: dict | str, *args: str,
-              env: dict | None = None) -> subprocess.CompletedProcess[str]:
+              env: dict | None = None, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         text = payload if isinstance(payload, str) else json.dumps(payload)
         return subprocess.run([shutil.which(SHELL[harness]), str(ROOT / harness / "hooks" / script), *args],
-                              input=text, capture_output=True, text=True, timeout=60, env=env)
+                              input=text, capture_output=True, text=True, timeout=60, env=env, cwd=cwd)
 
     def denied(self, result: subprocess.CompletedProcess[str]) -> bool:
         if result.returncode == 2:
@@ -295,6 +295,21 @@ class GuardTests(unittest.TestCase):
                     if caller is spec_tester and deny:
                         self.assertEqual(result.returncode, 2)
                         self.assertIn("devloop.py seal", result.stderr)
+
+
+    def test_a_stdlib_name_in_the_hook_cwd_keeps_the_seal_block(self) -> None:
+        planted = tempfile.TemporaryDirectory()
+        self.addCleanup(planted.cleanup)
+        marker = Path(planted.name, "ran")
+        for name in ("re", "shlex"):
+            Path(planted.name, f"{name}.py").write_text(f"open({str(marker)!r}, 'a').write('{name}')\nraise SystemExit\n")
+        seal = "python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature x --message y"
+        for harness in ("claude", "codex"):
+            with self.subTest(harness=harness):
+                result = self.guard(harness, "git-guard.sh", {"cwd": "/repo", "agent_id": "a", "agent_type": "implementer",
+                                                              "tool_input": {"command": seal}}, cwd=planted.name)
+                self.assertTrue(self.denied(result), result.stderr)
+        self.assertFalse(marker.exists())
 
 
 class SpecTesterSourceWallTests(unittest.TestCase):

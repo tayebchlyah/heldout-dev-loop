@@ -69,12 +69,12 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
         with ThreadPoolExecutor(8) as pool:
             return list(zip(commands, pool.map(lambda command: self.decision(command, branch, env), commands)))
 
-    def decision(self, command: str, branch: str = "feat", env: dict | None = None) -> str:
+    def decision(self, command: str, branch: str = "feat", env: dict | None = None, cwd: str | None = None) -> str:
         self.on(branch)
         result = subprocess.run(
             ["bash", str(CLAUDE_HOOKS / "git-guard.sh")],
             input=json.dumps({"cwd": self.repo, "tool_input": {"command": command}}),
-            text=True, capture_output=True, check=False, env=env,
+            text=True, capture_output=True, check=False, env=env, cwd=cwd,
         )
         if result.returncode == 2:
             return "deny"
@@ -313,6 +313,28 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
                         "cat <<'EOF'\ngit status\ngit push origin main")):
             self.assertEqual(got, "ask", command)
 
+    def test_a_quoted_or_commented_heredoc_marker_hides_no_command(self) -> None:
+        reset = "git re" + "set --hard HEAD"
+        for command, got in self.decisions(('echo "<<true"\ngit push origin HEAD:main\ntrue',
+                        "echo '<<true'\ngh release create v9.9.9\ntrue",
+                        ": x # <<true\ngit push --force origin HEAD:main\ntrue", f'echo "<<true"\n{reset}\ntrue',
+                        'echo "a\n<<true"\ngit push origin HEAD:main\ntrue', "echo $((1<<x))\ngit push origin HEAD:main\nx",
+                        "echo $'it\\'s <<true'\ngit push origin HEAD:main\ntrue")):
+            self.assertIn(got, ("ask", "deny"), command)
+        for command, got in self.decisions(("git commit -m \"$(cat <<'EOF'\nmsg: git push origin main\nEOF\n)\"",
+                        "cat > n.md <<'EOF'\nit's the git push origin main step\nEOF")):
+            self.assertEqual(got, "allow", command)
+
+    def test_a_stdlib_name_in_the_hook_cwd_runs_no_code(self) -> None:
+        planted = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, planted)
+        marker = os.path.join(planted, "ran")
+        for name in ("re", "shlex"):
+            with open(os.path.join(planted, f"{name}.py"), "w") as module:
+                module.write(f"open({marker!r}, 'a').write('{name}')\nraise SystemExit\n")
+        self.assertEqual(self.decision("cat <<'EOF'\nmsg\nEOF\ngit push origin HEAD:main", cwd=planted), "ask")
+        self.assertFalse(os.path.exists(marker))
+
     def test_a_cd_into_a_variable_the_line_surely_set_is_followed(self) -> None:
         # The session is on main. The push runs in the feature repo only when the
         # variable surely holds its path.
@@ -472,12 +494,12 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
 class CodexGitGuardPushTests(ClaudeGitGuardPushTests):
     """The Codex guard holds the same push rule. Codex cannot ask, so every ask is a deny."""
 
-    def decision(self, command: str, branch: str = "feat", env: dict | None = None) -> str:
+    def decision(self, command: str, branch: str = "feat", env: dict | None = None, cwd: str | None = None) -> str:
         self.on(branch)
         result = subprocess.run(
             ["sh", str(CODEX_ASSETS / "hooks" / "git-guard.sh")],
             input=json.dumps({"cwd": self.repo, "tool_input": {"command": command}}),
-            text=True, capture_output=True, check=False, env=env,
+            text=True, capture_output=True, check=False, env=env, cwd=cwd,
         )
         decision = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] if result.stdout else "allow"
         return "ask" if decision == "deny" else decision
