@@ -373,28 +373,44 @@ def gh_command(args, cwds, fed):
         ask("a gh " + " ".join(path))
 
 
+def qualify(name, tag):
+    if name.startswith("refs/"):
+        return name
+    if name.startswith(("heads/", "tags/", "remotes/")):
+        return "refs/" + name
+    return ("refs/tags/" if tag else "refs/heads/") + name
+
+
+def refspec(repo, spec, branch):
+    # #89 D13: the full source and destination of a refspec with no + or *, "" for a part that does not resolve.
+    src, colon, dst = spec.partition(":")
+    if src in ("HEAD", "@"):
+        full = f"refs/heads/{branch}" if branch else ""
+    elif git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src}")[0] == 0:
+        # allow-comment: dependency, rev-parse prints nothing for a name that is both a branch and a tag.
+        full = f"refs/tags/{src}"
+    elif git(repo, "rev-parse", "--git-dir")[0]:
+        full = qualify(src, False)
+    else:
+        rc, out = git(repo, "rev-parse", "--symbolic-full-name", src)
+        full = out if rc == 0 and out.startswith("refs/") else ""
+    if not colon:
+        return full, full if full.startswith(("refs/heads/", "refs/tags/")) else ""
+    return full, dst if dst in ("HEAD", "@") else qualify(dst, full.startswith("refs/tags/"))
+
+
 def tag_names(repo, specs, branch):
     # Every tag name the push writes on the remote: the destination of x:refs/tags/v1,
     # a local tag pushed by name, tag <name>. A wildcard counts as many. Each maps to
     # the <src> of a <src>:<dst> refspec, else None (a tag pushed by name).
-    names, j = {}, 0
-    while j < len(specs):
-        spec = specs[j].lstrip("+")
-        if spec == "tag" and j + 1 < len(specs):
-            j += 1
-            spec = "refs/tags/" + specs[j]
+    names = {}
+    for spec in specs:
+        spec = spec.lstrip("+")
         if "*" in spec:
             return {"*": None, "**": None}
-        src, colon, dst = spec.partition(":")
-        given = src if colon else None
-        if src in ("HEAD", "@"):
-            src = branch
-        dst = dst or src
+        dst = refspec(repo, spec, branch)[1]
         if dst.startswith("refs/tags/"):
-            names[dst.removeprefix("refs/tags/")] = given
-        elif src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src.removeprefix('refs/tags/')}")[0] == 0:
-            names[dst] = given
-        j += 1
+            names[dst.removeprefix("refs/tags/")] = spec.partition(":")[0] if ":" in spec else None
     return names
 
 
@@ -427,7 +443,10 @@ def check_push(repo, args, drift):
             pos.append(a)
         j += 1
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
-    remote, specs = (pos[0] if pos else ""), pos[1:]
+    remote, rest, specs = (pos[0] if pos else ""), pos[1:], []
+    while rest:
+        w = rest.pop(0)
+        specs.append("refs/tags/" + rest.pop(0) if w == "tag" and rest else w)
     if "head" in drift and (not specs or any(s.partition(":")[0] in ("HEAD", "@") for s in specs)):
         ask("a push of HEAD after a command that moves it")
     if not specs:
@@ -453,12 +472,11 @@ def check_push(repo, args, drift):
     for spec in specs:
         if spec.startswith(("+", ":")) or "*" in spec:
             ask("a forced, deleting or wildcard refspec")
-        src, _, dst = spec.partition(":")
-        if src in ("HEAD", "@"):
-            src = branch
-        dst = dst or src
-        if (src.startswith("refs/tags/") or dst.startswith("refs/tags/")
-                or (src and git(repo, "show-ref", "--verify", "--quiet", f"refs/tags/{src}")[0] == 0)):
+        src, dst = refspec(repo, spec, branch)
+        if not src and ":" not in spec and "head" in drift:
+            # #89: a command earlier in the line (checkout -b) may make the branch this push names.
+            src = dst = qualify(spec, False)
+        if src.startswith("refs/tags/") or dst.startswith("refs/tags/"):
             names = tag_names(repo, specs, branch)
             if len(names) != 1 or not fnmatch.fnmatchcase(next(iter(names)), "v*"):
                 ask("a tag push")
@@ -470,11 +488,13 @@ def check_push(repo, args, drift):
             if rc:
                 ask("a tag push", f"; release-check failed: {src} does not resolve")
             ask(f"a tag push of {sha}", release_suffix(repo, ["--sha", sha]))
-        if not dst:
+        if not dst and spec in ("HEAD", "@"):
             ask("a push from a detached HEAD" if git(repo, "rev-parse", "--git-dir")[0] == 0
                 else "a push from an unknown repository")
-        if dst.removeprefix("refs/heads/") in ("main", "master"):
+        if dst in ("refs/heads/main", "refs/heads/master"):
             ask("a push to main or master")
+        if not dst.startswith("refs/heads/") or dst == "refs/heads/":
+            ask("a push to a ref that is not a feature branch")
 
 
 def check_git(args, cwds, drift, fed):

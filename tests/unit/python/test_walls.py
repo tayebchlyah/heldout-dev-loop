@@ -422,6 +422,8 @@ class ClaudeGitGuardSubagentTests(unittest.TestCase):
     def test_a_subagent_push_that_would_ask_is_denied(self) -> None:
         with tempfile.TemporaryDirectory() as repo:
             subprocess.run(["git", "-C", repo, "init", "-q", "-b", "feat"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"],
+                           check=True)
             command = {"command": "git push origin main"}
             sub = self.run_guard({"cwd": repo, "agent_id": "a1", "tool_input": command})
             self.assertEqual((sub.returncode, sub.stdout), (2, ""))
