@@ -29,7 +29,7 @@ COLUMNS = ("file", "line", "finding", "class", "verdict")
 CLASSES = {"correctness", "security", "spec", "standards"}
 ACCEPTANCE_HINT = ("No JUnit XML read in {folder}. The acceptance command writes JUnit XML into $DEVLOOP_REPORT_DIR "
                    "(the dev-loop JUnit standard).")
-SHORT_HINT = ("ran {cases} of {floor} cases (full run at {head}). A full run that executes fewer cases than an "
+SHORT_HINT = ("ran {tests} of {floor} cases (full run at {head}). A full run that executes fewer cases than an "
               "earlier full run since the newest seal is never green: the user rules.")
 CASES_HINT = ("No executed test case in the JUnit XML in {folder}: no testcase, or every testcase skipped. A run with "
               "no executed case is never green.")
@@ -147,23 +147,27 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
     return merge(tables), 0
 
 
-def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None]:
+def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None, int | None]:
     files = sorted(folder.glob("*.xml"))
     if not files:
-        return None, None, None
+        return None, None, None, None
     ids: set[str] = set()
+    executed: set[str] = set()
     cases = 0
     for path in files:
         try:
             root = ET.parse(path).getroot()
         except ET.ParseError:
-            return None, None, None
+            return None, None, None, None
         for case in root.iter("testcase"):
-            cases += case.find("skipped") is None
+            name, classname = case.get("name", ""), case.get("classname")
+            if case.find("skipped") is None:
+                cases += 1
+                test = name.split(" (", 1)[0]
+                executed.add(f"{classname}::{test}" if classname else test)
             if case.find("failure") is not None or case.find("error") is not None:
-                name, classname = case.get("name", ""), case.get("classname")
                 ids.add(f"{classname}::{name}" if classname else name)
-    return len(ids), sorted(ids), cases
+    return len(ids), sorted(ids), cases, len(executed)
 
 
 def known(run: dict) -> bool:
@@ -204,11 +208,11 @@ def guard(runs: list[dict]) -> dict | None:
 def case_floor(runs: list[dict], suite: str | None) -> tuple[int | None, str | None]:
     floor, floor_head = None, None
     for run in runs:
-        cases = run.get("cases")
-        if run["mode"] != "full" or type(cases) is not int or "suite" not in run or run["suite"] != suite:
+        tests = run.get("tests")
+        if run["mode"] != "full" or type(tests) is not int or "suite" not in run or run["suite"] != suite:
             continue
-        if floor is None or cases >= floor:
-            floor, floor_head = cases, run.get("head")
+        if floor is None or tests >= floor:
+            floor, floor_head = tests, run.get("head")
     return floor, floor_head
 
 
@@ -307,7 +311,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     reports.mkdir()
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
     payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
-    failing, ids, cases = junit_failures(reports)
+    failing, ids, cases, tests = junit_failures(reports)
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
@@ -315,15 +319,15 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     floor, floor_head = (None, None) if failed else case_floor(runs, suite)
     this = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "head": head,
             "mode": "failed" if failed else "full", "exit": payload["exit"], "failing": failing, "ids": ids,
-            "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases, "floor": floor,
-            "suite": suite}
-    this["short"] = green(this) and floor is not None and cases < floor
+            "stale": stale["state"], "counted": counted, "log": str(log), "cases": cases, "tests": tests,
+            "floor": floor, "suite": suite}
+    this["short"] = green(this) and floor is not None and tests < floor
     runs.append(this)
     write_record(record, runs)
-    payload.update(mode=this["mode"], head=head, failing=failing, ids=ids, cases=cases, floor=floor,
+    payload.update(mode=this["mode"], head=head, failing=failing, ids=ids, cases=cases, tests=tests, floor=floor,
                    short=this["short"], stale=stale, counted=counted, guard=guard(runs), record=str(record))
     if this["short"]:
-        payload["hint"] = SHORT_HINT.format(cases=cases, floor=floor, head=floor_head[:12])
+        payload["hint"] = SHORT_HINT.format(tests=tests, floor=floor, head=floor_head[:12])
     elif failing is None:
         payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
     elif cases == 0:

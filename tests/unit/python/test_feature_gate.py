@@ -250,7 +250,7 @@ class AcceptanceCommandTests(RepoCase):
         self.assertEqual(out["record"], str(self.record(repo)))
         runs = json.loads(self.record(repo).read_text())["runs"]
         self.assertEqual(set(runs[0]), {"at", "head", "mode", "exit", "failing", "ids", "stale", "counted", "log",
-                                        "cases", "floor", "short", "suite"})
+                                        "cases", "tests", "floor", "short", "suite"})
         self.assertEqual(runs[0]["stale"], "skipped")
         self.assertRegex(runs[0]["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertEqual(out["guard"]["verdict"], "continue")
@@ -622,7 +622,7 @@ class FeatureGateTextTests(unittest.TestCase):
         "never green: the user rules. Never count by hand", "new seal"):
             self.assertIn(needle, stage6)
         contract = (ROOT / "reference" / "cli" / "acceptance.md").read_text()
-        for needle in ("`floor`", "`short`", "`floor_head`", "HEAD:tests/acceptance", "`suite`", "`reason` `short`"):
+        for needle in ("`floor`", "`tests`", "`short`", "`floor_head`", "HEAD:tests/acceptance", "`suite`", "`reason` `short`"):
             self.assertIn(needle, contract)
         self.assertNotIn("Merge the tables, dedupe by file and line", stage6)
         self.assertNotIn("docker compose ps --format", stage6)
