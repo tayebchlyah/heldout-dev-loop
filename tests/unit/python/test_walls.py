@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, git_in, write
+from test_search_wall import search_repo
 
 
 class GateGuardTests(unittest.TestCase):
@@ -215,24 +216,30 @@ class DenyWallScopeTests(unittest.TestCase):
 
     def test_a_heredoc_body_or_an_exclusion_is_not_a_read(self) -> None:
         held = self.HELD_OUT
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        top = str(search_repo(Path(tmp.name) / "repo"))
+        codex_wall = lambda p: subprocess.run(  # noqa: E731
+            ["sh", str(CODEX_ASSETS / "hooks" / "acceptance-wall.sh")], input=json.dumps(p), text=True,
+            capture_output=True, check=False).returncode == 2
         walls = (lambda p: self.run_claude("deny-acceptance-to-subagents.sh", p).returncode == 2,
-                 lambda p: self.run_claude("deny-path.sh", p, held).returncode == 2,
-                 lambda p: "deny" in self.run_codex(p, held).stdout)
+                 lambda p: self.run_claude("deny-path.sh", p, held).returncode == 2)
         allowed = (f"cat > brief.md <<'EOF'\nNever read {held}.\nEOF", f"git diff -- . ':!{held}'",
-                   f"git log -- ':(exclude){held}'", f"grep -rn --exclude-dir={held} foo .",
-                   f"grep -rn foo . | grep -v {held}", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"',
+                   f"git log -- ':(exclude){held}'", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"',
                    f"rg -g '!{held}/**' make", "rg --glob='!**/acceptance/**' make .", f"rg --iglob '!{held}' make",
                    f"find . -path ./{held} -prune -o -name '*.py' -print", f"find . -not -path '*/{held}/*' -name '*.py'",
                    f"find . ! -path '*/{held}/*'")
         blocked = (f"git diff -- . ':!x' {held}/a.py", f"cat > f <<'EOF'\nx\nEOF\ncat {held}/a.py",
-                   f"grep -v x {held}/a.py", f"rg -g '{held}/**' make", f"find . -name x -o -path ./{held}")
-        for wall in walls:
-            for command in allowed:
-                self.assertFalse(wall(self.subagent({"command": command})), command)
-            for command in blocked:
-                self.assertTrue(wall(self.subagent({"command": command})), command)
+                   f"grep -v x {held}/a.py", f"rg -g '{held}/**' make", f"find . -name x -o -path ./{held}",
+                   f"grep -rn --exclude-dir={held} foo .", f"grep -rn foo . | grep -v {held}")
+        for wall in (*walls, codex_wall):
+            for command, deny in [(c, False) for c in allowed] + [(c, True) for c in blocked]:
+                payload = {**self.subagent({"command": command}), "tool_name": "Bash", "cwd": top}
+                self.assertEqual(wall(payload), deny, command)
+        for wall in (*walls, lambda p: "deny" in self.run_codex(p, held).stdout):
             for glob, deny in (("!" + held + "/**", False), (held + "/**", True)):
-                self.assertEqual(wall(self.subagent({"pattern": "make", "path": ".", "glob": glob})), deny, glob)
+                payload = {**self.subagent({"pattern": "make", "path": ".", "glob": glob}), "tool_name": "Grep", "cwd": top}
+                self.assertEqual(wall(payload), deny, glob)
 
     def test_the_wall_ignores_a_controller_call(self) -> None:
         result = self.run_claude(

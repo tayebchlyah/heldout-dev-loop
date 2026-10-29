@@ -15,7 +15,8 @@
 # of `tests/*/**`). No substring rule closes those; only a resolve-and-compare
 # check would. The walls are hooks; the transcript audit backs them up.
 # Treat a block as a signal to stop and report, never as something to work
-# around: an agent that disguises its input has defeated the hook wall.
+# around: an agent that disguises its input has defeated the hook wall. One exception: after a
+# search-scope block, search again on named source folders or with the suite excluded.
 #
 # Match path-bearing fields only, never the whole tool input: a subagent that
 # writes a doc or a config whose BODY names the suite is not reading it, and
@@ -30,6 +31,11 @@
 # caller: kit files change only by upgrade.
 # Candidates are normalized before matching, so a trailing slash, a doubled
 # slash, a dot segment or a capital letter does not walk past the wall.
+# Search rule (#91): a subagent but spec-tester cannot run a recursive search (Grep, Glob, grep -r,
+# rg, git grep, find) whose root is tests/acceptance or a folder above it, unless it excludes the
+# suite; the engine is devloop.py search-wall of the kit, skipped when no kit CLI is found, and a
+# CLI error blocks. Not walled: wrappers (xargs, env, command, sh -c, bash -c, eval), and ls -R, tree,
+# fd, ag, ack, git ls-files. The audit path rule backs up the search tools.
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
@@ -37,6 +43,21 @@ command -v jq >/dev/null 2>&1 || fail "jq is missing"
 [ -n "$IN" ] || fail "empty hook input"
 printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
 normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
+WORD='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
+search_wall() {
+  local dir top cli= out
+  for dir in "$(printf '%s' "$1" | jq -r '.cwd // empty')" "$CLAUDE_PROJECT_DIR"; do
+    [ -n "$dir" ] || continue
+    top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || continue
+    [ -f "$top/.agents/skills/dev-loop/scripts/devloop.py" ] && { cli=$top/.agents/skills/dev-loop/scripts/devloop.py; break; }
+  done
+  [ -n "$cli" ] || return 0
+  out=$(printf '%s' "$1" | python3 "$cli" search-wall 2>/dev/null) || fail "search check failed"
+  printf '%s' "$out" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "search check failed"
+  [ "$(printf '%s' "$out" | jq -r '.deny')" = true ] || return 0
+  printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason')" >&2
+  exit 2
+}
 
 # Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs),
 # matched on repo-relative paths only: a user-level ~/.claude/agents/implementer.md is not a kit file.
@@ -147,4 +168,8 @@ if echo "$CANDIDATES" | grep -q 'tests/acceptance'; then
   echo "Blocked: held-out suite. Subagents cannot read it." >&2
   exit 2
 fi
+case "$(printf '%s' "$IN" | jq -r '.tool_name // empty')" in
+  Grep|Glob) search_wall "$IN" ;;
+  Bash) printf '%s' "$IN" | jq -r '.tool_input.command // empty' | grep -Eq "$WORD" && search_wall "$IN" ;;
+esac
 exit 0
