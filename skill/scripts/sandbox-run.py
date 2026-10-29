@@ -4,9 +4,10 @@
 The command is target code under audit: treat it as hostile. Exit: the command's own
 code, 124 on timeout, 125 with one `sandbox-run: <reason>` stderr line on a runner error.
 The image needs `env`, `mkdir`, `sleep`, `tar`, `chmod` and `sh`.
-The copy is never a git repository: a `.git` path part or a file named `HEAD` (any case) is
-dropped. A note file (`.md`, `.canvas`, `.base`, any case) gets `.txt` appended, so a notes
-app that runs code in notes never opens it.
+The copy holds only inert names: a file with a `.git` path part (any case) is dropped, and every
+other file whose name does not end in `.txt` (any case) gets `.txt` appended, so no tool of the host
+reads it as configuration, a repository, a note or a diagram. A file whose final name would pass 255
+bytes is skipped.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 SIZE_RE = re.compile(r"^[1-9][0-9]*[bkmg]?$")
 ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-NOTE_SUFFIXES = (".md", ".canvas", ".base")
 
 
 class RunnerError(Exception):
@@ -210,11 +210,12 @@ def extract(data: bytes, scratch: Path, cap: int) -> None:
         for member in members:
             name = posixpath.normpath(member.name)
             parts = name.split("/")
-            if name.startswith("/") or ".." in parts or name == "." or ".git" in name.casefold().split("/") \
-                    or parts[-1].casefold() == "head":
+            if name.startswith("/") or ".." in parts or name == "." or ".git" in name.casefold().split("/"):
                 continue
-            if parts[-1].casefold().endswith(NOTE_SUFFIXES):
+            if not parts[-1].casefold().endswith(".txt"):
                 parts[-1] += ".txt"
+            if len(parts[-1].encode()) > 255:
+                continue
             path = scratch
             safe = True
             for part in parts[:-1]:
