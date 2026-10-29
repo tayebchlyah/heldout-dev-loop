@@ -228,10 +228,13 @@ class DenyWallScopeTests(unittest.TestCase):
                    f"git log -- ':(exclude){held}'", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"',
                    f"rg -g '!{held}/**' make", "rg --glob='!**/acceptance/**' make .", f"rg --iglob '!{held}' make",
                    f"find . -path ./{held} -prune -o -name '*.py' -print", f"find . -not -path '*/{held}/*' -name '*.py'",
-                   f"find . ! -path '*/{held}/*'")
+                   f"find . ! -path '*/{held}/*'", f"git grep make -- . ':^{held}'", f"git grep make -- . :^{held}",
+                   f"cd src && find . -path ./{held} -prune -o -print")
         blocked = (f"git diff -- . ':!x' {held}/a.py", f"cat > f <<'EOF'\nx\nEOF\ncat {held}/a.py",
                    f"grep -v x {held}/a.py", f"rg -g '{held}/**' make", f"find . -name x -o -path ./{held}",
-                   f"grep -rn --exclude-dir={held} foo .", f"grep -rn foo . | grep -v {held}")
+                   f"grep -rn --exclude-dir={held} foo .", f"grep -rn foo . | grep -v {held}",
+                   f"cat -- ! -path {held}/test_x.py", f"cat -path {held}/x -prune",
+                   f"find . -path ./{held} -prune -o -print; cat {held}/test_x.py")
         for wall in (*walls, codex_wall):
             for command, deny in [(c, False) for c in allowed] + [(c, True) for c in blocked]:
                 payload = {**self.subagent({"command": command}), "tool_name": "Bash", "cwd": top}

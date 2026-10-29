@@ -123,12 +123,13 @@ fi
 CANDIDATES=$(echo "$IN" | jq -r '
   # A heredoc body and an exclusion (:!x, :(exclude)x, --exclude-dir=x, grep -v x)
   # name a path without reaching it.
+  def find_clean: gsub("(?<o>(^|[ \t])-(path|ipath|wholename|name|iname) +)[^ \t\n;|&]+(?= +-prune)"; "\(.o)")
+    | gsub("(?<o>(^|[ \t])(-not|!) +-path +)[^ \t\n;|&]+"; "\(.o)");
   def clean: gsub("<<-?[ \t]*(?<q>[\u0027\"]?)(?<d>[A-Za-z_][A-Za-z0-9_.-]*)\\k<q>(?<r>[^\n]*)\n(?:[^\n]*\n)*?\t*\\k<d>(?=\n|$)"; "<<\(.d)\(.r)")
-    | gsub("(:!|:\\([^)]*exclude[^)]*\\)|--exclude-dir=)[^ \t\n;|&]*"; "")
+    | gsub("(:!|:\\^|:\\([^)]*exclude[^)]*\\)|--exclude-dir=)[^ \t\n;|&]*"; "")
     | gsub("(?<g>grep( +-[A-Za-z]+)* +-[A-Za-z]*v[A-Za-z]*) +[^ \t\n;|&]+"; "\(.g)")
     | gsub("(?<o>(^|[ \t])(-g|--glob|--iglob)(=| *)[\u0027\"]?)![^ \t\n;|&\u0027\"]*"; "\(.o)")
-    | gsub("(?<o>(^|[ \t])-(path|ipath|wholename|name|iname) +)[^ \t\n;|&]+(?= +-prune)"; "\(.o)")
-    | gsub("(?<o>(^|[ \t])(-not|!) +-path +)[^ \t\n;|&]+"; "\(.o)");
+    | gsub("(?<s>(^|[;&|\n(])[ \t]*find([ \t][^;&|\n]*)?)"; "\(.s | find_clean)");
   def unless_excluded: if type == "string" and startswith("!") then empty else . end;
   def fields:
     [ .tool_input.file_path?, .tool_input.path?, .tool_input.notebook_path?,
