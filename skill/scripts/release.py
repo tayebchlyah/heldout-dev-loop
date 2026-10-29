@@ -9,10 +9,14 @@ import argparse
 import fcntl
 import fnmatch
 import hashlib
+import io
 import json
 import os
 import re
+import shutil
 import subprocess
+import tarfile
+import tempfile
 from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
@@ -20,7 +24,7 @@ from pathlib import Path
 import ci_skip
 from autonomy import write_atomic
 from devloop import AUDITS, emit, old_layout
-from merge_check import is_test_or_doc
+from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
@@ -232,6 +236,56 @@ def version_at(repo: Path, commit: str) -> str | None:
     data = manifest_at(repo, commit)
     version = data.get("version") if data else None
     return version if isinstance(version, str) and version else None
+
+
+KIT_SOURCE = ("lib", "skill", "skills", "claude", "codex", "package.json")
+KIT_SCRIPT = """
+import { pathToFileURL } from 'node:url'
+const [root, harnesses] = process.argv.slice(1)
+const { buildKit } = await import(pathToFileURL(root + '/lib/kit.mjs'))
+const { buildManifest } = await import(pathToFileURL(root + '/lib/manifest.mjs'))
+const kit = buildKit({ packageRoot: root, harnesses: JSON.parse(harnesses) })
+console.log(JSON.stringify({
+  files: buildManifest('0', kit).files,
+  exec: kit.files.filter((f) => f.executable).map((f) => f.path),
+  links: kit.links.map((l) => l.path),
+}))
+"""
+
+
+def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
+    """The kit that `commit`'s own installer builds, as `{path: (MANIFEST entry, git mode)}`; None when the tree
+    at `commit` is not the kit source, its `dev-loop.json` has no `harnesses`, or `git` or `node` fails."""
+    config = read_config(repo, commit)
+    harnesses = config.get("harnesses") if config else None
+    if not (isinstance(harnesses, list) and harnesses and all(isinstance(h, str) for h in harnesses)):
+        return None
+    package = run_git(repo, "show", f"{commit}:package.json")
+    try:
+        named = json.loads(package.stdout).get("name") == "dev-loop" if package.returncode == 0 else False
+    except (ValueError, AttributeError):
+        return None
+    if not named or any(run_git(repo, "cat-file", "-e", f"{commit}:lib/{f}").returncode != 0 for f in ("kit.mjs", "manifest.mjs")):
+        return None
+    tmp = tempfile.mkdtemp(prefix="kit-reference-")
+    try:
+        archive = subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", commit, "--", *KIT_SOURCE], capture_output=True)
+        if archive.returncode != 0:
+            return None
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
+            tar.extractall(tmp, filter="data")
+        built = subprocess.run(["node", "--input-type=module", "-e", KIT_SCRIPT, tmp, json.dumps(harnesses)],
+                               capture_output=True, text=True)
+        if built.returncode != 0:
+            return None
+        data = json.loads(built.stdout)
+        executable, links = set(data["exec"]), set(data["links"])
+        return {path: (entry, "120000" if path in links else "100755" if path in executable else "100644")
+                for path, entry in data["files"].items()}
+    except (OSError, ValueError, KeyError, tarfile.TarError):
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def kit_copies(repo: Path, commit: str, among: set[str]) -> set[str]:
