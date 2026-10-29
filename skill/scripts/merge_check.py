@@ -32,13 +32,11 @@ DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
-    """Every branch of `refs/heads` whose lower-case name ends with `/<slug>`, sorted."""
-    names = (git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") or "").splitlines()
-    return sorted(n.removeprefix("refs/heads/") for n in names if n.lower().endswith(f"/{slug}"))
+    names = (git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads") or "").splitlines()
+    return sorted(n for n in names if n.lower().endswith(f"/{slug}"))
 
 
 def branch_worktree(repo: Path, branch: str) -> Path | None:
-    """The worktree that has the branch checked out, or rewrites it in a rebase in progress, else None."""
     worktree: Path | None = None
     for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
         if line.startswith("worktree "):
@@ -215,10 +213,10 @@ def merge_check(args: argparse.Namespace) -> int:
         reviewed_pids = {c: patch_id(repo, c) for c in
                          git_out(repo, "rev-list", "--reverse", f"{base}..{reviewed}" if base else reviewed).split()}
         left = collections.Counter(p for p in reviewed_pids.values() if p)
-        landing: set[str | None] = set()
+        landing: collections.Counter[str | None] = collections.Counter()
         for commit in git_out(repo, "rev-list", "--reverse", f"{ref}..{head}").split():
             pid = patch_id(repo, commit)
-            landing.add(pid)
+            landing[pid] += 1
             if pid == "":
                 continue
             if pid is not None and left[pid] > 0:
@@ -241,7 +239,11 @@ def merge_check(args: argparse.Namespace) -> int:
         cherry_out = git_out(repo, "cherry", ref, reviewed, *([base] if base else []))
         upstream = {line[2:] for line in cherry_out.splitlines() if line.startswith("- ")}
         for commit, pid in reviewed_pids.items():
-            if pid and pid not in landing and commit not in upstream:
+            if not pid:
+                continue
+            if landing[pid] > 0:
+                landing[pid] -= 1
+            elif commit not in upstream:
                 reasons.append({"reason": "dropped", "commit": commit})
     return emit({"merge": "human" if reasons else "auto", "reasons": reasons, "reviewed": reviewed,
                  "head": head, "branch": branch, "unreviewed_minor": minor, "feature": slug, "track": track}, 0)

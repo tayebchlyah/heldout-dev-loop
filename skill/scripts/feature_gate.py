@@ -145,7 +145,6 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
 
 
 def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None]:
-    """Failing count, failing ids and executed cases (a `testcase` with no `skipped` child) of every XML there."""
     files = sorted(folder.glob("*.xml"))
     if not files:
         return None, None, None
