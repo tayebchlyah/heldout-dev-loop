@@ -307,6 +307,60 @@ class AcceptanceCommandTests(RepoCase):
 
 
 
+class AcceptanceMainRefTests(RepoCase):
+    """`acceptance` runs `commands.<key>` of `dev-loop.json` at the main ref, and only when the worktree agrees."""
+
+    RECORD = {"runs": [{"at": "2026-10-01T00:00:00Z", "head": "x", "mode": "full", "exit": 1, "failing": 1,
+                        "ids": ["t::a"], "stale": "skipped", "counted": True, "log": "x.log"}]}
+
+    def linked(self, repo: Path) -> Path:
+        wt = self.tmp / "wt"
+        git(repo, "worktree", "add", "-q", "-b", "feat/x", str(wt))
+        return wt
+
+    def test_refused_runs_nothing(self) -> None:
+        both = {"acceptance": "./run.sh", "acceptance_failed": "./run.sh"}
+        rows = [
+            ("changed", {"acceptance": "./run.sh"}, {"acceptance": "true"}, (), "commands.acceptance"),
+            ("absent here", {"acceptance": "./run.sh"}, None, (), "commands.acceptance"),
+            ("failed differs", both, {**both, "acceptance_failed": "true"}, ("--failed",), "commands.acceptance_failed"),
+            ("absent on main", {"gate": "true"}, {"gate": "true", "acceptance": "./run.sh"}, (), "commands.acceptance"),
+            ("commands not an object", "sh x", "sh x", (), "commands.acceptance"),
+            ("no main ref", {"acceptance": "./run.sh"}, {"acceptance": "./run.sh"}, (), "main"),
+        ]
+        for name, main, change, args, needle in rows:
+            with self.subTest(name):
+                shutil.rmtree(self.tmp)
+                self.tmp.mkdir()
+                repo = self.make_repo(main)
+                wt = self.linked(repo)
+                config = {"version": "2.1.1", "harnesses": ["claude"]}
+                if change is not None:
+                    config["commands"] = change
+                (wt / "dev-loop.json").write_text(json.dumps(config))
+                if name == "no main ref":
+                    git(repo, "branch", "-m", "main", "trunk")
+                record = self.record(wt)
+                record.parent.mkdir(parents=True, exist_ok=True)
+                record.write_text(json.dumps(self.RECORD))
+                code, out, _ = self.devloop("acceptance", *args, cwd=wt)
+                self.assertEqual(code, 1, out)
+                self.assertIn(needle, out["error"])
+                self.assertIn("refs/heads/main", out["error"])
+                self.assertFalse((wt / "ran.marker").exists())
+                logs = record.parent / "logs"
+                self.assertEqual(list(logs.glob("*")) if logs.exists() else [], [])
+                self.assertEqual(json.loads(record.read_text()), self.RECORD)
+
+    def test_main_command_runs_in_a_linked_worktree(self) -> None:
+        repo = self.make_repo({"acceptance": "./run.sh"})
+        wt = self.linked(repo)
+        (wt / "fixture.xml").write_text(junit([]))
+        code, out, _ = self.devloop("acceptance", cwd=wt)
+        self.assertEqual(code, 0, out)
+        self.assertTrue((wt / "ran.marker").exists())
+
+
 FAKE_DOCKER = """#!/usr/bin/env python3
 import json, os, sys
 spec = json.load(open(os.environ["FAKE_DOCKER"]))
