@@ -82,6 +82,27 @@ class PushSpellingTests(GuardRepo, unittest.TestCase):
             self.assertNotIn("release-check", self.guard("claude", command)[1], command)
         self.assert_allowed(["git push --no-follow-tags origin feat/x"])
 
+    def test_bare_push_resolves_the_push_remote_in_gits_order(self) -> None:
+        bare = "a bare push whose remote config can reach other branches"
+        self.git("remote", "add", "m", "https://example.invalid/o/m.git")
+        self.git("config", "remote.pushDefault", "m")
+        self.assert_allowed(["git push"])
+        self.git("config", "remote.m.mirror", "true")
+        self.assert_refused(["git push"], bare)
+        self.git("config", "remote.m.mirror", "false")
+        self.git("config", "remote.m.push", "refs/heads/feat/x:refs/heads/main")
+        self.assert_refused(["git push"], bare)
+        self.git("config", "--unset", "remote.m.push")
+        self.git("config", "remote.pushDefault", "origin")
+        self.git("config", "branch.feat/x.pushRemote", "m")
+        self.git("config", "remote.m.mirror", "true")
+        self.assert_refused(["git push"], bare)
+
+    def test_a_push_option_value_is_no_opt_out_of_follow_tags(self) -> None:
+        self.git("config", "push.followTags", "true")
+        self.assert_refused(["git push -o --no-follow-tags origin feat/x", "git push --push-option --no-follow-tags origin feat/x"],
+                            "push.followTags")
+
     def test_follow_tags_from_the_global_config_or_a_bad_value(self) -> None:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)

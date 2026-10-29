@@ -79,9 +79,9 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
             self.assertEqual(self.guard("claude", command)[0], "allow", command)
         # gh flags around release, the new alias, and a word the parser cannot read.
         for harness, decision in [("claude", "ask"), ("codex", "deny")]:
-            for command, part in [("gh release new v1.0.0", f"at {self.a}"), ("gh -R o/r release create v1.0.0", f"at {self.a}"),
-                                  ("gh release -R o/r create v1.0.0", f"at {self.a}"),
-                                  ("gh --repo=o/r release --repo o/r new v1.0.0", f"at {self.a}"),
+            for command, part in [("gh release new v1.0.0", f"at {self.a}"), ("gh -R o/r release create v1.0.0", "a gh release on another repository"),
+                                  ("gh release -R o/r create v1.0.0", "a gh release on another repository"),
+                                  ("gh --repo=o/r release --repo o/r new v1.0.0", "a gh release on another repository"),
                                   ("gh release $SUB v1.0.0", "release-check failed"),
                                   ("gh release -R o/r 'cr'$X v1.0.0", "release-check failed")]:
                 with self.subTest(harness=harness, command=command):
