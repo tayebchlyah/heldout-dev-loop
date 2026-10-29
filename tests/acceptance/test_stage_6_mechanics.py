@@ -14,8 +14,11 @@ Fixture choices the spec leaves open:
 - Every name in the temp repos is invented. HOME is a temporary folder.
 - Merge Check Binding amends O8 to O19 and O21: `dev-loop.json` holds the same `commands.acceptance` at the main ref
   and in the worktree. The repo runs on `main` and commits its `dev-loop.json` before the first run, so both match.
-- Merge Check Binding amends O12 and O13: green, and the `--failed` `continue`, also need executed cases; each such
-  run here has one passing case, `cases` 1.
+- Merge Check Binding amends O12 and O13: green, and the `--failed` `continue`, also need executed cases; the
+  `--failed` run here has one passing case, `cases` 1.
+- Acceptance Case Floor amends O10, O11 and O12: no full run executes fewer cases than an earlier full run. Each full
+  run with a JUnit file in F2 executes 7 cases, its failing cases plus passing ones, so a green run there is never
+  `short`.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ ACCEPTANCE_SH = REPO_ROOT / "scripts" / "acceptance.sh"
 COLUMNS = ("file", "line", "finding", "class", "verdict")
 RUN_KEYS = {"at", "head", "mode", "exit", "failing", "ids", "stale", "counted", "log"}
 UTC_SECONDS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+LOOP_CASES = 7
 
 RUNNER = """#!/bin/sh
 F='{fix}'
@@ -174,12 +178,12 @@ class Sandbox(unittest.TestCase):
 
     # acceptance helpers
 
-    def fixture(self, failing: list[str] | None, exit_code: int, errors: bool = False) -> None:
+    def fixture(self, failing: list[str] | None, exit_code: int, errors: bool = False, passing: int = 1) -> None:
         report = self.fix / "report.xml"
         if failing is None:
             report.unlink(missing_ok=True)
         else:
-            report.write_text(junit(failing, errors=errors))
+            report.write_text(junit(failing, passing=passing, errors=errors))
         (self.fix / "exit").write_text(f"{exit_code}\n")
 
     def ran(self) -> int:
@@ -187,8 +191,8 @@ class Sandbox(unittest.TestCase):
         return len(log.read_text().splitlines()) if log.exists() else 0
 
     def accept(self, failing: list[str] | None, exit_code: int, failed: bool = False,
-               errors: bool = False) -> tuple[int, dict, str]:
-        self.fixture(failing, exit_code, errors=errors)
+               errors: bool = False, passing: int = 1) -> tuple[int, dict, str]:
+        self.fixture(failing, exit_code, errors=errors, passing=passing)
         before = self.ran()
         code, payload, stderr, tail = self.cli("acceptance", *(["--failed"] if failed else []))
         self.assertNotIn("error", payload, tail)
@@ -291,11 +295,14 @@ class AcceptanceLoopTests(Sandbox):
         self.assertIsInstance(guard, dict, payload)
         return guard
 
+    def full(self, failing: list[str], exit_code: int, errors: bool = False) -> tuple[int, dict, str]:
+        return self.accept(failing, exit_code, errors=errors, passing=LOOP_CASES - len(failing))
+
     def test_f2_acceptance_loop(self) -> None:
         """F2, O8, O9, O10, O11, O12, O13, O14, O15 (no compose file), O20, O21, and the record (D11)."""
         head = self.commit("Initial", "2026-01-01T00:00:00Z")
 
-        code, run, stderr = self.accept(["b.Widgets::test_y", "a.Widgets::test_x"], 1, errors=True)
+        code, run, stderr = self.full(["b.Widgets::test_y", "a.Widgets::test_x"], 1, errors=True)
         with self.subTest(oracle=8):
             self.assertEqual(code, 1, run)
             self.assertEqual(run.get("exit"), 1)
@@ -321,7 +328,7 @@ class AcceptanceLoopTests(Sandbox):
             self.assertIn("junit", str(run.get("hint")).lower(), run)
             self.assertEqual(self.guard(run).get("verdict"), "unknown")
 
-        code, run, _ = self.accept([], 1)
+        code, run, _ = self.full([], 1)
         with self.subTest(oracle=14):
             self.assertEqual(code, 1, run)
             self.assertEqual(run.get("failing"), 0)
@@ -334,35 +341,35 @@ class AcceptanceLoopTests(Sandbox):
             self.assertEqual(self.guard(run).get("verdict"), "continue")
             self.assertEqual(run.get("cases"), 1, run)
 
-        code, run, _ = self.accept([], 0)
+        code, run, _ = self.full([], 0)
         with self.subTest(oracle=12, step="green"):
             self.assertEqual(code, 0, run)
             self.assertEqual(self.guard(run).get("verdict"), "green")
-            self.assertEqual(run.get("cases"), 1, run)
+            self.assertEqual(run.get("cases"), LOOP_CASES, run)
 
-        _, run, _ = self.accept(["c::t1", "c::t2", "c::t3", "c::t4", "c::t5"], 1)
+        _, run, _ = self.full(["c::t1", "c::t2", "c::t3", "c::t4", "c::t5"], 1)
         with self.subTest(oracle=12, step="first run of the new loop"):
             self.assertEqual(self.guard(run).get("counts"), [5])
-        _, run, _ = self.accept(["d::t1", "d::t2", "d::t3"], 1)
+        _, run, _ = self.full(["d::t1", "d::t2", "d::t3"], 1)
         with self.subTest(oracle=12, step="new loop"):
             self.assertEqual(self.guard(run).get("counts"), [5, 3])
-        _, run, _ = self.accept(["e::t1", "e::t2", "e::t3"], 1)
+        _, run, _ = self.full(["e::t1", "e::t2", "e::t3"], 1)
         with self.subTest(oracle=10, step="5, 3, 3"):
             guard = self.guard(run)
             self.assertEqual(guard.get("verdict"), "continue")
             self.assertIsNone(guard.get("reason"))
             self.assertEqual(guard.get("counts"), [5, 3, 3])
-        _, run, _ = self.accept(["f::t1", "f::t2", "f::t3", "f::t4"], 1)
+        _, run, _ = self.full(["f::t1", "f::t2", "f::t3", "f::t4"], 1)
         with self.subTest(oracle=10, step="5, 3, 3, 4"):
             guard = self.guard(run)
             self.assertEqual((guard.get("verdict"), guard.get("reason")), ("stop", "no-progress"))
             self.assertEqual(guard.get("counts"), [5, 3, 3, 4])
 
-        self.accept([], 0)
+        self.full([], 0)
         stuck = "s.Widgets::test_stuck"
         for count in (6, 5, 4):
-            self.accept([stuck] + [f"g{count}::t{i}" for i in range(count - 1)], 1)
-        _, run, _ = self.accept([stuck, "h::t1", "h::t2"], 1)
+            self.full([stuck] + [f"g{count}::t{i}" for i in range(count - 1)], 1)
+        _, run, _ = self.full([stuck, "h::t1", "h::t2"], 1)
         with self.subTest(oracle=11):
             guard = self.guard(run)
             self.assertEqual((guard.get("verdict"), guard.get("reason")), ("stop", "stuck"))
