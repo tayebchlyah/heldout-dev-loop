@@ -32,7 +32,7 @@ DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 SIZE_RE = re.compile(r"^[1-9][0-9]*[bkmg]?$")
 ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-LEFTOVER_WAIT = 10.0  # seconds: an out-of-memory kill frees a large heap before the process leaves
+LEFTOVER_WAIT_SECONDS = 10.0
 
 
 class RunnerError(Exception):
@@ -150,17 +150,20 @@ def failed(step: str, done: subprocess.CompletedProcess) -> RunnerError:
 
 def kill_leftovers(ctr: str) -> None:
     # A process the command left behind could stop tar or write into its stdout: none may survive.
-    deadline = time.monotonic() + LEFTOVER_WAIT
+    deadline = time.monotonic() + LEFTOVER_WAIT_SECONDS
     while True:
         killed = docker("exec", "-u", "65534:65534", ctr, "sh", "-c", "kill -9 -1")
         if killed.returncode in (126, 127):  # no `sh` in the image; 1 only means nothing was left to kill
             raise failed("kill in the container", killed)
         top = docker("top", ctr, "-o", "pid,stat")
-        alive = [line for line in top.stdout.splitlines()[1:] if not line.split()[1:2] or not line.split()[1].startswith("Z")]
+        rows = [line.split() for line in top.stdout.splitlines()[1:] if line.strip()]
+        alive = [tuple(row[:2]) for row in rows if len(row) < 2 or not row[1].startswith("Z")]
         if top.returncode == 0 and len(alive) == 1:  # only PID 1, `sleep infinity`
             return
         if time.monotonic() >= deadline:
-            raise RunnerError("leftover processes: " + "; ".join(" ".join(line.split()) for line in alive if line.split()[:1] != ["1"]))
+            if top.returncode != 0:
+                raise failed("docker top", top)
+            raise RunnerError("leftover processes (init included): " + "; ".join(" ".join(row) for row in alive))
         time.sleep(0.1)
 
 
