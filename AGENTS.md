@@ -49,7 +49,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_size.py`: `size-check`, seams, size in `gate`, `seal`.
   - `test_seal_hooks.py`: seal hooks, guard, spec-tester, Codex walls.
   - `test_kit_walls.py`: path, kit, `cd` walls, canary script, Codex trust warning.
-  - `test_walls.py`, `test_git_guard.py`, `test_gh_guard.py`: deny walls, Codex hooks, git and gh guard.
+  - `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: deny walls, Codex hooks, git and gh guard.
   - `test_board_robust.py`: board robustness.
   - `test_notes_migrate.py`, `test_notes_migrate_apply.py`: `notes-migrate`.
   - `test_board_layout.py`: board folders, names.
