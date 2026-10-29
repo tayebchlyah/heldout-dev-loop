@@ -16,6 +16,7 @@ from pathlib import Path
 
 import devloop
 from board.writer import inside, worktrees
+from notes_migrate.plan import _fold
 from notes_migrate.texts import Plan, build_plan, plan_hash
 from notes_path import NotesPathError, resolve
 
@@ -50,10 +51,6 @@ def _exact(path: Path) -> bool:
     except OSError:
         return False
     return unicodedata.normalize("NFC", path.name) in names
-
-
-def _fold(name: str) -> str:
-    return unicodedata.normalize("NFC", unicodedata.normalize("NFD", name).casefold())
 
 
 def _clash(notes: Path, dst: Path, skip: Path | None = None) -> bool:
