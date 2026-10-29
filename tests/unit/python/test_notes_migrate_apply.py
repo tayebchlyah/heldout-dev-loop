@@ -434,6 +434,21 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual((code, out["error"]), (1, "io"))
         self.assertEqual(sorted(os.listdir(self.notes)), [".notes-migrate.json", "framing", "plans", "specs"])
 
+    def test_case_variant_synced_in_after_plan(self) -> None:
+        self.put(DEMO)
+        planned = self.run_cli()[0]["plan_hash"]
+        real = os.rename
+
+        def synced(src, dst):
+            real(src, dst)
+            if Path(dst).name == "Spec.md":
+                write(self.folder / "plan.md", "keep")
+
+        out, code = self.call(planned, mock.patch("os.rename", synced))
+        self.assertEqual((code, out["error"]), (1, "io"))
+        self.assertEqual((self.folder / "plan.md").read_text(), "keep")
+        self.assertTrue((self.notes / "plans/20261021 Demo Work.md").is_file())
+
     def test_journal_write_error_is_json(self) -> None:
         self.put(DEMO)
         planned = self.run_cli()[0]["plan_hash"]
