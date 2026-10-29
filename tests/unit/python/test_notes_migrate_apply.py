@@ -449,6 +449,21 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual((self.folder / "plan.md").read_text(), "keep")
         self.assertTrue((self.notes / "plans/20261021 Demo Work.md").is_file())
 
+    def test_greek_case_pair_synced_in_after_plan(self) -> None:
+        self.put({"security-audit/run-1/a.md": "a", "security-audit/run-1/\u0399\u0308\u0301 notes.md": "r",
+                  "Security Audit/Run 1/old.md": "x"})
+        planned = self.run_cli()[0]["plan_hash"]
+        real = os.rename
+
+        def synced(src, dst):
+            real(src, dst)
+            if Path(dst).name == "a.md":
+                write(self.notes / "Security Audit/Run 1/\u0390 notes.md", "keep")
+
+        out, code = self.call(planned, mock.patch("os.rename", synced))
+        self.assertEqual((code, out["error"]), (1, "io"))
+        self.assertEqual((self.notes / "Security Audit/Run 1/\u0390 notes.md").read_text(), "keep")
+
     def test_log_name_skips_case_variant(self) -> None:
         self.put(DEMO)
         planned = self.run_cli()[0]["plan_hash"]

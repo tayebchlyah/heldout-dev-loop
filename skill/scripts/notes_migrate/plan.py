@@ -39,7 +39,7 @@ SF_DATALESS = 0x40000000
 
 
 def _fold(name: str) -> str:
-    return unicodedata.normalize("NFC", name).casefold()
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFD", name).casefold())
 
 
 def _nfc(name: str) -> str:
