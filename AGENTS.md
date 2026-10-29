@@ -130,7 +130,7 @@ python3 tests/unit/python/test_dev_loop.py  # skill suite
 
 Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: JUnit `skill.xml` there; a dead chunk errors its ids. Argument (test name): plain unittest, no report.
 
-`scripts/gate.sh` (full gate, both suites) fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
+`scripts/gate.sh` fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree runs it first (Stage 3). Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
 
 ## Project kit
 
