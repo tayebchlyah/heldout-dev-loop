@@ -572,7 +572,7 @@ class GitGuardParityTests(unittest.TestCase):
                 )
                 out = json.loads(result.stdout)["hookSpecificOutput"]
                 self.assertEqual(out["permissionDecision"], decision, shell)
-                self.assertIn("a push the guard failed to check", out["permissionDecisionReason"], shell)
+                self.assertIn("a command the guard failed to check", out["permissionDecisionReason"], shell)
 
     def test_a_git_write_in_the_old_vault_folder_is_allowed(self) -> None:
         # The kit holds no vault rule: a vault key in the config changes nothing.

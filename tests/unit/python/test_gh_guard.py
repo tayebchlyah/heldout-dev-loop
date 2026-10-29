@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import unittest
 
@@ -119,6 +120,48 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
 
     def test_fed_gh_is_refused(self) -> None:
         self.assert_refused(["echo 'api -X POST repos/o/r/releases' | xargs gh", "echo v1.0.0 | xargs gh release view"], CANNOT)
+
+    def test_a_line_that_fails_to_parse_asks_when_it_holds_gh(self) -> None:
+        self.assert_refused(["gh release delete v1.0.0 -y  # don't keep it", "gh pr merge 7 --admin --subject $'Fix the user\\'s bug'",
+                             "echo it's; gh api -X POST repos/o/r/releases"], CANNOT)
+        self.assert_allowed(["echo don't", "grep -rn 'don't"])
+
+    def test_gh_behind_what_the_guard_does_not_list_is_refused(self) -> None:
+        delete = "gh release delete v1"
+        self.assert_refused([f"2>/dev/null {delete}", f">/dev/null {delete}", f"2> /dev/null {delete}", f"sudo -p x {delete}",
+                             f"sudo -iu root {delete}", f"exec -a foo {delete}", f"env -P /usr/bin {delete}", f"op run -- {delete}",
+                             f"direnv exec . {delete}", f"stdbuf -oL {delete}", f"caffeinate -i {delete}", f"doas {delete}",
+                             f"flock /tmp/l {delete}", f"time -o f {delete}", f"ssh box {delete}", "g''h release delete v1",
+                             '"g"h release delete v1', "\\gh release delete v1"], "a gh release delete")
+        self.assert_refused(["ssh box gh release create v9"], "a release create")
+
+    def test_a_quoted_redirection_sign_is_an_argument(self) -> None:
+        self.assert_refused(["gh pr merge 12 --rebase --subject '>' --admin", "gh pr merge 12 --subject \"<\" --admin",
+                             "gh pr merge 12 --subject \\> --admin"], "a merge that bypasses branch protection")
+        self.assert_refused(["gh api graphql -t '<' -fquery='mutation{createRef(input:{})}'"], "a gh api write")
+        self.assert_allowed(["gh pr view 7 --json state --jq '.a > 1' > out.json", "gh pr view 7 2>/dev/null"])
+
+    def test_a_glob_in_a_decision_word_is_refused(self) -> None:
+        self.assert_refused(["gh pr mer? 12 --admin", "gh extension exe? my-ext", "gh rel* delete v1",
+                             "gh api repos/o/r/pulls?state=open"], CANNOT)
+        self.assert_refused(["gh release de[l]ete v1"], "a gh release command")
+        self.assert_allowed(["gh api 'repos/o/r/pulls?state=open'", 'gh api repos/o/r/pulls --jq ".[].number"'])
+
+    def test_a_release_on_another_repository_is_refused_unchecked(self) -> None:
+        self.stub("ok")
+        reason = "a gh release on another repository"
+        self.assert_refused(["gh release create v1.0.0 -R other/repo", "gh release create v1.0.0 --repo=o/r", "gh -R o/r release create v1.0.0",
+                             "GH_REPO=o/r gh release create v1.0.0", "gh release create v1.0.0 -Ro/r"], reason)
+        self.assert_refused(["gh release create v1.0.0"], reason, env={**os.environ, "GH_REPO": "o/r"})
+        self.assertFalse(self.calls.exists())
+
+    def test_graphql_read_needs_the_graphql_endpoint(self) -> None:
+        self.assert_refused(["gh api repos/o/r/graphql -f query='query{viewer{login}}'", "gh api foo/graphql -f a=b"], "a gh api write")
+        self.assert_allowed(["gh api https://api.github.com/graphql -f query='query{viewer{login}}'"])
+
+    def test_run_writes_are_refused(self) -> None:
+        self.assert_refused(["gh run rerun 1", "gh run cancel 1", "gh run delete 1"], "a gh run")
+        self.assert_allowed(["gh run list", "gh run view 1", "gh run watch 1", "gh run download 1", "gh run"])
 
 
 class GhKitTextTests(unittest.TestCase):

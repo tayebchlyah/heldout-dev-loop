@@ -1,5 +1,5 @@
-# The checker of git-guard.sh: the git push rule and the gh rule (#89 D1 to D10: gh api, release, family
-# writes, pr merge --admin, extension and agent runs, and gh words it cannot read).
+# The checker of git-guard.sh: the git push rule and the gh rule (#89: gh api, release, family writes,
+# pr merge --admin, extension and agent runs, and gh words it cannot read).
 # Run as python3 -I git-guard.py, with the env CMD (the command line), CWD (the hook cwd),
 # RAW (set when the heredoc pass failed) and AGENT_ID (set for a subagent).
 # Prints nothing, or the rule on line 1 and the release-check suffix on line 2.
@@ -17,30 +17,29 @@ FEEDERS = {"xargs", "parallel", "find", "fd"}
 # gh release create options that take a value.
 GH_ARG = {"--target", "-t", "--title", "-n", "--notes", "-F", "--notes-file", "--discussion-category",
           "--notes-start-tag", "-R", "--repo"}
-# #89 D1: the built-ins of gh 2.103.2. gh runs a built-in before an alias or extension of that name.
+# allow-comment: dependency, the built-ins of gh 2.103.2. gh runs a built-in before an alias or extension of that name.
 GH_BUILTINS = {"agent-task", "alias", "api", "attestation", "auth", "browse", "cache", "codespace", "completion",
                "config", "copilot", "discussion", "extension", "gist", "gpg-key", "help", "issue", "label",
                "licenses", "org", "pr", "preview", "project", "release", "repo", "ruleset", "run", "search",
                "secret", "skill", "ssh-key", "status", "variable", "version", "workflow"}
 GH_RELEASE_READ = {"list", "view", "download", "verify", "verify-asset"}
-# #89 D6: the read subcommands of the families whose other subcommands ask; GH_NESTED sits under repo.
 GH_READ = {"alias": {"list"}, "ruleset": {"list", "view", "check"}, "repo": {"view", "list", "clone", "read-dir", "read-file"},
-           "workflow": {"list", "view"}, "secret": {"list"}, "variable": {"list", "get"}}
+           "workflow": {"list", "view"}, "run": {"list", "view", "watch", "download"}, "secret": {"list"}, "variable": {"list", "get"}}
 GH_NESTED = {"deploy-key": {"list"}, "autolink": {"list", "view"}, "gitignore": {"list", "view"}, "license": {"list", "view"}}
 CANNOT = "a gh command the guard cannot read"
-# #89 D2: the words that may come before gh in command position.
+TEXT = {"echo", "printf", "grep", "egrep", "fgrep", "rg", "which", "whereis", "ls", "mkdir", "brew"}
 WRAPPERS = {"sudo", "command", "exec", "env", "timeout", "nice", "nohup", "time"}
 WRAPPER_VALUE = {"sudo": {"-u", "--user", "-g", "--group", "-C", "--close-from"},
                  "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
                  "nice": {"-n", "--adjustment"}, "timeout": {"-s", "--signal", "-k", "--kill-after"}}
 SHELL_WORDS = {"!", "{", "if", "then", "elif", "else", "do", "while", "until"}
-# #89 D4: the gh 2.103.2 api flags, True for a flag that takes a value.
+# allow-comment: dependency, the gh 2.103.2 api flags, True for a flag that takes a value.
 API_FLAGS = {**dict.fromkeys(["-i", "--include", "--paginate", "--slurp", "--silent", "--verbose",
                               "--allow-escape-sequences"], False),
              **dict.fromkeys(["-X", "--method", "-f", "--raw-field", "-F", "--field", "-H", "--header", "-q", "--jq",
                               "-t", "--template", "-p", "--preview", "--hostname", "--cache", "--input"], True)}
-# #89: the characters a single-quoted string keeps literal that unreadable() would read as shell syntax.
-MASK = "$" + chr(96) + "{},*?["
+# allow-comment: dependency, the characters a quoted string keeps literal that the shell reads as syntax elsewhere.
+MASK = "$" + chr(96) + "{},*?[<>"
 # Commands that run a string or a heredoc body as shell commands.
 RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
 EXPANDS = set("${}*?[~" + chr(96))
@@ -193,7 +192,7 @@ def check_release(args, cwds):
     repo = min(cwds)
     rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}") if tag else (1, "")
     if not rc and target is not None:
-        # #89 D10: gh uses --target only for a tag GitHub lacks, so the local tag must not hide it.
+        # allow-comment: dependency, gh uses --target only for a tag GitHub lacks, so the local tag must not hide it.
         trc, target_sha = git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
         if trc:
             ask("a release create", f"; release-check failed: target {target} does not resolve")
@@ -211,13 +210,10 @@ def check_release(args, cwds):
 
 
 def unreadable(word):
-    # #89 D3: a word the shell can turn into other words.
-    return bool({"$", chr(96)} & set(word) or re.search(r"\{[^{}]*(,|\.\.)[^{}]*\}", word)
-                or word.startswith(("-", "*", "?", "[")) and set("*?[") & set(word))
+    return bool({"$", chr(96), "*", "?", "["} & set(word) or re.search(r"\{[^{}]*(,|\.\.)[^{}]*\}", word))
 
 
 def command_index(seg):
-    # #89 D2: the index of the command word after assignments, shell words and wrappers, None for none.
     wrapper, duration, i = None, False, 0
     while i < len(seg):
         w = seg[i]
@@ -242,9 +238,11 @@ def command_index(seg):
 def strip_redirects(args):
     out, i = [], 0
     while i < len(args):
-        m = re.fullmatch(r"\d*(>>?|<)(.*)", args[i])
+        m = re.fullmatch(r"([^<>]*)[<>]+(.*)", args[i])
         if not m:
             out.append(args[i])
+        elif m.group(1) and not m.group(1).isdigit():
+            out.append(m.group(1))
         i += 2 if m and not m.group(2) else 1
     return out
 
@@ -260,14 +258,15 @@ def mask_quoted(cmd):
     while i < len(cmd):
         c = cmd[i]
         if c == "\\" and state != "'":
-            out.append(cmd[i:i + 2])
+            pair = cmd[i:i + 2]
+            out.append(c + chr(0xE000 + MASK.index(pair[1])) if pair[1:] and pair[1] in "<>*?[" else pair)
             i += 2
             continue
         if c == "'" and state != '"':
             state = None if state else "'"
         elif c == '"' and state != "'":
             state = None if state else '"'
-        elif state == "'" and c in MASK:
+        elif state and c in MASK and not (state == '"' and c in "$" + chr(96)):
             c = chr(0xE000 + MASK.index(c))
         out.append(c)
         i += 1
@@ -279,7 +278,6 @@ def unmask(word):
 
 
 def gh_api(args, masked):
-    # #89 D4: args the real words after api, masked the same words with single-quoted text masked.
     flags, pos, j = [], [], 0
     while j < len(args):
         a = args[j]
@@ -316,7 +314,7 @@ def gh_api(args, masked):
     endpoint = pos[0] if pos else ""
     methods = [v.upper() for n, v in flags if n in ("-X", "--method")]
     fields = [(n, v) for n, v in flags if n in ("-f", "--raw-field", "-F", "--field")]
-    graphql_read = ((endpoint == "graphql" or urllib.parse.urlsplit(endpoint).path.endswith("/graphql"))
+    graphql_read = ((endpoint == "graphql" or "://" in endpoint and urllib.parse.urlsplit(endpoint).path == "/graphql")
                     and not any("mutation" in a.lower() for a in args)
                     and not any(n in ("-F", "--field") and v.partition("=")[2].startswith("@") for n, v in fields))
     if (any(m not in ("GET", "HEAD") for m in methods) or any(n == "--input" for n, _ in flags)
@@ -327,7 +325,6 @@ def gh_api(args, masked):
 
 
 def gh_command(args, cwds, fed):
-    # #89: the remote effect of a gh command. Reads return, writes ask.
     if fed:
         ask(CANNOT)
     i = next_word(args, 0)
@@ -351,6 +348,9 @@ def gh_command(args, cwds, fed):
         ask(CANNOT)
     if word == "release" and sub is not None and sub not in GH_RELEASE_READ:
         if sub in ("create", "new"):
+            if "GH_REPO=" in os.environ["CMD"] or os.environ.get("GH_REPO") or any(
+                    a in ("-R", "--repo") or a.startswith("--repo=") or a.startswith("-R") for a in real):
+                ask("a gh release on another repository")
             check_release(real[j + 1:], cwds)
         ask(f"a gh release {sub}")
     if word == "extension" and sub == "exec":
@@ -383,7 +383,6 @@ def qualify(name, tag):
 
 
 def refspec(repo, spec, branch):
-    # #89 D13: the full source and destination of a refspec with no + or *, "" for a part that does not resolve.
     src, colon, dst = spec.partition(":")
     if src in ("HEAD", "@"):
         full = f"refs/heads/{branch}" if branch else ""
@@ -420,7 +419,7 @@ def check_push(repo, args, drift):
         ask("a push with an argument the shell expands")
     if "refs" in drift:
         ask("a push after a command that changes refs or config")
-    pos, lease, j = [], set(), 0
+    pos, lease, j, no_follow = [], set(), 0, False
     while j < len(args):
         a = args[j]
         if a == "--":
@@ -428,11 +427,12 @@ def check_push(repo, args, drift):
             break
         if a.startswith("--"):
             name = a.split("=", 1)[0]
+            no_follow |= a == "--no-follow-tags"
             if a in LEASE:
                 lease.add(a)
             elif len(name) > 2 and any(m.startswith(name) for m in FORCE):
                 ask("a force, delete, mirror, all, prune or tag push")
-            # #89 D12: git takes a unique prefix of an option.
+            # allow-comment: dependency, git takes a unique prefix of an option.
             if "=" not in a and len(name) > 2 and sum(m.startswith(name) for m in PUSH_ARG) == 1:
                 j += 1
         elif a.startswith("-") and len(a) > 1:
@@ -443,10 +443,10 @@ def check_push(repo, args, drift):
         else:
             pos.append(a)
         j += 1
-    # #89 D15: push.followTags makes every push a tag push. "/" reads the global and system scopes
-    # for a folder made earlier in the line.
+    # allow-comment: dependency, push.followTags makes every push a tag push. "/" reads the global and
+    # system scopes for a folder made earlier in the line.
     rc, follow = git(repo if os.path.isdir(repo) else "/", "config", "--type=bool", "--get", "push.followTags")
-    if (follow == "true" or rc not in (0, 1)) and "--no-follow-tags" not in args:
+    if (follow == "true" or rc not in (0, 1)) and not no_follow:
         ask("a tag push (push.followTags is set)")
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     remote, rest, specs = (pos[0] if pos else ""), pos[1:], []
@@ -455,8 +455,10 @@ def check_push(repo, args, drift):
         specs.append("refs/tags/" + rest.pop(0) if w == "tag" and rest else w)
     if "head" in drift and (not specs or any(s.partition(":")[0] in ("HEAD", "@") for s in specs)):
         ask("a push of HEAD after a command that moves it")
+    pushes_to = (git(repo, "config", f"branch.{branch}.pushRemote")[1] or git(repo, "config", "remote.pushDefault")[1]
+                 or git(repo, "config", f"branch.{branch}.remote")[1] or "origin")
     if not specs:
-        r = remote or git(repo, "config", f"branch.{branch}.remote")[1] or "origin"
+        r = remote or pushes_to
         merge = git(repo, "config", f"branch.{branch}.merge")[1]
         if (git(repo, "config", "--get-all", f"remote.{r}.push")[1]
                 or git(repo, "config", f"remote.{r}.mirror")[1] == "true"
@@ -468,8 +470,7 @@ def check_push(repo, args, drift):
                   or any(s not in ("HEAD", "@", branch, f"HEAD:{branch}") for s in specs)):
         ask("a force, delete, mirror, all, prune or tag push")
     if lease:
-        r = (git(repo, "config", f"branch.{branch}.pushRemote")[1] or git(repo, "config", "remote.pushDefault")[1]
-             or git(repo, "config", f"branch.{branch}.remote")[1] or "origin")
+        r = pushes_to
         merge = git(repo, "config", f"branch.{branch}.merge")[1]
         if (len(specs) > 1 or remote not in ("", r)
                 or git(repo, "config", "--get-all", f"remote.{r}.push")[1]
@@ -483,7 +484,6 @@ def check_push(repo, args, drift):
             ask("a push whose remote config can reach other branches")
         src, dst = refspec(repo, spec, branch)
         if not src and ":" not in spec and "head" in drift:
-            # #89: a command earlier in the line (checkout -b) may make the branch this push names.
             src = dst = qualify(spec, False)
         if src.startswith("refs/tags/") or dst.startswith("refs/tags/"):
             names = tag_names(repo, specs, branch)
@@ -573,7 +573,8 @@ def check(cmd, cwds, drift, top=False):
     try:
         segs = list(segments(mask_quoted(cmd)))
     except ValueError:
-        # Unbalanced quotes. Only a line that may push asks.
+        if re.search(r"(?<![\w.-])gh(?![\w.-])", re.sub(r"['\"\\]", "", cmd)):
+            ask(CANNOT)
         if re.search(r"(?<![\w.-])git(?![\w.-]).*(\bpush\b|send-pack)", cmd):
             ask("a push the guard cannot parse")
         return
@@ -627,12 +628,14 @@ def check(cmd, cwds, drift, top=False):
                     # env -C or --chdir before git runs it in a folder the guard does not follow.
                     chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
                     check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
-                if os.path.basename(tok) == "gh" and any(
-                        os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k]):
-                    gh_command(masked[k + 1:], cwds, True)
-            c = command_index(seg)
-            if c is not None and os.path.basename(seg[c]) == "gh":
-                gh_command(strip_redirects(masked[c + 1:]), cwds, False)
+            gargs = strip_redirects(masked)
+            gwords = [unmask(t) for t in gargs]
+            c = command_index(gwords)
+            if c is None or os.path.basename(gwords[c]) not in TEXT:
+                for k, tok in enumerate(gwords):
+                    if os.path.basename(tok) == "gh":
+                        fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in gwords[:k])
+                        gh_command(gargs[k + 1:], cwds, fed)
         for c in sep:
             if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
                 # A union, not a swap: a ) that closes no subshell (a case pattern,
