@@ -13,6 +13,7 @@
   devloop.py seal --rebase-continue                   write the new seal into the rebase commit, continue it
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
+  devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
   devloop.py drive [--all | --since SHA | --routes-from FILE]
@@ -242,6 +243,9 @@ def main() -> int:
     seal_check = commands.add_parser("seal-check")
     seal_check.add_argument("--uncommitted", action="store_true")
     seal_check.set_defaults(run=("seal.check", "cmd_seal_check"))
+
+    search_wall = commands.add_parser("search-wall")
+    search_wall.set_defaults(run=("seal.search", "cmd_search_wall"))
 
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()
