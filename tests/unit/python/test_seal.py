@@ -189,14 +189,22 @@ L3 = "assert compute_total([]) == 0  # held-out case three, empty"
 PROTECTED = f"{ACCEPTANCE_DIR}/x/test_total.py"
 
 
-def claude_line(text: str) -> dict:
+def claude_line(text: str, call_id: str = "t") -> dict:
     return {"type": "user", "message": {"role": "user", "content": [
-        {"type": "tool_result", "tool_use_id": "t", "content": [{"type": "text", "text": text}]}]}}
+        {"type": "tool_result", "tool_use_id": call_id, "content": [{"type": "text", "text": text}]}]}}
 
 
-def codex_line(text: str) -> dict:
+def claude_call(name: str, tool_input: dict, call_id: str) -> dict:
+    return {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]}}
+
+
+def codex_line(text: str, command: str = "cat") -> dict:
     return {"type": "event_msg", "payload": {"type": "item_completed", "item": {
-        "type": "CommandExecution", "command": "cat", "aggregated_output": text}}}
+        "type": "CommandExecution", "command": command, "aggregated_output": text}}}
+
+
+def bash_result(command: str, text: str, call_id: str = "c1") -> list[dict]:
+    return [claude_call("Bash", {"command": command}, call_id), claude_line(text, call_id)]
 
 
 class AuditTests(unittest.TestCase):
@@ -255,6 +263,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(record["agent_type"], "implementer")
         self.assertEqual(record["set"], "acceptance")
         self.assertEqual(record["lines"], [L1, L2])
+        self.assertEqual(record["paths"], [])
         self.assertEqual(record["end"], sha)
         self.assertEqual(record["start"], git(self.repo, "rev-parse", "HEAD~1").strip())
         self.assertEqual(record["attribution"], "transcript")
@@ -450,6 +459,68 @@ class AuditTests(unittest.TestCase):
                     audit_module.audit(hook)
                 read_paths = {Path(call.args[0]).name for call in read.call_args_list}
                 self.assertEqual("notes.txt" in read_paths, reads_other, read_paths)
+
+    def test_search_output_path_taints(self) -> None:
+        grep, short = "grep -rn make .", PROTECTED[len("tests/"):]
+        rows = [bash_result(grep, f"./{PROTECTED}:3:r = make(1)"), bash_result("rg -n make", f"{PROTECTED}:3:r = make(1)"),
+                bash_result("find . -name '*.py'", f"./{PROTECTED}"),
+                [claude_call("Glob", {"pattern": "**/*.py"}, "g1"), claude_line(f"{self.repo}/{PROTECTED}", "g1")],
+                bash_result(grep, f"{short}:3:x"), bash_result(grep, f"./{short}"), bash_result(grep, f"{PROTECTED}-4-  y"),
+                [codex_line(f"{PROTECTED}:3:r = make(1)", "rg -n make")]]
+        shas = []
+        for n, lines in enumerate(rows):
+            with self.subTest(lines=lines):
+                self.mark_start(f"p{n}")
+                shas.append(self.commit(f"src/p{n}.py", f"p = {n}\n", f"p{n}"))
+                code, out = self.audit(self.transcript(lines), agent_id=f"p{n}")
+                record = out["taint"] or {}
+                self.assertEqual((record.get("set"), record.get("paths"), record.get("lines")),
+                                 ("acceptance", [PROTECTED], []), out)
+                self.assertEqual([c["sha"] for c in record["commits"]], [shas[-1]])
+        code, out = run_cli("seal-check", cwd=self.repo)
+        self.assertEqual((out["ok"], [r["agent_id"] for r in out["taint"]]), (False, [f"p{n}" for n in range(len(rows))]))
+        for commit in reversed(shas):
+            git(self.repo, "revert", "--no-edit", commit)
+        code, out = run_cli("seal-check", cwd=self.repo)
+        self.assertEqual((out["ok"], out["taint"]), (True, []), out)
+
+    def test_lines_that_do_not_start_with_a_suite_path_do_not_taint(self) -> None:
+        held = PROTECTED
+        self.mark_start("a1")
+        self.commit("src/a.py", "a = 1\n", "A")
+        texts = [f" {held} | 3 +++", f"diff --git a/{held} b/{held}", f"- unsealed abc1234 {held}", f'  "path": "{held}"',
+                 f"see {held}", f"{ACCEPTANCE_DIR}/gone.py:1:x", "src/acceptance/x/test_total.py:1:x", f"{held}c:1:x"]
+        rows = [bash_result("grep -rn make .", text) for text in texts] + [
+            bash_result("git diff --name-only main...HEAD", held), bash_result("scripts/gate.sh", f"{held}:3:1: E501 line too long"),
+            [codex_line(held, "git diff --name-only main...HEAD")]]
+        for lines in rows:
+            with self.subTest(lines=lines):
+                code, out = self.audit(self.transcript(lines))
+                self.assertIsNone(out["taint"], out)
+        code, out = run_cli("seal-check", cwd=self.repo)
+        self.assertEqual((out["ok"], out["taint"]), (True, []), out)
+
+    def test_path_rule_scope(self) -> None:
+        self.mark_start("a1")
+        code, out = self.audit(self.transcript(bash_result("grep -rn make .", f"{PROTECTED}:3:x")))
+        self.assertEqual((out["taint"]["paths"], out["taint"]["commits"]), ([PROTECTED], []))
+        code, check = run_cli("seal-check", cwd=self.repo)
+        self.assertEqual((check["ok"], check["taint"]), (True, []))
+        self.assertIn(out["taint"], check["warnings"])
+        self.commit("src/app.py", "x = 1\n", "app")
+        code, out = self.audit(self.transcript(bash_result("grep -rn make .", "src/app.py:3:x")), agent_type="spec-tester",
+                               agent_id="s1")
+        self.assertIsNone(out["taint"], out)
+        self.mark_start("a2")
+        self.commit("src/b.py", "b = 1\n", "B")
+        code, out = self.audit(self.transcript([claude_line(f"{L1}\n{L2}\n")]), agent_id="a2")
+        path = audit_module.taint_file(self.repo)
+        data = json.loads(path.read_text())
+        for record in data["records"]:
+            record.pop("paths", None)
+        path.write_text(json.dumps(data))
+        code, check = run_cli("seal-check", cwd=self.repo)
+        self.assertEqual([r["agent_id"] for r in check["taint"]], ["a2"], check)
 
 
 def sha(text: str) -> str:
