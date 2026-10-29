@@ -381,9 +381,11 @@ class TracksContractTests(unittest.TestCase):
             "Right after the merge: write `shipped: <merge date>`", "`pr: <PR url>`",
             "into the spec frontmatter in the notes folder", "Track S: no spec, skip",
             "scripts/devloop.py merge-check", "`merge` `auto`", "merge_human_paths",
+            "no `--feature`", "`head` not equal to `<sha>`: the PR waits for the user",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, stage)
+        self.assertNotIn("it checks that HEAD", stage)
 
     def test_track_s_bug_fix_shows_red_then_green(self) -> None:
         line = next(line for line in stage_text(5).splitlines() if line.startswith("Track S bug fix:"))

@@ -137,6 +137,7 @@ class ReviewYieldContractTests(unittest.TestCase):
             "merge-check [--repo <path>] [--feature <slug>]", "merge_human_paths", "`config-unreadable`",
             "`merge-human`", "`track-l`", "`human-path`", "`config-changed`", "`no-review`", "`unreviewed`",
             "`unreviewed_minor`", "--verbatim",
+            "`head`", "`branch`", "`.github`", "`.yml`", "`.conf`", "more than one branch",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, merge_check)
@@ -146,6 +147,16 @@ class ReviewYieldContractTests(unittest.TestCase):
         r10 = kit[kit.index("Ruling R10"):kit.index("These are expected manual steps")]
         self.assertIn("3. ", r10)
         self.assertIn("security-audit", r10)
+
+    def test_acceptance_and_notes_docs(self) -> None:
+        acceptance = (REPO_ROOT / "reference" / "cli" / "acceptance.md").read_text()
+        notes = next(line for line in (REPO_ROOT / "reference" / "kit.md").read_text().splitlines()
+                     if line.startswith("Notes path:"))
+        for value in ("`cases`", "<main-ref>"):
+            self.assertIn(value, acceptance)
+        for value in ("DEV_LOOP_NOTES", "main worktree", "tracked"):
+            self.assertIn(value, notes)
+        self.assertNotIn("`dev-loop.local.json` in the worktree", notes)
 
 
 class SpecGapContractTests(unittest.TestCase):
