@@ -42,10 +42,8 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_status.py`, `test_merge_check.py`, `test_merge_binding.py`: `status`, `merge-check`.
   - `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: kit text contracts.
   - `test_check_setup.py`, `test_setup_checks.py`: `check_setup.py`.
-  - `test_notes_path.py`: `notes_path.py`.
-  - `test_mutation.py`: `select_mutants.py`, mutation setup and contract.
-  - `test_hooks.py`: board hook launch, Claude gate hook.
-  - `test_seal.py`: `seal`, `audit`.
+  - `test_notes_path.py`, `test_mutation.py`: `notes_path.py`; `select_mutants.py`, mutation setup and contract.
+  - `test_hooks.py`, `test_seal.py`: board hook launch, Claude gate hook; `seal`, `audit`.
   - `test_seal_check.py`: `seal-check`, `kit-changed`, `weakened`.
   - `test_size.py`: `size-check`, seams, size in `gate`, `seal`.
   - `test_seal_hooks.py`: seal hooks, guard, spec-tester, Codex walls.
@@ -58,15 +56,12 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_second_review.py`: `second-review`.
   - `test_release.py`, `test_release_record.py`: `release-check`, `release-plan`, `release-notes`; `release-record`.
   - `test_release_guard.py`: release guards, setup, kit, text.
-  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails it, set in CI).
-  - `test_metrics.py`: `metrics`.
-  - `test_ci.py`, `test_ci_skip.py`: `ci wait` (stub `gh` on `PATH`), `ci-skip`.
+  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails, set in CI).
+  - `test_metrics.py`, `test_ci.py`, `test_ci_skip.py`: `metrics`; `ci wait` (stub `gh` on `PATH`), `ci-skip`.
   - `test_kit_reference.py`: `kit_reference`, `kit_matches`, kit-source flows.
   - `test_gardener.py`: `garden` skill, kit text, harness names.
-  - `test_retro.py`: `review_due`, `sessions`.
-  - `test_feature_gate.py`: `review-merge`, `acceptance`.
-  - `test_upstream_watch.py`: upstream watch.
-  - `test_autonomy.py`: `decide`, `pause`, autonomy hooks.
+  - `test_retro.py`, `test_feature_gate.py`: `review_due`, `sessions`; `review-merge`, `acceptance`.
+  - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
   - `test_repo_rules.py`: `repo_rules.py`, `AGENTS.md` budget, CLI index, gate scope.
   - `junit_report.py`: the one JUnit writer.
   - `board_fixtures.py`: board fixtures shared with the held-out oracle.
@@ -130,7 +125,7 @@ python3 tests/unit/python/test_dev_loop.py  # skill suite
 
 Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: JUnit `skill.xml` there; a dead chunk errors its ids. Argument (test name): plain unittest, no report.
 
-`scripts/gate.sh` fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree runs it first (Stage 3). Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
+`scripts/gate.sh` (full gate, both suites) fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
 
 ## Project kit
 
