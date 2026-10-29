@@ -77,7 +77,7 @@ class SandboxTests(SandboxCase):
         self.assertFalse((self.target / "x").exists())
         result = self.run_sandbox("sh", "-c", "echo ok > /scratch/a")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.scratch / "a").read_text(), "ok\n")
+        self.assertEqual((self.scratch / "a.txt").read_text(), "ok\n")
 
     def test_o36_memory_cap(self) -> None:
         result = self.run_sandbox("dd", "if=/dev/zero", "of=/dev/null", "bs=600M", "count=1",
@@ -102,11 +102,11 @@ class SandboxTests(SandboxCase):
         control = self.run_sandbox("dd", "if=/dev/zero", "of=/scratch/small", "bs=1M", "count=1",
                                    opts=("--file-size", "4194304"))
         self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
-        self.assertEqual((self.scratch / "small").stat().st_size, 1048576)
+        self.assertEqual((self.scratch / "small.txt").stat().st_size, 1048576)
         result = self.run_sandbox("dd", "if=/dev/zero", "of=/scratch/f", "bs=1M", "count=8",
                                   opts=("--file-size", "4194304"))
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        copied = self.scratch / "f"
+        copied = self.scratch / "f.txt"
         if copied.exists():
             self.assertLessEqual(copied.stat().st_size, 4194304)
 
@@ -136,8 +136,8 @@ class SandboxTests(SandboxCase):
         result = self.run_sandbox("sh", "-c", script)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         kinds = self.scratch_files()
-        self.assertEqual({k: v for k, v in kinds.items() if v != "dir"}, {"f": "file"}, kinds)
-        self.assertEqual((self.scratch / "f").read_text(), "f\n")
+        self.assertEqual({k: v for k, v in kinds.items() if v != "dir"}, {"f.txt": "file"}, kinds)
+        self.assertEqual((self.scratch / "f.txt").read_text(), "f\n")
         self.assertEqual(snapshot(), before)
 
     def test_o41_empty_environment(self) -> None:
