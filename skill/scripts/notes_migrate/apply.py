@@ -53,7 +53,7 @@ def _exact(path: Path) -> bool:
 
 
 def _fold(name: str) -> str:
-    return unicodedata.normalize("NFC", name).casefold()
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFD", name).casefold())
 
 
 def _clash(notes: Path, dst: Path, skip: Path | None = None) -> bool:
