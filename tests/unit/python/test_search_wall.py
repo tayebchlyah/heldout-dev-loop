@@ -76,6 +76,31 @@ class SearchWallTests(unittest.TestCase):
             with self.subTest(tool=tool, tool_input=tool_input):
                 self.assertEqual(decide(payload(top, tool, tool_input), {"HOME": "/nonexistent"}), expected)
 
+    def test_bash_searches(self) -> None:
+        held = HELD
+        deny = ["grep -rn make .", "grep -Rn make", "grep -rn make tests", "egrep -r make .", "rgrep make .", "rg -n make",
+                "rg make .", "rg --files", "git grep -n make", "git -C tests grep make", "find . -name '*.py'",
+                "find tests -name x", "find", "cd tests && grep -rn make .", "grep -rn make ..", "grep -rn make ~",
+                f"grep -rn --exclude-dir={held} make .", f"grep -rn make . | grep -v {held}",
+                "grep -rn --include='*.py' make .", "rg -g '*.py' make", "rg -t py make", "find . -path ./tests -o -name x",
+                "find . -name acceptance -o -name '*.py'", "grep -rn make 2>/dev/null", "rg make > out.txt",
+                "if true; then grep -rn make .; fi", "echo `grep -rn make .`", "x=$(rg make)", "{ rg make; }",
+                "/usr/bin/grep -rn make .", "LC_ALL=C grep -rn make .", "git grep make HEAD", 'grep -rn "make .',
+                "grep -rn make \\\n  .", "rg make tests/*", f"rg -g '!{held}/**' make {held}"]
+        allow = ["grep -rn make src tests/unit", "rg make src", "git grep make -- src", "find src -name x",
+                 "cd src && grep -rn make .", "grep -n make src/app.py", "grep make README.md",
+                 f"grep -rn make {held}/../../src", "cat src/app.py", "grep -rn --exclude-dir=acceptance make .",
+                 "grep -rn --exclude-dir acceptance make tests", f"rg -g '!{held}/**' make", "rg --glob='!**/acceptance/**' make .",
+                 f"git grep make -- . ':!{held}'", f"git grep make -- ':(exclude){held}'",
+                 f"find . -path ./{held} -prune -o -name '*.py' -print", f"find . -not -path '*/{held}/*' -name '*.py'",
+                 "grep -rn make src 2>&1 | head", "rg --files src", "rg -r x make src",
+                 "cat > brief.md <<'EOF'\nDon't grep -r the repo\nEOF", "echo grep", "grep make .", "grep -rn ';' src",
+                 "rg make src/*.py", "find . -name tests -prune -o -print"]
+        for command, expected in [(c, DENY) for c in deny] + [(c, ALLOW) for c in allow]:
+            with self.subTest(command=command):
+                self.assertEqual(decide(payload(self.top, "Bash", {"command": command}), {"HOME": str(self.top.parent)}),
+                                 expected)
+
     def test_roles_and_suites(self) -> None:
         top, other = self.top, self.tmp / "other"
         other.mkdir()
@@ -106,6 +131,8 @@ class SearchWallTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
         rows = [(json.dumps(payload(self.top, "Grep", {"pattern": "make"})), (), 0, DENY),
                 (json.dumps(payload(self.top, "Grep", {"pattern": "make", "path": "src"})), (), 0, ALLOW),
+                (json.dumps(payload(self.top, "Bash", {"command": "grep -rn make ."})), (), 0, DENY),
+                (json.dumps(payload(self.top, "Bash", {"command": "rg make src"})), (), 0, ALLOW),
                 ("not json", (), 0, {"deny": True, "reason": "Blocked: guard error: hook input is not a JSON object"}),
                 ("{}", ("x",), 2, None)]
         for stdin, extra, code, expected in rows:
