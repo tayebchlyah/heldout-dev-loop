@@ -40,7 +40,7 @@ def search_repo(root: Path, *, marker: bool = True, suite: bool = True, cli: str
     if cli == "link":
         scripts.symlink_to(ROOT / "skill" / "scripts")
     elif cli is not None:
-        put(scripts / "devloop.py", {"stub-exit": "import sys\nsys.exit(1)\n", "stub-text": "print('not json')\n"}[cli])
+        put(scripts / "devloop.py", {"stub-exit": "raise SystemExit(1)\n", "stub-text": "print('not json')\n"}[cli])
     return root.resolve()
 
 
