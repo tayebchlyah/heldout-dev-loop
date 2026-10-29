@@ -33,7 +33,6 @@ class SearchHookTests(unittest.TestCase):
         self.tmp = Path(tmp.name)
 
     def check(self, rows: list[tuple]) -> None:
-        """Rows of (walls, caller, tool, tool_input, cwd, env, outcome): `d8`, `name`, `ok` or `guard`."""
         for walls, caller, tool, tool_input, cwd, env, outcome in rows:
             for wall in walls:
                 payload = {**caller, "tool_name": tool, "tool_input": tool_input, **({"cwd": str(cwd)} if cwd else {})}
