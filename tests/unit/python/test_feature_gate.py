@@ -616,7 +616,8 @@ class FeatureGateTextTests(unittest.TestCase):
     def test_skill_stage_6(self) -> None:
         stage6 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 6 Feature gate", "## 7 Ship")
         for needle in ("devloop.py review-merge", "devloop.py acceptance", "--force-recreate", "`file`", "`line`",
-                       "`finding`", "`class`", "`verdict`", "`guard`", "`stale`", "`counted`"):
+                       "`finding`", "`class`", "`verdict`", "`guard`", "`stale`", "`counted`",
+                       "`cases` 0", "never green", "`cases` > 0", "changed by the branch"):
             self.assertIn(needle, stage6)
         self.assertNotIn("Merge the tables, dedupe by file and line", stage6)
         self.assertNotIn("docker compose ps --format", stage6)
