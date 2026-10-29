@@ -288,6 +288,36 @@ def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def kit_matches(repo: Path, commit: str, among: set[str], ref: dict[str, tuple[str, str]]) -> set[str]:
+    """The paths of `among` under `KIT_ROOTS` whose tree entry at `commit` (MANIFEST entry and git mode) equals
+    `ref`, plus `MANIFEST` when it is in `among` and its `files` at `commit` equal the entries of `ref`."""
+    tree = run_git(repo, "ls-tree", "-r", "-z", "--full-tree", commit)
+    entries = {}
+    for line in tree.stdout.split("\0") if tree.returncode == 0 else []:
+        meta, _, path = line.partition("\t")
+        if path:
+            mode, _, blob = meta.split(" ")
+            entries[path] = (mode, blob)
+    found = set()
+    for path in among:
+        if path not in entries or path not in ref or not path.startswith(KIT_ROOTS):
+            continue
+        mode, blob = entries[path]
+        read = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True)
+        if read.returncode != 0:
+            continue
+        if mode == "120000":
+            actual = "link:" + read.stdout.decode("utf-8", "replace")
+        else:
+            actual = "sha256:" + hashlib.sha256(read.stdout).hexdigest()
+        if (actual, mode) == ref[path]:
+            found.add(path)
+    manifest = manifest_at(repo, commit)
+    if MANIFEST in among and manifest and manifest.get("files") == {p: e for p, (e, _) in ref.items()}:
+        found.add(MANIFEST)
+    return found
+
+
 def kit_copies(repo: Path, commit: str, among: set[str]) -> set[str]:
     data = manifest_at(repo, commit)
     files = data.get("files") if data else None
