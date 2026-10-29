@@ -12,8 +12,9 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
 - `skills/`: kit skills `pause`, `continue`, `release-audit`, `garden`, `release`, `release-notes` (user-invoked only, except `continue`).
 - `skill/SKILL.md`: the dev-loop skill payload.
-- `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `second-review.md` (second reviewer prompt).
-- `skill/scripts/devloop.py`: the `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
+- `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`.
+- `skill/references/second-review.md`: second reviewer prompt.
+- `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
 - `skill/scripts/status.py`: `status`.
 - `skill/scripts/merge_check.py`: `merge-check`.
 - `skill/scripts/gate.py`: `logged`, `gate`.
@@ -26,7 +27,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/retro.py`: `status` `review_due`, `sessions`.
 - `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`.
-- `skill/scripts/sandbox-run.py`: the audit sandbox runner (Docker).
+- `skill/scripts/sandbox-run.py`: audit sandbox runner (Docker).
 - `skill/scripts/feature_gate.py`: `review-merge`, `acceptance`.
 - `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal.
@@ -88,7 +89,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `reference/release.md`: the release steps.
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md` (guard test).
-- `dev-loop.json`: this repo's own project marker, kit version.
+- `dev-loop.json`: this repo's project marker, kit version.
 
 ## devloop CLI
 
@@ -152,7 +153,7 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 - Stage 7 after a merge: report line `rc: now|later: <reason>`; rule in `reference/release.md`.
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase, before push.
-- No tracked file holds an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never the expanded home path (guard test).
+- No tracked file holds an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never its expansion (guard test).
 - No tracked file names an internal client or project (employer, its customers, private projects). `tests/unit/node/payload.test.mjs` holds only `sha256` (first 16 hex) of the lowercased name words joined by one space. New name: add hash to `INTERNAL_NAME_HASHES`, never the name.
 - The 3 merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`): merged, never copied whole.
 
