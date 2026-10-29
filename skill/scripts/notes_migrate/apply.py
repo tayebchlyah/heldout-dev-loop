@@ -52,6 +52,14 @@ def _exact(path: Path) -> bool:
     return unicodedata.normalize("NFC", path.name) in names
 
 
+def _variant(path: Path) -> bool:
+    try:
+        names = {unicodedata.normalize("NFC", name).lower() for name in os.listdir(path.parent)}
+    except OSError:
+        return False
+    return unicodedata.normalize("NFC", path.name).lower() in names
+
+
 def _plan_report(notes: Path, plan: Plan) -> dict:
     rel = lambda path: path.relative_to(notes).as_posix()
     return _report(plan.plan_hash, moves=[{"from": rel(m.src), "to": rel(m.dst)} for m in plan.moves],
@@ -186,8 +194,9 @@ def _move_all(notes: Path, journal: dict) -> None:
         elif _exact(src):
             if step["role"] == "board-merge" and _exact(dst):
                 dst.unlink()
-            if _exact(dst):
-                raise Stop("io", f"{step['dst']} exists: it synced in after the plan; move it away, then run again")
+            if _exact(dst) or (not case and _variant(dst)):
+                raise Stop("io", f"{step['dst']} or a name that differs only by case exists: it synced in after the "
+                                 "plan; move it away, then run again")
             dst.parent.mkdir(parents=True, exist_ok=True)
             if case:
                 os.rename(src, tmp)
