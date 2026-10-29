@@ -513,7 +513,8 @@ class SecondReviewRunTests(unittest.TestCase):
         for body, state in [(f"out({HELD!r}[0] + '\\n' + {HELD!r}[1])", "tainted"),
                             (f"out('t'); sys.stderr.write('\\n'.join({HELD!r}))", "tainted"),
                             (f"sys.stderr.write('\\n'.join({HELD!r})); sys.exit(3)", "tainted"),
-                            (f"out({HELD!r}[0])", "done")]:
+                            (f"out({HELD!r}[0])", "done"),
+                            (f"out('tests/' + 'acceptance/test_x.py:3:x\\n' + {HELD!r}[0])", "done")]:
             with self.subTest(body=body):
                 self.setUp()
                 self.stub("codex", body)

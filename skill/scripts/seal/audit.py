@@ -16,7 +16,7 @@ from pathlib import Path
 
 import devloop
 from devloop import emit
-from seal import ACCEPTANCE_DIR, git_dir, merge_base, run_git
+from seal import ACCEPTANCE_DIR, SEARCH_WORD, git_dir, merge_base, run_git
 
 SOURCE_DIRS = ("src/", "app/", "backend/", "frontend/")
 SPEC_TESTER = ("spec-tester", "spec_tester")
@@ -33,9 +33,12 @@ def now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def tool_outputs(path: Path) -> list[str] | None:
-    """Claude `tool_result` texts of `type:"user"` lines, Codex `aggregated_output` of `CommandExecution` items."""
+def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
+    """Claude `tool_result` texts of `type:"user"` lines, Codex `aggregated_output` of `CommandExecution` items: all
+    of them, and those of a search (`Grep`, `Glob`, a command that holds a search word, paired by `tool_use_id`)."""
     outputs: list[str] = []
+    searches: list[str] = []
+    search_ids: set[str] = set()
     found = False
     with path.open(encoding="utf-8", errors="replace") as lines:
         for line in lines:
@@ -51,13 +54,29 @@ def tool_outputs(path: Path) -> list[str] | None:
                 if isinstance(item, dict) and item.get("type") == "CommandExecution":
                     found = True
                     outputs.append(str(item.get("aggregated_output") or ""))
+                    command = item.get("command")
+                    if SEARCH_WORD.search(" ".join(map(str, command)) if isinstance(command, list) else str(command or "")):
+                        searches.append(outputs[-1])
             message = entry.get("message")
+            if entry.get("type") == "assistant" and isinstance(message, dict) and isinstance(message.get("content"), list):
+                for item in message["content"]:
+                    if isinstance(item, dict) and item.get("type") == "tool_use" and is_search(item):
+                        search_ids.add(str(item.get("id")))
             if entry.get("type") == "user" and isinstance(message, dict) and isinstance(message.get("content"), list):
                 for item in message["content"]:
                     if isinstance(item, dict) and item.get("type") == "tool_result":
                         found = True
                         outputs.append(result_text(item.get("content")))
-    return outputs if found else None
+                        if str(item.get("tool_use_id")) in search_ids:
+                            searches.append(outputs[-1])
+    return (outputs, searches) if found else None
+
+
+def is_search(call: dict) -> bool:
+    tool_input = call.get("input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    return call.get("name") in ("Grep", "Glob") or (call.get("name") == "Bash" and isinstance(command, str)
+                                                     and SEARCH_WORD.search(command) is not None)
 
 
 def result_text(content: object) -> str:
@@ -114,6 +133,19 @@ def matched_lines(repo: Path, protected: tuple[str, ...], outputs: list[str]) ->
     others = feature_docs(repo) + [text for path in listed if path not in own and (text := read_text(repo / path))]
     # Distinctive: in one protected file only, and in no other file, spec or plan.
     return [line for line in seen if not any(line in text for text in others)][:MAX_LINES]
+
+
+def suite_paths(repo: Path, outputs: list[str]) -> list[str]:
+    """The held-out files whose path starts a line of the search outputs, sorted, at most 3."""
+    listed = run_git(repo, "ls-files", "-co", "--exclude-standard", "-z", "--", f":(top){ACCEPTANCE_DIR}/").stdout
+    text = "\n".join(outputs)
+    found = []
+    for path in sorted(set(filter(None, listed.split("\0")))):
+        rest = re.escape(path[len(ACCEPTANCE_DIR) + 1:])
+        suite = re.escape(ACCEPTANCE_DIR)
+        if re.search(rf"^(?:\S*/)?{suite}/{rest}(?=$|[:\-\0\s])|^(?:\./)?acceptance/{rest}(?=$|[:\-\0\s])", text, re.M):
+            found.append(path)
+    return found[:MAX_LINES]
 
 
 def patch_ids(repo: Path, *diff: str) -> list[tuple[str, str]]:
@@ -193,18 +225,21 @@ def audit(hook: dict) -> dict:
         transcript = Path(hook.get("agent_transcript_path") or "")
         if not hook.get("agent_transcript_path") or not transcript.is_file():
             return skip("no-transcript", f"no transcript file: {hook.get('agent_transcript_path')}")
-        outputs = tool_outputs(transcript)
-        if outputs is None:
+        found = tool_outputs(transcript)
+        if found is None:
             return skip("no-tool-output", f"no tool output in {transcript}")
+        outputs, searches = found
         source = agent_type in SPEC_TESTER
         lines = matched_lines(repo, SOURCE_DIRS if source else (ACCEPTANCE_DIR + "/",), outputs)
-        if len(lines) < MIN_MATCHES:
+        paths = [] if source else suite_paths(repo, searches)
+        if len(lines) < MIN_MATCHES and not paths:
             return {"taint": None, "skipped": []}
         head_file = git_dir(repo) / "dev-loop-subagents" / f"{agent_id}.head"
         # No .head (D2): from `<base>`, else the root, never an empty range that closes the record.
         start = head_file.read_text().strip() if agent_id and head_file.is_file() else merge_base(repo)
         shas, attribution = tainted_commits(repo, start, end, outputs)
-        record = {**base, "set": "source" if source else "acceptance", "lines": lines, "start": start, "end": end,
+        record = {**base, "set": "source" if source else "acceptance", "lines": lines, "paths": paths, "start": start,
+                  "end": end,
                   "commits": [commit_record(repo, sha) for sha in shas], "attribution": attribution}
         append(repo, "records", record)
         return {"taint": record, "skipped": []}
