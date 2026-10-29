@@ -7,7 +7,7 @@ import fnmatch, json, os, re, shlex, subprocess, sys, urllib.parse
 FORCE = {"--force", "--force-with-lease", "--force-if-includes", "--delete", "--mirror",
          "--all", "--branches", "--prune", "--tags", "--follow-tags"}
 LEASE = {"--force-with-lease", "--force-if-includes"}
-PUSH_ARG = {"--push-option", "--repo", "--receive-pack", "--exec"}
+PUSH_ARG = {"--push-option", "--repo", "--receive-pack", "--exec", "--recurse-submodules"}
 GLOBAL_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 # Earlier commands in the same line that change what a later push resolves to.
 MOVES_HEAD = {"checkout", "switch", "reset", "rebase", "worktree", "init", "clone", "branch"}
@@ -413,9 +413,10 @@ def check_push(repo, args, drift):
             name = a.split("=", 1)[0]
             if a in LEASE:
                 lease.add(a)
-            elif name in FORCE or (len(name) > 4 and any(m.startswith(name) for m in FORCE)):
+            elif len(name) > 2 and any(m.startswith(name) for m in FORCE):
                 ask("a force, delete, mirror, all, prune or tag push")
-            if name in PUSH_ARG and "=" not in a:
+            # #89 D12: git takes a unique prefix of an option.
+            if "=" not in a and len(name) > 2 and sum(m.startswith(name) for m in PUSH_ARG) == 1:
                 j += 1
         elif a.startswith("-") and len(a) > 1:
             if "f" in a[1:] or "d" in a[1:]:
