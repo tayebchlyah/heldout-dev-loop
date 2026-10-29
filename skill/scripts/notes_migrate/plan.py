@@ -107,7 +107,7 @@ class _Planner:
                 return src / path.relative_to(dst)
         return path
 
-    def case_clash(self, path: Path) -> Path | None:
+    def case_clash(self, path: Path, own: Path | None = None) -> Path | None:
         here = self.notes
         for part in path.relative_to(self.notes).parts:
             try:
@@ -115,12 +115,13 @@ class _Planner:
             except OSError:
                 return None
             if _nfc(part) not in names:
-                return here / part if _nfc(part).lower() in {name.lower() for name in names} else None
+                others = {name.lower() for name in names if own is None or here / name != own}
+                return here / part if _nfc(part).lower() in others else None
             here = here / part
         return None
 
     def add(self, src: Path, dst: Path, role: str, slug: str | None) -> None:
-        clash = self.case_clash(self.now(dst.parent))
+        clash = self.case_clash(self.now(dst))
         if clash is not None:
             self.block(clash, "collision")
         elif self.exact(self.now(dst)):
@@ -150,6 +151,9 @@ class _Planner:
     def place(self, src: Path, dst: Path, board: bool, top: str | None) -> None:
         here = self.now(dst)
         if not self.exact(here):
+            if self.case_clash(here, own=src.parent / _nfc(src.name)) is not None:
+                self.block(dst, "collision")
+                return
             if not src.is_dir():
                 self.moves.append(Move(src, dst, "board-merge" if board else "file", None))
                 return
