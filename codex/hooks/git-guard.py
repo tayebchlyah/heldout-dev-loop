@@ -1,4 +1,5 @@
-# The checker of git-guard.sh: the git push rule and the gh rule.
+# The checker of git-guard.sh: the git push rule and the gh rule (#89 D1 to D10: gh api, release, family
+# writes, pr merge --admin, extension and agent runs, and gh words it cannot read).
 # Run as python3 -I git-guard.py, with the env CMD (the command line), CWD (the hook cwd),
 # RAW (set when the heredoc pass failed) and AGENT_ID (set for a subagent).
 # Prints nothing, or the rule on line 1 and the release-check suffix on line 2.

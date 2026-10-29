@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 
-from support import GuardRepo
+from support import PACKAGE_ROOT, GuardRepo
 
 CANNOT = "a gh command the guard cannot read"
 
@@ -118,3 +119,22 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
 
     def test_fed_gh_is_refused(self) -> None:
         self.assert_refused(["echo 'api -X POST repos/o/r/releases' | xargs gh", "echo v1.0.0 | xargs gh release view"], CANNOT)
+
+
+class GhKitTextTests(unittest.TestCase):
+    """The kit text names the gh rules, the residuals and the literal merge sha."""
+
+    def test_kit_text_names_the_gh_rules(self) -> None:
+        kit = (PACKAGE_ROOT / "reference" / "kit.md").read_text()
+        for value in ("gh api", "gh pr merge --admin", "push.followTags", "rulesets", "#98", "gh auth token", "gh ssh-key add",
+                      "gh agent-task create", "GitHub MCP tools"):
+            self.assertIn(value, kit)
+        rules = next(line for line in (PACKAGE_ROOT / "skill" / "references" / "codex.md").read_text().splitlines()
+                     if "Command rules" in line)
+        self.assertIn("gh api", rules)
+        self.assertIn("gh release", rules)
+        for path in (PACKAGE_ROOT / "skill" / "SKILL.md", PACKAGE_ROOT / "skills" / "release" / "SKILL.md"):
+            sentence = next(part for part in re.split(r"(?<=\.) ", path.read_text()) if "--match-head-commit" in part)
+            self.assertIn("literal hash", sentence, path)
+        for harness in ("claude", "codex"):
+            self.assertIn("gh", (PACKAGE_ROOT / harness / "hooks" / "git-guard.sh").read_text().splitlines()[1].split(), harness)
