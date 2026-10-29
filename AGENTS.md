@@ -53,23 +53,19 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: deny walls, Codex hooks, git and gh guard.
   - `test_board_robust.py`: board robustness.
   - `test_notes_migrate.py`, `test_notes_migrate_apply.py`: `notes-migrate`.
-  - `test_board_layout.py`: board folders, names.
-  - `test_board_tasks.py`: board task state, subagents, hook filter.
-  - `test_verify.py`: `verify-init`, `drive`, verify checks.
-  - `test_capture.py`: `capture`.
+  - `test_board_layout.py`, `test_board_tasks.py`: board folders, names; task state, subagents, hook filter.
+  - `test_verify.py`, `test_capture.py`: `verify-init`, `drive`, verify checks; `capture`.
   - `test_second_review.py`: `second-review`.
-  - `test_release.py`: `release-check`, `release-plan`, `release-notes`.
-  - `test_release_record.py`: `release-record`.
+  - `test_release.py`, `test_release_record.py`: `release-check`, `release-plan`, `release-notes`; `release-record`.
   - `test_release_guard.py`: release guards, setup, kit, text.
   - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails it, set in CI).
   - `test_metrics.py`: `metrics`.
-  - `test_ci.py`: `ci wait` (stub `gh` on `PATH`).
-  - `test_ci_skip.py`: `ci-skip`.
+  - `test_ci.py`, `test_ci_skip.py`: `ci wait` (stub `gh` on `PATH`), `ci-skip`.
   - `test_kit_reference.py`: `kit_reference`, `kit_matches`, kit-source flows.
-  - `test_gardener.py`: the `garden` skill, kit text, harness names.
+  - `test_gardener.py`: `garden` skill, kit text, harness names.
   - `test_retro.py`: `review_due`, `sessions`.
   - `test_feature_gate.py`: `review-merge`, `acceptance`.
-  - `test_upstream_watch.py`: the upstream watch.
+  - `test_upstream_watch.py`: upstream watch.
   - `test_autonomy.py`: `decide`, `pause`, autonomy hooks.
   - `test_repo_rules.py`: `repo_rules.py`, `AGENTS.md` budget, CLI index, gate scope.
   - `junit_report.py`: the one JUnit writer.
