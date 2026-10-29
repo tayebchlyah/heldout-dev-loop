@@ -25,7 +25,6 @@ ALLOW = {"deny": False, "reason": None}
 
 
 def search_repo(root: Path, *, marker: bool = True, suite: bool = True, cli: str | None = "link") -> Path:
-    """A git repo with `src`, unit tests, and by default `dev-loop.json`, the held-out suite and the kit CLI."""
     root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q")
     put(root / "README.md", "# x\n")
