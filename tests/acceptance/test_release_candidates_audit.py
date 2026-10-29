@@ -12,8 +12,6 @@ import unittest
 
 from release_candidates_support import K1, K2, K4, KIT_ROOTS, MANIFEST, REPO_ROOT, AuditCase, put, sha
 
-UPGRADED = sorted([K1, K2, MANIFEST])
-
 
 def reasons(payload: dict, name: str) -> list[dict]:
     return [r for r in payload.get("reasons") or [] if isinstance(r, dict) and r.get("reason") == name]
@@ -22,13 +20,14 @@ def reasons(payload: dict, name: str) -> list[dict]:
 class AuditExclusionTests(AuditCase):
 
     def test_f3_incremental_audit(self) -> None:
-        """F3 (O18, O26): record at the rc.1 commit, then an upgrade and a code change: `release-plan` excludes
-        the kit copies; `release-check` still gives stale-audit with every changed path."""
+        """F3 (O18 as amended by kit-copy-reference, O26): record at the rc.1 commit, then an upgrade and a code
+        change, in this repo with no kit source: `release-plan` excludes nothing; `release-check` still gives
+        stale-audit with every changed path."""
         self.record_at(self.A)
         B = self.upgrade_commit()
         payload = self.plan()
         self.assertEqual(payload.get("scope"), f"{self.A}..{B}", payload)
-        self.assertEqual(payload["exclude"], UPGRADED, payload)
+        self.assertEqual(payload["exclude"], [], payload)
         self.assertNotIn("src/app.py", payload["exclude"])
         self.assertNotIn("dev-loop.json", payload["exclude"])
         code, check = self.devloop("release-check", "--sha", B)
@@ -46,16 +45,18 @@ class AuditExclusionTests(AuditCase):
         self.assertEqual(self.plan()["exclude"], [])
 
     def test_o19_copy_that_does_not_match_its_hash_stays_in_scope(self) -> None:
-        """O19, threat 1: K2 differs from its MANIFEST hash at B: K2 is not in exclude."""
+        """O19, threat 1: K2 differs from its MANIFEST hash at B: K2 is not in exclude (no kit source: O18 as
+        amended by kit-copy-reference excludes nothing)."""
         self.record_at(self.A)
         self.upgrade_commit(entries={K2: sha("STAGE = 'something else'\n")})
-        self.assertEqual(self.plan()["exclude"], sorted([K1, MANIFEST]))
+        self.assertEqual(self.plan()["exclude"], [])
 
     def test_o21_product_path_in_the_manifest_is_not_excluded(self) -> None:
-        """O21, threat 1: a MANIFEST key `src/app.py` with the right hash, outside every kit root: not excluded."""
+        """O21, threat 1: a MANIFEST key `src/app.py` with the right hash, outside every kit root: not excluded
+        (no kit source: O18 as amended by kit-copy-reference excludes nothing)."""
         self.record_at(self.A)
         self.upgrade_commit(entries={"src/app.py": sha("def colour():\n    return 'blue'\n")})
-        self.assertEqual(self.plan()["exclude"], UPGRADED)
+        self.assertEqual(self.plan()["exclude"], [])
 
     def test_o22_first_audit_excludes_nothing(self) -> None:
         """O22 (and O28): no `## Release audits` record: scope whole, exclude []; `release-check --tag
@@ -90,23 +91,26 @@ class AuditExclusionTests(AuditCase):
         self.assertEqual(payload["exclude"], [])
 
     def test_o25_deleted_kit_copy_stays_in_scope(self) -> None:
-        """O25: a kit copy at A deleted at B (and dropped from the MANIFEST) is not in exclude."""
+        """O25: a kit copy at A deleted at B (and dropped from the MANIFEST) is not in exclude (no kit source: O18
+        as amended by kit-copy-reference excludes nothing)."""
         self.record_at(self.A)
         self.upgrade_commit(extra={K4: None}, entries={K4: None})
-        self.assertEqual(self.plan()["exclude"], UPGRADED)
+        self.assertEqual(self.plan()["exclude"], [])
 
     def test_o27_merged_config_files_are_never_excluded(self) -> None:
         """O27, threat 1: `.claude/settings.json` and `.codex/hooks.json` change in B (listed in the MANIFEST
-        with their hashes): neither is in exclude."""
+        with their hashes): neither is in exclude (no kit source: O18 as amended by kit-copy-reference excludes
+        nothing)."""
         settings, hooks = '{"hooks": {"Stop": []}}\n', '{"hooks": {"Stop": []}}\n'
         self.record_at(self.A)
         self.upgrade_commit(extra={".claude/settings.json": settings, ".codex/hooks.json": hooks},
                             entries={".claude/settings.json": sha(settings), ".codex/hooks.json": sha(hooks)})
-        self.assertEqual(self.plan()["exclude"], UPGRADED)
+        self.assertEqual(self.plan()["exclude"], [])
 
     def test_o29_kit_roots_equal_the_installer_kit_roots(self) -> None:
         """O29, threat 1: every kit path a real `init` writes lies under the six kit roots, each root is used,
-        and `release-plan` excludes a matching kit copy under each root and under no other folder."""
+        and `release-plan` excludes no matching kit copy under any folder in this repo with no kit source (O18 as
+        amended by kit-copy-reference)."""
         project = self.new_repo("installed")
         init = subprocess.run(["node", str(REPO_ROOT / "bin" / "install.mjs"), "init", "--yes", "--harness=both"],
                               cwd=project, env=self.env, capture_output=True, text=True, timeout=300)
@@ -141,8 +145,7 @@ class AuditExclusionTests(AuditCase):
 
         self.record_at(kit_commit(1, "3.0.0-rc.1"))
         kit_commit(2, "3.0.0-rc.2")
-        roots = [p for p, kind in regular.items() if kind != "other"]
-        self.assertEqual(self.plan()["exclude"], sorted([K1, link, MANIFEST, *roots]))
+        self.assertEqual(self.plan()["exclude"], [])
 
 
 if __name__ == "__main__":
