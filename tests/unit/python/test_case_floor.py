@@ -81,6 +81,36 @@ class CaseFloorTests(RepoCase):
                     self.assertEqual((out["guard"]["reason"], out["guard"]["floor"]), ("short", 4))
                     self.assertTrue(out["hint"].startswith(f"ran {out['cases']} of 4 cases (full run at {first[:12]})"))
 
+    def acceptance(self, repo, cases: list[tuple[str, str, str]], exit: int) -> tuple[int, dict]:
+        body = "".join(f'<testcase classname="{c}" name="{n}">{inner}</testcase>' for c, n, inner in cases)
+        (repo / "fixture.xml").write_text(f'<?xml version="1.0"?><testsuites><testsuite>{body}</testsuite></testsuites>')
+        (repo / "exit.txt").write_text(str(exit))
+        code, out, _ = self.devloop("acceptance", cwd=repo)
+        return code, out
+
+    def test_subtests_count_as_their_test(self) -> None:
+        repo = self.make_repo({"acceptance": "./run.sh"})
+        fail = '<failure message="x"/>'
+        red = [("t", "test_a", ""), ("t", "test_a (i=1)", fail), ("t", "test_a (i=2)", fail), ("o", "other", "")]
+        code, out = self.acceptance(repo, red, 1)
+        self.assertEqual((code, out["cases"], out["tests"], out["failing"]), (1, 4, 2, 2))
+        self.assertEqual(json.loads(self.record(repo).read_text())["runs"][-1]["tests"], 2)
+        code, out = self.acceptance(repo, [("t", "test_a", ""), ("o", "other", "")], 0)
+        self.assertEqual((code, out["cases"], out["tests"], out["floor"], out["short"], out["guard"]["verdict"]),
+                         (0, 2, 2, 2, False, "green"))
+
+    def test_duplicate_ids_count_once(self) -> None:
+        repo = self.make_repo({"acceptance": "./run.sh"})
+        cases = [("t", "test_a", ""), ("t", "test_a", ""), ("o", "other", ""), ("s", "skip", "<skipped/>")]
+        code, out = self.acceptance(repo, cases, 0)
+        self.assertEqual((code, out["cases"], out["tests"]), (0, 3, 2))
+
+    def test_no_report_has_no_tests(self) -> None:
+        repo = self.make_repo({"acceptance": "./run.sh"})
+        (repo / "exit.txt").write_text("0")
+        _, out, _ = self.devloop("acceptance", cwd=repo)
+        self.assertIsNone(out["tests"])
+
 
 if __name__ == "__main__":
     unittest.main()
