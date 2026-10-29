@@ -13,7 +13,7 @@ from pathlib import Path
 import autonomy
 import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
-from notes_path import NotesPathError, resolve
+from notes_path import NotesPathError, TrackedLocalFile, resolve
 
 
 def rebasing(worktree: Path) -> str | None:
@@ -258,6 +258,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     try:
         notes = resolve(repo, os.environ, Path.home())
+    except TrackedLocalFile as exc:
+        return emit({"error": str(exc)}, 1)
     except NotesPathError as exc:
         payload = result(0, "no notes path", str(exc))
         payload["effort"] = effort(0, False, os.environ)
