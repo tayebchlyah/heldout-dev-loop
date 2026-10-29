@@ -52,6 +52,17 @@ SPEC_TESTERS = [REPO_ROOT / "claude" / "agents" / "spec-tester.md", REPO_ROOT / 
 
 
 class InstructionContractTests(unittest.TestCase):
+    def test_search_scope_texts(self) -> None:
+        held = "tests/" + "acceptance"
+        rows = [(SKILL_ROOT / "references" / "building.md", [f"never the repo root or `tests/` without excluding `{held}`"]),
+                (SKILL_ROOT / "references" / "claude.md", ["search-wall", "recursive search", "xargs"]),
+                (SKILL_ROOT / "references" / "codex.md", ["search-wall", "recursive search", "xargs"]),
+                (REPO_ROOT / "reference" / "cli" / "audit.md", ["path rule", "`paths`"])]
+        for path, phrases in rows:
+            for phrase in phrases:
+                with self.subTest(path=path.name, phrase=phrase):
+                    self.assertIn(phrase, path.read_text())
+
     def test_building_md_holds_ponytail_and_its_notice(self) -> None:
         text = (SKILL_ROOT / "references" / "building.md").read_text()
         for value in ["Does it need to exist?", "MIT License", "DietrichGebert"]:

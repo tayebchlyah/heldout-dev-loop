@@ -219,11 +219,13 @@ class SealInstructionContractTests(unittest.TestCase):
                 self.assertIsNone(re.search(r"devloop\.py seal (?!--)", text))
 
     def test_implementers_stop_on_a_block_or_a_taint(self) -> None:
-        for path in IMPLEMENTERS:
+        for path in [*IMPLEMENTERS, SKILL_ROOT / "SKILL.md"]:
             with self.subTest(path=path.name):
                 text = path.read_text()
                 self.assertIn("guard block or a taint report", text)
                 self.assertIn("never rephrase the call", text)
+                self.assertIn("after a search-scope block, search again on named source folders or with the suite excluded",
+                              text)
 
     def test_stage_texts_hold_the_seal_rules(self) -> None:
         checks = {

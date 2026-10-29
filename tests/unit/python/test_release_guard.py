@@ -264,7 +264,8 @@ class ReleaseKitTests(unittest.TestCase):
         for name in ["release-plan", "release-record", "release-check", "sandbox-run.py", "sandbox.runner",
                      "never push a tag", "never run the audit in a subagent", "run-incomplete", "incomplete_reason",
                      "No approved sandbox: ", "Approved OS-enforced sandbox for every target-controlled execution",
-                     "30 min", "19 USD", "quick"]:
+                     "30 min", "19 USD", "quick", "`tests/" "acceptance` as out of the audit scope",
+                     "search named folders or exclude the suite"]:
             self.assertIn(name, text.replace("Never push a tag", "never push a tag")
                           .replace("Never run the audit in a subagent", "never run the audit in a subagent"), name)
         self.assertNotIn("\u2014", text)
