@@ -2,11 +2,42 @@
 
 from __future__ import annotations
 
+import json
+import re
+import shutil
+import subprocess
+import tempfile
 import tomllib
 import unittest
+from pathlib import Path
 
 import test_devloop
 from support import CHECKER, CLAUDE_HOOKS, CODEX_ASSETS, SKILL, SKILL_ROOT, all_instructions
+from test_seal_hooks import ROOT, SHELL, patch
+
+KIT_LIST_FILES = ("lib/kit.mjs", "claude/hooks/deny-acceptance-to-subagents.sh", "codex/hooks/acceptance-wall.sh",
+                  "skill/scripts/seal/check.py", "skill/references/codex.md")
+
+
+def kit_list_drift(root: Path) -> list[str]:
+    """One message per hand-kept kit skill list whose names differ from `dev-loop` plus `KIT_SKILLS`."""
+    text = {name: (root / name).read_text() for name in KIT_LIST_FILES}
+    kit_skills = re.search(r"^export const KIT_SKILLS = \[(.*)\]", text["lib/kit.mjs"], re.M).group(1)
+    expected = {"dev-loop"} | set(re.findall(r"'([^']+)'", kit_skills))
+    claude = re.search(r"^KIT='(.*)'$", text["claude/hooks/deny-acceptance-to-subagents.sh"], re.M).group(1)
+    codex = re.search(r"^\s*kit='(.*)'$", text["codex/hooks/acceptance-wall.sh"], re.M).group(1)
+    lists = {}
+    for wall, regex in (("claude", claude), ("codex", codex)):
+        for folder in (".agents", ".claude"):
+            group = re.search(re.escape("\\" + folder + "/skills/(") + r"([^)]*)\)", regex)
+            lists[f"{wall} {folder}"] = set(group.group(1).split("|")) if group else set()
+    kit_dirs = re.search(r"^KIT_DIRS = \((.*?)\)$", text["skill/scripts/seal/check.py"], re.M | re.S).group(1)
+    lists["KIT_DIRS"] = set(re.findall(r'"\.agents/skills/([^/"]+)/"', kit_dirs))
+    walls = next(line for line in text["skill/references/codex.md"].splitlines() if line.startswith("- Walls:"))
+    folders = re.search(r"kit skill folders .*? of (.*?)\)", walls)
+    lists["codex.md"] = set(re.findall(r"`([a-z-]+)`", folders.group(1))) if folders else set()
+    return [f"{name}: missing {sorted(expected - names)}, extra {sorted(names - expected)}"
+            for name, names in lists.items() if names != expected]
 
 
 class SkillContractTests(unittest.TestCase):
@@ -306,3 +337,40 @@ class NotesLayoutTextTests(unittest.TestCase):
         self.assertIn("(references/notes-migrate.md)", SKILL.read_text())
         self.assertTrue((SKILL_ROOT / "references/notes-migrate.md").is_file())
         self.assertNotIn("reference/cli/notes-migrate.md", SKILL.read_text())
+
+
+class KitSkillListTests(unittest.TestCase):
+    """The walls, `KIT_DIRS` and `codex.md` name `dev-loop` plus every `KIT_SKILLS` entry of `lib/kit.mjs`."""
+
+    def run_wall(self, harness: str, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([SHELL[harness], str(ROOT / harness / "hooks" / script)], input=json.dumps(payload),
+                              capture_output=True, text=True, timeout=60)
+
+    def test_every_kit_skill_list_equals_kit_skills(self) -> None:
+        self.assertEqual(kit_list_drift(ROOT), [])
+        names = re.search(r"^export const KIT_SKILLS = \[(.*)\]", (ROOT / "lib/kit.mjs").read_text(), re.M).group(1)
+        for name in ["dev-loop", *re.findall(r"'([^']+)'", names)]:
+            for path in (f".agents/skills/{name}/SKILL.md", f".claude/skills/{name}/SKILL.md"):
+                for caller in ({}, {"agent_id": "a", "agent_type": "implementer"}):
+                    calls = [("claude", "deny-acceptance-to-subagents.sh", tool, {"file_path": path})
+                             for tool in ("Edit", "Write")]
+                    calls.append(("codex", "acceptance-wall.sh", "apply_patch",
+                                  {"command": patch(f"*** Update File: {path}")}))
+                    for harness, script, tool, tool_input in calls:
+                        with self.subTest(path=path, caller=caller.get("agent_type", "main"), tool=tool):
+                            result = self.run_wall(harness, script, {**caller, "cwd": "/repo", "tool_name": tool,
+                                                                     "tool_input": tool_input})
+                            self.assertEqual(result.returncode, 2, result.stderr)
+                            self.assertIn("upgrade", result.stderr)
+
+    def test_a_name_added_to_one_list_only_is_drift(self) -> None:
+        edits = [("lib/kit.mjs", "export const KIT_SKILLS = [", "export const KIT_SKILLS = ['zz-new', "),
+                 ("skill/scripts/seal/check.py", "KIT_DIRS = (", 'KIT_DIRS = (".agents/skills/zz-new/", ')]
+        for name, old, new in edits:
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                for rel in KIT_LIST_FILES:
+                    (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(ROOT / rel, Path(tmp) / rel)
+                target = Path(tmp) / name
+                target.write_text(target.read_text().replace(old, new, 1))
+                self.assertNotEqual(kit_list_drift(Path(tmp)), [])
