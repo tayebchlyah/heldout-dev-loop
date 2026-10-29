@@ -232,6 +232,36 @@ class MergeCheckTests(MergeCheckCase):
                 expected = [{"reason": "dropped", "commit": fix}] if case == "skipped" else []
                 self.assertEqual(out["reasons"], expected)
 
+    def test_dropped_reviewed_patch_counted_per_occurrence(self) -> None:
+        """A patch reviewed twice needs two landing commits: a rebase that keeps only one copy drops the other."""
+        wt = self.feature()
+        self.commit(wt, "src/app.py", "a\n")
+        first = self.head(wt)
+        git(wt, "revert", "--no-edit", first)
+        second = self.head(wt)
+        git(wt, "cherry-pick", first)
+        third = self.head(wt)
+        self.gate_green(wt, third)
+        git(wt, "reset", "-q", "--hard", second)
+        out = self.ok(wt)
+        self.assertEqual(out["merge"], "human")
+        self.assertEqual(self.reasons(out, "dropped"), [{"reason": "dropped", "commit": third}])
+
+    def test_feature_binds_a_branch_with_a_prefix_only(self) -> None:
+        """`--feature <slug>` binds a branch whose short name ends with `/<slug>`, never a bare `<slug>` branch."""
+        wt = self.feature()
+        git(self.repo, "branch", "widget")
+        out = self.ok(self.repo, "--feature", "widget")
+        self.assertEqual(out["branch"], "feat/widget")
+        code, out = self.merge_check("--feature", "feat/widget", cwd=self.repo)
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+        git(self.repo, "worktree", "remove", "--force", str(wt))
+        git(self.repo, "branch", "-m", "feat/widget", "feat-widget")
+        code, out = self.merge_check("--feature", "widget", cwd=self.repo)
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+
     def test_git_failure_exits_1(self) -> None:
         """A path or commit listing git cannot give fails closed: an error, no `merge` value."""
         for case in ("worktree-gone", "no-merge-base"):
