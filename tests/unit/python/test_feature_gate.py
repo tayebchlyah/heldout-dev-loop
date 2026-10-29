@@ -669,8 +669,12 @@ class FeatureGateTextTests(unittest.TestCase):
         stage6 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 6 Feature gate", "## 7 Ship")
         for needle in ("devloop.py review-merge", "devloop.py acceptance", "--force-recreate", "`file`", "`line`",
                        "`finding`", "`class`", "`verdict`", "`guard`", "`stale`", "`counted`",
-                       "`cases` 0", "never green", "`cases` > 0", "changed by the branch"):
+                       "`cases` 0", "never green", "`cases` > 0", "changed by the branch",
+                       "`short`: under the case floor"):
             self.assertIn(needle, stage6)
+        contract = (ROOT / "reference" / "cli" / "acceptance.md").read_text()
+        for needle in ("`floor`", "`short`", "`floor_head`", "--is-ancestor", "`reason` `short`"):
+            self.assertIn(needle, contract)
         self.assertNotIn("Merge the tables, dedupe by file and line", stage6)
         self.assertNotIn("docker compose ps --format", stage6)
         self.assertNotIn("up -d --build --wait", stage6)
