@@ -46,7 +46,7 @@ Two modes, `dev-loop.json` `release_notes`: `cliff` (default: `CHANGELOG.md` and
 python3 .agents/skills/dev-loop/scripts/devloop.py release-notes --tag "$GITHUB_REF_NAME" --output CHANGES.md
 ```
 
-CI skip job. A release PR or a kit upgrade PR changes no code; job `changes` in a project `ci.yml` lets the other jobs skip. It checks out the PR head with `fetch-depth: 0` and the base into `.devloop-base`, and runs the `ci-skip` of the base kit, never the kit of the PR. A base without `ci_skip.py` writes `skip=false`.
+CI skip job. A release PR or a kit upgrade PR changes no code; job `changes` in a project `ci.yml` lets the other jobs skip. It checks out the PR head with `fetch-depth: 0` and the base into `.devloop-base`, and runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo (dev-loop itself), where the base commit's installer builds the reference kit; in any other project it runs CI and the next release audit covers the new kit copies. A base without `ci_skip.py` writes `skip=false`.
 
 ```yaml
   changes:

@@ -32,7 +32,7 @@ Never a merge before stop 1. Never a tag push or a release creation before stop 
 
 ## CI skip job
 
-A release PR or a kit upgrade PR changes no code. This job lets the project CI skip the other jobs for it. It runs the `ci-skip` of the base kit, never the kit of the PR.
+A release PR or a kit upgrade PR changes no code. This job lets the project CI skip the other jobs for it. It runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo.
 
 ```yaml
   changes:
