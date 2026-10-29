@@ -17,6 +17,8 @@ from pathlib import Path
 import devloop
 from devloop import emit
 from seal import ACCEPTANCE_DIR, SEARCH_WORD, git_dir, merge_base, run_git
+from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, HEREDOC, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
+                         shell_tokens)
 
 SOURCE_DIRS = ("src/", "app/", "backend/", "frontend/")
 SPEC_TESTER = ("spec-tester", "spec_tester")
@@ -34,8 +36,6 @@ def now() -> str:
 
 
 def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
-    """Claude `tool_result` texts of `type:"user"` lines, Codex `aggregated_output` of `CommandExecution` items: all
-    of them, and those of a search (`Grep`, `Glob`, a command that holds a search word, paired by `tool_use_id`)."""
     outputs: list[str] = []
     searches: list[str] = []
     search_ids: set[str] = set()
@@ -55,7 +55,7 @@ def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
                     found = True
                     outputs.append(str(item.get("aggregated_output") or ""))
                     command = item.get("command")
-                    if SEARCH_WORD.search(" ".join(map(str, command)) if isinstance(command, list) else str(command or "")):
+                    if reads_files(" ".join(map(str, command)) if isinstance(command, list) else str(command or "")):
                         searches.append(outputs[-1])
             message = entry.get("message")
             if entry.get("type") == "assistant" and isinstance(message, dict) and isinstance(message.get("content"), list):
@@ -76,7 +76,43 @@ def is_search(call: dict) -> bool:
     tool_input = call.get("input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     return call.get("name") in ("Grep", "Glob") or (call.get("name") == "Bash" and isinstance(command, str)
-                                                     and SEARCH_WORD.search(command) is not None)
+                                                     and reads_files(command))
+
+
+def is_filter(name: str, args: list[str]) -> bool:
+    grep = name in ("grep", "egrep", "fgrep")
+    options, operands, _ = parse_options(args, "efmABCdD" if grep else "efgtTmABCjMrdE", GREP_LONG if grep else RG_LONG,
+                                         GREP_FLAGS if grep else RG_FLAGS)
+    names = {option for option, _ in options}
+    if "?" in names or names & {"-r", "-R", "-d", "--recursive", "--dereference-recursive", "--directories", "--files"}:
+        return False
+    return len(operands) <= (0 if names & PATTERN_GIVEN else 1)
+
+
+def reads_files(command: str) -> bool:
+    if not SEARCH_WORD.search(command):
+        return False
+    try:
+        tokens = shell_tokens(HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command))
+    except ValueError:
+        return True
+    words: list[str] = []
+    piped = False
+    for kind, text in [*tokens, ("op", ";")]:
+        if kind == "word":
+            words.append(text)
+            continue
+        while words and (words[0] in KEYWORDS or ASSIGNMENT.match(words[0])):
+            words = words[1:]
+        if words and SEARCH_WORD.search(" ".join(words)):
+            name = words[0].rsplit("/", 1)[-1]
+            if name in ("bash", "sh", "zsh") and len(words) >= 3 and re.fullmatch(r"-\w*c", words[1]):
+                if reads_files(words[2]):
+                    return True
+            elif not (piped and name in ("grep", "egrep", "fgrep", "rg") and is_filter(name, words[1:])):
+                return True
+        words, piped = [], text in ("|", "|&")
+    return False
 
 
 def result_text(content: object) -> str:
@@ -136,7 +172,6 @@ def matched_lines(repo: Path, protected: tuple[str, ...], outputs: list[str]) ->
 
 
 def suite_paths(repo: Path, outputs: list[str]) -> list[str]:
-    """The held-out files whose path starts a line of the search outputs, sorted, at most 3."""
     listed = run_git(repo, "ls-files", "-co", "--exclude-standard", "-z", "--", f":(top){ACCEPTANCE_DIR}/").stdout
     text = "\n".join(outputs)
     found = []

@@ -500,6 +500,31 @@ class AuditTests(unittest.TestCase):
         code, out = run_cli("seal-check", cwd=self.repo)
         self.assertEqual((out["ok"], out["taint"]), (True, []), out)
 
+    def test_filter_output_does_not_taint(self) -> None:
+        held = PROTECTED
+        self.mark_start("a1")
+        self.commit("src/a.py", "a = 1\n", "A")
+        rows = [bash_result("git diff --name-only main...HEAD | grep -v md", held),
+                bash_result("git ls-files | grep tests", held),
+                bash_result("git ls-files | rg -v md | egrep tests", held),
+                [codex_line(held, "git diff --name-only main...HEAD | grep -v md")],
+                [codex_line(held, "bash -lc 'git ls-files | grep tests'")]]
+        for lines in rows:
+            with self.subTest(lines=lines):
+                code, out = self.audit(self.transcript(lines))
+                self.assertIsNone(out["taint"], out)
+
+    def test_search_that_reads_files_taints(self) -> None:
+        rows = ["grep -rn make .", "rg -l make", "git grep -n make", "find . -name '*.py'", "git ls-files | xargs grep make",
+                "git ls-files | grep -r make", "git ls-files | grep make .", "git ls-files | grep make 'unclosed",
+                "bash -c 'grep -rn make .'", "grep -rn make . | grep -v md"]
+        for n, command in enumerate(rows):
+            with self.subTest(command=command):
+                self.mark_start(f"f{n}")
+                self.commit(f"src/f{n}.py", f"f = {n}\n", f"f{n}")
+                code, out = self.audit(self.transcript(bash_result(command, f"{PROTECTED}:3:x")), agent_id=f"f{n}")
+                self.assertEqual((out["taint"] or {}).get("paths"), [PROTECTED], out)
+
     def test_path_rule_scope(self) -> None:
         self.mark_start("a1")
         code, out = self.audit(self.transcript(bash_result("grep -rn make .", f"{PROTECTED}:3:x")))
