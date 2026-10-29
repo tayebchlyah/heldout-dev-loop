@@ -120,8 +120,9 @@ has "${G}reset +--hard" && deny "Blocked: git reset --hard discards work. Use gi
 # $2: "; release-check: ..." or empty. A subagent is denied without running the check.
 AGENT_ID=$(printf '%s' "$IN" | jq -r '.agent_id // empty')
 ask() { [ -n "$AGENT_ID" ] && deny "Global rule: $1 needs explicit permission, and a subagent cannot ask for it. Push from the main session."; jq -cn --arg r "Global rule: $1 needs explicit permission each time$2." '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r}}'; exit 0; }
-if has '(^|[^[:alnum:]_.-])(git|gh)([^[:alnum:]_.-]|$)'; then
-  REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" AGENT_ID="$AGENT_ID" python3 -I "$(dirname "$0")/git-guard.py") || REASON="a push the guard failed to check"
+# allow-comment: dependency, the shell joins g''h into gh, so quotes and backslashes go first.
+if printf '%s' "$CMD" | tr -d '\\\\"'"'"'' | grep -Eq -e '(^|[^[:alnum:]_.-])(git|gh)([^[:alnum:]_.-]|$)'; then
+  REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" AGENT_ID="$AGENT_ID" python3 -I "$(dirname "$0")/git-guard.py") || REASON="a command the guard failed to check"
   NL='
 '
   WHAT=${REASON%%"$NL"*}
