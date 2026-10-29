@@ -7,6 +7,12 @@
 # Deny: exit 2 and one stderr line. The path match is deny-path.sh, in this folder.
 #
 # A workflow guard, not a security boundary: a block means stop and report, never rephrase the call.
+# One exception: after a search-scope block, search again on named source folders or with the suite excluded.
+# Search rule (#91): the Bash of a subagent but spec_tester cannot run a recursive search (grep -r, rg,
+# git grep, find) whose root is tests/acceptance or a folder above it, unless it excludes the
+# suite; the engine is devloop.py search-wall of the kit, skipped when no kit CLI is found, and a
+# CLI error blocks. Not walled: wrappers (xargs, env, command, sh -c, bash -c, eval), and ls -R, tree,
+# fd, ag, ack, git ls-files. The audit path rule backs up the search tools.
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
@@ -66,8 +72,21 @@ if [ "$tool" != Bash ]; then
   fi
 fi
 verdict=$(printf '%s' "$call" | sh "$(dirname "$0")/deny-path.sh" "$@") || exit 2
-[ -z "$verdict" ] && exit 0
-reason=$(printf '%s' "$verdict" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null) \
-  || fail "unreadable deny-path verdict"
-echo "$reason" >&2
-exit 2
+if [ -n "$verdict" ]; then
+  reason=$(printf '%s' "$verdict" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null) \
+    || fail "unreadable deny-path verdict"
+  echo "$reason" >&2
+  exit 2
+fi
+word='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
+cli=$top/.agents/skills/dev-loop/scripts/devloop.py
+if [ "$tool" = Bash ] && [ -n "$agent_id" ] && [ "$agent_type" != spec_tester ] && [ -n "$top" ] && [ -f "$cli" ] \
+  && field .tool_input.command | grep -Eq "$word"; then
+  out=$(printf '%s' "$input" | python3 "$cli" search-wall 2>/dev/null) || fail "search check failed"
+  printf '%s' "$out" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "search check failed"
+  if [ "$(printf '%s' "$out" | jq -r '.deny')" = true ]; then
+    printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason')" >&2
+    exit 2
+  fi
+fi
+exit 0
