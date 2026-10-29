@@ -21,6 +21,6 @@ Satisfy the spec, not the tests you can see.
 
 Contradictory test exit: a failing test you were given contradicts the spec. Stop. Report `CONTRADICTORY_TEST: <test> <spec line>`. Never bend the code to that test.
 
-A guard block or a taint report means stop and report; never rephrase the call.
+A guard block or a taint report means stop and report; never rephrase the call. One exception: after a search-scope block, search again on named source folders or with the suite excluded.
 
 Final report ends with a `Discoveries` list: one line per surprise (a fact about the code, a tool or a test the brief did not say), `none` when none. The controller logs them.

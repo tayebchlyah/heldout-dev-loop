@@ -41,7 +41,7 @@ SOFTWARE.
 
 ## Code volume
 
-Source: Ponytail v5.1.0 `AGENTS.md` (https://github.com/DietrichGebert/ponytail, commit `9b58c1f`), copied verbatim, first-person ponytail-repo line dropped.
+Source: Ponytail v5.1.0 `AGENTS.md` (https://github.com/DietrichGebert/ponytail, commit `9b58c1f`), copied verbatim, first-person ponytail-repo line dropped, bug-fix line scoped to named folders.
 
 ### Before you write
 
@@ -63,7 +63,7 @@ Take the first option that fully works:
 - No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions.
 - The shortest working diff wins, once you know everything it must touch. A one-liner that needs decoding is not short.
 - Comments: only the kinds that the project `CODING_STANDARDS.md` allows, else the kinds in [coding-standards.md](coding-standards.md). A `CODING_STANDARDS.md` with no `## Comments` section counts as absent.
-- Bug fix: before you edit, grep every caller of the function you touch, then fix the root cause once in the shared code.
+- Bug fix: before you edit, grep every caller of the function you touch in the source folders you name (and your unit test folders), never the repo root or `tests/` without excluding `tests/acceptance`; then fix the root cause once in the shared code.
 - Code you move or merge keeps its error handling and validation.
 - Between options of equal size, take the one that is correct on edge cases.
 - Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
