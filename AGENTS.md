@@ -12,8 +12,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
 - `skills/`: kit skills `pause`, `continue`, `release-audit`, `garden`, `release`, `release-notes` (user-invoked only, except `continue`).
 - `skill/SKILL.md`: the dev-loop skill payload.
-- `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`.
-- `skill/references/second-review.md`: the second reviewer's prompt.
+- `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `second-review.md` (second reviewer prompt).
 - `skill/scripts/devloop.py`: the `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
 - `skill/scripts/status.py`: `status`.
 - `skill/scripts/merge_check.py`: `merge-check`.
@@ -50,7 +49,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_size.py`: `size-check`, seams, size in `gate`, `seal`.
   - `test_seal_hooks.py`: seal hooks, guard, spec-tester, Codex walls.
   - `test_kit_walls.py`: path, kit, `cd` walls, canary script, Codex trust warning.
-  - `test_walls.py`, `test_git_guard.py`: deny walls, Codex hooks, git guard.
+  - `test_walls.py`, `test_git_guard.py`, `test_gh_guard.py`: deny walls, Codex hooks, git and gh guard.
   - `test_board_robust.py`: board robustness.
   - `test_notes_migrate.py`, `test_notes_migrate_apply.py`: `notes-migrate`.
   - `test_board_layout.py`: board folders, names.

@@ -16,6 +16,19 @@ FEEDERS = {"xargs", "parallel", "find", "fd"}
 # gh release create options that take a value.
 GH_ARG = {"--target", "-t", "--title", "-n", "--notes", "-F", "--notes-file", "--discussion-category",
           "--notes-start-tag", "-R", "--repo"}
+# #89 D1: the built-ins of gh 2.103.2. gh runs a built-in before an alias or extension of that name.
+GH_BUILTINS = {"agent-task", "alias", "api", "attestation", "auth", "browse", "cache", "codespace", "completion",
+               "config", "copilot", "discussion", "extension", "gist", "gpg-key", "help", "issue", "label",
+               "licenses", "org", "pr", "preview", "project", "release", "repo", "ruleset", "run", "search",
+               "secret", "skill", "ssh-key", "status", "variable", "version", "workflow"}
+GH_RELEASE_READ = {"list", "view", "download", "verify", "verify-asset"}
+CANNOT = "a gh command the guard cannot read"
+# #89 D2: the words that may come before gh in command position.
+WRAPPERS = {"sudo", "command", "exec", "env", "timeout", "nice", "nohup", "time"}
+WRAPPER_VALUE = {"sudo": {"-u", "--user", "-g", "--group", "-C", "--close-from"},
+                 "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
+                 "nice": {"-n", "--adjustment"}, "timeout": {"-s", "--signal", "-k", "--kill-after"}}
+SHELL_WORDS = {"!", "{", "if", "then", "elif", "else", "do", "while", "until"}
 # Commands that run a string or a heredoc body as shell commands.
 RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
 EXPANDS = set("${}*?[~" + chr(96))
@@ -178,23 +191,77 @@ def check_release(args, cwds):
     ask(f"a release create at {sha}", release_suffix(repo, ["--sha", sha]))
 
 
-def gh_release(args, cwds):
-    # gh [flags] release [flags] create|new: gh flags may sit around release, -R and
-    # --repo take a value. A word the shell expands after release asks.
-    words, i = [], 0
-    while i < len(args) and len(words) < 2:
-        a = args[i]
-        if words and EXPANDS & set(a):
-            ask("a gh release command", "; release-check failed: a gh release command the guard cannot read")
-        if a in ("-R", "--repo"):
-            i += 1
-        elif not a.startswith("-"):
-            words.append(a)
-            if words[0] != "release":
-                return
+def unreadable(word):
+    # #89 D3: a word the shell can turn into other words.
+    return bool({"$", chr(96)} & set(word) or re.search(r"\{[^{}]*(,|\.\.)[^{}]*\}", word)
+                or word.startswith(("-", "*", "?", "[")) and set("*?[") & set(word))
+
+
+def command_index(seg):
+    # #89 D2: the index of the command word after assignments, shell words and wrappers, None for none.
+    wrapper, duration, i = None, False, 0
+    while i < len(seg):
+        w = seg[i]
+        if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", w) or w in SHELL_WORDS:
+            pass
+        elif os.path.basename(w) in WRAPPERS:
+            wrapper = os.path.basename(w)
+            duration = wrapper == "timeout"
+            if wrapper == "command" and seg[i + 1:i + 2] in (["-v"], ["-V"]):
+                return None
+        elif wrapper and w.startswith("-"):
+            if w in WRAPPER_VALUE.get(wrapper, ()):
+                i += 1
+        elif duration:
+            duration = False
+        else:
+            return i
         i += 1
-    if words == ["release", "create"] or words == ["release", "new"]:
-        check_release(args[i:], cwds)
+    return None
+
+
+def strip_redirects(args):
+    out, i = [], 0
+    while i < len(args):
+        m = re.fullmatch(r"\d*(>>?|<)(.*)", args[i])
+        if not m:
+            out.append(args[i])
+        i += 2 if m and not m.group(2) else 1
+    return out
+
+
+def next_word(args, i):
+    while i < len(args) and (args[i].startswith("-") or i and args[i - 1] in ("-R", "--repo")):
+        i += 1
+    return i
+
+
+def gh_command(args, cwds, fed):
+    # #89: the remote effect of a gh command. Reads return, writes ask.
+    if fed:
+        ask(CANNOT)
+    i = next_word(args, 0)
+    if any(unreadable(a) for a in args[:i + 1]):
+        ask(CANNOT)
+    if i == len(args):
+        return
+    word = args[i]
+    if word not in GH_BUILTINS:
+        ask(CANNOT)
+    if word == "copilot":
+        ask("a gh extension or agent run")
+    j = next_word(args, i + 1)
+    sub = args[j] if j < len(args) else None
+    if word in ("release", "pr", "extension") and any(unreadable(a) for a in args[i + 1:j + 1]):
+        if word == "release":
+            ask("a gh release command", "; release-check failed: a gh release command the guard cannot read")
+        ask(CANNOT)
+    if word == "release" and sub is not None and sub not in GH_RELEASE_READ:
+        if sub in ("create", "new"):
+            check_release(args[j + 1:], cwds)
+        ask(f"a gh release {sub}")
+    if word == "extension" and sub == "exec":
+        ask("a gh extension or agent run")
 
 
 def tag_names(repo, specs, branch):
@@ -420,8 +487,12 @@ def check(cmd, cwds, drift, top=False):
                     # env -C or --chdir before git runs it in a folder the guard does not follow.
                     chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
                     check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
-                if os.path.basename(tok) == "gh":
-                    gh_release(seg[k + 1:], cwds)
+                if os.path.basename(tok) == "gh" and any(
+                        os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k]):
+                    gh_command(seg[k + 1:], cwds, True)
+            c = command_index(seg)
+            if c is not None and os.path.basename(seg[c]) == "gh":
+                gh_command(strip_redirects(seg[c + 1:]), cwds, False)
         for c in sep:
             if c == ")" or (c == chr(96) and subshells and subshells[-1][0] == c):
                 # A union, not a swap: a ) that closes no subshell (a case pattern,
