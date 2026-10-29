@@ -52,8 +52,35 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
                              "gh release download v1.0.0", "gh release verify v1.0.0",
                              "gh release verify-asset v1.0.0 x.tgz"])
 
+    def test_family_writes_are_refused(self) -> None:
+        for command, path in (("gh alias set rel 'release create'", "alias set"), ("gh alias delete rel", "alias delete"),
+                              ("gh alias import a.yml", "alias import"), ("gh repo edit --default-branch x", "repo edit"),
+                              ("gh repo delete o/r --yes", "repo delete"), ("gh repo sync", "repo sync"),
+                              ("gh repo fork", "repo fork"), ("gh repo set-default o/r", "repo set-default"),
+                              ("gh repo deploy-key add k.pub --allow-write", "repo deploy-key add"),
+                              ("gh repo autolink create x y", "repo autolink create"), ("gh workflow run release.yml", "workflow run"),
+                              ("gh workflow disable ci.yml", "workflow disable"), ("gh secret set X", "secret set"),
+                              ("gh secret delete X", "secret delete"), ("gh variable set X", "variable set"),
+                              ("gh variable delete X", "variable delete"), ("gh ruleset frob 1", "ruleset frob")):
+            self.assert_refused([command], f"a gh {path}")
+
+    def test_family_reads_run(self) -> None:
+        self.assert_allowed(["gh alias list", "gh ruleset list", "gh ruleset view 1", "gh ruleset check main", "gh repo view",
+                             "gh repo list", "gh repo clone o/r", "gh repo deploy-key list", "gh repo autolink list",
+                             "gh repo gitignore view Python", "gh repo license list", "gh workflow list", "gh workflow view ci.yml",
+                             "gh secret list", "gh variable list", "gh variable get X", "gh repo deploy-key", "gh workflow"])
+
+    def test_admin_and_unreadable_merges_are_refused(self) -> None:
+        self.assert_refused(["gh pr merge 12 --admin --rebase", "gh pr merge --admin=true 12", "gh pr -R o/r merge 12 --admin"],
+                            "a merge that bypasses branch protection")
+        self.assert_refused(["gh pr merge 12 --rebase --match-head-commit $SHA"], CANNOT)
+
+    def test_everyday_merge_runs(self) -> None:
+        self.assert_allowed([f"gh pr merge 12 --rebase --match-head-commit {self.a}", "gh pr merge --auto --rebase 12"])
+
     def test_unknown_words_and_agent_runs_are_refused(self) -> None:
         self.assert_refused(["gh rel v9.9.9", "gh co 12", "gh my-ext", "gh $CMD"], CANNOT)
+        self.assert_refused(["gh alias set rel 'release create' && gh rel v9.9.9"], "a gh alias set")
         self.assert_refused(["gh extension exec my-ext", "gh copilot"], "a gh extension or agent run")
 
     def test_unchanged_builtins_run(self) -> None:

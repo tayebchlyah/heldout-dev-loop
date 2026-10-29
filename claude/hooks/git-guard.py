@@ -22,6 +22,10 @@ GH_BUILTINS = {"agent-task", "alias", "api", "attestation", "auth", "browse", "c
                "licenses", "org", "pr", "preview", "project", "release", "repo", "ruleset", "run", "search",
                "secret", "skill", "ssh-key", "status", "variable", "version", "workflow"}
 GH_RELEASE_READ = {"list", "view", "download", "verify", "verify-asset"}
+# #89 D6: the read subcommands of the families whose other subcommands ask; GH_NESTED sits under repo.
+GH_READ = {"alias": {"list"}, "ruleset": {"list", "view", "check"}, "repo": {"view", "list", "clone", "read-dir", "read-file"},
+           "workflow": {"list", "view"}, "secret": {"list"}, "variable": {"list", "get"}}
+GH_NESTED = {"deploy-key": {"list"}, "autolink": {"list", "view"}, "gitignore": {"list", "view"}, "license": {"list", "view"}}
 CANNOT = "a gh command the guard cannot read"
 # #89 D2: the words that may come before gh in command position.
 WRAPPERS = {"sudo", "command", "exec", "env", "timeout", "nice", "nohup", "time"}
@@ -333,7 +337,7 @@ def gh_command(args, cwds, fed):
         gh_api(real[i + 1:], args[i + 1:])
     j = next_word(args, i + 1)
     sub = real[j] if j < len(args) else None
-    if word in ("release", "pr", "extension") and any(unreadable(a) for a in args[i + 1:j + 1]):
+    if word in ("release", "pr", "extension", *GH_READ) and any(unreadable(a) for a in args[i + 1:j + 1]):
         if word == "release":
             ask("a gh release command", "; release-check failed: a gh release command the guard cannot read")
         ask(CANNOT)
@@ -343,6 +347,23 @@ def gh_command(args, cwds, fed):
         ask(f"a gh release {sub}")
     if word == "extension" and sub == "exec":
         ask("a gh extension or agent run")
+    if word == "pr" and sub == "merge":
+        if any(unreadable(a) for a in args[i + 1:]):
+            ask(CANNOT)
+        if any(a == "--admin" or a.startswith("--admin=") for a in real[i + 1:]):
+            ask("a merge that bypasses branch protection")
+    if word in GH_READ and sub is not None and sub not in GH_READ[word]:
+        path = [word, sub]
+        if word == "repo" and sub in GH_NESTED:
+            k = next_word(args, j + 1)
+            if k == len(args):
+                return
+            if any(unreadable(a) for a in args[j + 1:k + 1]):
+                ask(CANNOT)
+            if real[k] in GH_NESTED[sub]:
+                return
+            path.append(real[k])
+        ask("a gh " + " ".join(path))
 
 
 def tag_names(repo, specs, branch):
