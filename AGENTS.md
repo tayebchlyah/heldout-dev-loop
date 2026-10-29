@@ -12,59 +12,36 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
 - `skills/`: kit skills `pause`, `continue`, `release-audit`, `garden`, `release`, `release-notes` (user-invoked only, except `continue`).
 - `skill/SKILL.md`: the dev-loop skill payload.
-- `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`.
-- `skill/references/second-review.md`: second reviewer prompt.
+- `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`; `skill/references/second-review.md`: second reviewer prompt.
 - `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
-- `skill/scripts/status.py`: `status`.
-- `skill/scripts/merge_check.py`: `merge-check`.
-- `skill/scripts/gate.py`: `logged`, `gate`.
-- `skill/scripts/check_setup.py`: post-install verifier.
-- `skill/scripts/notes_path.py`: notes path resolver.
-- `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`.
-- `skill/scripts/verify.py`, `skill/scripts/drive.mjs`, `skill/scripts/capture.py`: `verify-init`, `drive`, `capture`.
-- `skill/scripts/metrics.py`: `metrics`.
-- `skill/scripts/ci.py`: `ci wait`, the GitHub settings check.
-- `skill/scripts/ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
-- `skill/scripts/retro.py`: `status` `review_due`, `sessions`.
-- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`.
-- `skill/scripts/sandbox-run.py`: audit sandbox runner (Docker).
-- `skill/scripts/feature_gate.py`: `review-merge`, `acceptance`.
-- `skill/scripts/second_review.py`: `second-review`.
-- `skill/scripts/size.py`: `size-check`, the `seal` size refusal.
-- `skill/scripts/notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
-- `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, the `gate` `weakened` report.
-- `skill/scripts/board/`: progress board writer, server and page; `board/cli.py`: `board`.
+- `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `gate.py`: `logged`, `gate`.
+- `skill/scripts/check_setup.py`: post-install verifier; `notes_path.py`: notes path resolver.
+- `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
+- `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
+- `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
+- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `sandbox-run.py`: audit sandbox runner (Docker).
+- `skill/scripts/feature_gate.py`: `review-merge`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
+- `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
+- `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, the `gate` `weakened` report; `board/`: progress board writer, server and page; `board/cli.py`: `board`.
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
 - `tests/unit/python/`: skill suite, one file per subject:
-  - `test_dev_loop.py`: the entry: loads the files below, in chunks.
-  - `test_devloop.py`: `logged`, `gate`, the project config shape, CLI test helpers.
-  - `test_status.py`, `test_merge_check.py`, `test_merge_binding.py`: `status`, `merge-check`.
-  - `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: kit text contracts.
-  - `test_check_setup.py`, `test_setup_checks.py`: `check_setup.py`.
-  - `test_notes_path.py`, `test_mutation.py`: `notes_path.py`; `select_mutants.py`, mutation setup and contract.
+  - `test_dev_loop.py`: entry: loads the files below, in chunks.
+  - `test_devloop.py`, `test_status.py`, `test_merge_check.py`, `test_merge_binding.py`, `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: `logged`, `gate`, the project config shape, CLI test helpers; `status`, `merge-check`; kit text contracts.
+  - `test_check_setup.py`, `test_setup_checks.py`, `test_notes_path.py`, `test_mutation.py`: `check_setup.py`; `notes_path.py`; `select_mutants.py`, mutation setup and contract.
   - `test_hooks.py`, `test_seal.py`: board hook launch, Claude gate hook; `seal`, `audit`.
-  - `test_seal_check.py`: `seal-check`, `kit-changed`, `weakened`.
-  - `test_size.py`: `size-check`, seams, size in `gate`, `seal`.
-  - `test_seal_hooks.py`: seal hooks, guard, spec-tester, Codex walls.
-  - `test_kit_walls.py`: path, kit, `cd` walls, canary script, Codex trust warning.
-  - `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: deny walls, Codex hooks, git and gh guard.
-  - `test_board_robust.py`: board robustness.
-  - `test_notes_migrate.py`, `test_notes_migrate_apply.py`: `notes-migrate`.
-  - `test_board_layout.py`, `test_board_tasks.py`: board folders, names; task state, subagents, hook filter.
-  - `test_verify.py`, `test_capture.py`: `verify-init`, `drive`, verify checks; `capture`.
-  - `test_second_review.py`: `second-review`.
-  - `test_release.py`, `test_release_record.py`: `release-check`, `release-plan`, `release-notes`; `release-record`.
-  - `test_release_guard.py`: release guards, setup, kit, text.
-  - `test_sandbox_run.py`: `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails, set in CI).
-  - `test_metrics.py`, `test_ci.py`, `test_ci_skip.py`: `metrics`; `ci wait` (stub `gh` on `PATH`), `ci-skip`.
-  - `test_kit_reference.py`: `kit_reference`, `kit_matches`, kit-source flows.
-  - `test_gardener.py`: `garden` skill, kit text, harness names.
-  - `test_retro.py`, `test_feature_gate.py`: `review_due`, `sessions`; `review-merge`, `acceptance`.
+  - `test_seal_check.py`, `test_search_wall.py`, `test_search_hooks.py`: `seal-check`, `kit-changed`, `weakened`; `search-wall`: direct, via walls.
+  - `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, size in `gate`, `seal`; seal hooks, guard, spec-tester, Codex walls.
+  - `test_kit_walls.py`, `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: path, kit, `cd` walls, canary script, Codex trust warning; deny walls, Codex hooks, git and gh guard.
+  - `test_board_robust.py`, `test_notes_migrate.py`, `test_notes_migrate_apply.py`: board robustness; `notes-migrate`.
+  - `test_board_layout.py`, `test_board_tasks.py`, `test_verify.py`, `test_capture.py`: board folders, names; task state, subagents, hook filter; `verify-init`, `drive`, verify checks; `capture`.
+  - `test_second_review.py`, `test_release.py`, `test_release_record.py`: `second-review`; `release-check`, `release-plan`, `release-notes`; `release-record`.
+  - `test_release_guard.py`, `test_sandbox_run.py`: release guards, setup, kit, text; `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails, set in CI).
+  - `test_metrics.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh` on `PATH`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
+  - `test_gardener.py`, `test_retro.py`, `test_feature_gate.py`: `garden` skill, kit text, harness names; `review_due`, `sessions`; `review-merge`, `acceptance`.
   - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
   - `test_repo_rules.py`: `repo_rules.py`, `AGENTS.md` budget, CLI index, gate scope.
-  - `junit_report.py`: the one JUnit writer.
-  - `board_fixtures.py`: board fixtures shared with the held-out oracle.
+  - `junit_report.py`, `board_fixtures.py`: the one JUnit writer; board fixtures shared with the held-out oracle.
   - `support.py`: shared constants and helpers of this suite.
   - `fixtures/`: test data. No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests (Node test runner, real Chromium).
@@ -93,6 +70,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `gate --summary`: Run the project gate; report failures, slowest tests, seal check, weakened tests, size check. `reference/cli/gate.md`
 - `seal --feature <slug> --message <subject> [--reverts <sha> ...]`: Commit the staged held-out tests with the seal trailers (`spec-tester` only); `seal --rebase-continue` in a rebase. `reference/cli/seal.md`
 - `seal-check [--uncommitted]`: Check the branch seal commits, kit file changes and taint records. `reference/cli/seal-check.md`
+- `search-wall`: Deny a subagent search that reaches the held-out suite; hook JSON on stdin. `reference/cli/search-wall.md`
 - `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a split seam. `reference/cli/size-check.md`
 - `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, feature map README and `verify` key. `reference/cli/verify-init.md`
 - `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save evidence. `reference/cli/drive.md`
