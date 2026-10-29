@@ -204,11 +204,15 @@ class KitWallTests(unittest.TestCase):
         kit = [".agents/skills/dev-loop/scripts/seal/check.py", ".agents/skills/dev-loop/SKILL.md",
                ".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/MANIFEST.json", ".claude/skills/dev-loop/SKILL.md",
                ".codex/rules/dev-loop.rules", ".agents/skills/continue/SKILL.md", ".agents/skills/pause/agents/openai.yaml",
-               ".claude/skills/pause/SKILL.md", ".claude/skills/continue", *[f"{folder}/{name}" for folder, name in KIT_AGENTS]]
+               ".claude/skills/pause/SKILL.md", ".claude/skills/continue", ".agents/skills/release-audit/SKILL.md",
+               ".agents/skills/garden/SKILL.md", ".agents/skills/release/SKILL.md", ".agents/skills/release-notes/x.md",
+               ".claude/skills/release/SKILL.md", *[f"{folder}/{name}" for folder, name in KIT_AGENTS]]
         open_paths = ["skill/scripts/seal/check.py", "claude/hooks/git-guard.sh", ".claude/agents/my-reviewer.md",
                       ".codex/agents/mine.toml", ".codex/rules/mine.rules", "docs/dev-loop/x.md",
                       ".agents/skills/verify-shop/SKILL.md", ".claude/skills/pauses/SKILL.md", "skills/pause/SKILL.md",
-                      "dev-loop.json", "../dev-loop-worktrees/x/README.md"]
+                      "dev-loop.json", "../dev-loop-worktrees/x/README.md", ".agents/skills/releases/SKILL.md",
+                      ".agents/skills/release-plan/x.md", ".agents/skills/gardener/x.md",
+                      ".claude/skills/release-notesx/SKILL.md", "skills/release/SKILL.md"]
         callers = [{}, {"agent_id": "a", "agent_type": "implementer"}]
         rows = []
         for path, deny in [(p, True) for p in kit] + [(p, False) for p in open_paths]:
