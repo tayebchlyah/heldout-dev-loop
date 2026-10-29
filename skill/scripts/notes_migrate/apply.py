@@ -52,12 +52,23 @@ def _exact(path: Path) -> bool:
     return unicodedata.normalize("NFC", path.name) in names
 
 
-def _variant(path: Path) -> bool:
-    try:
-        names = {unicodedata.normalize("NFC", name).lower() for name in os.listdir(path.parent)}
-    except OSError:
-        return False
-    return unicodedata.normalize("NFC", path.name).lower() in names
+def _fold(name: str) -> str:
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def _clash(notes: Path, dst: Path, skip: Path | None = None) -> bool:
+    here = notes
+    for part in dst.relative_to(notes).parts:
+        try:
+            names = [unicodedata.normalize("NFC", name) for name in os.listdir(here)]
+        except OSError:
+            return False
+        exact = unicodedata.normalize("NFC", part)
+        if exact not in names:
+            kept = [name for name in names if skip is None or here / name != skip]
+            return _fold(part) in {_fold(name) for name in kept}
+        here = here / part
+    return False
 
 
 def _plan_report(notes: Path, plan: Plan) -> dict:
@@ -187,14 +198,17 @@ def _move_all(notes: Path, journal: dict) -> None:
             if _exact(src):
                 src.unlink()
             continue
-        case = src.parent == dst.parent and src.name != dst.name and src.name.lower() == dst.name.lower()
+        case = src.parent == dst.parent and src.name != dst.name and _fold(src.name) == _fold(dst.name)
         tmp = src.with_name(src.name + TMP)
         if case and _exact(tmp):
+            if _exact(dst) or _clash(notes, dst):
+                raise Stop("io", f"{step['dst']} or a name that differs only by case exists: it synced in after the "
+                                 "plan; move it away, then run again")
             os.rename(tmp, dst)
         elif _exact(src):
             if step["role"] == "board-merge" and _exact(dst):
                 dst.unlink()
-            if _exact(dst) or (not case and _variant(dst)):
+            if _exact(dst) or _clash(notes, dst, src if case else None):
                 raise Stop("io", f"{step['dst']} or a name that differs only by case exists: it synced in after the "
                                  "plan; move it away, then run again")
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -241,7 +255,7 @@ def _clean(notes: Path) -> None:
 def _log_name(notes: Path) -> str:
     day = time.strftime("%Y%m%d")
     name, n = f"{day} Notes Migration.md", 1
-    while _exact(notes / name):
+    while _exact(notes / name) or _clash(notes, notes / name):
         n += 1
         name = f"{day} Notes Migration {n}.md"
     return name
