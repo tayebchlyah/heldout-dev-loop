@@ -1,6 +1,6 @@
 # Test rules
 
-Read before writing a test. Source: Dev Process Review, "Test Strategy".
+Read before writing a test.
 
 1. One home file per module. A function's tests live in one file, found by name.
 2. Public behaviour only. No test reads private state or calls a private helper.
@@ -14,3 +14,23 @@ Read before writing a test. Source: Dev Process Review, "Test Strategy".
 10. A growth report on each PR.
 
 Plus: tests only at the seams the spec names.
+
+## Seams
+
+Source: Pocock skills v1.3.1 `codebase-design` (`skills/engineering/codebase-design/SKILL.md` and `DEEPENING.md`, commit `24fe0ef`).
+
+11. The interface is the test surface. Callers and tests cross the same seam. A test that must reach past the interface means the module has the wrong shape.
+12. Replace old tests, do not layer new ones. Once tests exist at the deepened interface, delete the old tests on the shallow modules.
+13. One adapter is a hypothetical seam, two adapters are a real one. Add a seam only when something varies across it, typically production and test.
+
+## Verification budget
+
+The kit enforces no time cap: a hook the harness kills is a non-blocking error, so a hard cap could let a red gate pass. Each project caps T0 in its own `gate.sh`.
+
+| Tier | When | Budget | Content |
+|---|---|---|---|
+| T0 | Stop hook, each turn | 60 s or less, never falls back to the full gate | lint, types, impacted tests without `proof` or `slow` markers |
+| T1 | End of a stage, direct `gate.sh` | 4 min or less | full fast tier, writes the green record |
+| T2 | CI on each PR | 8 min or less, jobs split | fast tier, proof tier, UI |
+| T3 | CI, feature gate | API 11 min, Playwright 9 min per shard | held-out acceptance, flows only |
+| T4 | Nightly | about 60 min | mutation on critical modules, test-value audit, flake statistics |

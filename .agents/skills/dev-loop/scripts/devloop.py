@@ -2,11 +2,47 @@
 """dev-loop CLI. Each command prints one JSON object on stdout.
 
   devloop.py status [--repo PATH] [--feature SLUG]   stage of the repo or of one feature
+  devloop.py merge-check [--repo PATH] [--feature SLUG]   auto or human merge, with reasons
   devloop.py logged [--name NAME] -- CMD...          run CMD, full output to a log file
   devloop.py gate --summary                           run the gate through `logged`, summarize it
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
   devloop.py board [--repo PATH] [--event E] [--claim SLUG] [--no-serve] [--stop-server]
                                                       write the status notes of this machine
+  devloop.py seal --feature SLUG --message SUBJECT [--reverts SHA ...]
+                                                      commit the staged acceptance tests with the seal trailer
+  devloop.py seal --rebase-continue                   write the new seal into the rebase commit, continue it
+  devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
+  devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
+  devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
+  devloop.py verify-init --base-url URL [--name SKILL]
+                                                      write the verify skill skeleton and the verify key
+  devloop.py drive [--all | --since SHA | --routes-from FILE]
+                                                      drive the feature map routes the branch changed, save the evidence
+  devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
+                                                      put the before and after screens in the PR body
+  devloop.py second-review --harness claude|codex [--timeout MINUTES]
+  devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
+                                                      merge the reviewer tables by file and line
+  devloop.py acceptance [--failed]                    run the acceptance command, read its JUnit, record the run
+  devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
+                                                      the release audit plan: run folder, scope, sandbox, skill
+  devloop.py release-record --run PATH [--base SHA] [--harness claude|codex] [--repo PATH]
+                                                      record a finished release audit run in the project note
+  devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
+                                                      the release gate: a current audit record, no open security item
+  devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
+                                                      may CI skip this diff: only a release or a kit upgrade
+  devloop.py release-notes --tag TAG [--repo PATH] [--output FILE]
+                                                      the CHANGELOG.md section body of a release tag
+  devloop.py metrics [--repo PATH] [--feature SLUG] [--write]
+                                                      the token cost of each stage of a feature, its row in Feature Metrics.md
+  devloop.py sessions --since DAYS [--repo PATH]       the Claude Code and Codex sessions of the repo, for retro
+  devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
+                                                      append one row to the decision log
+  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
+  devloop.py pause --clear                            write or delete the pause note of the worktree
+  devloop.py notes-migrate [--repo PATH] [--apply [--plan HASH]]
+                                                      move the notes to the feature folder layout, rewrite the links
 
 Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 """
@@ -14,29 +50,18 @@ Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
+import math
 import os
 import re
 import subprocess
 import sys
-import time
-import xml.etree.ElementTree as ET
-from datetime import datetime
 from pathlib import Path
 
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
-from notes_path import NotesPathError, resolve  # noqa: E402
-
-CHECKS_RETRY_SECONDS = 15
-FAILED_CHECK_STATES = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
-JUNIT_HINT = (
-    "No JUnit XML in $DEVLOOP_REPORT_DIR. Make the gate write it there: "
-    'pytest --junitxml="$DEVLOOP_REPORT_DIR/pytest.xml", '
-    'vitest run --reporter=junit --outputFile="$DEVLOOP_REPORT_DIR/vitest.xml", '
-    'gotestsum --junitfile "$DEVLOOP_REPORT_DIR/go.xml"'
-)
 
 
 def emit(payload: dict, code: int) -> int:
@@ -64,16 +89,13 @@ def git(repo: Path, *args: str) -> str | None:
     return out
 
 
-# status
-
-
 def slug_from_title(filename: str) -> str:
     stem = re.sub(r"^\d{8} ", "", re.sub(r"\.md$", "", filename))
     return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
 
 
 def frontmatter(path: Path) -> dict[str, str]:
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
     fields: dict[str, str] = {}
@@ -86,444 +108,79 @@ def frontmatter(path: Path) -> dict[str, str]:
     return {}
 
 
+FEATURES = "Features"
+ANSWERS = "Answers"
+MAPS = "Maps"
+AUDITS = "Security Audit"
+BOARD = "Dev Loop Board"
+BOARD_FEATURES = "Features"
+OLD_NAMES = ("specs", "plans", "framing", "answers", "maps", "security-audit", "dev-loop-board")
+JOURNAL = ".notes-migrate.json"
+
+
+def old_layout(notes: Path) -> list[str]:
+    """The entries of the notes folder the old layout left behind; exact names, so a new `Answers` is not one."""
+    try:
+        names = os.listdir(notes)
+    except OSError:
+        return []
+    return sorted(name for name in names if name in OLD_NAMES or name == JOURNAL)
+
+
 def specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
-    for path in sorted((notes / "specs").glob("*.md")):
-        found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
+    for path in sorted((notes / FEATURES).glob("*/Spec.md")):
+        found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
+    if "specs" in old_layout(notes):
+        for path in sorted((notes / "specs").glob("*.md")):
+            found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
     return found
 
 
+def is_spec(notes: Path, path: Path) -> bool:
+    return any(path == spec for _, spec in specs(notes))
+
+
 def find_plan(notes: Path, spec: Path) -> Path | None:
+    if spec.name == "Spec.md" and spec.parent.parent == notes / FEATURES:
+        plan = spec.parent / "Plan.md"
+        return plan if plan.is_file() else None
     plans = [p for p in sorted((notes / "plans").glob("*.md")) if frontmatter(p).get("spec") in (spec.name, spec.stem)]
     return plans[-1] if plans else None
 
 
-def rebasing(worktree: Path) -> str | None:
-    """The branch a rebase in progress in the worktree rewrites ("" when unknown), or None with no rebase."""
-    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
-    if git_dir is None:
-        return None
-    for name in ("rebase-merge", "rebase-apply"):
-        state = Path(git_dir) / name
-        if state.is_dir():
-            head = state / "head-name"
-            return head.read_text().strip().removeprefix("refs/heads/") if head.is_file() else ""
+def ledger(top: Path, plan: Path) -> Path | None:
+    """The `progress.md` of the sdd folder whose `plan-path` marker names this plan; the folder name is free."""
+    want = os.path.realpath(plan)
+    for marker in sorted((top / ".superpowers" / "sdd").glob("*/plan-path")):
+        try:
+            named = Path(marker.read_text().strip())
+        except OSError:
+            continue
+        if os.path.realpath(top / named) == want:
+            progress = marker.parent / "progress.md"
+            return progress if progress.is_file() else None
+    folder = top / ".superpowers" / "sdd" / plan.stem
+    if folder.is_dir() and not (folder / "plan-path").exists():
+        progress = folder / "progress.md"
+        return progress if progress.is_file() else None
     return None
 
 
-def feature_checkout(repo: Path, slug: str) -> tuple[Path | None, str | None]:
-    """The worktree and the branch `<prefix>/<slug>`. A branch with no worktree gives (None, branch).
-    A worktree mid-rebase is detached: its branch comes from the rebase state. Branch case is ignored."""
-    worktree: Path | None = None
-    for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines():
-        if line.startswith("worktree "):
-            worktree = Path(line[len("worktree "):])
-        elif line.startswith("branch refs/heads/") and line.lower().endswith(f"/{slug}"):
-            return worktree, line[len("branch refs/heads/"):]
-        elif line == "detached" and worktree and (rebasing(worktree) or "").lower().endswith(f"/{slug}"):
-            return worktree, rebasing(worktree)
-    for branch in (git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads") or "").splitlines():
-        if branch.lower().endswith(f"/{slug}"):
-            return None, branch
-    return None, None
-
-
-def cherry(repo: Path, branch: str) -> list[str] | None:
-    """`git cherry origin/main <branch>` lines, or None when it fails (no origin/main, for one)."""
-    out = git(repo, "cherry", "origin/main", branch)
-    return None if out is None else out.splitlines()
-
-
-def holds_slug(path: str, slug: str) -> bool:
-    """An acceptance path (relative to the acceptance folder) that holds the slug as a whole token.
-    `-` and `_` count as the same character."""
-    token = re.escape(slug.replace("_", "-"))
-    return re.search(rf"(?<![a-z0-9]){token}(?![a-z0-9])", path.lower().replace("_", "-")) is not None
-
-
-def has_acceptance(worktree: Path, slug: str) -> bool:
-    root = worktree / "tests" / "acceptance"
-    return any(path.is_file() and holds_slug(str(path.relative_to(root)), slug) for path in root.rglob("*"))
-
-
-def remote_branch(repo: Path, slug: str) -> str | None:
-    """`origin/<prefix>/<slug>`, or None."""
-    remotes = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin") or ""
-    return next((ref for ref in remotes.splitlines() if ref.lower().endswith(f"/{slug}") and ref.count("/") >= 2), None)
-
-
-def shipped_without_branch(repo: Path, slug: str) -> bool:
-    """An acceptance file for the slug on the default branch. For a feature with no branch, local or remote."""
-    prefix = "tests/acceptance/"
-    files = git(repo, "ls-tree", "-r", "--name-only", DEFAULT_BRANCH, prefix) or ""
-    return any(holds_slug(f[len(prefix):], slug) for f in files.splitlines() if f.startswith(prefix))
-
-
-def result(stage: int | str, check: str, next_: str, feature: str | None = None,
-           track: str | None = None, worktree: Path | None = None) -> dict:
-    return {
-        "stage": stage,
-        "check": check,
-        "next": next_,
-        "feature": feature,
-        "track": track,
-        "worktree": str(worktree) if worktree else None,
-    }
-
-
-FETCH = "git fetch origin, then run devloop status again"
-REBASE = "finish or abort the rebase, then rerun status"
-DEFAULT_BRANCH = "main"
-SKIP_ACCEPTANCE = ("regression", "none")  # Spec `acceptance:` values with no Stage 3: the slice changes no flow.
-
-
-def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
-    slug = slug.lower()  # The one slug normalization: spec names, branches and acceptance paths compare in lower case.
-    worktree, branch = feature_checkout(repo, slug)
-    if worktree is not None and rebasing(worktree) is not None:
-        return result("rebase", f"rebase in progress in {worktree}", REBASE, slug, None, worktree)
-    matches = [path for name, path in specs(notes) if name == slug]
-    if not matches:
-        if branch is None:
-            return result(1, f"no spec and no branch for {slug}", "Stage 1 Frame", slug)
-        lines = cherry(repo, branch)
-        if lines is None:
-            return result(5, "Track S: git cherry origin/main fails", FETCH, slug, "S", worktree)
-        if not lines:
-            return result(5, f"Track S: {branch} has no commit ahead of origin/main", "Stage 5 Build", slug, "S", worktree)
-        if any(line.startswith("+") for line in lines):
-            git_dir = git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
-            marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
-            if marker is None or not marker.is_file():
-                return result(6, "Track S: no review-done marker in the git dir", "Stage 6 review wave, triage, fix wave, "
-                              "then write the review-done marker", slug, "S", worktree)
-            return result(7, f"Track S: {branch} has commits not on origin/main", "Stage 7 Ship", slug, "S", worktree)
-        return result("shipped", f"git cherry origin/main {branch} lists no + commit", "none", slug, "S", worktree)
-
-    spec = matches[-1]
-    fields = frontmatter(spec)
-    track = fields.get("track") or None
-
-    def at(stage: int | str, check: str, next_: str) -> dict:
-        return result(stage, check, next_, slug, track, worktree)
-
-    if fields.get("shipped"):
-        return at("shipped", f"spec {spec.name} has shipped: {fields['shipped']}", "none")
-    if fields.get("review_status") != "approved":
-        return at(2, f"spec {spec.name} review_status is not approved", f"Stage 2 Spec: finish {spec} and get it approved")
-    known = branch or remote_branch(repo, slug)
-    if known is None and shipped_without_branch(repo, slug):
-        return at("shipped", f"no branch for {slug}, its acceptance file is on {DEFAULT_BRANCH}", "none")
-    lines = cherry(repo, known) if known else None
-    if lines and not any(line.startswith("+") for line in lines):
-        return at("shipped", f"git cherry origin/main {known} lists no + commit", "none")
-    if worktree is None or branch is None:  # A worktree always comes with its branch.
-        return at(3, f"no worktree on a branch <prefix>/{slug}", f"Stage 3 Acceptance: create the feature worktree for {slug}")
-    if fields.get("acceptance", "").lower() not in SKIP_ACCEPTANCE and not has_acceptance(worktree, slug):
-        return at(3, f"no acceptance file for {slug}", "Stage 3 Acceptance: dispatch spec-tester")
-    plan = find_plan(notes, spec)
-    if plan is None:
-        return at(4, f"no plan with spec: {spec.name}", "Stage 4 Plan")
-    ledger = worktree / ".superpowers" / "sdd" / plan.stem / "progress.md"
-    if not ledger.is_file():
-        next_ = f"Stage 5 Build: run {plan}"
-        if any(line.startswith("+") for line in cherry(repo, branch) or []):
-            next_ += ". The branch has commits ahead of origin/main: rebuild the ledger from the plan and git log first"
-        return at(5, f"no ledger {ledger}", next_)
-    text = ledger.read_text()
-    tasks = sorted({int(n) for n in re.findall(r"^#{2,3} Task (\d+)\b", plan.read_text(), re.MULTILINE)})
-    missing = [n for n in tasks if not re.search(rf"^Task {n}: complete", text, re.MULTILINE)]
-    if missing:
-        return at(5, f"ledger has no 'Task <N>: complete' line for task {', '.join(map(str, missing))}", f"Stage 5 Build: run {plan}")
-    if not re.search(r"^Feature gate: green at", text, re.MULTILINE):
-        return at(6, "no 'Feature gate: green at' line in the ledger", "Stage 6 Gate")
-    lines = cherry(repo, branch)
-    if lines is None:
-        return at(7, "git cherry origin/main fails", FETCH)
-    if any(line.startswith("+") for line in lines):
-        return at(7, f"git cherry origin/main {branch} lists a + commit", "Stage 7 Ship")
-    return at("shipped", f"git cherry origin/main {branch} lists no + commit", "none")
-
-
-def detect(repo: Path, feature: str | None, notes: Path) -> dict:
-    top = git(repo, "rev-parse", "--show-toplevel")
-    if top is None or git(repo, "rev-parse", "HEAD") is None:
-        return result(0, "git rev-parse HEAD fails", "Stage 0 Bootstrap: git init and a first commit")
-    if not any((Path(top) / name).is_file() for name in ("GLOSSARY.md", "CONTEXT.md")):
-        return result(0, "no glossary: GLOSSARY.md or CONTEXT.md", "Stage 0 Bootstrap: write GLOSSARY.md")
-    if feature is None:
-        branch = git(repo, "symbolic-ref", "--short", "-q", "HEAD")
-        if branch and "/" in branch:
-            return detect_feature(repo, branch.rsplit("/", 1)[1], notes)
-        head = None if branch else rebasing(repo)
-        if head is not None:
-            if "/" in head:
-                return detect_feature(repo, head.rsplit("/", 1)[1], notes)
-            return result("rebase", "rebase in progress", REBASE)
-        features = []
-        for slug, spec in dict(specs(notes)).items():
-            # Approved, no branch, no worktree: left out, no stage computed. `--feature <slug>` still resolves it.
-            if (frontmatter(spec).get("review_status") == "approved"
-                    and feature_checkout(repo, slug) == (None, None) and remote_branch(repo, slug) is None):
-                continue
-            found = detect_feature(repo, slug, notes)
-            if found["stage"] != "shipped":
-                features.append({"feature": slug, "stage": found["stage"], "worktree": found["worktree"]})
-        next_ = "Stage 1 Frame for new work"
-        if features:
-            next_ += ", or run devloop status --feature <slug> for an open feature"
-        payload = result(1, f"on {branch or 'a detached HEAD'} with no --feature", next_)
-        payload["features"] = features
-        return payload
-    return detect_feature(repo, feature, notes)
-
-
-def cmd_status(args: argparse.Namespace) -> int:
-    repo = Path(args.repo).resolve()
+def finite_minutes(value: str) -> float:
     try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit(result(0, "no notes path", str(exc)), 0)
-    out = detect(repo, args.feature, notes)
-    # Lazy, as in cmd_board: the old tests load this file with importlib and must not need the board package.
-    sys.path.insert(0, str(Path(__file__).parent))
-    from board import state, store, writer
-
-    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    last = state.load(Path(common) / "dev-loop")["last_run"] if common else None
-    last = last if isinstance(last, dict) else {}
-    skipped = last.get("skipped")
-    if isinstance(skipped, list) and any(
-            isinstance(s, dict) and s.get("reason") not in ("busy", "rebase", "no-dev-loop", "stage-0")
-            for s in skipped):
-        out["board"] = {"at": last.get("at"), "skipped": skipped}
-    top = git(repo, "rev-parse", "--show-toplevel")
-    first = next((line[len("worktree "):] for line in (git(repo, "worktree", "list", "--porcelain") or "").splitlines()
-                  if line.startswith("worktree ")), None)
-    if top and first:
-        have, main = writer.kit_version(Path(top)), writer.kit_version(Path(first))
-        if store.version_key(have) > store.version_key(main):
-            out["kit_drift"] = {"worktree": have, "main": main}
-    return emit(out, 0)
-
-
-# logged and gate
-
-
-def log_path(cwd: Path, name: str) -> Path | None:
-    git_dir = git(cwd, "rev-parse", "--absolute-git-dir")
-    if git_dir is None:
-        return None
-    logs = Path(git_dir) / "dev-loop" / "logs"
-    logs.mkdir(parents=True, exist_ok=True)
-    stamp = f"{name}-{datetime.now():%Y%m%dT%H%M%S}"
-    log, n = logs / f"{stamp}.log", 1
-    while True:
-        try:
-            log.open("x").close()
-            return log
-        except FileExistsError:
-            n += 1
-            log = logs / f"{stamp}-{n}.log"
-
-
-def run_logged(cmd: list[str], log: Path, cwd: Path, env: dict[str, str] | None = None) -> dict:
-    start = time.monotonic()
-    with log.open("w") as out:
-        try:
-            code = subprocess.run(cmd, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT).returncode
-        except FileNotFoundError as exc:
-            out.write(f"{exc}\n")
-            code = 127
-        except PermissionError as exc:
-            out.write(f"{exc}\n")
-            code = 126
-    return {"exit": code, "log": str(log), "seconds": round(time.monotonic() - start, 1)}
-
-
-def parse_failures(text: str) -> list[str]:
-    found: list[str] = []
-    for line in text.splitlines():
-        if line.startswith(("FAILED ", "ERROR ", "--- FAIL")) or " FAIL " in line:
-            line = line.strip()
-            if line not in found:
-                found.append(line)
-    return found
-
-
-def slowest(report_dir: Path, n: int = 10) -> list[dict]:
-    cases = []
-    for path in sorted(report_dir.glob("*.xml")):
-        try:
-            root = ET.parse(path).getroot()
-        except ET.ParseError:
-            continue
-        for case in root.iter("testcase"):
-            try:
-                seconds = float(case.get("time") or 0)
-            except ValueError:
-                continue
-            name = case.get("name", "")
-            classname = case.get("classname")
-            cases.append({"name": f"{classname}::{name}" if classname else name, "seconds": seconds})
-    return sorted(cases, key=lambda c: c["seconds"], reverse=True)[:n]
-
-
-def cmd_logged(args: argparse.Namespace) -> int:
-    cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
-    if not cmd:
-        return emit({"error": "no command after --"}, 2)
-    cwd = Path.cwd()
-    log = log_path(cwd, args.name or Path(cmd[0]).name)
-    if log is None:
-        return emit({"error": "not a git repository"}, 2)
-    payload = run_logged(cmd, log, cwd)
-    payload["tail"] = log.read_text(errors="replace").splitlines()[-20:]
-    return emit(payload, 0 if payload["exit"] == 0 else 1)
-
-
-def mapped_gate(top: Path) -> str | None:
-    try:
-        command = json.loads((top / "dev-loop.json").read_text()).get("commands", {}).get("gate")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return command if isinstance(command, str) and command else None
-
-
-def cmd_gate(args: argparse.Namespace) -> int:
-    top_out = git(Path.cwd(), "rev-parse", "--show-toplevel")
-    log = log_path(Path.cwd(), "gate")
-    if top_out is None or log is None:
-        return emit({"error": "not a git repository"}, 2)
-    top = Path(top_out)
-    command = mapped_gate(top)
-    cmd = ["sh", "-c", command] if command else [str(top / "scripts" / "gate.sh")]
-    reports = log.parent / f"{log.stem}-reports"
-    reports.mkdir()
-    payload = run_logged(cmd, log, top, {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
-    payload["failures"] = parse_failures(log.read_text(errors="replace"))
-    payload["slowest"] = slowest(reports)
-    if not any(reports.glob("*.xml")):
-        payload["hint"] = JUNIT_HINT
-    return emit(payload, 0 if payload["exit"] == 0 else 1)
-
-
-# ci wait
-
-
-def first_error(log: str) -> str | None:
-    lines = log.splitlines()
-    for i, line in enumerate(lines):
-        if "error" in line.lower() or "FAIL" in line:
-            return "\n".join(lines[i:i + 30])
-    return None
-
-
-def gh(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
-
-
-def cmd_ci_wait(args: argparse.Namespace) -> int:
-    payload: dict = {"state": "no-pr", "failed_job": None, "first_error": None, "url": None}
-    view = gh("pr", "view", *([str(args.pr)] if args.pr else []), "--json", "number,url")
-    if view.returncode != 0:
-        if "no pull requests found" not in view.stderr:
-            payload.update(state="error", message=view.stderr.strip())
-        return emit(payload, 1)
-    pr = json.loads(view.stdout)
-    number, payload["url"] = str(pr["number"]), pr["url"]
-    deadline = time.monotonic() + args.timeout * 60
-    while True:
-        try:
-            watch = gh("pr", "checks", number, "--watch", "--interval", "30", timeout=max(deadline - time.monotonic(), 0))
-        except subprocess.TimeoutExpired:
-            watch = None
-        # Right after a push no check is registered yet: gh exits 1 with "no checks reported".
-        if watch is not None and "no checks reported" in watch.stderr and time.monotonic() + CHECKS_RETRY_SECONDS < deadline:
-            time.sleep(CHECKS_RETRY_SECONDS)
-            continue
-        if watch is None or "no checks reported" in watch.stderr:
-            payload["state"] = "timeout"
-            return emit(payload, 1)
-        break
-    if watch.returncode == 0:
-        payload["state"] = "pass"
-        return emit(payload, 0)
-    payload["state"] = "fail"
-    try:
-        checks = json.loads(gh("pr", "checks", number, "--json", "name,state,link").stdout)
+        minutes = float(value)
     except ValueError:
-        checks = []
-    failed = next((c for c in checks if c.get("state") in FAILED_CHECK_STATES), None)
-    if failed:
-        payload["failed_job"] = failed.get("name")
-        payload["url"] = failed.get("link") or payload["url"]
-        run = re.search(r"/runs/(\d+)", failed.get("link") or "")
-        if run:
-            payload["first_error"] = first_error(gh("run", "view", run.group(1), "--log-failed").stdout)
-    return emit(payload, 1)
+        minutes = float("nan")
+    if not math.isfinite(minutes) or minutes <= 0:
+        raise argparse.ArgumentTypeError(f"not a finite number above 0: {value}")
+    return minutes
 
 
-# board
-
-
-def cmd_board(args: argparse.Namespace) -> int:
-    raw = os.environ.get("DEVLOOP_BOARD_PORT") or "7777"
-    port = int(raw) if raw.isascii() and raw.isdigit() and 0 < int(raw) < 65536 else None
-    bad_port = {"state": "error", "url": f"http://127.0.0.1:{raw}/",
-                "message": f"DEVLOOP_BOARD_PORT is not a port: {raw}"}
-    # Lazy: the old tests load this file with importlib and must not need the board package.
-    sys.path.insert(0, str(Path(__file__).parent))
-    from board import store, writer  # board.server only when a server is stopped or ensured: its imports are slow.
-
-    if args.stop_server:
-        from board import server
-        stopped = server.stop(port) if port is not None else bad_port
-        return emit({"notes": [], "removed": [], "board_note": None, "skipped": [], "server": stopped}, 0)
-    repo = Path(args.repo).resolve()
-    try:
-        notes = resolve(repo, os.environ, Path.home())
-    except NotesPathError as exc:
-        return emit({"error": str(exc)}, 1)
-    hook_cwd = hook_session = None
-    if args.event:
-        try:
-            hook = json.loads(sys.stdin.read())
-        except ValueError:
-            hook = None
-        hook = hook if isinstance(hook, dict) else {}
-        cwd, session = hook.get("cwd"), hook.get("session_id")
-        hook_cwd = Path(cwd) if isinstance(cwd, str) and cwd else None
-        hook_session = session if isinstance(session, str) and session else None  # D12: else no session map.
-
-    try:
-        code, payload = writer.run(sys.modules[__name__], repo, notes, Path.home(), event=args.event,
-                                   hook_cwd=hook_cwd, hook_session=hook_session, claim=args.claim)
-        if code != 0:
-            return emit(payload, code)
-        whole = {s["reason"] for s in payload["skipped"]} & {"no-dev-loop", "notes-in-repo"}
-        if args.no_serve or whole:
-            payload["server"] = {"state": "disabled", "url": f"http://127.0.0.1:{raw}/"}
-        elif port is None:
-            payload["server"] = bad_port
-        else:
-            from board import server
-            machine = store.load_machine(Path.home())
-            top = Path(git(repo, "rev-parse", "--show-toplevel") or repo)
-            payload["server"] = server.ensure(port, writer.kit_version(top), [store.root_of(notes)], machine["id"],
-                                              machine["owner"])
-    except Exception as exc:  # A bad machine.json, an undecodable spec, an OSError: JSON, never a traceback.
-        error = f"{type(exc).__name__}: {exc}"
-        try:  # A hook drops the JSON: `last_run` shows the crash in `status`. Best effort.
-            from board import state
-            common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            if common:
-                state.save_last_run(Path(common) / "dev-loop", time.strftime(writer.TIME, time.gmtime()),
-                                    [{"feature": None, "reason": "error", "message": error}])
-        except Exception:
-            pass
-        return emit({"error": error}, 1)
-    return emit(payload, 0)
+def positive_int(value: str) -> int:
+    if not value.isdigit() or int(value) < 1:
+        raise argparse.ArgumentTypeError(f"not a positive integer: {value}")
+    return int(value)
 
 
 class Parser(argparse.ArgumentParser):
@@ -533,39 +190,181 @@ class Parser(argparse.ArgumentParser):
 
 
 def main() -> int:
+    if __name__ in sys.modules:
+        sys.modules.setdefault("devloop", sys.modules[__name__])
+    from autonomy import INTENT_FIELDS
+
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
     status = commands.add_parser("status")
     status.add_argument("--repo", default=".")
     status.add_argument("--feature")
-    status.set_defaults(run=cmd_status)
+    status.set_defaults(run=("status", "cmd_status"))
+
+    merge_check = commands.add_parser("merge-check")
+    merge_check.add_argument("--repo", default=".")
+    merge_check.add_argument("--feature")
+    merge_check.set_defaults(run=("merge_check", "cmd_merge_check"))
 
     logged = commands.add_parser("logged")
     logged.add_argument("--name")
     logged.add_argument("cmd", nargs=argparse.REMAINDER)
-    logged.set_defaults(run=cmd_logged)
+    logged.set_defaults(run=("gate", "cmd_logged"))
 
     gate = commands.add_parser("gate")
     gate.add_argument("--summary", action="store_true", required=True)
-    gate.set_defaults(run=cmd_gate)
+    gate.set_defaults(run=("gate", "cmd_gate"))
 
     ci = commands.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     wait = ci.add_parser("wait")
     wait.add_argument("--pr", type=int)
-    wait.add_argument("--timeout", type=float, default=30, help="minutes")
-    wait.set_defaults(run=cmd_ci_wait)
+    wait.add_argument("--timeout", type=finite_minutes, default=30, help="minutes")
+    wait.set_defaults(run=("ci", "cmd_ci_wait"))
 
     board = commands.add_parser("board")
     board.add_argument("--repo", default=".")
-    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-stop", "post-tool"])
+    board.add_argument("--event", choices=["session-start", "prompt", "stop", "subagent-start", "subagent-stop", "post-tool"])
     board.add_argument("--claim")
     board.add_argument("--no-serve", action="store_true")
     board.add_argument("--stop-server", action="store_true")
-    board.set_defaults(run=cmd_board)
+    board.set_defaults(run=("board.cli", "cmd_board"))
+
+    seal = commands.add_parser("seal")
+    seal.add_argument("--feature")
+    seal.add_argument("--message")
+    seal.add_argument("--reverts", action="extend", nargs="+")
+    seal.add_argument("--rebase-continue", action="store_true")
+    seal.set_defaults(run=("seal.value", "cmd_seal"))
+
+    audit = commands.add_parser("audit")
+    audit.set_defaults(run=("seal.audit", "cmd_audit"))
+
+    seal_check = commands.add_parser("seal-check")
+    seal_check.add_argument("--uncommitted", action="store_true")
+    seal_check.set_defaults(run=("seal.check", "cmd_seal_check"))
+
+    search_wall = commands.add_parser("search-wall")
+    search_wall.set_defaults(run=("seal.search", "cmd_search_wall"))
+
+    size_check = commands.add_parser("size-check")
+    size_mode = size_check.add_mutually_exclusive_group()
+    size_mode.add_argument("--uncommitted", action="store_true")
+    size_mode.add_argument("--all", action="store_true")
+    size_check.set_defaults(run=("size", "cmd_size_check"))
+
+    verify_init = commands.add_parser("verify-init")
+    verify_init.add_argument("--base-url", required=True)
+    verify_init.add_argument("--name")
+    verify_init.set_defaults(run=("verify", "cmd_verify_init"))
+
+    drive = commands.add_parser("drive")
+    scope = drive.add_mutually_exclusive_group()
+    scope.add_argument("--all", action="store_true")
+    scope.add_argument("--since")
+    scope.add_argument("--routes-from")
+    drive.set_defaults(run=("verify", "cmd_drive"))
+
+    capture = commands.add_parser("capture")
+    capture.add_argument("--pr", type=positive_int)
+    capture.add_argument("--before")
+    capture.add_argument("--after")
+    capture.add_argument("--write-after")
+    capture.set_defaults(run=("capture", "cmd_capture"))
+
+    second = commands.add_parser("second-review")
+    second.add_argument("--harness", choices=["claude", "codex"], required=True)
+    second.add_argument("--timeout", type=finite_minutes, default=15)
+    second.set_defaults(run=("second_review", "cmd_second_review"))
+
+    review = commands.add_parser("review-merge")
+    review.add_argument("pairs", nargs="+")
+    review.set_defaults(run=("feature_gate", "cmd_review_merge"))
+
+    accept = commands.add_parser("acceptance")
+    accept.add_argument("--failed", action="store_true")
+    accept.set_defaults(run=("feature_gate", "cmd_acceptance"))
+
+    release = commands.add_parser("release-check")
+    release.add_argument("--repo", default=".")
+    target = release.add_mutually_exclusive_group(required=True)
+    target.add_argument("--tag")
+    target.add_argument("--sha")
+    release.set_defaults(run=("release", "cmd_release_check"))
+
+    skip = commands.add_parser("ci-skip")
+    skip.add_argument("--base", required=True)
+    skip.add_argument("--head", default="HEAD")
+    skip.add_argument("--repo", default=".")
+    skip.add_argument("--github-output", action="store_true")
+    skip.set_defaults(run=("ci_skip", "cmd_ci_skip"))
+
+    notes = commands.add_parser("release-notes")
+    notes.add_argument("--tag", required=True)
+    notes.add_argument("--repo", default=".")
+    notes.add_argument("--output")
+    notes.set_defaults(run=("release", "cmd_release_notes"))
+
+    plan = commands.add_parser("release-plan")
+    plan.add_argument("--repo", default=".")
+    plan.add_argument("--harness", choices=["claude", "codex"], default="claude")
+    plan.add_argument("--profile", choices=["quick", "standard", "deep"])
+    plan.add_argument("--budget", type=positive_int)
+    plan.set_defaults(run=("release", "cmd_release_plan"))
+
+    rec = commands.add_parser("release-record")
+    rec.add_argument("--repo", default=".")
+    rec.add_argument("--run", dest="run_folder", required=True)
+    rec.add_argument("--base")
+    rec.add_argument("--harness", choices=["claude", "codex"], default="claude")
+    rec.set_defaults(run=("release", "cmd_release_record"))
+
+    metrics = commands.add_parser("metrics")
+    metrics.add_argument("--repo", default=".")
+    metrics.add_argument("--feature")
+    metrics.add_argument("--write", action="store_true")
+    metrics.set_defaults(run=("metrics", "cmd_metrics"))
+
+    sessions = commands.add_parser("sessions")
+    sessions.add_argument("--since", type=positive_int, required=True)
+    sessions.add_argument("--repo", default=".")
+    sessions.set_defaults(run=("retro", "cmd_sessions"))
+
+    decide = commands.add_parser("decide")
+    decide.add_argument("--kind", choices=["decision", "discovery"], required=True)
+    decide.add_argument("--what", required=True)
+    decide.add_argument("--why", required=True)
+    decide.add_argument("--evidence", required=True)
+    decide.add_argument("--result")
+    decide.add_argument("--risk", action="store_true")
+    decide.add_argument("--feature")
+    decide.add_argument("--repo", default=".")
+    decide.set_defaults(run=("autonomy", "cmd_decide"))
+
+    pause = commands.add_parser("pause")
+    pause.add_argument("--event", action="store_true")
+    pause.add_argument("--clear", action="store_true")
+    for name in INTENT_FIELDS:
+        pause.add_argument(f"--{name}")
+    pause.add_argument("--agent", action="append")
+    pause.add_argument("--run", action="append", dest="runs")
+    pause.add_argument("--repo", default=".")
+    pause.set_defaults(run=("autonomy", "cmd_pause"))
+
+    migrate = commands.add_parser("notes-migrate")
+    migrate.add_argument("--repo", default=".")
+    migrate.add_argument("--apply", action="store_true")
+    migrate.add_argument("--plan")
+    migrate.set_defaults(run=("notes_migrate.apply", "cmd_notes_migrate"))
 
     args = parser.parse_args()
-    return args.run(args)
+    if args.command == "capture":
+        if args.write_after and (args.pr or args.before or args.after):
+            parser.error("--write-after takes no --pr, --before or --after")
+        if not args.write_after and not args.pr:
+            parser.error("--pr is required unless --write-after is given")
+    module, name = args.run
+    return getattr(importlib.import_module(module), name)(args)
 
 
 if __name__ == "__main__":

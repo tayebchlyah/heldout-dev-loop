@@ -1,0 +1,521 @@
+"""`devloop.py metrics`: the token cost of each stage of a feature and its numbers, from local Claude transcripts.
+
+D2 read, D3 feature of a record, D4 stage of a record, D5 weights, D6 numbers, D7 row and notes file;
+effort per stage and role, its row cell and the old table migration.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from autonomy import branch_slug
+import devloop
+from devloop import emit, frontmatter, git, specs
+from merge_check import main_ref
+from notes_path import NotesPathError, resolve
+from status import LEVELS, feature_checkout
+
+WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_read": 0.1, "output": 5.0}
+STAGES = ("1-2", "3", "4", "5", "6", "7")
+GATE = "devloop.py gate --summary"
+DENIAL = re.compile(r"PreToolUse:\S+ hook error: \[(.*?)(?:\]:.*)?$")
+HOOK = re.compile(r"[^\s/\[\]\"'`]+\.sh")
+TESTS = (re.compile(r"^\s*def test_\w*\("), re.compile(r"^\s*(?:it|test)\("), re.compile(r"^func Test\w*\("))
+HEADER = ("| feature | track | shipped | sessions | active h | user msgs | gate runs | gate s | unit tests "
+          "| acceptance tests | denials | S1-2 | S3 | S4 | S5 | S6 | S7 | total | effort | escaped |")
+CODES = dict(zip(LEVELS, ("l", "m", "h", "xh", "max")))
+DATA_RULE = ("Data rule: no process cut based on cost (drop a reviewer, no `tdd` for a task, shorter spec stages) "
+             "until 5 features have a row with stage cells that are not `?`.")
+CLAIM = re.compile(r"devloop\.py board\b.*--claim[ =]([a-z0-9]+(?:-[a-z0-9]+)*)")
+
+
+@dataclass
+class Transcript:
+    path: Path
+    records: list[dict]
+    meta: dict | None  # the subagent's `.meta.json` object, None for a main transcript
+
+    @property
+    def main(self) -> bool:
+        return self.meta is None
+
+
+@dataclass
+class Counted:
+    record: dict
+    transcript: Transcript
+    feature: str
+    copy: bool  # its `uuid` was read before: it drives attribution, it is not counted
+
+
+def parse_time(value: object) -> float | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def project_folders(root: Path, worktrees: list[Path]) -> list[Path]:
+    names = [re.sub(r"[^A-Za-z0-9]", "-", str(w)) for w in worktrees]
+    return [root / n for n in dict.fromkeys(names) if (root / n).is_dir()]
+
+
+def read_records(path: Path) -> list[dict]:
+    records = []
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    for line in lines:
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+    return records
+
+
+def read_meta(path: Path) -> dict:
+    try:
+        value = json.loads(path.with_name(path.name.removesuffix(".jsonl") + ".meta.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def load(folders: list[Path]) -> list[Transcript]:
+    found = []
+    for folder in folders:
+        found += [Transcript(p, read_records(p), None) for p in sorted(folder.glob("*.jsonl"))]
+        found += [Transcript(p, read_records(p), read_meta(p)) for p in sorted(folder.glob("*/subagents/agent-*.jsonl"))]
+
+    def first_time(t: Transcript) -> float:
+        times = (parse_time(r.get("timestamp")) for r in t.records)
+        return next((x for x in times if x is not None), float("inf"))
+
+    return sorted(found, key=lambda t: (first_time(t), str(t.path)))
+
+
+def blocks(rec: dict) -> list[dict]:
+    message = rec.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+
+
+def tool_uses(rec: dict) -> list[dict]:
+    return [b for b in blocks(rec) if b.get("type") == "tool_use"] if rec.get("type") == "assistant" else []
+
+
+def mention(rec: dict, patterns: dict[str, re.Pattern]) -> str | None:
+    """The feature the record's last tool_use names, or None (D3)."""
+    found = None
+    for use in tool_uses(rec):
+        inp = use.get("input")
+        command = inp.get("command") if isinstance(inp, dict) else None
+        if use.get("name") == "Bash" and isinstance(command, str) and (m := CLAIM.search(command)):
+            found = m.group(1)
+            continue
+        text = json.dumps(inp, ensure_ascii=False)
+        for slug, pattern in patterns.items():
+            if pattern.search(text):
+                found = slug
+    return found
+
+
+def attribute(transcripts: list[Transcript], worktrees: dict[str, Path]) -> list[Counted]:
+    """Each record that belongs to a feature, in read order (D2, D3)."""
+    patterns = {slug: re.compile(re.escape(str(path)) + r'(?=[/" ]|$)') for slug, path in worktrees.items()}
+    seen: set[str] = set()  # main transcripts only: a subagent record is never a copy
+    copies: dict[int, list[bool]] = {}
+    for t in transcripts:
+        flags = []
+        for rec in t.records:
+            uid = rec.get("uuid")
+            flags.append(t.main and isinstance(uid, str) and uid in seen)
+            if t.main and isinstance(uid, str):
+                seen.add(uid)
+        copies[id(t)] = flags
+
+    features: dict[int, list[str | None]] = {}
+    for t in transcripts:
+        if not t.main:
+            continue
+        current = None
+        marks = []
+        for rec in t.records:
+            current = mention(rec, patterns) or current
+            marks.append(current)
+        first = next((m for m in marks if m), None)
+        features[id(t)] = [m or first for m in marks]
+
+    by_tool: dict[str, str] = {}
+
+    def index(t: Transcript) -> None:
+        for rec, feature in zip(t.records, features[id(t)]):
+            for use in tool_uses(rec):
+                if feature and isinstance(use.get("id"), str):
+                    by_tool[use["id"]] = feature
+
+    for t in transcripts:
+        if t.main:
+            index(t)
+    pending = [t for t in transcripts if not t.main]
+    while resolved := [t for t in pending if (t.meta or {}).get("toolUseId") in by_tool]:
+        for t in resolved:
+            features[id(t)] = [by_tool[(t.meta or {})["toolUseId"]]] * len(t.records)
+            index(t)
+            pending.remove(t)
+
+    return [Counted(rec, t, feature, copy)
+            for t in transcripts
+            for rec, feature, copy in zip(t.records, features.get(id(t), []), copies[id(t)])
+            if feature]
+
+
+def number(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def raw_usage(message: dict) -> dict[str, int]:
+    usage = message.get("usage") if isinstance(message, dict) else None
+    usage = usage if isinstance(usage, dict) else {}
+    creation = usage.get("cache_creation")
+    if isinstance(creation, dict):
+        write_5m = number(creation.get("ephemeral_5m_input_tokens"))
+        write_1h = number(creation.get("ephemeral_1h_input_tokens"))
+    else:
+        write_5m, write_1h = number(usage.get("cache_creation_input_tokens")), 0
+    return {"input": number(usage.get("input_tokens")), "cache_write_5m": write_5m, "cache_write_1h": write_1h,
+            "cache_read": number(usage.get("cache_read_input_tokens")), "output": number(usage.get("output_tokens"))}
+
+
+def weigh(raw: dict[str, int]) -> float:
+    return sum(raw[k] * w for k, w in WEIGHTS.items())
+
+
+def boundaries(state_file: Path, slug: str, has_spec: bool) -> tuple[list[tuple[float, str]] | None, set[str]]:
+    """Sorted (time, stage) of the keys 3 to 7 of the board `stage_times`, None when unattributed (D4); plus the
+    keys that hold a time."""
+    try:
+        state = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        return None, set()
+    features = state.get("features") if isinstance(state, dict) else None
+    entry = features.get(slug) if isinstance(features, dict) else None
+    times = entry.get("stage_times") if isinstance(entry, dict) else None
+    if not isinstance(times, dict):
+        return None, set()
+    present = {str(k) for k, v in times.items() if parse_time(v) is not None}
+    bounds = sorted((parse_time(v), str(k)) for k, v in times.items()
+                    if str(k) in STAGES[1:] and parse_time(v) is not None)
+    if (has_spec and entry.get("backfilled") is True) or not bounds:
+        return None, present
+    return bounds, present  # type: ignore[return-value]
+
+
+def stage_of(when: float | None, bounds: list[tuple[float, str]]) -> str:
+    stage = "1-2"
+    for at, key in bounds:
+        if when is not None and at <= when:
+            stage = key
+    return stage
+
+
+def text_of(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b["text"] for b in content if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return ""
+
+
+def typed(rec: dict) -> bool:
+    """A user message the user typed (D6)."""
+    message = rec.get("message")
+    if rec.get("type") != "user" or rec.get("isMeta") is True or rec.get("isCompactSummary") is True \
+            or not isinstance(message, dict):
+        return False
+    content = message.get("content")
+    if isinstance(content, str):
+        return not content.startswith(("<", "[Request interrupted"))
+    if not isinstance(content, list):
+        return False
+    parts = [b for b in content if isinstance(b, dict)]
+    if any(b.get("type") == "tool_result" for b in parts):
+        return False
+    first = next((b.get("text") for b in parts if b.get("type") == "text"), None)
+    return not (isinstance(first, str) and first.startswith(("<", "[Request interrupted")))
+
+
+def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | None) -> dict:
+    """The JSON numbers of the feature, from its records that are not copies (D5, D6)."""
+    commands = {use["id"]: use for c in items for use in tool_uses(c.record) if isinstance(use.get("id"), str)}
+    mine = [c for c in items if c.feature == slug and not c.copy]
+    stages: dict[str, dict] = {}
+    per_transcript: dict[int, float] = {}
+    owners: dict[str, Counted] = {}  # a `message.id` counts for the first record that holds it, over all features
+    for c in items:
+        message = c.record.get("message")
+        if c.copy or c.record.get("type") != "assistant" or not isinstance(message, dict) \
+                or not isinstance(message.get("usage"), dict):
+            continue
+        if isinstance(message.get("id"), str):
+            owners.setdefault(message["id"], c)
+    times: list[float] = []
+    gate = {"runs": 0, "seconds": 0.0}
+    denials: dict[str, int] = {}
+    total = 0.0
+    for c in mine:
+        rec = c.record
+        when = parse_time(rec.get("timestamp"))
+        if when is not None:
+            times.append(when)
+        stage = stages.setdefault(stage_of(when, bounds or []), {"weighted": 0.0, "models": {}})
+        message = rec.get("message")
+        if rec.get("type") == "assistant" and isinstance(message, dict) and isinstance(message.get("usage"), dict):
+            mid = message.get("id")
+            if not (isinstance(mid, str) and owners[mid] is not c):
+                raw = raw_usage(message)
+                weight = weigh(raw)
+                total += weight
+                stage["weighted"] += weight
+                model = message.get("model") if isinstance(message.get("model"), str) else "unknown"
+                kinds = stage["models"].setdefault(model, dict.fromkeys(WEIGHTS, 0))
+                for key, value in raw.items():
+                    kinds[key] += value
+                per_transcript[id(c.transcript)] = per_transcript.get(id(c.transcript), 0.0) + weight
+        for block in blocks(rec) if rec.get("type") == "user" else []:
+            if block.get("type") != "tool_result":
+                continue
+            text = text_of(block.get("content"))
+            use = commands.get(block.get("tool_use_id"), {})
+            inp = use.get("input") if isinstance(use.get("input"), dict) else {}
+            if use.get("name") == "Bash" and GATE in str(inp.get("command", "")):
+                payload = None
+                for candidate in (text, *[x for x in text.splitlines() if x.startswith("{")][-1:]):
+                    try:
+                        payload = json.loads(candidate)
+                        break
+                    except ValueError:
+                        continue
+                seconds = payload.get("seconds") if isinstance(payload, dict) else None
+                if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                    gate["runs"] += 1
+                    gate["seconds"] += seconds
+            if block.get("is_error") is True and (m := DENIAL.match(text.split("\n", 1)[0])):
+                names = HOOK.findall(m.group(1))
+                key = names[-1] if names else "other"
+                denials[key] = denials.get(key, 0) + 1
+
+    times.sort()
+    active = sum(b - a for a, b in zip(times, times[1:]) if b - a <= 300)
+    agents = []
+    for t in {id(c.transcript): c.transcript for c in mine if not c.transcript.main}.values():
+        stamps = [x for c in mine if c.transcript is t if (x := parse_time(c.record.get("timestamp"))) is not None]
+        meta = t.meta or {}
+        agents.append({"type": str(meta.get("agentType", "")), "description": str(meta.get("description", "")),
+                       "weighted": round(per_transcript.get(id(t), 0.0)),
+                       "seconds": float(max(stamps) - min(stamps)) if stamps else 0.0})
+    agents.sort(key=lambda a: -a["weighted"])
+    return {
+        "sessions": len({id(c.transcript) for c in mine if c.transcript.main}),
+        "active_hours": round(active / 3600, 1),
+        "user_messages": sum(1 for c in mine if c.transcript.main and typed(c.record)),
+        "gate": gate,
+        "denials": denials,
+        "unattributed": bounds is None,
+        "stages": {} if bounds is None else {
+            k: {"weighted": round(stages[k]["weighted"]), "models": stages[k]["models"]} for k in STAGES if k in stages},
+        "total": round(total),
+        "agents": agents,
+    }
+
+
+def efforts(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | None) -> dict:
+    """Requests of the feature by stage, role and effort level, from its `api-request` records."""
+    if bounds is None:
+        return {}
+    found: dict[str, dict[str, dict[str, int]]] = {}
+    for c in items:
+        rec = c.record
+        if c.feature != slug or c.copy or rec.get("type") != "api-request":
+            continue
+        params = rec.get("params")
+        config = params.get("output_config") if isinstance(params, dict) else None
+        level = config.get("effort") if isinstance(config, dict) else None
+        agent = (c.transcript.meta or {}).get("agentType")
+        role = "main" if c.transcript.main else agent if isinstance(agent, str) and agent else "?"
+        levels = found.setdefault(stage_of(parse_time(rec.get("timestamp")), bounds), {}).setdefault(role, {})
+        key = level if level in LEVELS else "?"
+        levels[key] = levels.get(key, 0) + 1
+    return found
+
+
+def effort_cell(payload: dict) -> str:
+    """`<stage>:<code>` per stage from the main role: most requests, a tie to the higher level."""
+    if payload["unattributed"]:
+        return "?"
+
+    def code(stage: str) -> str:
+        counts = payload["effort"].get(stage, {}).get("main", {})
+        if not counts:
+            return "-"
+        known = [lv for lv in LEVELS if counts.get(lv)]
+        return CODES[max(reversed(known), key=lambda lv: counts[lv])] if known else "?"
+
+    return " ".join(f"{stage}:{code(stage)}" for stage in STAGES)
+
+
+def test_counts(worktree: Path, ref: str) -> dict[str, int]:
+    """Test functions added minus removed on the branch, by tier (D6)."""
+    counts = {"unit": 0, "acceptance": 0}
+    git = ["git", "-C", str(worktree)]
+    base = subprocess.run([*git, "merge-base", "HEAD", ref], capture_output=True, text=True).stdout.strip()
+    if not base:
+        return counts
+    diff = subprocess.run([*git, "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+                           "-U0", f"{base}...HEAD"],
+                          capture_output=True, text=True, errors="replace").stdout
+    path = ""
+    for line in diff.splitlines():
+        if line.startswith(("--- a/", "+++ b/")):
+            path = line[6:]  # a removed file keeps the `--- a/` path: its `+++` side is /dev/null
+        elif line.startswith(("--- ", "+++ ")):
+            continue
+        elif line[:1] in "+-" and line and any(p.match(line[1:]) for p in TESTS):
+            tier = "acceptance" if path.startswith("tests/acceptance/") else "unit"
+            counts[tier] += 1 if line[0] == "+" else -1
+    return counts
+
+
+def row(slug: str, track: str, shipped: str, payload: dict, present: set[str]) -> str:
+    """The table row of the feature, `escaped` empty (D7)."""
+    def stage(key: str) -> str:
+        if payload["unattributed"]:
+            return "?"
+        if key != "1-2" and key not in present:
+            return "-"
+        return str(round(payload["stages"].get(key, {}).get("weighted", 0) / 1000))
+
+    cells = [slug, track, shipped, payload["sessions"], payload["active_hours"], payload["user_messages"],
+             payload["gate"]["runs"], round(payload["gate"]["seconds"]), payload["tests"]["unit"],
+             payload["tests"]["acceptance"], sum(payload["denials"].values()), *map(stage, STAGES),
+             round(payload["total"] / 1000), effort_cell(payload), ""]
+    return "| " + " | ".join(map(str, cells)) + " |"
+
+
+def cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().removeprefix("|").removesuffix("|").split("|")]
+
+
+def write_row(file: Path, slug: str, line: str, lock: Path) -> None:
+    """Replace the feature's row (its `escaped` cell kept), else add it after the last table line. Raises OSError."""
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        if not file.exists() and file.with_name(f".{file.name}.icloud").exists():
+            raise OSError(f"iCloud placeholder: {file}")
+        write_locked(file, slug, line)
+
+
+def migrate(lines: list[str]) -> list[str]:
+    """An old header with no `effort` column becomes `HEADER`, its rows get a `?` cell before `escaped`."""
+    if any(cells(x) == cells(HEADER) for x in lines if x.lstrip().startswith("|")):
+        return lines
+    at = next((i for i, x in enumerate(lines) if x.lstrip().startswith("|") and cells(x)[0] == "feature"
+               and "effort" not in cells(x)), None)
+    if at is None:
+        return lines
+    out = [*lines[:at], HEADER, separator()]
+    rule = at + 1 < len(lines) and lines[at + 1].lstrip().startswith("|") \
+        and set("".join(cells(lines[at + 1]))) <= set("-:")
+    rest = lines[at + 1 + rule:]
+    for i, x in enumerate(rest):
+        if not x.lstrip().startswith("|"):
+            return out + rest[i:]
+        head, last = x.rstrip().removesuffix("|").rsplit("|", 1)
+        out.append(f"{head}| ? |{last}|")
+    return out
+
+
+def separator() -> str:
+    return "| " + " | ".join(["---"] * len(cells(HEADER))) + " |"
+
+
+def write_locked(file: Path, slug: str, line: str) -> None:
+    table = [HEADER, separator()]
+    if file.exists():
+        lines = migrate(file.read_text().splitlines())
+        rows = [i for i, x in enumerate(lines) if x.lstrip().startswith("|")]
+        data = [i for i in rows if cells(lines[i]) != cells(HEADER) and not all(set(c) <= set("-:") for c in cells(lines[i]))]
+        mine = next((i for i in data if cells(lines[i])[0] == slug), None)
+        if mine is not None:
+            escaped = cells(lines[mine])[-1]
+            lines[mine] = line.rstrip().removesuffix("|").rsplit("|", 1)[0] + f"| {escaped} |"
+        elif rows:
+            lines.insert(rows[-1] + 1, line)
+        else:
+            lines += ["", *table, line]
+    else:
+        lines = ["---", "type: note", "tags: [dev-loop, feature-metrics]", "---", "", "# Feature Metrics", "",
+                 DATA_RULE, "", *table, line]
+    temp = file.with_name(f".{file.name}.{os.getpid()}.tmp")
+    try:
+        temp.write_text("\n".join(lines) + "\n")
+        os.replace(temp, file)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def cmd_metrics(args: argparse.Namespace) -> int:
+    from board import writer
+
+    repo = Path(args.repo).resolve()
+    slug = (args.feature or "").lower() or branch_slug(repo)
+    if slug is None:
+        return emit({"error": "no feature: run metrics on a feature branch or pass --feature"}, 1)
+    worktree, _ = feature_checkout(repo, slug)
+    if worktree is None:
+        return emit({"error": f"no worktree for {slug}"}, 1)
+    try:
+        notes = resolve(repo, os.environ, Path.home())
+    except NotesPathError as exc:
+        return emit({"error": str(exc)}, 1)
+    matches = [path for name, path in specs(notes) if name == slug]
+    fields = frontmatter(matches[-1]) if matches else {}
+    track = (fields.get("track") or "").upper() or "S"
+    found = writer.worktrees(devloop, repo)  # a worktree in a rebase (detached) keeps its slug
+    paths = list(found)
+    features = {name: path for path, name in found.items() if name}
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    items = attribute(load(project_folders(root, paths)), features)
+    if not any(c.feature == slug and not c.copy for c in items):
+        return emit({"error": f"no transcript records for {slug}"}, 1)
+    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir") or ""
+    bounds, present = boundaries(Path(common) / "dev-loop" / "board-state.json", slug, bool(matches))
+    ref = main_ref(repo)
+    payload = {"feature": slug, "track": track, "shipped": fields.get("shipped", ""),
+               **numbers(items, slug, bounds),
+               "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0},
+               "effort": efforts(items, slug, bounds)}
+    payload["row"] = row(slug, track, payload["shipped"], payload, present)
+    payload["file"] = None
+    if args.write:
+        file = notes / "Feature Metrics.md"
+        try:
+            write_row(file, slug, payload["row"], Path(common) / "dev-loop" / "metrics.lock")
+        except (OSError, UnicodeError) as exc:
+            return emit({"error": f"cannot read or write {file}: {exc}"}, 1)
+        payload["file"] = str(file)
+    return emit(payload, 0)

@@ -26,8 +26,19 @@
           {
             "type": "command",
             "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/git-guard.sh\"",
-            "timeout": 5,
+            "timeout": 30,
             "statusMessage": "Checking command safety"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/acceptance-wall.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking held-out suite access"
           }
         ]
       }
@@ -40,6 +51,12 @@
             "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh\"",
             "timeout": 600,
             "statusMessage": "Running repository gate"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/seal.sh\" turn",
+            "timeout": 120,
+            "statusMessage": "Checking held-out seal"
           }
         ]
       }
@@ -52,6 +69,12 @@
             "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh\"",
             "timeout": 600,
             "statusMessage": "Running repository gate"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/seal.sh\" stop",
+            "timeout": 120,
+            "statusMessage": "Checking held-out seal"
           }
         ]
       }
@@ -77,6 +100,18 @@
             "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" post-tool",
             "timeout": 5,
             "statusMessage": "Updating dev-loop board"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/seal.sh\" start",
+            "timeout": 5,
+            "statusMessage": "Recording subagent start"
           }
         ]
       }

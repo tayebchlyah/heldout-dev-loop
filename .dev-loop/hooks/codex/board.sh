@@ -7,16 +7,11 @@
 # The background group holds none of the hook's pipes, so the hook returns at once.
 input=$(cat)
 if [ "$1" = post-tool ]; then
-  tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
-  case "$tool" in
-    TaskCreate|TaskUpdate) ;;
-    *)
-      command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
-      case "$command" in
-        *task-start*|*task-done*|*sdd-workspace*|*"git commit"*|*"git worktree add"*|*"gh pr create"*|*"gh pr merge"*) ;;
-        *"git -C "*" commit"*|*"git -C "*" worktree add"*) ;;
-        *) exit 0 ;;
-      esac ;;
+  command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
+  case "$command" in
+    *task-start*|*task-done*|*sdd-workspace*|*"git commit"*|*"git worktree add"*|*"gh pr create"*|*"gh pr merge"*) ;;
+    *"git -C "*" commit"*|*"git -C "*" worktree add"*) ;;
+    *) exit 0 ;;
   esac
 fi
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)

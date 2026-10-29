@@ -1,6 +1,7 @@
 #!/bin/bash
-# SessionStart, UserPromptSubmit, PostToolUse, Stop, SubagentStop: refresh the progress board in the background.
-# Usage: board.sh session-start|prompt|post-tool|stop|subagent-stop. Hook input JSON on stdin. Always silent, exit 0.
+# SessionStart, UserPromptSubmit, PostToolUse, SubagentStart, Stop, SubagentStop: refresh the progress board in the
+# background. Usage: board.sh session-start|prompt|post-tool|subagent-start|stop|subagent-stop. Hook input JSON on
+# stdin. Always silent, exit 0.
 # post-tool runs only after a task list change or a command that moves the loop (task-start, task-done, sdd-workspace,
 # git commit, git worktree add (also with -C <path>), gh pr create, gh pr merge).
 # The CLI comes from the main worktree of CLAUDE_PROJECT_DIR (the hook input cwd when unset). The cwd is only data on

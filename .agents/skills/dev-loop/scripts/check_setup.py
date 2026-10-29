@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 from typing import Mapping
@@ -19,9 +20,15 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
+from devloop import AUDITS, BOARD, old_layout  # noqa: E402
+import ci  # noqa: E402
+import merge_check  # noqa: E402
+import second_review  # noqa: E402
+from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
+from verify import check as check_verify, gh_line  # noqa: E402
 
 
-CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype"]
+CODEX_SKILLS = ["grilling", "domain-modeling", "codebase-design", "code-review", "tdd", "diagnosing-bugs", "pr", "prototype", "wayfinder", "retro"]
 # D16: the Superpowers skills that Pocock grilling, tdd, diagnosing-bugs and pr replace, denied per project.
 PROJECT_SKILL_DENIES = [
     "Skill(superpowers:test-driven-development)",
@@ -29,7 +36,8 @@ PROJECT_SKILL_DENIES = [
     "Skill(superpowers:brainstorming)",
     "Skill(superpowers:finishing-a-development-branch)",
 ]
-COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed")
+COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed",
+                "release_prepare", "release_check", "release_verify")
 MERGE_VALUES = ("auto", "human")
 EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
 EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
@@ -77,6 +85,17 @@ def check_notes(home: Path, repo: Path, env: Mapping[str, str] | None = None) ->
     return []
 
 
+def check_notes_layout(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    try:
+        notes = resolve(repo, os.environ if env is None else env, home)
+    except NotesPathError:
+        return []
+    names = old_layout(notes)
+    if not names:
+        return []
+    return [f"old-notes-layout: {', '.join(names)} in {notes}: run devloop.py notes-migrate (dry run), then --apply --plan <hash>"]
+
+
 def dataview_ready(root: Path) -> bool:
     try:
         plugins = json.loads((root / ".obsidian" / "community-plugins.json").read_text())
@@ -84,6 +103,20 @@ def dataview_ready(root: Path) -> bool:
     except (OSError, ValueError):
         return False
     return isinstance(plugins, list) and "dataview" in plugins and isinstance(data, dict) and data.get("enableDataviewJs") is True
+
+
+def vault_unignored(top: Path, notes: Path, folder: str) -> bool:
+    """True when git in `top` says `<notes>/<folder>/` is not ignored."""
+    try:
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "--no-index", f"{notes.resolve().relative_to(top.resolve())}/{folder}/"],
+            cwd=top,
+            capture_output=True,
+            check=False,
+        ).returncode
+    except (OSError, ValueError):
+        return False
+    return ignored == 1
 
 
 def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = None) -> list[str]:
@@ -102,26 +135,97 @@ def check_board_vault(home: Path, repo: Path, env: Mapping[str, str] | None = No
         local = {}
     if local.get("board_dataview") is not False and (root / ".obsidian").is_dir() and not dataview_ready(root):
         actions.append("Install the Dataview plugin and turn on JavaScript queries (Dataview settings) for the board note")
-    if local.get("board_vault_git") != "shared" and (root / ".git").exists():
+    if local.get("board_vault_git") != "shared":
+        if (root / ".git").exists() and vault_unignored(root, Path(notes), BOARD):
+            actions.append(f"add {BOARD}/ to the vault .gitignore, unless a partner receives the notes by git")
+        # D13: the vault git repo is wherever git finds it, with or without an .obsidian folder.
         try:
-            ignored = subprocess.run(
-                ["git", "check-ignore", "-q", "--no-index", f"{Path(notes).resolve().relative_to(root)}/dev-loop-board/"],
-                cwd=root,
-                capture_output=True,
-                check=False,
-            ).returncode
+            top = subprocess.run(["git", "-C", str(notes), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
         except OSError:
-            ignored = 0
-        if ignored == 1:
-            actions.append("add dev-loop-board/ to the vault .gitignore, unless a partner receives the notes by git")
+            top = None
+        if top is not None and top.returncode == 0 and top.stdout.strip():
+            if vault_unignored(Path(top.stdout.strip()), Path(notes), AUDITS):
+                actions.append(f"add {AUDITS}/ to the vault .gitignore")
     # D24: `board` keeps a note at the kit version whatever its body, so a planted body is the user's to delete.
-    note = Path(notes) / "dev-loop-board" / store.BOARD_NOTE
+    note = Path(notes) / BOARD / store.BOARD_NOTE
     kit = writer.kit_version(repo)
     if note.is_file() and not note.is_symlink():
         have = (store.read_note(note) or {}).get("version")
         if store.version_key(have) == store.version_key(kit) and note.read_text() != writer.board_text(kit):
             actions.append(f"{store.BOARD_NOTE} differs from the dev-loop template: delete it, the next board run writes it again")
     return actions
+
+
+AUDIT_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
+AUDIT_SHAPE = 'security_audit in dev-loop.json must be {"images": {<name>: <image>}}, names ^[a-z0-9][a-z0-9_-]*$'
+
+
+def audit_images(config: dict) -> dict[str, str] | None:
+    """D12: the security_audit images map, or None when the key is absent or its shape is wrong."""
+    audit = config.get("security_audit")
+    images = audit.get("images") if isinstance(audit, dict) and set(audit) == {"images"} else None
+    if isinstance(images, dict) and all(
+        AUDIT_NAME.fullmatch(name) and isinstance(image, str) and image for name, image in images.items()
+    ):
+        return images
+    return None
+
+
+def check_release_sandbox(repo: Path) -> list[str]:
+    """D12: user actions for the release audit sandbox. Only for a valid, non-empty images map."""
+    config = load_json(repo / "dev-loop.json", [])
+    images = audit_images(config) if isinstance(config, dict) else None
+    if not images:
+        return []
+
+    def docker(*args: str) -> bool:
+        try:
+            return subprocess.run(["docker", *args], capture_output=True, timeout=10, check=False).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    if not docker("info"):
+        return ["start a Docker engine for the release audit sandbox"]
+    return [
+        f"pull the release audit sandbox image {image} (security_audit.images.{name})"
+        for name, image in images.items()
+        if not docker("image", "inspect", image)
+    ]
+
+
+def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """D2 to D4: the project allows a second reviewer at the main ref, so the user must choose one or turn it off."""
+    ref = merge_check.main_ref(repo)
+    if ref is None:
+        return [], []
+    # project_lock reads the ref with git: a replace ref must not change what it shows.
+    had = os.environ.get("GIT_NO_REPLACE_OBJECTS")
+    os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    try:
+        lock = second_review.project_lock(repo, ref)
+    finally:
+        if had is None:
+            del os.environ["GIT_NO_REPLACE_OBJECTS"]
+        else:
+            os.environ["GIT_NO_REPLACE_OBJECTS"] = had
+    if lock is None:
+        return [f"second_review in dev-loop.json at {ref} must be true or false"], []
+    if not lock:
+        return [], []
+    path = second_review.main_worktree(repo) / second_review.LOCAL
+    reviewer = second_review.REVIEWER[harness]
+    status, _ = second_review.read_local(repo, reviewer)
+    if status == "tracked":
+        return [f"second_review in {path} is not used: the file is tracked by git, so its answer would reach every "
+                f"clone. Run git rm --cached {second_review.LOCAL} in {path.parent}"], []
+    if status == "bad-config":
+        return [f"second_review in {path} is not valid: write false, or an object keyed by claude or codex, "
+                "each value false or an object with optional model and effort"], []
+    if status != "not-chosen":
+        return [], []
+    heading = (f'Choose the {reviewer} second reviewer: write "second_review": {{"{reviewer}": {{"model": "<model>"}}}} '
+               f'(or {{}} for the CLI default model) or "second_review": false to {path}')
+    return [], [(heading, [])]
 
 
 def check_project_config(repo: Path) -> list[str]:
@@ -140,7 +244,104 @@ def check_project_config(repo: Path) -> list[str]:
             failures.append(f"commands.{key} in dev-loop.json must be a non-empty string")
     if config.get("merge", "auto") not in MERGE_VALUES:
         failures.append("merge in dev-loop.json must be auto or human")
+    paths = config.get("merge_human_paths")
+    if "merge_human_paths" in config and not (
+        isinstance(paths, list)
+        and all(isinstance(item, str) and item.strip() and not item.endswith("/") for item in paths)
+    ):
+        failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
+    if "file_size_exempt" in config and not exempt_ok(config["file_size_exempt"]):
+        failures.append(EXEMPT_ERROR)
+    if "security_audit" in config and audit_images(config) is None:
+        failures.append(AUDIT_SHAPE)
+    if config.get("release_notes", "cliff") not in ("cliff", "written"):
+        failures.append("release_notes in dev-loop.json must be cliff or written")
+    if "version_files" in config:
+        files = config["version_files"]
+        if not (isinstance(files, list) and all(
+                isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in files)):
+            failures.append("version_files in dev-loop.json must be a list of repo-relative paths (no leading /, no ..)")
+        else:
+            failures += [f"version_files path in dev-loop.json does not exist: {p}"
+                         for p in files if not (repo / p).exists()]
     return failures
+
+
+GATE_SCRIPT_CALL = re.compile(r"(?:^|\s)(?:\./)?scripts/gate\.sh(?:\s|$)")
+GIT_CALL = re.compile(r"(?:^|[;&|({]|\$\()\s*(?:(?:if|!|then|while|until|exec|command|sudo|env)\s+)*git\b")
+GUARD_PARTS = [
+    re.compile(r"\bexport\b"),
+    re.compile(r"GIT_CONFIG_KEY_[^\s=]+=[\"']?core\.fsmonitor\b"),
+    re.compile(r"GIT_CONFIG_VALUE_[^\s=]+=[\"']?false\b"),
+    re.compile(r"GIT_CONFIG_COUNT="),
+]
+GUARD_MISSING = (
+    "scripts/gate.sh lacks the core.fsmonitor guard: export core.fsmonitor=false through "
+    "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n>, before its first git call"
+)
+GUARD_AFTER_GIT = (
+    "scripts/gate.sh runs git before the core.fsmonitor guard: move the GIT_CONFIG_* export above its first git call"
+)
+
+
+def check_gate_guard(repo: Path) -> list[str]:
+    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_* before its first git call.
+
+    Skipped when commands.gate maps a command that does not run scripts/gate.sh."""
+    gate = repo / "scripts" / "gate.sh"
+    config = load_json(repo / "dev-loop.json", [])
+    commands = config.get("commands") if isinstance(config, dict) else None
+    mapped = commands.get("gate") if isinstance(commands, dict) else None
+    if (isinstance(mapped, str) and mapped and not GATE_SCRIPT_CALL.search(mapped)) or not gate.is_file():
+        return []
+    lines = [line for line in gate.read_text(errors="replace").splitlines() if not line.lstrip().startswith("#")]
+    guard = next((i for i, line in enumerate(lines) if all(part.search(line) for part in GUARD_PARTS)), None)
+    if guard is None:
+        return [GUARD_MISSING]
+    if any(GIT_CALL.search(line) for line in lines[:guard]):
+        return [GUARD_AFTER_GIT]
+    return []
+
+
+MIN_VERSIONS = {
+    "claude": ((2, 1, 295), "Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code."),
+    "codex": ((0, 162, 1), "codex-cli {found} is older than 0.162.1 (hooks need agent_type). Update Codex."),
+}
+KIT_GUARDS = (".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/hooks/claude/deny-acceptance-to-subagents.sh")
+WALLED_AGENTS = ("implementer", "spec-tester")
+
+
+def check_version(harness: str) -> list[str]:
+    """D11: the harness binary on PATH must be new enough for the seal hooks."""
+    try:
+        out = subprocess.run([harness, "--version"], capture_output=True, text=True, check=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [f"cannot read the {harness} version: {exc}"]
+    match = re.search(r"\d+(?:\.\d+)+", out)
+    if not match:
+        return [f"cannot read the {harness} version: no version in {out.strip()!r}"]
+    found = match.group()
+    minimum, message = MIN_VERSIONS[harness]
+    return [message.format(found=found)] if tuple(map(int, found.split("."))) < minimum else []
+
+
+def check_on_failure(repo: Path) -> list[str]:
+    """D8: each kit guard hook, in the settings and in the agent frontmatter, carries onFailure: block."""
+    missing = []
+    settings = load_json(repo / ".claude" / "settings.json", [])
+    for entry in settings.get("hooks", {}).get("PreToolUse", []):
+        for hook in entry.get("hooks", []):
+            command = hook.get("command", "")
+            if any(guard in command for guard in KIT_GUARDS) and hook.get("onFailure") != "block":
+                missing.append(command)
+    for name in WALLED_AGENTS:
+        path = repo / ".claude" / "agents" / f"{name}.md"
+        text = path.read_text(errors="replace") if path.is_file() else ""
+        for block in re.split(r"(?m)^\s*- type:", text.partition("\n---\n")[0])[1:]:
+            command = re.search(r"command:\s*(.+)", block)
+            if command and "deny-path.sh" in command.group(1) and not re.search(r"onFailure:\s*[\"']?block[\"']?\s*$", block, re.M):
+                missing.append(command.group(1).strip().strip("'\""))
+    return [f'missing onFailure: "block" on {command}' for command in missing]
 
 
 def check_claude_settings(path: Path, failures: list[str]) -> None:
@@ -149,6 +350,12 @@ def check_claude_settings(path: Path, failures: list[str]) -> None:
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Claude hook event: {event}")
+    for event, matcher, script in [("PreToolUse", "AskUserQuestion", "deny-ask.sh"), ("PreToolUse", "Edit|Write|NotebookEdit", "worktree-wall.sh"), ("StopFailure", "rate_limit", "pause.sh")]:
+        groups = hooks.get(event, [])
+        if not any(isinstance(g, dict) and g.get("matcher") == matcher
+                   and any(script in str(h.get("command", "")) for h in g.get("hooks", []) if isinstance(h, dict))
+                   for g in groups if isinstance(groups, list)):
+            failures.append(f"missing Claude hook: {event} {matcher} {script}")
     denies = settings.get("permissions", {}).get("deny", [])
     for rule in [
         "Skill(superpowers:verification-before-completion)",
@@ -205,43 +412,17 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
             failures.append(f"missing Codex filesystem deny: {pattern}")
 
     hooks = load_json(root / "hooks.json", failures).get("hooks", {})
-    for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStop"]:
+    for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Codex hook event: {event}")
 
-    agents = {
-        "implementer.toml": "dev-implementer",
-        "spec-tester.toml": "dev-spec-tester",
-        "task-reviewer.toml": "dev-read-only",
-        "final-reviewer.toml": "dev-read-only",
-        "security-reviewer.toml": "dev-read-only",
-    }
-    for filename, permission_profile in agents.items():
+    for filename in ["implementer.toml", "spec-tester.toml", "task-reviewer.toml", "final-reviewer.toml", "security-reviewer.toml", "planner.toml"]:
         path = root / "agents" / filename
         require_file(path, failures)
         if path.is_file():
-            agent_config, raw = load_toml(path, failures)
+            _, raw = load_toml(path, failures)
             for field in ["name", "description", "developer_instructions"]:
                 require_text(raw, field, f"{filename} field", failures)
-            if agent_config.get("default_permissions") != permission_profile:
-                failures.append(f"wrong {filename} permission profile: expected {permission_profile}")
-
-    required_profiles = {
-        "dev-read-only": (":read-only", ["**/.env", "**/.env.*"]),
-        "dev-implementer": ("dev-workspace", ["tests/acceptance", "tests/acceptance/**"]),
-        "dev-spec-tester": (
-            "dev-workspace",
-            ["src", "src/**", "app", "app/**", "backend", "backend/**", "frontend", "frontend/**"],
-        ),
-    }
-    for name, (parent, denied_paths) in required_profiles.items():
-        role_profile = profiles.get(name, {})
-        if role_profile.get("extends") != parent:
-            failures.append(f"wrong Codex profile parent: {name} must extend {parent}")
-        role_rules = role_profile.get("filesystem", {}).get(":workspace_roots", {})
-        for path in denied_paths:
-            if role_rules.get(path) != "deny":
-                failures.append(f"missing Codex role deny in {name}: {path}")
 
     require_file(rules_path, failures)
     if rules_path.is_file():
@@ -340,6 +521,35 @@ def snake_case(event: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()
 
 
+def codex_hook_hash(event: str, group: dict, hook: dict) -> str:
+    handler = {"type": "command", "command": hook["command"], "timeout": hook.get("timeout", 600), "async": bool(hook.get("async", False))}
+    if hook.get("statusMessage") is not None:
+        handler["statusMessage"] = hook["statusMessage"]
+    ident: dict = {"event_name": snake_case(event), "hooks": [handler]}
+    if group.get("matcher") is not None:
+        ident["matcher"] = group["matcher"]
+    text = json.dumps(ident, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+
+
+def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
+    """The project hook events with a hook entry whose trusted_hash in ~/.codex/config.toml is missing or differs from its entry: Codex skips it without a message. Hash: sha256 of the sorted compact JSON of the handler (openai/codex rust-v0.162.1 hooks/src/engine/discovery.rs hook_hash)."""
+    hooks_file = f"{main}/.codex/hooks.json"
+    states = config.get("hooks", {}).get("state", {})
+    events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
+
+    def trusted(event: str, i: int, j: int, group: dict, hook: dict) -> bool:
+        if not isinstance(hook, dict) or hook.get("type", "command") != "command":
+            return True
+        value = states.get(f"{hooks_file}:{snake_case(event)}:{i}:{j}")
+        return isinstance(value, dict) and value.get("trusted_hash") == codex_hook_hash(event, group, hook)
+
+    return [
+        snake_case(event) for event, groups in events.items()
+        if not all(trusted(event, i, j, group, hook) for i, group in enumerate(groups) for j, hook in enumerate(group.get("hooks", [])))
+    ]
+
+
 def project_trust_groups(home: Path, repo: Path) -> list[tuple[str, list[str]]]:
     """D14: the trust Codex records in ~/.codex/config.toml once the user trusts the project."""
     main = main_checkout(repo)
@@ -347,30 +557,59 @@ def project_trust_groups(home: Path, repo: Path) -> list[tuple[str, list[str]]]:
     trust_failures: list[str] = []
     if config.get("projects", {}).get(main, {}).get("trust_level") != "trusted":
         trust_failures.append(f'missing trusted Codex project: [projects."{main}"] trust_level = "trusted"')
-    hooks_file = f"{main}/.codex/hooks.json"
-    states = config.get("hooks", {}).get("state", {})
-    events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
-    for event in map(snake_case, events):
-        prefix = f"{hooks_file}:{event}:"
-        if not any(
-            key.startswith(prefix)
-            and isinstance(value, dict)
-            and str(value.get("trusted_hash", "")).startswith("sha256:")
-            for key, value in states.items()
-        ):
-            trust_failures.append(f"missing trusted Codex hook hash: {event}")
+    trust_failures += [f"missing trusted Codex hook hash: {event}" for event in untrusted_hook_events(config, repo, main)]
     return [("Trust the project, then run /hooks in Codex.", trust_failures)] if trust_failures else []
+
+
+SECURITY_AUDIT_COMMIT = "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+SECURITY_AUDIT_TREE = "ccbc33ed119b28c3ef7b44a7e2081ab191ad63af"
+SECURITY_AUDIT_INSTALL = (
+    f"npx skills add https://github.com/cloudflare/security-audit-skill/tree/{SECURITY_AUDIT_COMMIT} "
+    "--skill security-audit --global --agent claude-code codex"
+)
+
+
+def tree_id(folder: Path) -> str | None:
+    """The git tree id of the folder's files: the Skills CLI lock's skillFolderHash."""
+    with tempfile.TemporaryDirectory() as tmp:
+        git = ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false", "-c", "core.attributesFile=/dev/null",
+               f"--git-dir={tmp}/g", f"--work-tree={folder}"]
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+        try:
+            subprocess.run(["git", "init", "-q", "--bare", f"{tmp}/g"], check=True, capture_output=True, env=env)
+            # Finder litter is not skill content
+            subprocess.run([*git, "add", "-A", "-f", ".", ":(exclude,glob)**/.DS_Store"],
+                           check=True, capture_output=True, env=env)
+            out = subprocess.run([*git, "write-tree"], check=True, capture_output=True, text=True, env=env)
+        except (subprocess.CalledProcessError, OSError):
+            return None
+        return out.stdout.strip()
+
+
+def security_audit_groups(home: Path, harness: str, env: Mapping[str, str]) -> list[tuple[str, list[str]]]:
+    """D6: the Cloudflare security-audit skill at the pinned commit, in this harness's skills folder."""
+    folder = home / (".claude" if harness == "claude" else ".agents") / "skills" / "security-audit"
+    if not (folder / "SKILL.md").is_file():
+        item = f"missing {folder / 'SKILL.md'}"
+    else:
+        tree = tree_id(folder.resolve())
+        if tree == (env.get("DEVLOOP_TEST_SECURITY_AUDIT_TREE") or SECURITY_AUDIT_TREE):
+            return []
+        item = f"{folder} is tree {tree}"
+    heading = f"Install the Cloudflare security-audit skill at {SECURITY_AUDIT_COMMIT}: {SECURITY_AUDIT_INSTALL}"
+    return [(heading, [item])]
 
 
 def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
     """D10: the kit against its manifest, the project merged files, and no user-level skill."""
-    failures = check_manifest(repo) + check_user_skill(home)
+    failures = check_manifest(repo) + check_user_skill(home) + check_gate_guard(repo)
     if harness == "claude":
         check_claude_settings(repo / ".claude" / "settings.json", failures)
-        return failures + check_claude_repo(repo), []
+        return failures + check_on_failure(repo) + check_claude_repo(repo), security_audit_groups(home, harness, os.environ)
     root = repo / ".codex"
     failures += check_codex_root(root, root / "rules" / "dev-loop.rules")
-    return failures, project_trust_groups(home, repo) + codex_skill_groups(home)
+    return failures, project_trust_groups(home, repo) + codex_skill_groups(home) + security_audit_groups(home, harness, os.environ)
 
 
 def repo_files(repo: Path, name: str) -> list[Path]:
@@ -477,17 +716,33 @@ def main() -> int:
     parser.add_argument("--harness", choices=["claude", "codex"], required=True)
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--repo", type=Path, default=Path.cwd())
+    # Codex SessionStart: one line, the untrusted project hook events joined by ", " (empty when all are trusted).
+    parser.add_argument("--hooks-trust", action="store_true")
     args = parser.parse_args()
+
+    if args.hooks_trust:
+        config, _ = load_toml(args.home / ".codex" / "config.toml", [])
+        print(", ".join(untrusted_hook_events(config, args.repo, main_checkout(args.repo))))
+        return 0
 
     if not uses_dev_loop(args.repo):
         print(f"{args.harness}: FAIL")
         print(f"- no dev-loop.json in {args.repo}. Run npx github:tchlyah/dev-loop#<tag> init")
         return 1
     failures, action_groups = check_project(args.home, args.repo, args.harness)
+    failures += check_version(args.harness)
     failures += check_notes(args.home, args.repo)
+    failures += check_notes_layout(args.home, args.repo)
     failures += check_project_config(args.repo)
+    second_failures, second_groups = check_second_review(args.repo, args.harness)
+    failures += second_failures
+    action_groups += second_groups
     failures += check_mutation(args.repo)
+    failures += check_verify(args.repo)
+    failures += gh_line(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
+    action_groups += [(line, []) for line in check_release_sandbox(args.repo)]
+    action_groups += [(line, []) for line in ci.check_github(args.repo)]
 
     if failures or action_groups:
         print(f"{args.harness}: FAIL")
