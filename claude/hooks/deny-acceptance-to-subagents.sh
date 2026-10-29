@@ -104,16 +104,20 @@ CANDIDATES=$(echo "$IN" | jq -r '
   # name a path without reaching it.
   def clean: gsub("<<-?[ \t]*(?<q>[\u0027\"]?)(?<d>[A-Za-z_][A-Za-z0-9_.-]*)\\k<q>(?<r>[^\n]*)\n(?:[^\n]*\n)*?\t*\\k<d>(?=\n|$)"; "<<\(.d)\(.r)")
     | gsub("(:!|:\\([^)]*exclude[^)]*\\)|--exclude-dir=)[^ \t\n;|&]*"; "")
-    | gsub("(?<g>grep( +-[A-Za-z]+)* +-[A-Za-z]*v[A-Za-z]*) +[^ \t\n;|&]+"; "\(.g)");
+    | gsub("(?<g>grep( +-[A-Za-z]+)* +-[A-Za-z]*v[A-Za-z]*) +[^ \t\n;|&]+"; "\(.g)")
+    | gsub("(?<o>(^|[ \t])(-g|--glob|--iglob)(=| *)[\u0027\"]?)![^ \t\n;|&\u0027\"]*"; "\(.o)")
+    | gsub("(?<o>(^|[ \t])-(path|ipath|wholename|name|iname) +)[^ \t\n;|&]+(?= +-prune)"; "\(.o)")
+    | gsub("(?<o>(^|[ \t])(-not|!) +-path +)[^ \t\n;|&]+"; "\(.o)");
+  def unless_excluded: if type == "string" and startswith("!") then empty else . end;
   def fields:
     [ .tool_input.file_path?, .tool_input.path?, .tool_input.notebook_path?,
-      .tool_input.pattern?, (.tool_input.command? | strings | clean), .tool_input.glob?,
+      .tool_input.pattern?, (.tool_input.command? | strings | clean), (.tool_input.glob? | unless_excluded),
       .tool_input.paths?, .tool_input.files?, .tool_input.url?,
       .tool_input.source?, .tool_input.destination?, .tool_input.directory? ]
     | [ .[] | .. | strings ];
   def joins:
     [ (.tool_input.path? | .. | strings) as $p
-      | ((.tool_input.glob?, .tool_input.pattern?) | .. | strings) as $g
+      | (((.tool_input.glob? | unless_excluded), .tool_input.pattern?) | .. | strings) as $g
       | $p + "/" + $g ];
   # A token walk over each field, in order: the folder starts at the cwd; a cd or pushd token makes the next
   # token not starting with - (options, --) its target, absolute or joined to the folder, and a folder
