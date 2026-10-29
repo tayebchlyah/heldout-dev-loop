@@ -191,6 +191,13 @@ def check_release(args, cwds):
         ask("a release create", "; release-check failed: a folder or argument the guard cannot read")
     repo = min(cwds)
     rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}") if tag else (1, "")
+    if not rc and target is not None:
+        # #89 D10: gh uses --target only for a tag GitHub lacks, so the local tag must not hide it.
+        trc, target_sha = git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
+        if trc:
+            ask("a release create", f"; release-check failed: target {target} does not resolve")
+        if target_sha != sha:
+            ask("a release create", f"; release-check failed: local tag {tag} at {sha}, --target at {target_sha}")
     if rc and target is not None:
         rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
         if rc:

@@ -47,6 +47,18 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
                               ("gh release frob v1.0.0", "frob")):
             self.assert_refused([command], f"a gh release {word}")
 
+    def test_release_create_target_off_the_local_tag(self) -> None:
+        self.stub("ok")
+        self.assert_refused([f"gh release create v1.0.0 --target {self.b}"], "release-check failed",
+                            f"local tag v1.0.0 at {self.a}, --target at {self.b}")
+        self.assert_refused(["gh release create v1.0.0 --target nowhere"], "release-check failed: target nowhere does not resolve")
+        self.assertFalse(self.calls.exists())
+        decision, reason, _ = self.guard("claude", f"gh release create v1.0.0 --target {self.a}")
+        self.assertEqual(decision, "ask")
+        self.assertIn(f"a release create at {self.a}", reason)
+        self.assertIn("release-check: ok", reason)
+        self.assertIn(f"--sha {self.a}", self.calls.read_text())
+
     def test_gh_release_reads_run(self) -> None:
         self.assert_allowed(["gh release list", "gh release view v1.0.0", "gh -R o/r release view v1.0.0",
                              "gh release download v1.0.0", "gh release verify v1.0.0",
