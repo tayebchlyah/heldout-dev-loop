@@ -681,10 +681,11 @@ def section(text: str, start: str, end: str) -> str:
 class FeatureGateTextTests(unittest.TestCase):
     def test_skill_stage_6(self) -> None:
         stage6 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 6 Feature gate", "## 7 Ship")
-        for needle in ("devloop.py review-merge", "devloop.py acceptance", "--force-recreate", "`file`", "`line`",
-                       "`finding`", "`class`", "`verdict`", "`guard`", "`stale`", "`counted`",
-                       "`cases` 0", "never green", "`cases` > 0", "changed by the branch",
-                       "`short`: under the case floor"):
+        for needle in (
+        "devloop.py review-merge", "devloop.py acceptance", "--force-recreate", "`stale`",
+        "`file`, `line`, `finding`, `class`, `verdict`", "`counted` false, `guard` null", "`cases` > 0",
+        "changed by the branch", "`cases` 0: never green", "under the case floor",
+        "never green: the user rules. Never count by hand", "new seal"):
             self.assertIn(needle, stage6)
         contract = (ROOT / "reference" / "cli" / "acceptance.md").read_text()
         for needle in ("`floor`", "`short`", "`floor_head`", "HEAD:tests/acceptance", "`suite`", "`reason` `short`"):
