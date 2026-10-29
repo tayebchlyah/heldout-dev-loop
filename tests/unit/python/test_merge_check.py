@@ -175,6 +175,39 @@ class MergeCheckTests(MergeCheckCase):
                     self.assertEqual((out["merge"], self.reasons(out, "unreviewed")), ("auto", []))
                     self.assertEqual(out["unreviewed_minor"][0]["commit"], self.head(wt))
 
+    def test_replayed_patch(self) -> None:
+        """Each reviewed patch vouches for one landing commit: a later copy of it is unreviewed."""
+        for row in ("revert of revert", "re-pick", "reviewed replay", "tests only"):
+            with self.subTest(row):
+                self.tearDown()
+                self.setUp()
+                wt = self.feature()
+                path = "tests/unit/test_x.py" if row == "tests only" else "src/app.py"
+                self.commit(wt, path, "a\n")
+                r1 = self.head(wt)
+                git(wt, "revert", "--no-edit", r1)
+                r2 = self.head(wt)
+                self.gate_green(wt, r2)
+                git(wt, *(("cherry-pick", r1) if row == "re-pick" else ("revert", "--no-edit", r2)))
+                r3 = self.head(wt)
+                if row == "reviewed replay":
+                    self.gate_green(wt, r3)
+                    self.commit(self.repo, "other.txt", "x\n")
+                    git(self.repo, "push", "-q", "origin", "main")
+                    git(wt, "fetch", "-q", "origin")
+                    git(wt, "rebase", "-q", "origin/main")
+                out = self.ok(wt)
+                if row == "reviewed replay":
+                    self.assertEqual((out["merge"], out["reasons"]), ("auto", []))
+                elif row == "tests only":
+                    self.assertEqual(self.reasons(out, "unreviewed"), [])
+                    self.assertEqual([m["commit"] for m in out["unreviewed_minor"]], [r3])
+                else:
+                    self.assertEqual(out["merge"], "human")
+                    self.assertEqual(self.reasons(out, "unreviewed"),
+                                     [{"reason": "unreviewed", "commit": r3, "paths": ["src/app.py"]}])
+                    self.assertEqual(self.reasons(out, "dropped"), [])
+
     def test_dropped_reviewed_commit(self) -> None:
         """A reviewed fix that no landing commit carries waits, unless main already has it."""
         for case in ("skipped", "upstream", "clean-rebase"):
