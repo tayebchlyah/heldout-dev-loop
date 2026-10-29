@@ -20,7 +20,6 @@ KIT_LIST_FILES = ("lib/kit.mjs", "claude/hooks/deny-acceptance-to-subagents.sh",
 
 
 def kit_list_drift(root: Path) -> list[str]:
-    """One message per hand-kept kit skill list whose names differ from `dev-loop` plus `KIT_SKILLS`."""
     text = {name: (root / name).read_text() for name in KIT_LIST_FILES}
     kit_skills = re.search(r"^export const KIT_SKILLS = \[(.*)\]", text["lib/kit.mjs"], re.M).group(1)
     expected = {"dev-loop"} | set(re.findall(r"'([^']+)'", kit_skills))
@@ -340,7 +339,6 @@ class NotesLayoutTextTests(unittest.TestCase):
 
 
 class KitSkillListTests(unittest.TestCase):
-    """The walls, `KIT_DIRS` and `codex.md` name `dev-loop` plus every `KIT_SKILLS` entry of `lib/kit.mjs`."""
 
     def run_wall(self, harness: str, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
         return subprocess.run([SHELL[harness], str(ROOT / harness / "hooks" / script)], input=json.dumps(payload),
