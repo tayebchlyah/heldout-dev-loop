@@ -256,7 +256,7 @@ class AcceptanceCommandTests(RepoCase):
         self.assertEqual(out["record"], str(self.record(repo)))
         runs = json.loads(self.record(repo).read_text())["runs"]
         self.assertEqual(set(runs[0]), {"at", "head", "mode", "exit", "failing", "ids", "stale", "counted", "log",
-                                        "cases", "floor", "short"})
+                                        "cases", "floor", "short", "suite"})
         self.assertEqual(runs[0]["stale"], "skipped")
         self.assertRegex(runs[0]["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertEqual(out["guard"]["verdict"], "continue")
@@ -357,6 +357,8 @@ class AcceptanceCommandTests(RepoCase):
             ("three cases one failing", "commit", (), junit([("t", "a")], passing=2), 1, 4, False, "continue"),
             ("new seal", "seal", (), junit([], passing=3), 0, None, False, "green"),
             ("amended", "amend", (), junit([], passing=3), 1, 4, True, "stop"),
+            ("seal rebased", "rebase", (), junit([], passing=3), 1, 4, True, "stop"),
+            ("later commit amended", "amendlate", (), junit([], passing=3), 1, 4, True, "stop"),
             ("failed mode", "commit", ("--failed",), junit([], passing=1), 0, None, False, "continue"),
             ("bad record heads", "heads", (), junit([], passing=3), 0, None, False, "green"),
         ]
@@ -367,7 +369,19 @@ class AcceptanceCommandTests(RepoCase):
                 repo = self.make_repo({"acceptance": "./run.sh", "acceptance_failed": "./run.sh"})
                 (repo / "fixture.xml").write_text(junit([("t", "a"), ("t", "b")], passing=2))
                 (repo / "exit.txt").write_text("1")
-                if step == "heads":
+                if step in ("rebase", "amendlate"):
+                    for n, rel in enumerate(("tests/acceptance/test_x.py", "app.py")[:1 if step == "rebase" else 2]):
+                        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                        (repo / rel).write_text("x = 2\n")
+                        git(repo, "add", ".")
+                        git(repo, "commit", "-qm", f"c{n}")
+                    first = self.devloop("acceptance", cwd=repo)[1]["head"]
+                    later = {**os.environ, "GIT_COMMITTER_DATE": "2030-01-01T00:00:00Z"}
+                    cmd = (["rebase", "--force-rebase", "HEAD~1"] if step == "rebase"
+                           else ["commit", "--amend", "--no-edit", "--reset-author"])
+                    subprocess.run(["git", "-C", str(repo), *cmd], env=later, check=True, capture_output=True)
+                    self.assertNotEqual(git(repo, "rev-parse", "HEAD"), first)
+                elif step == "heads":
                     self.record(repo).parent.mkdir(parents=True)
                     self.record(repo).write_text(json.dumps({"runs": [{**bad, "head": "--output=x"},
                                                                       {**bad, "head": "0" * 40}]}))
@@ -673,7 +687,7 @@ class FeatureGateTextTests(unittest.TestCase):
                        "`short`: under the case floor"):
             self.assertIn(needle, stage6)
         contract = (ROOT / "reference" / "cli" / "acceptance.md").read_text()
-        for needle in ("`floor`", "`short`", "`floor_head`", "--is-ancestor", "`reason` `short`"):
+        for needle in ("`floor`", "`short`", "`floor_head`", "HEAD:tests/acceptance", "`suite`", "`reason` `short`"):
             self.assertIn(needle, contract)
         self.assertNotIn("Merge the tables, dedupe by file and line", stage6)
         self.assertNotIn("docker compose ps --format", stage6)
