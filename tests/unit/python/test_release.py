@@ -183,6 +183,17 @@ class ReleaseCheckTests(unittest.TestCase):
         self.assertEqual(self.check("--sha", doc)[0]["ok"], True)
         self.assertNotEqual(child, doc)
 
+    def test_ci_and_config_changes_are_stale(self) -> None:
+        self.audited()
+        self.git("checkout", "-q", "-b", "ci", self.a)
+        self.commit(".github/workflows/ci.yml", "c", "docker-compose.yml", "d")
+        self.git("tag", "v1.0.0")
+        self.assertEqual(self.check("--tag", "v1.0.0")[0]["reasons"],
+                         [{"reason": "stale-audit", "paths": [".github/workflows/ci.yml", "docker-compose.yml"]}])
+        self.git("checkout", "-q", "-b", "fixtures", self.a)
+        fixtures = self.commit("tests/unit/test_x.py", "x", "tests/fixtures/data.json", "{}", "docs/guide.md", "g")
+        self.assertEqual(self.check("--sha", fixtures)[0]["ok"], True)
+
     def test_last_record_is_current(self) -> None:
         old = f"- 2026-10-24 Run 1 at {self.b}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
         self.note(old + "\n" + RECORD.format(sha=self.a).replace("Run 1", "Run 2"))

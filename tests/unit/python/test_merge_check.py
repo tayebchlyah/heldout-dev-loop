@@ -153,6 +153,28 @@ class MergeCheckTests(MergeCheckCase):
         self.assertEqual((out["merge"], out["reasons"]), ("auto", []))
         self.assertEqual(out["unreviewed_minor"], [{"commit": self.head(wt), "paths": ["README.md", "tests/unit/test_x.py"]}])
 
+    def test_paths_after_review(self) -> None:
+        code_paths = [".github/workflows/deploy.test.yml", ".github/actions/test/action.yml", ".github/README.md",
+                      "docker-compose.test.yml", "app/docs/views.py", "docs/conf.toml"]
+        minor_sets = [["docs/guide.md", "docs/img/flow.png", "tests/unit/test_x.py", "src/x.test.ts",
+                       "docs/test_views.py", "README.md"], ["tests/fixtures/data.json", "tests/fixtures/settings.yaml"]]
+        for paths in [[p] for p in code_paths] + minor_sets:
+            with self.subTest(paths=paths):
+                self.tearDown()
+                self.setUp()
+                wt, _ = self.reviewed_feature()
+                for path in paths:
+                    put(wt / path, "x\n")
+                git(wt, "add", "-A")
+                git(wt, "commit", "-q", "-m", "after review")
+                out = self.ok(wt)
+                if paths[0] in code_paths:
+                    self.assertEqual(self.reasons(out, "unreviewed"),
+                                     [{"reason": "unreviewed", "commit": self.head(wt), "paths": paths}])
+                else:
+                    self.assertEqual((out["merge"], self.reasons(out, "unreviewed")), ("auto", []))
+                    self.assertEqual(out["unreviewed_minor"][0]["commit"], self.head(wt))
+
     def test_dropped_reviewed_commit(self) -> None:
         """A reviewed fix that no landing commit carries waits, unless main already has it."""
         for case in ("skipped", "upstream", "clean-rebase"):
@@ -250,6 +272,11 @@ class MergeCheckTests(MergeCheckCase):
             "tests/a.py": True, "a/test/b.go": True, "docs/x.md": True, "test_a.py": True, "pkg/a_test.py": True,
             "a_test.go": True, "x.test.ts": True, "x.spec.js": True, "README.md": True, "sub/CHANGELOG.md": True,
             "skill/SKILL.md": False, "AGENTS.md": False, "src/app.py": False, "testing/a.py": False, "readme.md": False,
+            ".github/workflows/deploy.test.yml": False, ".github/actions/test/action.yml": False,
+            ".github/README.md": False, "docker-compose.test.yml": False, "app/docs/views.py": False,
+            "docs/conf.toml": False, "docs/x.py": False, "config/App.YML": False,
+            "docs/guide.md": True, "docs/img/flow.png": True, "docs/Flow.PNG": True, "src/x.test.ts": True,
+            "docs/test_views.py": True, "tests/fixtures/data.json": True, "tests/fixtures/settings.yaml": True,
         }
         for path, expected in rows.items():
             with self.subTest(path=path):
