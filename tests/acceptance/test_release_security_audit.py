@@ -119,10 +119,16 @@ class ReleaseCheckTests(Case):
                 r = self.audited([item] + ([ruling] if ruling else []))
                 self.assert_open(r, item if still_open else None)
 
-    def test_o09_confirmed_item_is_not_closed_by_a_ruling(self) -> None:
+    def test_o09_confirmed_item_closes_with_a_ruling_and_its_reason(self) -> None:
+        """Superseded by One Audit Per Release oracle 5: `accept <reason>` or `close <reason>` closes a confirmed
+        item; a ruling word with no reason keeps it open."""
         item = "- 2026-10-25 (security, confirmed, Run 1): x"
-        r = self.audited([item, "  - Ruling 2026-10-26: accept"])
-        self.assert_open(r, item)
+        for ruling, still_open in (("  - Ruling 2026-10-26: accept the risk", False),
+                                   ("  - Ruling 2026-10-26: close not reachable", False),
+                                   ("  - Ruling 2026-10-26: accept", True)):
+            with self.subTest(ruling=ruling):
+                r = self.audited([item, ruling])
+                self.assert_open(r, item if still_open else None)
 
     def test_o10_checkbox_item_under_a_subsection(self) -> None:
         item = "- [ ] 2026-10-25 (security, needs-validation, review-wave-measurement): y"
