@@ -219,7 +219,7 @@ test('upgrade refuses a file of yours at a new kit path, names it and --force, a
   initOldKit(repo, home)
   writeUserSkill(repo, 'mine\n')
   const before = snapshot(repo)
-  upgradeFails(repo, home, [], /files of yours at dev-loop paths:\n {2}\.agents\/skills\/continue\/SKILL\.md\n[\s\S]*--force/)
+  upgradeFails(repo, home, [], /files or links of yours at dev-loop paths:\n {2}\.agents\/skills\/continue\/SKILL\.md\n[\s\S]*--force/)
   upgradeFails(repo, home, ['--dry-run'], /\.agents\/skills\/continue\/SKILL\.md/)
   assert.deepEqual(snapshot(repo), before)
 })
@@ -254,24 +254,44 @@ test('upgrade from a kit with the one skill link creates the pause and continue 
   }
 })
 
-test('init and upgrade refuse a symlink of yours at a new kit link path unless --force, which moves it aside', () => {
+function userLinkRepo(command) {
+  const { home, repo } = setup()
+  if (command === 'upgrade') initOldKit(repo, home)
+  mkdirSync(join(repo, '.claude/skills'), { recursive: true })
+  symlinkSync('../../mine/continue', join(repo, '.claude/skills/continue'))
+  const fails = command === 'init' ? initFails : upgradeFails
+  const args = command === 'init' ? ['--yes', '--harness=claude'] : []
+  return { home, repo, fails, args, write: command === 'init' ? init : upgrade }
+}
+
+test('init and upgrade refuse a symlink of yours at a new kit link path unless --force, which moves it out of the skills folder', () => {
   for (const command of ['init', 'upgrade']) {
-    const { home, repo } = setup()
-    if (command === 'upgrade') initOldKit(repo, home)
-    mkdirSync(join(repo, '.claude/skills'), { recursive: true })
-    symlinkSync('../../mine/continue', join(repo, '.claude/skills/continue'))
-    const fails = command === 'init' ? initFails : upgradeFails
-    const args = command === 'init' ? ['--yes', '--harness=claude'] : []
+    const { home, repo, fails, args, write } = userLinkRepo(command)
     const before = snapshot(repo)
-    fails(repo, home, args, /files of yours at dev-loop paths:\n[\s\S]* {2}\.claude\/skills\/continue\n[\s\S]*--force/)
+    fails(repo, home, args, /files or links of yours at dev-loop paths:\n[\s\S]* {2}\.claude\/skills\/continue\n[\s\S]*--force/)
+    fails(repo, home, [...args, '--dry-run'], /files or links of yours at dev-loop paths:\n[\s\S]* {2}\.claude\/skills\/continue\n/)
+    assert.match(write(repo, home, [...args, '--force', '--dry-run']), /backup .*\.claude\/backups\/skills\/continue\.bak-/, command)
     assert.deepEqual(snapshot(repo), before, command)
 
-    const output = (command === 'init' ? init : upgrade)(repo, home, [...args, '--force'])
+    const output = write(repo, home, [...args, '--force'])
     assert.equal(readlinkSync(join(repo, '.claude/skills/continue')), '../../.agents/skills/continue', command)
-    const backups = readdirSync(join(repo, '.claude/skills')).filter((name) => name.startsWith('continue.bak-'))
+    assert.equal(readdirSync(join(repo, '.claude/skills')).some((name) => name.startsWith('continue.bak-')), false, command)
+    const backups = readdirSync(join(repo, '.claude/backups/skills')).filter((name) => name.startsWith('continue.bak-'))
     assert.equal(backups.length, 1, command)
-    assert.equal(readlinkSync(join(repo, '.claude/skills', backups[0])), '../../mine/continue', command)
-    assert.match(output, /backup .*continue\.bak-/, command)
+    assert.equal(readlinkSync(join(repo, '.claude/backups/skills', backups[0])), '../../mine/continue', command)
+    assert.match(output, /backup .*\.claude\/backups\/skills\/continue\.bak-/, command)
+  }
+})
+
+test('init and upgrade --force refuse to back up a link of yours through a symlinked .claude/backups, and write nothing', () => {
+  for (const command of ['init', 'upgrade']) {
+    const { home, repo, fails, args } = userLinkRepo(command)
+    const outside = tempDir('dev-loop-outside-')
+    symlinkSync(outside, join(repo, '.claude/backups'))
+    const before = snapshot(repo)
+    fails(repo, home, [...args, '--force'], /\.claude\/backups is a symlink/)
+    assert.deepEqual(snapshot(repo), before, command)
+    assert.deepEqual(readdirSync(outside), [], command)
   }
 })
 
