@@ -569,6 +569,17 @@ class WaveCheckTests(WaveRepo):
         self.git("tag", "v1.0.1", d)
         self.assertTrue(self.check("--sha", d)[0]["ok"])
 
+    def test_tag_order_ignores_tag_sort_config(self) -> None:
+        self.git("config", "tag.sort", "-refname")
+        self.git("tag", "v1.0.0", self.c)
+        self.git("tag", "v1.0.1", self.c)
+        self.assertEqual(self.check("--sha", self.release_commit())[0]["wave_ignored"], "released: v1.0.0")
+
+    def test_non_release_tag_has_wave_keys(self) -> None:
+        self.git("tag", "foo", self.c)
+        out, code = self.check("--tag", "foo")
+        self.assertEqual((code, out["skipped"], out["wave"], out["wave_ignored"]), (0, "not-a-release-tag", None, None))
+
     def test_edited_wave_issues(self) -> None:
         self.edit(": #7, #8", ": #7")
         out, _ = self.check("--sha", self.c)

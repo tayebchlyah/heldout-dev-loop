@@ -29,7 +29,7 @@ from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
-RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) ")
+RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) +\S")
 RECORD_RE = re.compile(
     r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
     r"profile \S+, scope (whole|[0-9a-f]{40}\.\.[0-9a-f]{40})$"
@@ -220,7 +220,7 @@ def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str) -> str | 
         return "not-ancestor"
     if (refused := wave_check(repo, record_sha, sha, wave["issues"])) is not None:
         return refused["error"]
-    for tag in run_git(repo, "tag", "--list", "v*", "--contains", sha).stdout.split():
+    for tag in run_git(repo, "tag", "--list", "--sort=refname", "v*", "--contains", sha).stdout.split():
         if run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}").stdout.strip() != target:
             return f"released: {tag}"
     return None
@@ -235,7 +235,8 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple
         return {"error": f"cannot resolve {target}"}, 1
     sha = resolved.stdout.strip()
     if tag is not None and not is_release_tag(tag):
-        return {"ok": True, "tag": tag, "target": sha, "record": None, "reasons": [], "skipped": "not-a-release-tag"}, 0
+        return {"ok": True, "tag": tag, "target": sha, "record": None, "reasons": [], "wave": None, "wave_ignored": None,
+                "skipped": "not-a-release-tag"}, 0
     if notes is None:
         return {"error": "notes path unresolved"}, 1
     note = project_note(notes)
@@ -576,7 +577,7 @@ def fix_wave(repo: Path, notes: Path, issues: list[int]) -> tuple[dict, int]:
             return {"error": "no-audit"}, 1
         if current_wave(text, current["run"]) is not None:
             return {"error": "wave-exists"}, 1
-        if not head or head == current["sha"] or run_git(repo, "merge-base", "--is-ancestor", current["sha"], head).returncode != 0:
+        if head == current["sha"] or run_git(repo, "merge-base", "--is-ancestor", current["sha"], head).returncode != 0:
             return {"error": "not-descendant"}, 1
         if (refused := wave_check(repo, current["sha"], head, issues)) is not None:
             return refused, 1
