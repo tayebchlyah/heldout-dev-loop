@@ -11,4 +11,4 @@
 - JSON `skip` (at least one changed path and none blocking), `kind` (`release` when `CHANGELOG.md` changed, else `kit-upgrade`; null when `skip` is false), `blocking` (sorted paths no rule allows), `base`, `head` (full shas).
 - `--github-output`: also appends `skip=true` or `skip=false` and a newline to the file `GITHUB_OUTPUT` names.
 - Exit 0 when the check ran (`skip` true or false). Exit 1 with `error`: not a git repo, a rev that does not resolve to a commit (the all-zero sha of a new branch push too), `version_files` not a list of non-empty strings with no leading `/` and no `..` segment. Exit 2: usage, `--github-output` with `GITHUB_OUTPUT` unset.
-- CI runs the `ci-skip` of the base kit, never the kit of the PR (`reference/kit.md`), and only for a PR on the default branch.
+- CI runs the `ci-skip` of the base kit, never the kit of the PR (`reference/kit.md`), and only when the PR base, or the pushed branch, is the default branch.

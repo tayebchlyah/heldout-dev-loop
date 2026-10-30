@@ -46,7 +46,7 @@ Two modes, `dev-loop.json` `release_notes`: `cliff` (default: `CHANGELOG.md` and
 python3 .agents/skills/dev-loop/scripts/devloop.py release-notes --tag "$GITHUB_REF_NAME" --output CHANGES.md
 ```
 
-CI skip job. A release PR or a kit upgrade PR changes no code; job `changes` in a project `ci.yml` lets the other jobs skip. It checks out the PR head with `fetch-depth: 0` and the base into `.devloop-base`, and runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo (dev-loop itself), where the base commit's installer builds the reference kit; in any other project it runs CI and the next release audit covers the new kit copies. A base without `ci_skip.py` writes `skip=false`, and so does a PR whose base is not the default branch: a later retarget keeps no skip from that base.
+CI skip job. A release PR or a kit upgrade PR changes no code; job `changes` in a project `ci.yml` lets the other jobs skip. It checks out the PR head with `fetch-depth: 0` and the base into `.devloop-base`, and runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo (dev-loop itself), where the base commit's installer builds the reference kit; in any other project it runs CI and the next release audit covers the new kit copies. A base without `ci_skip.py` writes `skip=false`, and so does a PR whose base is not the default branch: a PR opened on another base never skips, so a retarget to the default branch keeps no skip. A push skips only to the default branch.
 
 ```yaml
   changes:
@@ -64,12 +64,10 @@ CI skip job. A release PR or a kit upgrade PR changes no code; job `changes` in 
           path: .devloop-base
       - id: skip
         env:
-          BASE_REF: ${{ github.base_ref }}
+          TARGET: ${{ github.base_ref || github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          elif [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
+          if [ "$TARGET" != "$DEFAULT_BRANCH" ] || [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output
