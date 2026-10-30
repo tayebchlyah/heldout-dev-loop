@@ -45,10 +45,18 @@ class ReleaseParseTests(unittest.TestCase):
                 found, _ = self.items(deferred(item, *rulings))
                 self.assertEqual([i["line"] for i in found], [item] if is_open else [])
 
-    def test_confirmed_is_never_closed_by_a_ruling(self) -> None:
+    def test_confirmed_rulings(self) -> None:
         item = "- 2026-10-25 (security, confirmed, Run 1): x"
-        found, _ = self.items(deferred(item, "  - Ruling 2026-10-26: accept"))
-        self.assertEqual([(i["verdict"], i["source"]) for i in found], [("confirmed", "Run 1")])
+        cases = [
+            (["  - Ruling 2026-10-30: accept low risk"], False),
+            (["  - Ruling 2026-10-30: close fixed by #7"], False),
+            (["  - Ruling 2026-10-30: fix #7 in a slice"], True),
+            (["  - Ruling 2026-10-30: accept"], True),
+        ]
+        for rulings, is_open in cases:
+            with self.subTest(rulings=rulings):
+                found, _ = self.items(deferred(item, *rulings))
+                self.assertEqual([i["line"] for i in found], [item] if is_open else [])
 
     def test_checkbox_and_subsection_and_fingerprint(self) -> None:
         text = "## Deferred\n### Some gate\n- [ ] 2026-10-25 (security, needs-validation, my-feature): y. Fingerprint `abc123`. Blocker: z.\n- [x] 2026-10-25 (security, confirmed, Run 2): w\n"
