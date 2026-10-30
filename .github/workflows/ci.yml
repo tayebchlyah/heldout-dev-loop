@@ -27,8 +27,13 @@ jobs:
         with:
           python-version: "3.14"
       - id: skip
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output
