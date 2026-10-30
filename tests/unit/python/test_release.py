@@ -39,6 +39,8 @@ class ReleaseParseTests(unittest.TestCase):
             (["  - Ruling 2026-10-26: fix in a slice"], True),
             (["\t- Ruling 2026-10-26: accept the risk"], False),
             (["- Ruling 2026-10-26: accept the risk"], True),
+            (["  - Ruling 2026-10-26: accept "], True),
+            (["  - Ruling 2026-10-26: close   "], True),
         ]
         for rulings, is_open in cases:
             with self.subTest(rulings=rulings):
@@ -52,6 +54,8 @@ class ReleaseParseTests(unittest.TestCase):
             (["  - Ruling 2026-10-30: close fixed by #7"], False),
             (["  - Ruling 2026-10-30: fix #7 in a slice"], True),
             (["  - Ruling 2026-10-30: accept"], True),
+            (["  - Ruling 2026-10-30: accept "], True),
+            (["  - Ruling 2026-10-30: close   "], True),
         ]
         for rulings, is_open in cases:
             with self.subTest(rulings=rulings):
