@@ -343,6 +343,17 @@ class TracksContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, where)
 
+    def test_worktree_branch_has_no_upstream_and_audit_finds_the_transcript(self) -> None:
+        where = self.skill[self.skill.index("\n## Where each stage runs"):self.skill.index("\n## 0 ")]
+        self.assertIn("branch from `origin/main` with `--no-track`", where)
+        for route, value in [
+            ("claude.md", "`git worktree add --no-track`"),
+            ("claude.md", "`$CLAUDE_CONFIG_DIR/projects/*/<session id>.jsonl` (default `~/.claude`)"),
+            ("codex.md", "`$CODEX_HOME/sessions/**/rollout-*-<session id>.jsonl` (default `~/.codex`)"),
+        ]:
+            with self.subTest(route=route, value=value):
+                self.assertIn(value, (SKILL_ROOT / "references" / route).read_text())
+
     def test_verification_budget_moved(self) -> None:
         tests_md = (SKILL_ROOT / "references" / "tests.md").read_text()
         for value in ["## Verification budget", "| T0 |", "| T4 |", "Each project caps T0"]:
