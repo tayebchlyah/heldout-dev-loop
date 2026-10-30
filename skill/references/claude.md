@@ -16,13 +16,13 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 ## Delivery autonomy
 
-- Stages 3 to 7 start: `EnterWorktree` with the feature worktree `path` (create it first with `git worktree add --no-track` when absent). The session cwd, and so each hook `cwd`, is then the worktree.
+- Stages 3 to 7 start: `EnterWorktree` with the feature worktree `path` (create it first with `git worktree add --no-track -b <branch> <path> origin/main` when absent). The session cwd, and so each hook `cwd`, is then the worktree.
 - Ask wall: `deny-ask.sh` (PreToolUse `AskUserQuestion`) denies the call in a feature worktree: a linked worktree, branch with `/`, `dev-loop.json` at its top. Decide and log with `devloop.py decide`, or stop and report a stop-list item. Fails open on an internal error: `main` keeps its questions.
 - Limit: `pause.sh` (`StopFailure`, matcher `rate_limit`) writes the pause note through `devloop.py pause --event`. No intent fields: `/pause` adds them. Unconfirmed until a live check: a subscription usage limit arrives as `rate_limit`.
 - Wake (same session, `/continue` or "continue"): `SendMessage` to each subagent that stopped during its work: it resumes with its full history. Source: the Claude Code docs; unconfirmed until a live check. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
 - `/pause`: `TaskStop` on each running subagent; background `logged` runs stay alive.
 - Stage 7 end: after the merge, `git fetch origin` and `metrics --write` in the feature worktree, then `ExitWorktree` with `keep`: the session cwd is the main checkout again. The final report suggests `/clear` before the next feature.
-- Stage 7 log audit: the main transcript is `$CLAUDE_CONFIG_DIR/projects/*/<session id>.jsonl` (default `~/.claude`).
+- Stage 7 log audit: the main transcript is `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/*/$CLAUDE_CODE_SESSION_ID.jsonl`. The controller resolves it and passes the path.
 
 ## Skill and agent names
 
