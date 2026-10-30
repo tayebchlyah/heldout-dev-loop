@@ -32,7 +32,7 @@ Never a merge before stop 1. Never a tag push or a release creation before stop 
 
 ## CI skip job
 
-A release PR or a kit upgrade PR changes no code. This job lets the project CI skip the other jobs for it. It runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo.
+A release PR or a kit upgrade PR changes no code. This job lets the project CI skip the other jobs for it. It runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo. A PR whose base is not the default branch never skips.
 
 ```yaml
   changes:
@@ -49,8 +49,13 @@ A release PR or a kit upgrade PR changes no code. This job lets the project CI s
           ref: ${{ github.event.pull_request.base.sha || github.event.before }}
           path: .devloop-base
       - id: skip
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output

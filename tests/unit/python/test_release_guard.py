@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+import textwrap
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -470,6 +471,29 @@ class ReleaseWorkflowTests(unittest.TestCase):
         for job in jobs:
             self.assertIn("    needs: changes\n", job)
             self.assertIn("    if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}\n", job)
+
+    def test_changes_job_skips_only_on_a_default_branch_base(self) -> None:
+        sources = {"ci.yml": self.workflow("ci.yml"), "reference/kit.md": (self.ROOT / "reference/kit.md").read_text(),
+                   "skills/release/SKILL.md": (self.ROOT / "skills/release/SKILL.md").read_text()}
+        for source, text in sources.items():
+            step = text.split("      - id: skip\n", 1)[1].split("\n```", 1)[0].split("\n\n", 1)[0]
+            env_block, run = step.split("        run: |\n", 1)
+            for base_ref, skip in (("trunk", "true"), ("", "true"), ("feature", "false")):
+                with self.subTest(source=source, base_ref=base_ref), tempfile.TemporaryDirectory() as tmp:
+                    scripts = Path(tmp, ".devloop-base/.agents/skills/dev-loop/scripts")
+                    scripts.mkdir(parents=True)
+                    (scripts / "ci_skip.py").write_text("")
+                    (scripts / "devloop.py").write_text(
+                        "import os\nopen(os.environ['GITHUB_OUTPUT'], 'a').write('skip=true\\n')\n")
+                    env = {**os.environ, "GITHUB_OUTPUT": str(Path(tmp, "out"))}
+                    values = {"${{ github.base_ref }}": base_ref, "${{ github.event.repository.default_branch }}": "trunk"}
+                    for line in env_block.splitlines()[1:]:
+                        key, value = line.strip().split(": ", 1)
+                        env[key] = values[value]
+                    script = textwrap.dedent(run).replace(
+                        "${{ github.event.pull_request.base.sha || github.event.before }}", "BASE")
+                    subprocess.run(["bash", "-euc", script], cwd=tmp, env=env, check=True)
+                    self.assertEqual(Path(tmp, "out").read_text(), f"skip={skip}\n")
 
     def test_dev_loop_json(self) -> None:
         config = json.loads((self.ROOT / "dev-loop.json").read_text())
