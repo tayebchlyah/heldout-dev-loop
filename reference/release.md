@@ -10,6 +10,16 @@ At rc.1 of a cycle, the agent proposes major, minor or patch from the changes af
 
 After a merge, the Stage 7 report has one line `rc: now|later: <reason>`. The agent compares the kit-source commits after the last tag (rc or final) with the planned work: open GitHub issues, specs in `$NOTES/Features/*/Spec.md` with no `shipped:`, framing notes with no spec, open `## Deferred` items. `now`: a planned item needs the change in the kit before it starts; the reason names it. `later`: no planned item needs it now. Judgment, no script. The user decides to cut.
 
+## One audit, one fix wave
+
+Each release tag (each rc and the final) gets one audit and at most one fix wave.
+
+- Severity bar: `release-record` writes a confirmed finding of `low` or `informational` severity to `## Gardener`. Any other severity, or none, goes to `## Deferred` and blocks the release.
+- Rulings: the user rules each open item with a sub-bullet `- Ruling <date>: fix #<n> <reason>`, `accept <reason>` or `close <reason>`. `accept` and `close` close it. A fixed item gets `close fixed by #<n>` after its fix merges.
+- Fix wave: after the fix slices merge, `release-record --fix-wave --issue <n> ...` records the wave at `HEAD`. It refuses a code commit that names none of the issues. `release-check` then measures staleness from the wave commit, so the fix code needs no second audit for this release.
+- End: the next release tag ends the wave. The next audit covers the fix code: `release-plan` keeps the record sha as its base.
+- Guard threat model, given to the audit: the git and gh guards stop agent mistakes. They are not a wall against an agent that works against its instructions. A command spelling that passes a guard and still needs a user confirmation, or reaches no release asset, is hardening (`low`).
+
 ## Changelog
 
 `dev-loop.json` `release_notes` is `written`: `CHANGELOG.md` holds prose, one section per final release, written by `/release-notes` (Codex `$release-notes`) inside `/release`. During a cycle it also has one section `## [X.Y.Z-rc.N]` for the newest rc, with everything after the last final release; it replaces the section of the previous rc. The final release replaces it with `## [X.Y.Z]`. `release.yml` takes the GitHub Release body from that section (`devloop.py release-notes`). `cliff.toml` stays for `scripts/repo_rules.py subjects`.
