@@ -6,11 +6,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -92,18 +91,19 @@ class MetricsCommandTests(TempDir):
     def test_write_unattributed_rerun_keeps_stage_cells(self) -> None:
         file = self.tmp / "Feature Metrics.md"
         unattributed = metrics.row("a", "M", "2026-10-25", payload(unattributed=True, stages={}, total=20_000), {"5"})
-        for first, then, stages, effort, total in [
-            (ROW, unattributed, ["0", "2", "-", "12", "0", "0"], "1-2:h 3:- 4:- 5:m 6:- 7:-", "20"),
-            (None, unattributed, ["?"] * 6, "?", "20"),
-            (unattributed, ROW, ["0", "2", "-", "12", "0", "0"], "1-2:h 3:- 4:- 5:m 6:- 7:-", "15"),
+        for first, then, escaped, stages, effort, total in [
+            (ROW, unattributed, "yes", ["0", "2", "-", "12", "0", "0"], "1-2:h 3:- 4:- 5:m 6:- 7:-", "20"),
+            (ROW, unattributed, r"yes: [[Bug\|b]]", ["0", "2", "-", "12", "0", "0"], "1-2:h 3:- 4:- 5:m 6:- 7:-", "20"),
+            (None, unattributed, "", ["?"] * 6, "?", "20"),
+            (unattributed, ROW, "yes", ["0", "2", "-", "12", "0", "0"], "1-2:h 3:- 4:- 5:m 6:- 7:-", "15"),
         ]:
-            with self.subTest(first=first, then=then):
+            with self.subTest(first=first, then=then, escaped=escaped):
                 file.unlink(missing_ok=True)
                 if first:
-                    metrics.write_row(file, "a", first.replace("|  |", "| yes |"), self.lock)
-                metrics.write_row(file, "a", then, self.lock)
+                    metrics.write_row(file, "a", first.replace("|  |", f"| {escaped} |"), self.lock)
+                metrics.write_row(file, "a", then, self.lock, unattributed=then is unattributed)
                 got = metrics.cells(next(x for x in file.read_text().splitlines() if x.startswith("| a |")))
-                self.assertEqual((got[11:17], got[17], got[18], got[19]), (stages, total, effort, "yes" if first else ""))
+                self.assertEqual((got[11:17], got[17], got[18], got[19:]), (stages, total, effort, [escaped]))
 
     def test_write_migrates_old_header(self) -> None:
         file = self.tmp / "Feature Metrics.md"
@@ -285,24 +285,24 @@ class MetricsCommandTests(TempDir):
         gate = "python3 x/devloop.py gate --summary"
         piped = [tool_use("3", "2026-01-01T10:32:00Z", "Bash", {"command": gate}, tid="g1"),
                  result("4", "2026-01-01T10:33:00Z", "g1", json.dumps({"seconds": 7}))]
-        for logs, want in [(0, {"runs": 1, "seconds": 7}), (2, {"runs": 2, "seconds": 40.0})]:
-            with self.subTest(logs=logs):
+        first = datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc).timestamp()
+        parent = self.tmp
+        for n, (starts, want) in enumerate([([], {"runs": 1, "seconds": 7}), ([0, 60], {"runs": 2, "seconds": 40.0}),
+                                            ([-5400], {"runs": 1, "seconds": 7})]):
+            with self.subTest(starts=starts):
+                self.tmp = parent / str(n)
+                self.tmp.mkdir()
                 self.fixture()
                 self.transcript(self.work() + piped)
                 folder = self.repo / ".git" / "worktrees" / "wt" / "dev-loop" / "logs"
                 folder.mkdir(parents=True, exist_ok=True)
-                for n in range(logs):
-                    log = folder / f"gate-20260101T10{n}000.log"
+                for start in starts:
+                    log = folder / f"gate-{datetime.fromtimestamp(first + start):%Y%m%dT%H%M%S}.log"
                     log.write_text("x\n")
                     (folder / f"{log.stem}-reports").mkdir()
-                    end = datetime(2026, 1, 1, 10, n * 10).timestamp() + 20
-                    os.utime(log, (end, end))
+                    os.utime(log, (first + start + 20, first + start + 20))
                 code, out = self.run_cli()
                 self.assertEqual((code, out.get("gate")), (0, want), out)
-                shutil.rmtree(self.root / "repo")
-                shutil.rmtree(self.root / "wt")
-                shutil.rmtree(self.notes)
-                shutil.rmtree(self.config, ignore_errors=True)
 
     def test_cli_track_s(self) -> None:
         self.fixture(slug="quick-fix", prefix="fix", spec=False)

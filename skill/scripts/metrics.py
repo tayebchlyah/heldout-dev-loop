@@ -342,14 +342,23 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
     }
 
 
-def gate_logs(logs: Path) -> dict:
-    """The `gate` runs of a worktree log folder: each `gate-<start>.log` with its `-reports` folder, start to mtime."""
+def gate_logs(logs: Path, first: float, last: float) -> dict:
+    """The `gate` runs of a worktree log folder: each `gate-<start>.log` with its `-reports` folder and its start
+    from `first` to `last`, start to mtime."""
     gate = {"runs": 0, "seconds": 0.0}
     for log in sorted(logs.glob("gate-*.log")):
         m = re.fullmatch(r"gate-(\d{8}T\d{6})(?:-\d+)?", log.stem)
-        if m and (logs / f"{log.stem}-reports").is_dir():
+        if not m or not (logs / f"{log.stem}-reports").is_dir():
+            continue
+        try:
+            start = datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").timestamp()
+            seconds = log.stat().st_mtime - start
+        except (ValueError, OSError):
+            continue
+        if first <= start <= last and seconds >= 0:
             gate["runs"] += 1
-            gate["seconds"] += log.stat().st_mtime - datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").timestamp()
+            gate["seconds"] += seconds
+    gate["seconds"] = round(gate["seconds"], 1)
     return gate
 
 
@@ -427,17 +436,18 @@ def row(slug: str, track: str, shipped: str, payload: dict, present: set[str]) -
 
 
 def cells(line: str) -> list[str]:
-    return [c.strip() for c in line.strip().removeprefix("|").removesuffix("|").split("|")]
+    return [c.strip() for c in re.split(r"(?<!\\)\|", line.strip().removeprefix("|").removesuffix("|"))]
 
 
-def write_row(file: Path, slug: str, line: str, lock: Path) -> None:
-    """Replace the feature's row (its `escaped` cell kept), else add it after the last table line. Raises OSError."""
+def write_row(file: Path, slug: str, line: str, lock: Path, unattributed: bool = False) -> None:
+    """Replace the feature's row (its `escaped` cell kept, and its stage and `effort` cells when `unattributed`),
+    else add it after the last table line. Raises OSError."""
     lock.parent.mkdir(parents=True, exist_ok=True)
     with open(lock, "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
         if not file.exists() and file.with_name(f".{file.name}.icloud").exists():
             raise OSError(f"iCloud placeholder: {file}")
-        write_locked(file, slug, line)
+        write_locked(file, slug, line, unattributed)
 
 
 def migrate(lines: list[str]) -> list[str]:
@@ -464,7 +474,7 @@ def separator() -> str:
     return "| " + " | ".join(["---"] * len(cells(HEADER))) + " |"
 
 
-def write_locked(file: Path, slug: str, line: str) -> None:
+def write_locked(file: Path, slug: str, line: str, unattributed: bool) -> None:
     table = [HEADER, separator()]
     if file.exists():
         lines = migrate(file.read_text().splitlines())
@@ -473,8 +483,10 @@ def write_locked(file: Path, slug: str, line: str) -> None:
         mine = next((i for i in data if cells(lines[i])[0] == slug), None)
         if mine is not None:
             old, new = cells(lines[mine]), cells(line)
-            if new[11:17] == ["?"] * 6 and len(old) == len(new):
-                new[11:17], new[18] = old[11:17], old[18]
+            if unattributed and len(old) == len(new):
+                header = cells(HEADER)
+                at, end, effort = header.index("S1-2"), header.index("S7") + 1, header.index("effort")
+                new[at:end], new[effort] = old[at:end], old[effort]
             new[-1] = old[-1]
             lines[mine] = "| " + " | ".join(new) + " |"
         elif rows:
@@ -523,15 +535,18 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                **numbers(items, slug, bounds),
                "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0},
                "effort": efforts(items, slug, bounds)}
-    logs = gate_logs(Path(git(worktree, "rev-parse", "--absolute-git-dir") or worktree) / "dev-loop" / "logs")
-    if logs["runs"]:
+    times = [t for c in items if c.feature == slug and not c.copy
+             if (t := parse_time(c.record.get("timestamp"))) is not None]
+    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    logs = gate_logs(Path(git_dir) / "dev-loop" / "logs", min(times), max(times)) if git_dir and times else {}
+    if logs.get("runs"):
         payload["gate"] = logs
     payload["row"] = row(slug, track, payload["shipped"], payload, present)
     payload["file"] = None
     if args.write:
         file = notes / "Feature Metrics.md"
         try:
-            write_row(file, slug, payload["row"], Path(common) / "dev-loop" / "metrics.lock")
+            write_row(file, slug, payload["row"], Path(common) / "dev-loop" / "metrics.lock", payload["unattributed"])
         except (OSError, UnicodeError) as exc:
             return emit({"error": f"cannot read or write {file}: {exc}"}, 1)
         payload["file"] = str(file)
