@@ -575,9 +575,11 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     for _, path in sorted(shipped, reverse=True)[SHIPPED_KEPT:]:
         path.unlink()
         payload["removed"].append(str(path))
-    # Issue #114: a slug whose own note this run did not see stays, so its note can still ship.
+    # Issue #114: a slug whose own note this run did not see stays only while that note exists in a board folder.
+    old_folder = board.parent / "dev-loop-board" / ctx.dl.BOARD_FEATURES
     features = [f for f in features if f in kept or f in own_features
-                or store.note_name(machine["id"], project, f) not in own_names]
+                or store.note_name(machine["id"], project, f) not in own_names
+                and any((d / store.note_name(machine["id"], project, f)).exists() for d in (folder, old_folder))]
     if features != old_features:
         features_file.write_text(json.dumps(features) + "\n")
     # D1: an entry goes once its feature is out of the write set and has no own-name note in either folder.
