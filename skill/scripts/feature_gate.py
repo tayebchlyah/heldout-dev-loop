@@ -13,7 +13,6 @@ import json
 import re
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
