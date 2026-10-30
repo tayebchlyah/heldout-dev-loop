@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
 sys.path.insert(1, str(Path(__file__).resolve().parent))
 from board import server
-from board_fixtures import Board, MACHINE, note_text, put, snapshot, status_note
+from board_fixtures import Board, ISO_Z, MACHINE, git, note_text, put, read_note, snapshot, status_note
 from support import check_setup
 
 
@@ -34,6 +34,27 @@ class BoardLayoutTests(Board):
         before = snapshot(self.notes / "dev-loop-board")
         self.ok("--claim", "demo-work")
         self.assertEqual(snapshot(self.notes / "dev-loop-board"), before)
+
+    def test_note_in_the_old_folder_ships_after_the_move(self) -> None:
+        """Issue #114: a run that does not see an own note keeps its slug, so the note ships once it is moved back."""
+        wt = self.worktree("tiny", prefix="fix")
+        put(wt / "tiny.txt", "work\n")
+        git(wt, "add", "tiny.txt")
+        git(wt, "commit", "-q", "-m", "tiny")
+        self.ok(cwd=wt)
+        path = self.own_notes()["tiny"]
+        old = self.notes / "dev-loop-board" / "features" / path.name
+        old.parent.mkdir(parents=True)
+        path.rename(old)
+        git(self.repo, "cherry-pick", "fix/tiny")
+        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, "fetch", "-q", "origin")
+        git(self.repo, "worktree", "remove", "--force", str(wt))
+        git(self.repo, "branch", "-D", "fix/tiny")
+        self.ok()
+        old.rename(path)
+        self.ok()
+        self.assertRegex(read_note(path)["shipped_at"], ISO_Z)
 
     def test_claim_error_names_the_features_folder(self) -> None:
         code, payload = self.board("--claim", "nothing")
