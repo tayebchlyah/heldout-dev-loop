@@ -147,29 +147,6 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
     return merge(tables), 0
 
 
-def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None, int | None]:
-    files = sorted(folder.glob("*.xml"))
-    if not files:
-        return None, None, None, None
-    ids: set[str] = set()
-    executed: set[str] = set()
-    cases = 0
-    for path in files:
-        try:
-            root = ET.parse(path).getroot()
-        except ET.ParseError:
-            return None, None, None, None
-        for case in root.iter("testcase"):
-            name, classname = case.get("name", ""), case.get("classname")
-            if case.find("skipped") is None:
-                cases += 1
-                test = name.split(" (", 1)[0]
-                executed.add(f"{classname}::{test}" if classname else test)
-            if case.find("failure") is not None or case.find("error") is not None:
-                ids.add(f"{classname}::{name}" if classname else name)
-    return len(ids), sorted(ids), cases, len(executed)
-
-
 def known(run: dict) -> bool:
     return (run["counted"] and run["failing"] is not None and not (run["exit"] != 0 and run["failing"] == 0)
             and (run.get("cases") or 0) > 0)
@@ -311,7 +288,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     reports.mkdir()
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
     payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
-    failing, ids, cases, tests = junit_failures(reports)
+    failing, ids, cases, tests = gate.junit_failures(reports)
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
