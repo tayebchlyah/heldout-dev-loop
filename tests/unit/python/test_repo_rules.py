@@ -495,5 +495,36 @@ class GateScopeTests(unittest.TestCase):
                     git(repo, "checkout", "-q", "--", path)
 
 
+class GateTempLeakTests(unittest.TestCase):
+    def test_only_the_python_tempfile_probe_is_not_a_leak(self) -> None:
+        rows = (
+            ("ab3d_9x7", "blat", False),
+            ("ab3d_9x7", "", False),
+            ("ab3d_9x7", "blah", True),
+            ("ab3d_9x7", "blat\n", True),
+            ("ab3d_9x7q", "blat", True),
+            ("AB3D_9X7", "blat", True),
+            ("ab3d-9x7", "blat", True),
+            ("ab3d_9x7", None, True),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp).resolve()
+            put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
+            put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
+            (repo / "node_modules" / "playwright").mkdir(parents=True)
+            for name, content, leak in rows:
+                with self.subTest(name=name, content=content):
+                    put(repo / "tests" / "unit" / "python" / "test_dev_loop.py",
+                        "import os, sys\n"
+                        f"path = os.path.join(os.environ['TMPDIR'], {name!r})\n"
+                        f"content = {content!r}\n"
+                        "os.mkdir(path) if content is None else open(path, 'w').write(content)\n")
+                    run = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
+                                         env={k: v for k, v in os.environ.items()
+                                              if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}, timeout=60)
+                    self.assertEqual("temp leak" in run.stdout, leak, run.stdout)
+                    self.assertEqual(run.returncode, 1 if leak else 0, run.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,8 @@
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
 # README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh. No change: neither. Else both.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
-# Both suites run with an empty TMPDIR: anything left in it but node-compile-cache fails the gate (a temp leak).
+# Both suites run with an empty TMPDIR: anything left in it but node-compile-cache and a Python tempfile probe
+# (8 characters [a-z0-9_], empty or "blat") fails the gate (a temp leak).
 set -u
 cd "$(dirname "$0")/.."
 
@@ -47,7 +48,12 @@ for suite in node py; do
   cat "$out/$suite"
   [ "$(cat "$out/$suite.exit")" = 0 ] || status=1
 done
-left=$(ls -A "$scratch" | grep -vx node-compile-cache)
+left=$(ls -A "$scratch" | grep -vx node-compile-cache | while IFS= read -r name; do
+  file="$scratch/$name"
+  # allow-comment: dependency, Python's first gettempdir() writes "blat" to an 8-character file and unlinks it; a killed child leaves it (#106).
+  [[ $name =~ ^[a-z0-9_]{8}$ ]] && [ -f "$file" ] && [ ! -L "$file" ] && { [ ! -s "$file" ] || cmp -s "$file" <(printf blat); } && continue
+  echo "$name"
+done)
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
   status=1
