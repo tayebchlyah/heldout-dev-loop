@@ -312,6 +312,12 @@ class ReleaseSkillTextTests(unittest.TestCase):
         for name in ["release-record --fix-wave", "fix #<n>", "accept", "close"]:
             self.assertIn(name, step3, name)
         self.assertLess(step3.index("release-record --fix-wave"), step3.index("skills/release-audit/SKILL.md"))
+        self.assertIn("Any other `--fix-wave` error (`foreign-commit`, `wave-exists`, `not-descendant`, `no-audit`, `no-project-note`), or any other `stale-audit`: follow the steps of `skills/release-audit/SKILL.md`", step3)
+
+    def test_release_step_1_fixed_item_close(self) -> None:
+        step1 = self.skill("release").split("\n1. ")[1].split("\n2. ")[0]
+        self.assertIn("ruled `fix #<n>`", step1)
+        self.assertIn("close fixed by #<n>", step1)
 
     def test_release_notes_steps_use_output_file(self) -> None:
         text = self.skill("release")
