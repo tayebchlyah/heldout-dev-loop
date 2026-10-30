@@ -125,24 +125,50 @@ class CanaryScriptTests(unittest.TestCase):
                                                     "lines": ["TOKOTHER line 1"]}]}))
         foreign.write_text(json.dumps({"records": [{"agent_type": "implementer", "set": "acceptance",
                                                     "lines": ["TOKREAD line 1"]}]}))
-        for where, taint, token, verdict in [
-            (transcripts, tainted, "TOKREAD", "read-detected"),
-            (transcripts, tainted, "TOKOTHER", "read-detected"),
-            (transcripts, foreign, "TOKREAD", "LEAK"),
-            (transcripts, absent, "TOKREAD", "LEAK"),
-            (denied, tainted, "TOKNEVER", "blocked"),
-            (transcripts, tainted, "TOKNEVER", "not-run"),
-            (quoted, tainted, "TOKNEVER", "not-run"),
-            (empty, tainted, "TOKREAD", "ERROR"),
+        claude, codex, quoting = work / "claude", work / "codex", work / "quoting"
+
+        def lines(path, *objs):
+            put(path / "agent.jsonl", "".join(json.dumps(o) + "\n" for o in objs))
+
+        lines(claude,
+              {"message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash",
+                                        "input": {"command": "cat src/canary_cat.py"}}]}},
+              {"message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content":
+                                        "PreToolUse:Bash hook error: Blocked: src/ is outside this agent's territory."}]}})
+        lines(codex,
+              {"payload": {"type": "custom_tool_call", "call_id": "c1", "name": "exec",
+                           "input": "cat tests/acceptance/test_canary_cat.py"}},
+              {"payload": {"type": "custom_tool_call_output", "call_id": "c1", "output":
+                           "Blocked: this agent cannot access tests/acceptance. Command: cat x"}})
+        lines(quoting,
+              {"payload": {"call_id": "q1", "arguments": "cat .claude/hooks/deny-path.sh"}},
+              {"payload": {"call_id": "q1", "output": 'echo "Blocked: $FRAG is outside this agent\'s territory."\n'
+                                                      'Blocked: this agent cannot access $denied'}},
+              {"payload": {"call_id": "q2", "arguments": "cat src/canary_git_show.py > /dev/null"}},
+              {"payload": {"call_id": "q2", "output": ""}})
+        for where, taint, token, stem, verdict in [
+            (transcripts, tainted, "TOKREAD", "canary_x", "read-detected"),
+            (transcripts, tainted, "TOKOTHER", "canary_x", "read-detected"),
+            (transcripts, foreign, "TOKREAD", "canary_x", "LEAK"),
+            (transcripts, absent, "TOKREAD", "canary_x", "LEAK"),
+            (denied, tainted, "TOKNEVER", "canary_x", "not-run"),
+            (transcripts, tainted, "TOKNEVER", "canary_x", "not-run"),
+            (quoted, tainted, "TOKNEVER", "canary_x", "not-run"),
+            (empty, tainted, "TOKREAD", "canary_x", "ERROR"),
+            (claude, tainted, "TOKNEVER", "canary_cat", "blocked"),
+            (claude, tainted, "TOKNEVER", "canary_python", "skipped"),
+            (codex, tainted, "TOKNEVER", "test_canary_cat", "blocked"),
+            (quoting, tainted, "TOKNEVER", "canary_git_show", "unproven"),
+            (quoting, tainted, "TOKNEVER", "canary_cat", "not-run"),
         ]:
-            with self.subTest(where=where.name, taint=taint.name, token=token):
+            with self.subTest(where=where.name, taint=taint.name, token=token, stem=stem):
                 result = subprocess.run(["/bin/bash", str(self.script), "--self-test-verdict", str(where), str(taint),
-                                         "spec-tester", token], capture_output=True, text=True)
+                                         "spec-tester", token, stem], capture_output=True, text=True)
                 self.assertEqual((result.returncode, result.stdout), (0, verdict + "\n"), result.stderr)
 
     def test_codex_runs_the_hooks_of_its_own_scratch_install(self):
         text = self.script.read_text()
-        runs = [line for line in text.splitlines() if "codex exec" in line and not line.lstrip().startswith("#")]
+        runs = [line for line in text.splitlines() if line.strip().startswith("codex exec")]
         self.assertGreaterEqual(len(runs), 2)
         for line in runs:
             self.assertIn("--dangerously-bypass-hook-trust", line)
@@ -168,6 +194,18 @@ class CanaryScriptTests(unittest.TestCase):
                 self.assertEqual(config.read_text(), before)
                 self.assertEqual(sorted(p.name for p in work.iterdir()), ["config.toml"])
 
+    def test_trust_add_refuses_to_run_over_an_earlier_backup(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        config, backup = work / "config.toml", work / "config.toml.canary-bak"
+        config.write_text('model = "x"\n')
+        backup.write_text('model = "old"\n')
+        result = subprocess.run(["/bin/bash", str(self.script), "--self-test-trust", str(config), str(work / "p")],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("canary: an earlier run left", result.stderr)
+        self.assertEqual((config.read_text(), backup.read_text()), ('model = "x"\n', 'model = "old"\n'))
+
     def test_forget_drops_the_trust_codex_wrote_under_the_scratch_folder_only(self):
         work = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, work, True)
@@ -184,6 +222,41 @@ class CanaryScriptTests(unittest.TestCase):
                 self.assertEqual(sorted(after["projects"]), sorted(kept))
                 self.assertEqual(after["model"], "x")
                 self.assertIn("hooks", after)
+
+    def test_forget_edits_by_line_and_keeps_what_it_cannot_decode(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        head = '[projects."/s/a"]\ntrust_level = "trusted"\n'
+        for name, before, after in [
+            ("first", head + '\nmodel = "x"\n', 'model = "x"\n'),
+            ("last-no-newline", 'model = "x"\n\n' + head.rstrip("\n"), 'model = "x"'),
+            ("adjacent", 'm = 1\n\n' + head + '[projects."/s/b"]\ntrust_level = "trusted"\n[o]\n', 'm = 1\n[o]\n'),
+            ("kept-key", head + '[projects."\\U0001F600"]\ntrust_level = "trusted"\n',
+             '[projects."\\U0001F600"]\ntrust_level = "trusted"\n'),
+            ("other-lines", head.replace("trusted", "untrusted") + '[projects."/s/b"]\ntrust_level = "trusted"\nx = 1\n', None),
+        ]:
+            with self.subTest(name=name):
+                config = work / "config.toml"
+                config.write_text(before)
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-forget", str(config), "/s"],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(config.read_text(), before if after is None else after)
+        missing = work / "none.toml"
+        result = subprocess.run(["/bin/bash", str(self.script), "--self-test-forget", str(missing), "/s"],
+                                capture_output=True, text=True)
+        self.assertEqual((result.returncode, missing.exists()), (0, False), result.stderr)
+
+    def test_codex_older_than_0_165_is_skipped_with_a_failure(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        put(work / "codex", "#!/bin/sh\necho codex-cli 0.164.0\n")
+        (work / "codex").chmod(0o755)
+        result = subprocess.run(["/bin/bash", str(self.script), "--codex"], capture_output=True, text=True,
+                                env={**os.environ, "PATH": f"{work}:{os.environ['PATH']}"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("codex-cli 0.164.0 is older than 0.165.0: the canary needs --dangerously-bypass-hook-trust", result.stderr)
+        self.assertNotIn("codex implementer", result.stdout)
 
     def test_second_review_canary_shows_a_reviewer_that_quotes_a_canary(self):
         work = Path(tempfile.mkdtemp())
