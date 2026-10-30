@@ -134,7 +134,11 @@ class CanaryScriptTests(unittest.TestCase):
               {"message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash",
                                         "input": {"command": "cat src/canary_cat.py"}}]}},
               {"message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content":
-                                        "PreToolUse:Bash hook error: Blocked: src/ is outside this agent's territory."}]}})
+                                        "PreToolUse:Bash hook error: Blocked: src/ is outside this agent's territory."}]}},
+              {"message": {"content": [{"type": "tool_use", "id": "t2", "name": "Grep",
+                                        "input": {"pattern": ".", "path": "src/canary_Grep.py"}}]}},
+              {"message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "content":
+                                        "<tool_use_error>Error: No such tool available: Grep.</tool_use_error>"}]}})
         lines(codex,
               {"payload": {"type": "custom_tool_call", "call_id": "c1", "name": "exec",
                            "input": "cat tests/acceptance/test_canary_cat.py"}},
@@ -157,6 +161,7 @@ class CanaryScriptTests(unittest.TestCase):
             (empty, tainted, "TOKREAD", "canary_x", "ERROR"),
             (claude, tainted, "TOKNEVER", "canary_cat", "blocked"),
             (claude, tainted, "TOKNEVER", "canary_python", "skipped"),
+            (claude, tainted, "TOKNEVER", "canary_Grep", "absent"),
             (codex, tainted, "TOKNEVER", "test_canary_cat", "blocked"),
             (quoting, tainted, "TOKNEVER", "canary_git_show", "unproven"),
             (quoting, tainted, "TOKNEVER", "canary_cat", "not-run"),
