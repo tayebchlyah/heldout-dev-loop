@@ -510,6 +510,30 @@ class ReleaseWorkflowTests(unittest.TestCase):
                     self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
                     self.assertEqual(list(scratch.iterdir()), [])
 
+    def test_release_verify_never_waits_on_a_prompt(self) -> None:
+        script = self.ROOT / "scripts" / "release-verify.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, stubs, seen = root / "repo", root / "bin", root / "seen.txt"
+            repo.mkdir()
+            stubs.mkdir()
+            for args in (("init", "-q", "-b", "main"), ("config", "user.email", "a@b"), ("config", "user.name", "a"),
+                         ("commit", "-q", "--allow-empty", "-m", "a")):
+                subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+            (stubs / "npx").write_text(
+                "#!/bin/sh\n"
+                f'{{ echo "prompt=$GIT_TERMINAL_PROMPT"; echo "ssh=$GIT_SSH_COMMAND"\n'
+                '  echo "url=$(git config --get url.git@github.com:.insteadof)"\n'
+                f'  echo "fsmonitor=$(git config --get core.fsmonitor)"; }} > "{seen}"\n')
+            (stubs / "npx").chmod(0o755)
+            env = {**os.environ, "RELEASE_TAG": "v9.9.9", "TMPDIR": tmp, "GIT_CONFIG_COUNT": "1",
+                   "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+                   "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}"}
+            result = subprocess.run([str(script)], cwd=repo, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(seen.read_text().splitlines(), [
+                "prompt=0", "ssh=ssh -o BatchMode=yes", "url=https://github.com/", "fsmonitor=false"])
+
     def test_test_and_acceptance_jobs_install_git_cliff_before_the_suite(self) -> None:
         ci = self.workflow("ci.yml")
         test_job, acceptance_job = ci.split("  acceptance:\n", 1)
