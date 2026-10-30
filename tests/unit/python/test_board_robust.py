@@ -298,16 +298,17 @@ class BoardRobustTests(Board):
         self.assertEqual(note["tasks"], [{"n": 1, "title": "Step 1", "state": "todo"},
                                          {"n": 2, "title": "Step 2", "state": "todo"}])
 
-    def test_board_note_at_a_release_candidate_is_rewritten_by_a_newer_one(self) -> None:
-        """D2: a board note at 3.0.0-rc.1 is older than kit 3.0.0-rc.2: written again with the kit version.
-        #119: a MANIFEST version that is not a version (planted Markdown) counts as 0.0.0."""
+    def test_board_note_version_follows_a_valid_kit_version(self) -> None:
+        """D2: an older board note is rewritten with the kit version. #119: a MANIFEST version
+        that is not `X.Y.Z` or `X.Y.Z-rc.N` (ASCII digits, no leading zeros) counts as 0.0.0."""
         from board import writer
 
         folder = self.board_dir / "Features"
         planted = "3.0.0-rc.2\n```dataviewjs\ndv.el('p', 'planted')\n```"
         for have, kit, want in [("3.0.0-rc.1", "3.0.0-rc.2", "3.0.0-rc.2"), ("3.0.0-rc.2", "3.0.0-rc.2", "3.0.0-rc.2"),
                                 ("3.0.0-rc.2", "3.0.0-rc.1", "3.0.0-rc.2"), ("3.0.0-rc.1", planted, "3.0.0-rc.1"),
-                                (None, planted, "0.0.0"), (None, "3.1.0-beta.2", "3.1.0-beta.2")]:
+                                (None, planted, "0.0.0"), (None, "3.1.0-beta.2", "0.0.0"),
+                                (None, "3.1.0-rc.12", "3.1.0-rc.12"), (None, "３.0.0", "0.0.0")]:
             with self.subTest(have=have, kit=kit):
                 (folder / "Dev Loop Board.md").unlink(missing_ok=True)
                 if have:
