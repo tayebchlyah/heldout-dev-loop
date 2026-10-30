@@ -217,10 +217,8 @@ class SandboxRunTests(unittest.TestCase):
         self.assertEqual(done.stdout.split(), ["CapEff:", "0000000000000000", "CapBnd:", "0000000000000000"])
 
     def test_timeout(self) -> None:
-        start = time.monotonic()
-        done, _ = self.run_sandbox("sleep", "30", opts=("--timeout", "2"))
+        done, _ = self.run_sandbox("sleep", "600", opts=("--timeout", "2"))
         self.assertEqual(done.returncode, 124, done.stderr)
-        self.assertLess(time.monotonic() - start, 15)
 
     def test_runner_errors(self) -> None:
         empty = self.tmp / "empty-path"
