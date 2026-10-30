@@ -67,8 +67,8 @@ def section(text: str, heading: str) -> list[str]:
 def security_items(text: str) -> tuple[list[dict], list[str]]:
     """(open items, unparsed lines) of `## Deferred`.
 
-    An item is `{line, verdict, source, fingerprint}`. A `needs-validation` item with a ruling `accept` or `close`
-    is closed and left out. A top-level bullet that names security and does not match the item format is unparsed.
+    An item is `{line, verdict, source, fingerprint}`. An item with a ruling `accept` or `close` is closed and left
+    out. A top-level bullet that names security and does not match the item format is unparsed.
     """
     items: list[dict] = []
     unparsed: list[str] = []
@@ -98,7 +98,7 @@ def security_items(text: str) -> tuple[list[dict], list[str]]:
         elif line.strip() and not line[0].isspace():
             finish()
             current, closed = None, False
-        elif current is not None and current["verdict"] == "needs-validation":
+        elif current is not None:
             ruling = RULING_RE.match(line)
             if ruling and ruling.group(1) in CLOSING_WORDS:
                 closed = True
@@ -530,17 +530,21 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
             if base != expected:
                 return {"error": "bad-base", "expected_base": expected}, 1
         open_prints = {i["fingerprint"] for i in security_items(text)[0] if i["fingerprint"]}
+        garden_prints = {m.group(1) for line in section(text, "Gardener") if (m := FINGERPRINT_RE.search(line))}
         deferred: list[str] = []
+        low: list[str] = []
         skipped: list[str] = []
         for item in findings:
             verdict = verdicts.get(item.get("verdict"))
             if verdict is None:
                 continue
+            severity = item.get("severity")
+            is_low = verdict == "confirmed" and isinstance(severity, dict) and severity.get("overall_severity") in ("low", "informational")
             fingerprint = one_line(item["fingerprint"]) if item.get("fingerprint") else ""
-            if fingerprint and fingerprint in open_prints:
+            if fingerprint and (fingerprint in open_prints or is_low and fingerprint in garden_prints):
                 skipped.append(fingerprint)
                 continue
-            open_prints.add(fingerprint)
+            (garden_prints if is_low else open_prints).add(fingerprint)
             detail = "FINDINGS-DETAIL.md" if verdict == "confirmed" else "NEEDS-VALIDATION.md"
             blockers = item.get("blockers")
             blocker = one_line(blockers[0]) if verdict == "needs-validation" and isinstance(blockers, list) and blockers and blockers[0] else ""
@@ -550,7 +554,10 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
             if blocker:
                 parts.append(f"Blocker: {blocker}.")
             parts.append(f"Details: {AUDITS}/{name}/{detail}.")
-            deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
+            if is_low:
+                low.append(f"- {today} (security, low, {name}): {' '.join(parts)}")
+            else:
+                deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
         counts = {v: sum(1 for r in findings if r.get("verdict") == v) for v in verdicts}
         hardening = hardening_count(run / "REPORT.md")
         gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see {AUDITS}/{name}/REPORT.md" if hardening else None
@@ -559,12 +566,12 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         lines = text.split("\n")
         if deferred:
             add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *deferred], blank_before=True)
-        if gardener:
-            add_lines(lines, "Gardener", [gardener])
+        if low or gardener:
+            add_lines(lines, "Gardener", [*low, *([gardener] if gardener else [])])
         add_lines(lines, "Release audits", [line])
         out = "\n".join(lines)
         write_atomic(note, out if out.endswith("\n") else out + "\n")
-    return {"record": line, "deferred": deferred, "skipped": skipped, "gardener": gardener}, 0
+    return {"record": line, "deferred": deferred, "low": low, "skipped": skipped, "gardener": gardener}, 0
 
 
 def section_body(text: str, version: str) -> list[str] | None:

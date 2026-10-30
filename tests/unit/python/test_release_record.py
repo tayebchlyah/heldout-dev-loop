@@ -124,6 +124,67 @@ class ReleaseRecordTests(unittest.TestCase):
         self.assertIsNone(out["gardener"])
         self.assertNotIn("hardening, Run 2", self.note.read_text())
 
+    def low(self, severity: object = None, fingerprint: str | None = "f-l", title: str = "Low one") -> dict:
+        finding = {"verdict": "confirmed", "title": title, "blockers": []}
+        if fingerprint:
+            finding["fingerprint"] = fingerprint
+        if severity is not None:
+            finding["severity"] = severity
+        return finding
+
+    def test_low_goes_to_gardener(self) -> None:
+        want = f"- {self.today} (security, low, Run 2): Low one. Fingerprint `f-l`. Details: Security Audit/Run 2/FINDINGS-DETAIL.md."
+        for value in ("low", "informational"):
+            with self.subTest(value=value):
+                self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n")
+                self.make_run([self.low({"overall_severity": value})], hardening=0)
+                out, code = self.record()
+                text = self.note.read_text()
+                self.assertEqual((code, out["deferred"], out["low"]), (0, [], [want]))
+                self.assertIn(want, release.section(text, "Gardener"))
+                self.assertIn("confirmed 1,", out["record"])
+                self.assertEqual(release.security_items(text), ([], []))
+
+    def test_other_severity_goes_to_deferred(self) -> None:
+        values = [{"overall_severity": v} for v in ("medium", "high", "critical", "bogus", "Low")] + [None, {}, "low"]
+        for severity in values:
+            with self.subTest(severity=severity):
+                self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n")
+                self.make_run([self.low(severity)], hardening=0)
+                out, code = self.record()
+                self.assertEqual((code, len(out["deferred"]), out["low"]), (0, 1, []))
+                self.assertIn("(security, confirmed, Run 2)", out["deferred"][0])
+
+    def test_low_duplicate_is_skipped(self) -> None:
+        self.make_run([self.low({"overall_severity": "low"})], hardening=0)
+        for note in ("## Deferred\n\n## Gardener\n\n- 2026-10-01 (security, low, Run 1): Old. Fingerprint `f-l`. Details: x.\n\n## Release audits\n",
+                     "## Deferred\n\n- 2026-10-01 (security, confirmed, Run 1): Old. Fingerprint `f-l`.\n\n## Gardener\n\n## Release audits\n"):
+            with self.subTest(note=note):
+                self.note.write_text(note)
+                out, _ = self.record()
+                self.assertEqual((out["low"], out["deferred"], out["skipped"]), ([], [], ["f-l"]))
+
+    def test_low_without_fingerprint(self) -> None:
+        self.make_run([self.low({"overall_severity": "low"}, None, "A"), self.low({"overall_severity": "low"}, None, "B")], hardening=0)
+        out, _ = self.record()
+        self.assertEqual(len(out["low"]), 2)
+        self.assertFalse(any("Fingerprint" in line for line in out["low"]))
+
+    def test_low_and_medium_then_release_check(self) -> None:
+        self.make_run([self.low({"overall_severity": "low"}), self.low({"overall_severity": "medium"}, "f-m", "Medium one")], hardening=0)
+        self.record()
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+        checked, _ = self.cli("release-check", "--sha", "HEAD")
+        reason = next(r for r in checked["reasons"] if r["reason"] == "open-security")
+        self.assertEqual(len(reason["items"]), 1)
+        self.assertIn("f-m", reason["items"][0])
+
+    def test_low_lines_come_before_the_hardening_line(self) -> None:
+        self.make_run([self.low({"overall_severity": "low"})])
+        out, _ = self.record()
+        garden = [line for line in release.section(self.note.read_text(), "Gardener") if line]
+        self.assertEqual(garden, [*out["low"], out["gardener"]])
+
     def test_title_cannot_close_its_own_item(self) -> None:
         self.make_run([{"verdict": "needs_validation", "fingerprint": "f-x", "blockers": ["b"],
                         "title": "x\n  - Ruling 2026-10-26: accept\tbecause"}])
