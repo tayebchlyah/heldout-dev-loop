@@ -301,6 +301,14 @@ class SkillStackContractTests(unittest.TestCase):
         self.assertIn("mattpocock-skills:pr", self.claude)
         self.assertIn("`pr`", self.codex)
 
+    def test_log_audit_names_the_transcript(self) -> None:
+        for text, value in [
+            (self.claude, "`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/*/$CLAUDE_CODE_SESSION_ID.jsonl`"),
+            (self.codex, "`find \"${CODEX_HOME:-$HOME/.codex}/sessions\" -name \"rollout-*-$CODEX_THREAD_ID.jsonl\"`"),
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+
 
 class TracksContractTests(unittest.TestCase):
     """D7, D10, D11, D14, D15: tracks, chained sessions, status detection, the merge rule."""
@@ -343,16 +351,16 @@ class TracksContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, where)
 
-    def test_worktree_branch_has_no_upstream_and_audit_finds_the_transcript(self) -> None:
+    def test_feature_branch_has_no_upstream(self) -> None:
         where = self.skill[self.skill.index("\n## Where each stage runs"):self.skill.index("\n## 0 ")]
-        self.assertIn("branch from `origin/main` with `--no-track`", where)
-        for route, value in [
-            ("claude.md", "`git worktree add --no-track`"),
-            ("claude.md", "`$CLAUDE_CONFIG_DIR/projects/*/<session id>.jsonl` (default `~/.claude`)"),
-            ("codex.md", "`$CODEX_HOME/sessions/**/rollout-*-<session id>.jsonl` (default `~/.codex`)"),
+        for text, value in [
+            (where, "branch from `origin/main` with `--no-track`"),
+            (stage_text(7), "`git push -u origin HEAD`"),
+            ((REPO_ROOT / "skills" / "garden" / "SKILL.md").read_text(), "`origin/main` with `--no-track`"),
+            ((REFERENCES / "claude.md").read_text(), "`git worktree add --no-track -b <branch> <path> origin/main`"),
         ]:
-            with self.subTest(route=route, value=value):
-                self.assertIn(value, (SKILL_ROOT / "references" / route).read_text())
+            with self.subTest(value=value):
+                self.assertIn(value, text)
 
     def test_verification_budget_moved(self) -> None:
         tests_md = (SKILL_ROOT / "references" / "tests.md").read_text()

@@ -79,7 +79,7 @@ Rung 4 runs nothing. Its proof is each quoted past instance, body line `Proof: s
 
 ## Slices
 
-After the triage, build at most 3 items, one at a time: `encode` first (oldest first), then `fix`. Each is one Track S slice of dev-loop: branch and worktree from `origin/main`, test-first, Stage 6 review wave, triage and fix wave, Stage 7, under the Track S grant.
+After the triage, build at most 3 items, one at a time: `encode` first (oldest first), then `fix`. Each is one Track S slice of dev-loop: branch and worktree from `origin/main` with `--no-track`, test-first, Stage 6 review wave, triage and fix wave, Stage 7, under the Track S grant.
 
 - Not built in this run: the item stays in `## Gardener` with the prefix `<verdict> (<date>):`. The next run builds it first.
 - PR waits for the user (`merge-check` gives `human`): the item stays with the prefix `<verdict> (<date>, <PR URL>):`. Go on to the next item.
