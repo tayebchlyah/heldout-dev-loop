@@ -37,7 +37,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `test_board_layout.py`, `test_board_tasks.py`, `test_verify.py`, `test_capture.py`: board folders, names; task state, subagents, hook filter; `verify-init`, `drive`, verify checks; `capture`.
   - `test_second_review.py`, `test_release.py`, `test_release_record.py`: `second-review`; `release-check`, `release-plan`, `release-notes`; `release-record`.
   - `test_release_guard.py`, `test_sandbox_run.py`: release guards, setup, kit, text; `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails, set in CI).
-  - `test_metrics.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh` on `PATH`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
+  - `test_metrics{,_cli}.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
   - `test_gardener.py`, `test_retro.py`, `test_feature_gate.py`: `garden` skill, kit text, harness names; `review_due`, `sessions`; `review-merge`, `acceptance`.
   - `test_case_floor.py`: case floor.
   - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
