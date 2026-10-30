@@ -211,6 +211,21 @@ def is_release_tag(name: str) -> bool:
     return fnmatch.fnmatchcase(name, "v*")
 
 
+def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str) -> str | None:
+    """Why `release-check` does not measure from the fix wave: `not-ancestor`, `foreign-commit`, `unfixed` or
+    `released: <tag>` (a `v*` tag that holds the wave and points elsewhere than the target), else None."""
+    sha = wave["sha"]
+    if (sha == record_sha or run_git(repo, "merge-base", "--is-ancestor", record_sha, sha).returncode != 0
+            or run_git(repo, "merge-base", "--is-ancestor", sha, target).returncode != 0):
+        return "not-ancestor"
+    if (refused := wave_check(repo, record_sha, sha, wave["issues"])) is not None:
+        return refused["error"]
+    for tag in run_git(repo, "tag", "--list", "v*", "--contains", sha).stdout.split():
+        if run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}").stdout.strip() != target:
+            return f"released: {tag}"
+    return None
+
+
 def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple[dict, int]:
     """The release gate: a current audit record and no open security item. Exit 0 when ok.
 
@@ -231,20 +246,28 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple
     except (OSError, ValueError) as exc:
         return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
     reasons: list[dict] = []
+    wave = ignored = None
     record = current_record(text)
     if record is None:
         reasons.append({"reason": "no-audit"})
     elif (detail := mismatch(notes, record)) is not None:
         reasons.append({"reason": "record-mismatch", "detail": detail})
-    elif record["sha"] != sha and (paths := stale_paths(repo, record["sha"], sha)) is not None:
-        reasons.append({"reason": "stale-audit", "paths": paths})
+    else:
+        base = record["sha"]
+        if (found := current_wave(text, record["run"])) is not None:
+            ignored = wave_ignored(repo, base, found, sha)
+            if ignored is None:
+                wave, base = found["line"], found["sha"]
+        if base != sha and (paths := stale_paths(repo, base, sha)) is not None:
+            reasons.append({"reason": "stale-audit", "paths": paths})
     items, unparsed = security_items(text)
     if items:
         reasons.append({"reason": "open-security", "items": [i["line"] for i in items]})
     if unparsed:
         reasons.append({"reason": "unparsed-security", "lines": unparsed})
     ok = not reasons
-    return {"ok": ok, "tag": tag, "target": sha, "record": record["line"] if record else None, "reasons": reasons}, 0 if ok else 1
+    return {"ok": ok, "tag": tag, "target": sha, "record": record["line"] if record else None, "wave": wave,
+            "wave_ignored": ignored, "reasons": reasons}, 0 if ok else 1
 
 
 def skill_dir(harness: str, env: Mapping[str, str]) -> Path:
