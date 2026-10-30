@@ -299,18 +299,22 @@ class BoardRobustTests(Board):
                                          {"n": 2, "title": "Step 2", "state": "todo"}])
 
     def test_board_note_at_a_release_candidate_is_rewritten_by_a_newer_one(self) -> None:
-        """D2: a board note at 3.0.0-rc.1 is older than kit 3.0.0-rc.2: written again with the kit version."""
+        """D2: a board note at 3.0.0-rc.1 is older than kit 3.0.0-rc.2: written again with the kit version.
+        #119: a MANIFEST version that is not a version (planted Markdown) counts as 0.0.0."""
         from board import writer
 
         folder = self.board_dir / "Features"
-        for have, kit, rewritten in [("3.0.0-rc.1", "3.0.0-rc.2", True), ("3.0.0-rc.2", "3.0.0-rc.2", False),
-                                     ("3.0.0-rc.2", "3.0.0-rc.1", False)]:
+        planted = "3.0.0-rc.2\n```dataviewjs\ndv.el('p', 'planted')\n```"
+        for have, kit, want in [("3.0.0-rc.1", "3.0.0-rc.2", "3.0.0-rc.2"), ("3.0.0-rc.2", "3.0.0-rc.2", "3.0.0-rc.2"),
+                                ("3.0.0-rc.2", "3.0.0-rc.1", "3.0.0-rc.2"), ("3.0.0-rc.1", planted, "3.0.0-rc.1"),
+                                (None, planted, "0.0.0"), (None, "3.1.0-beta.2", "3.1.0-beta.2")]:
             with self.subTest(have=have, kit=kit):
-                put(folder / "Dev Loop Board.md", writer.board_text(have))
+                (folder / "Dev Loop Board.md").unlink(missing_ok=True)
+                if have:
+                    put(folder / "Dev Loop Board.md", writer.board_text(have))
                 put(self.repo / ".dev-loop" / "MANIFEST.json", json.dumps({"version": kit, "files": {}}))
                 writer.board_note(self.repo, folder, {"skipped": []})
-                want = writer.board_text(kit if rewritten else have)
-                self.assertEqual((folder / "Dev Loop Board.md").read_text(), want)
+                self.assertEqual((folder / "Dev Loop Board.md").read_text(), writer.board_text(want))
 
     def test_shipped_note_in_the_write_set_is_never_rewritten(self) -> None:
         """O5 regression (Task 3 fix 2): an own note with shipped_at, feature still in the write set: unchanged."""

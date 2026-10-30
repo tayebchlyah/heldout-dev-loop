@@ -397,11 +397,12 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, s
 
 
 def kit_version(top: Path) -> str:
-    """The `version` of `.dev-loop/MANIFEST.json`, else "0.0.0"."""
+    """The `version` of `.dev-loop/MANIFEST.json` when it is a version (#119), else "0.0.0"."""
     try:
-        return str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
+        version = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return "0.0.0"
+    return version if re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", version) else "0.0.0"
 
 
 def board_text(kit: str) -> str:
