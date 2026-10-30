@@ -522,17 +522,20 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
             (stubs / "npx").write_text(
                 "#!/bin/sh\n"
-                f'{{ echo "prompt=$GIT_TERMINAL_PROMPT"; echo "ssh=$GIT_SSH_COMMAND"\n'
+                '{ echo "prompt=$GIT_TERMINAL_PROMPT"\n'
                 '  echo "url=$(git config --get url.git@github.com:.insteadof)"\n'
+                '  echo "helper=$(git config --get credential.helper)"\n'
                 f'  echo "fsmonitor=$(git config --get core.fsmonitor)"; }} > "{seen}"\n')
             (stubs / "npx").chmod(0o755)
-            env = {**os.environ, "RELEASE_TAG": "v9.9.9", "TMPDIR": tmp, "GIT_CONFIG_COUNT": "1",
+            env = {**os.environ, "RELEASE_TAG": "v9.9.9", "TMPDIR": tmp, "GIT_CONFIG_COUNT": "2",
                    "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+                   "GIT_CONFIG_KEY_1": "credential.helper", "GIT_CONFIG_VALUE_1": "osxkeychain",
+                   "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
                    "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}"}
             result = subprocess.run([str(script)], cwd=repo, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(seen.read_text().splitlines(), [
-                "prompt=0", "ssh=ssh -o BatchMode=yes", "url=https://github.com/", "fsmonitor=false"])
+                "prompt=0", "url=https://github.com/", "helper=", "fsmonitor=false"])
 
     def test_test_and_acceptance_jobs_install_git_cliff_before_the_suite(self) -> None:
         ci = self.workflow("ci.yml")
