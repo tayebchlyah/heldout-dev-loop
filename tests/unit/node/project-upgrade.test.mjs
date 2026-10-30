@@ -254,6 +254,27 @@ test('upgrade from a kit with the one skill link creates the pause and continue 
   }
 })
 
+test('init and upgrade refuse a symlink of yours at a new kit link path unless --force, which moves it aside', () => {
+  for (const command of ['init', 'upgrade']) {
+    const { home, repo } = setup()
+    if (command === 'upgrade') initOldKit(repo, home)
+    mkdirSync(join(repo, '.claude/skills'), { recursive: true })
+    symlinkSync('../../mine/continue', join(repo, '.claude/skills/continue'))
+    const fails = command === 'init' ? initFails : upgradeFails
+    const args = command === 'init' ? ['--yes', '--harness=claude'] : []
+    const before = snapshot(repo)
+    fails(repo, home, args, /files of yours at dev-loop paths:\n[\s\S]* {2}\.claude\/skills\/continue\n[\s\S]*--force/)
+    assert.deepEqual(snapshot(repo), before, command)
+
+    const output = (command === 'init' ? init : upgrade)(repo, home, [...args, '--force'])
+    assert.equal(readlinkSync(join(repo, '.claude/skills/continue')), '../../.agents/skills/continue', command)
+    const backups = readdirSync(join(repo, '.claude/skills')).filter((name) => name.startsWith('continue.bak-'))
+    assert.equal(backups.length, 1, command)
+    assert.equal(readlinkSync(join(repo, '.claude/skills', backups[0])), '../../mine/continue', command)
+    assert.match(output, /backup .*continue\.bak-/, command)
+  }
+})
+
 test('init refuses a real directory at the pause skill link path, and writes nothing', () => {
   const { home, repo } = setup()
   mkdirSync(join(repo, '.claude/skills/pause'), { recursive: true })
