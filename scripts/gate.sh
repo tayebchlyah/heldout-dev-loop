@@ -48,11 +48,14 @@ for suite in node py; do
   cat "$out/$suite"
   [ "$(cat "$out/$suite.exit")" = 0 ] || status=1
 done
+# allow-comment: dependency, Python's first gettempdir() writes "blat" to an 8-character file and unlinks it; a killed child leaves it (#106).
+is_probe() {
+  [[ $1 =~ ^[a-z0-9_]{8}$ ]] || return 1
+  [ -f "$scratch/$1" ] && [ ! -L "$scratch/$1" ] || return 1
+  [ ! -s "$scratch/$1" ] || cmp -s "$scratch/$1" <(printf blat)
+}
 left=$(ls -A "$scratch" | grep -vx node-compile-cache | while IFS= read -r name; do
-  file="$scratch/$name"
-  # allow-comment: dependency, Python's first gettempdir() writes "blat" to an 8-character file and unlinks it; a killed child leaves it (#106).
-  [[ $name =~ ^[a-z0-9_]{8}$ ]] && [ -f "$file" ] && [ ! -L "$file" ] && { [ ! -s "$file" ] || cmp -s "$file" <(printf blat); } && continue
-  echo "$name"
+  is_probe "$name" || echo "$name"
 done)
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"

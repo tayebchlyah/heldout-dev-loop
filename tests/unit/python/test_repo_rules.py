@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/repo_rules.py (comments, subjects), the AGENTS.md budget and its CLI index, the gate scope, the audit sandbox image."""
+"""Tests for scripts/repo_rules.py (comments, subjects), the AGENTS.md budget and its CLI index, the gate scope and temp leak check, the audit sandbox image."""
 
 from __future__ import annotations
 
@@ -498,32 +498,40 @@ class GateScopeTests(unittest.TestCase):
 class GateTempLeakTests(unittest.TestCase):
     def test_only_the_python_tempfile_probe_is_not_a_leak(self) -> None:
         rows = (
-            ("ab3d_9x7", "blat", False),
-            ("ab3d_9x7", "", False),
-            ("ab3d_9x7", "blah", True),
-            ("ab3d_9x7", "blat\n", True),
-            ("ab3d_9x7q", "blat", True),
-            ("AB3D_9X7", "blat", True),
-            ("ab3d-9x7", "blat", True),
-            ("ab3d_9x7", None, True),
+            ([("ab3d_9x7", "blat")], []),
+            ([("ab3d_9x7", "")], []),
+            ([("ab3d_9x7", "blah")], ["ab3d_9x7"]),
+            ([("ab3d_9x7", "blat\n")], ["ab3d_9x7"]),
+            ([("ab3d_9x7q", "blat")], ["ab3d_9x7q"]),
+            ([("AB3D_9X7", "blat")], ["AB3D_9X7"]),
+            ([("ab3d-9x7", "blat")], ["ab3d-9x7"]),
+            ([("ab3d_9x7", "dir")], ["ab3d_9x7"]),
+            ([("ab3d_9x7", "link")], ["ab3d_9x7"]),
+            ([("ab3d_9x7", "fifo")], ["ab3d_9x7"]),
+            ([("ab3d_9x7", "blat"), ("leftover", "x")], ["leftover"]),
         )
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp).resolve()
             put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
             put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
+            put(repo / "blat.txt", "blat")
             (repo / "node_modules" / "playwright").mkdir(parents=True)
-            for name, content, leak in rows:
-                with self.subTest(name=name, content=content):
+            for entries, left in rows:
+                with self.subTest(entries=entries):
                     put(repo / "tests" / "unit" / "python" / "test_dev_loop.py",
-                        "import os, sys\n"
-                        f"path = os.path.join(os.environ['TMPDIR'], {name!r})\n"
-                        f"content = {content!r}\n"
-                        "os.mkdir(path) if content is None else open(path, 'w').write(content)\n")
+                        "import os\n"
+                        f"for name, content in {entries!r}:\n"
+                        "    path = os.path.join(os.environ['TMPDIR'], name)\n"
+                        "    if content == 'dir': os.mkdir(path)\n"
+                        "    elif content == 'link': os.symlink(os.path.abspath('blat.txt'), path)\n"
+                        "    elif content == 'fifo': os.mkfifo(path)\n"
+                        "    else: open(path, 'w').write(content)\n")
                     run = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
                                          env={k: v for k, v in os.environ.items()
                                               if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}, timeout=60)
-                    self.assertEqual("temp leak" in run.stdout, leak, run.stdout)
-                    self.assertEqual(run.returncode, 1 if leak else 0, run.stdout)
+                    report = run.stdout.partition("temp leak, the tests left in TMPDIR:\n")[2].split()
+                    self.assertEqual(report, left, run.stdout)
+                    self.assertEqual(run.returncode, 1 if left else 0, run.stdout)
 
 
 if __name__ == "__main__":
