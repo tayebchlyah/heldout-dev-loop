@@ -7,6 +7,10 @@ repo=$(git rev-parse --show-toplevel)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 git clone --quiet --branch main "$repo" "$tmp/repo"
-(cd "$tmp/repo" && npx --yes "github:tchlyah/dev-loop#$RELEASE_TAG" upgrade)
+# npm fetches github: over HTTPS; a credential prompt can wait forever (#117). allow-comment: dependency
+n=${GIT_CONFIG_COUNT:-0}
+(cd "$tmp/repo" && env GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" \
+  "GIT_CONFIG_KEY_$n=url.git@github.com:.insteadOf" "GIT_CONFIG_VALUE_$n=https://github.com/" \
+  GIT_CONFIG_COUNT=$((n + 1)) npx --yes "github:tchlyah/dev-loop#$RELEASE_TAG" upgrade)
 git -C "$tmp/repo" diff --exit-code
 test -z "$(git -C "$tmp/repo" status --porcelain)"
