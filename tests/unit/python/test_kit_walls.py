@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -113,9 +114,12 @@ class CanaryScriptTests(unittest.TestCase):
         # An audit record keeps at most 3 lines, so one record may hold another route's token, or none.
         work = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, work, True)
-        transcripts, empty = work / "t", work / "empty"
+        transcripts, empty, denied, quoted = work / "t", work / "empty", work / "denied", work / "quoted"
         empty.mkdir()
         put(transcripts / "agent.jsonl", '{"out": "TOKREAD line 1"}\n{"out": "TOKOTHER line 1"}\n')
+        put(denied / "agent.jsonl", '{"out": "Blocked: this agent cannot access tests/acceptance"}\n')
+        put(quoted / "agent.jsonl", '{"out": "SEARCH_BLOCK_MESSAGE = (f\\"Blocked: this search reaches the held-out suite '
+                                    '{ACCEPTANCE_DIR}"}\n')
         tainted, foreign, absent = work / "taint.json", work / "foreign.json", work / "absent.json"
         tainted.write_text(json.dumps({"records": [{"agent_type": "spec-tester", "set": "source",
                                                     "lines": ["TOKOTHER line 1"]}]}))
@@ -126,13 +130,60 @@ class CanaryScriptTests(unittest.TestCase):
             (transcripts, tainted, "TOKOTHER", "read-detected"),
             (transcripts, foreign, "TOKREAD", "LEAK"),
             (transcripts, absent, "TOKREAD", "LEAK"),
-            (transcripts, tainted, "TOKNEVER", "blocked"),
+            (denied, tainted, "TOKNEVER", "blocked"),
+            (transcripts, tainted, "TOKNEVER", "not-run"),
+            (quoted, tainted, "TOKNEVER", "not-run"),
             (empty, tainted, "TOKREAD", "ERROR"),
         ]:
             with self.subTest(where=where.name, taint=taint.name, token=token):
                 result = subprocess.run(["/bin/bash", str(self.script), "--self-test-verdict", str(where), str(taint),
                                          "spec-tester", token], capture_output=True, text=True)
                 self.assertEqual((result.returncode, result.stdout), (0, verdict + "\n"), result.stderr)
+
+    def test_codex_runs_the_hooks_of_its_own_scratch_install(self):
+        text = self.script.read_text()
+        runs = [line for line in text.splitlines() if "codex exec" in line and not line.lstrip().startswith("#")]
+        self.assertGreaterEqual(len(runs), 2)
+        for line in runs:
+            self.assertIn("--dangerously-bypass-hook-trust", line)
+        self.assertNotIn('-c "projects.', text)
+        self.assertIn("never redirect or discard", text)
+        self.assertIn("A route reported without running it is a failure", text)
+        self.assertEqual(text.count('[ "$v" = not-run ] && [ "$h" = codex ] && [ "$agent" = spec_tester ] && v=refused'), 1)
+        self.assertIn('[ "$4" = not-run ]', text.split("emit() {", 1)[1].split("\n", 1)[0])
+
+    def test_trust_entry_is_added_for_the_run_and_removed_after(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        project = work / "sandbox \"q\" dir"
+        for before in ['model = "x"\n\n[projects."/a"]\ntrust_level = "trusted"\n', 'model = "x"', ""]:
+            with self.subTest(before=before):
+                config = work / "config.toml"
+                config.write_text(before)
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-trust", str(config), str(project)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                during = tomllib.loads(result.stdout)
+                self.assertEqual(during["projects"][str(project)], {"trust_level": "trusted"})
+                self.assertEqual(config.read_text(), before)
+                self.assertEqual(sorted(p.name for p in work.iterdir()), ["config.toml"])
+
+    def test_forget_drops_the_trust_codex_wrote_under_the_scratch_folder_only(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        entry = '\n[projects."%s"]\ntrust_level = "trusted"\n'
+        config = work / "config.toml"
+        for prefix, kept in [("/s/tmp.A", ["/s/tmp.AB", "/q"]), ("/none", ["/s/tmp.A", "/s/tmp.A/codex", "/s/tmp.AB", "/q"])]:
+            with self.subTest(prefix=prefix):
+                config.write_text('model = "x"\n' + "".join(entry % p for p in ["/s/tmp.A", "/s/tmp.A/codex", "/s/tmp.AB", "/q"])
+                                  + "\n[hooks.state]\n")
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-forget", str(config), prefix],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                after = tomllib.loads(config.read_text())
+                self.assertEqual(sorted(after["projects"]), sorted(kept))
+                self.assertEqual(after["model"], "x")
+                self.assertIn("hooks", after)
 
     def test_second_review_canary_shows_a_reviewer_that_quotes_a_canary(self):
         work = Path(tempfile.mkdtemp())
