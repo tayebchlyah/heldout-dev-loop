@@ -293,16 +293,21 @@ class MetricsNumbersTests(TempDir):
         logs = self.tmp / "logs"
         logs.mkdir()
         start = datetime(2026, 1, 1, 10).timestamp()
-        for name, reports, seconds in [("gate-20260101T100000", True, 30), ("gate-20260101T100000-2", True, 12.5),
+        for name, reports, seconds in [("gate-20260101T100000", True, 30.04), ("gate-20260101T100000-2", True, 12.5),
                                        ("gate-20260101T100000-3", False, 9), ("ci-wait-20260101T100000", True, 4),
-                                       ("gate-2026", True, 3)]:
+                                       ("gate-2026", True, 3), ("gate-20260101T095959", True, 5),
+                                       ("gate-20260101T103001", True, 5), ("gate-20261399T100000", True, 5),
+                                       ("gate-20260101T100500", True, 250)]:
             log = logs / f"{name}.log"
             log.write_text("x\n")
             if reports:
                 (logs / f"{name}-reports").mkdir()
             os.utime(log, (start + seconds, start + seconds))
-        self.assertEqual(metrics.gate_logs(logs), {"runs": 2, "seconds": 42.5})
-        self.assertEqual(metrics.gate_logs(self.tmp / "none"), {"runs": 0, "seconds": 0.0})
+        (logs / "gate-20260101T100100.log").symlink_to(logs / "missing")
+        (logs / "gate-20260101T100100-reports").mkdir()
+        window = (start, start + 1800)
+        self.assertEqual(metrics.gate_logs(logs, *window), {"runs": 2, "seconds": 42.5})
+        self.assertEqual(metrics.gate_logs(self.tmp / "none", *window), {"runs": 0, "seconds": 0.0})
 
     def test_denials(self) -> None:
         text = "PreToolUse:Bash hook error: [~/.claude/hooks/deny-path.sh]: denied"
