@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -55,6 +56,23 @@ class BoardLayoutTests(Board):
         old.rename(path)
         self.ok()
         self.assertRegex(read_note(path)["shipped_at"], ISO_Z)
+
+    def test_unseen_slug_goes_once_its_note_is_gone_from_every_folder(self) -> None:
+        """Issue #114: an unseen slug stays while a note of its name exists in the old folder, and goes with it."""
+        wt = self.worktree("tiny", prefix="fix")
+        self.ok()
+        features = self.repo / ".git" / "dev-loop" / "board-features.json"
+        path = self.own_notes()["tiny"]
+        old = self.notes / "dev-loop-board" / "features" / path.name
+        old.parent.mkdir(parents=True)
+        path.rename(old)
+        git(self.repo, "worktree", "remove", "--force", str(wt))
+        git(self.repo, "branch", "-D", "fix/tiny")
+        self.ok()
+        self.assertEqual(json.loads(features.read_text()), ["tiny"])
+        old.unlink()
+        self.ok()
+        self.assertEqual(json.loads(features.read_text()), [])
 
     def test_claim_error_names_the_features_folder(self) -> None:
         code, payload = self.board("--claim", "nothing")
