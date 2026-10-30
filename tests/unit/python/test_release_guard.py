@@ -478,15 +478,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
         for source, text in sources.items():
             step = text.split("      - id: skip\n", 1)[1].split("\n```", 1)[0].split("\n\n", 1)[0]
             env_block, run = step.split("        run: |\n", 1)
-            for base_ref, skip in (("trunk", "true"), ("", "true"), ("feature", "false")):
-                with self.subTest(source=source, base_ref=base_ref), tempfile.TemporaryDirectory() as tmp:
+            for event, target, skip in (("pull_request", "trunk", "true"), ("push", "trunk", "true"),
+                                        ("push", "feature", "false"), ("pull_request", "other", "false")):
+                with self.subTest(source=source, event=event, target=target), tempfile.TemporaryDirectory() as tmp:
                     scripts = Path(tmp, ".devloop-base/.agents/skills/dev-loop/scripts")
                     scripts.mkdir(parents=True)
                     (scripts / "ci_skip.py").write_text("")
                     (scripts / "devloop.py").write_text(
                         "import os\nopen(os.environ['GITHUB_OUTPUT'], 'a').write('skip=true\\n')\n")
                     env = {**os.environ, "GITHUB_OUTPUT": str(Path(tmp, "out"))}
-                    values = {"${{ github.base_ref }}": base_ref, "${{ github.event.repository.default_branch }}": "trunk"}
+                    values = {"${{ github.base_ref || github.ref_name }}": target, "${{ github.event.repository.default_branch }}": "trunk"}
                     for line in env_block.splitlines()[1:]:
                         key, value = line.strip().split(": ", 1)
                         env[key] = values[value]
