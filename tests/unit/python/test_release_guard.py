@@ -270,6 +270,15 @@ class ReleaseKitTests(unittest.TestCase):
                           .replace("Never run the audit in a subagent", "never run the audit in a subagent"), name)
         self.assertNotIn("\u2014", text)
 
+    def test_threat_model_and_low_lines(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        step4 = text.split("\n4. ")[1].split("\n5. ")[0]
+        step7 = text.split("\n7. ")[1].split("\n\n")[0]
+        for name in ["stop agent mistakes", "not a wall", "hardening", "`low`"]:
+            self.assertIn(name, step4, name)
+        for name in ["`low`", "Gardener"]:
+            self.assertIn(name, step7, name)
+
 
 class ReleaseSkillTextTests(unittest.TestCase):
     """Oracle 35, 36 and 38: the /release and /release-notes skills and the Stage 7 line."""
@@ -297,6 +306,12 @@ class ReleaseSkillTextTests(unittest.TestCase):
         self.assertIn("Then `ci wait`: a verdict other than `pass`: stop, report it.", text)
         self.assertLess(text.index("Stop 2"), text.index("git push origin <tag>"))
         self.assertLess(text.index("Stop 2"), text.index("gh release create"))
+
+    def test_release_step_3_fix_wave(self) -> None:
+        step3 = self.skill("release").split("\n3. ")[1].split("\n4. ")[0]
+        for name in ["release-record --fix-wave", "fix #<n>", "accept", "close"]:
+            self.assertIn(name, step3, name)
+        self.assertLess(step3.index("release-record --fix-wave"), step3.index("skills/release-audit/SKILL.md"))
 
     def test_release_notes_steps_use_output_file(self) -> None:
         text = self.skill("release")
@@ -355,6 +370,22 @@ class ReleaseTextTests(unittest.TestCase):
         self.assertIn("codex exec", box)
         self.assertNotIn("grep -Eqw 65534", box)
         self.assertIn("uid=${uid:-none}", box)
+
+    def test_one_audit_one_fix_wave_section(self) -> None:
+        text = self.read("reference/release.md")
+        self.assertIn("\n## One audit, one fix wave\n", text)
+        section = text.split("\n## One audit, one fix wave\n")[1].split("\n## ")[0]
+        for name in ["one audit", "informational", "## Gardener", "release-record --fix-wave", "next release tag",
+                     "release-plan", "stop agent mistakes", "not a wall"]:
+            self.assertIn(name, section, name)
+
+    def test_skill_release_rule(self) -> None:
+        raw = (self.ROOT / "skill" / "SKILL.md").read_bytes()
+        rule = next(line for line in raw.decode().splitlines() if line.startswith("Release rule."))
+        self.assertIn("release-record --fix-wave", rule)
+        self.assertIn("until a ruling under it says", rule)
+        self.assertNotIn("until its line is removed", rule)
+        self.assertLessEqual(len(raw), 40000)
 
     def test_repo_release_steps_are_plain_numbers(self) -> None:
         steps = self.read("reference/release.md")
