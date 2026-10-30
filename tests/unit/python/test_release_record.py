@@ -382,3 +382,144 @@ class RunFolderTests(unittest.TestCase):
         text = "## Deferred\n- 2026-10-25 (security, needs-validation, release-security-audit): x\n"
         items, unparsed = release.security_items(text)
         self.assertEqual(([i["source"] for i in items], unparsed), (["release-security-audit"], []))
+
+
+class WaveRepo(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.notes = self.root / "Demo"
+        self.repo.mkdir()
+        self.notes.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.a = self.commit("init", {"src/app.py": "a", "package.json": '{"version": "1.0.0"}\n',
+                                      "dev-loop.json": json.dumps({"version": "1.0.0", "version_files": ["package.json"]}),
+                                      "CHANGELOG.md": "# Changelog\n\n## [1.0.0] - 2026-10-01\n"})
+        self.note = self.notes / "Project Note.md"
+        self.note.write_text("## Deferred\n\n## Gardener\n\n## Release audits\n"
+                             f"- 2026-10-29 Run 2 at {self.a}: confirmed 0, needs validation 0, hardening 0, profile standard, scope whole\n")
+        self.run_meta("Run 2", self.a)
+        self.today = date.today().isoformat()
+
+    def run_meta(self, run: str, sha: str) -> None:
+        folder = self.notes / "Security Audit" / run
+        folder.mkdir(parents=True)
+        (folder / "run-metadata.json").write_text(json.dumps({"run_status": "complete", "source_ref": {"commit": sha}}))
+
+    def git(self, *args: str) -> str:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+    def commit(self, subject: str, files: dict | None = None) -> str:
+        for name, body in (files or {"src/app.py": subject}).items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text(body)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", subject)
+        return self.git("rev-parse", "HEAD")
+
+    def release_commit(self) -> str:
+        return self.commit("🔖(release) demo 1.0.1", {
+            "package.json": '{"version": "1.0.1"}\n',
+            "dev-loop.json": json.dumps({"version": "1.0.1", "version_files": ["package.json"]}),
+            "CHANGELOG.md": "# Changelog\n\n## [1.0.1] - 2026-10-30\n\n## [1.0.0] - 2026-10-01\n"})
+
+    def cli(self, command: str, *args: str) -> tuple[dict, int]:
+        done = subprocess.run([sys.executable, str(DEVLOOP), command, "--repo", str(self.repo), *args],
+                              capture_output=True, text=True, env={**os.environ, "DEV_LOOP_NOTES": str(self.notes)})
+        return json.loads(done.stdout or "{}"), done.returncode
+
+    def wave(self, *issues: int) -> tuple[dict, int]:
+        return self.cli("release-record", "--fix-wave", *(arg for i in issues for arg in ("--issue", str(i))))
+
+    def check(self, *args: str) -> tuple[dict, int]:
+        return self.cli("release-check", *args)
+
+
+class FixWaveTests(WaveRepo):
+    def test_wave_line(self) -> None:
+        self.commit("#7: fix")
+        c = self.commit("#8: fix")
+        out, code = self.wave(8, 7)
+        want = f"- {self.today} Run 2 fix wave at {c}: #7, #8"
+        text = self.note.read_text()
+        self.assertEqual((code, out["wave"]), (0, want))
+        self.assertEqual([line for line in text.splitlines() if line][-1], want)
+        self.assertEqual(release.current_record(text)["run"], "Run 2")
+
+    def test_duplicate_issue_and_crlf_note(self) -> None:
+        self.note.write_bytes(self.note.read_text().replace("\n", "\r\n").encode())
+        self.commit("#7: fix")
+        out, code = self.wave(7, 7)
+        self.assertEqual(code, 0)
+        self.assertTrue(out["wave"].endswith(": #7"))
+        self.assertEqual(release.current_wave(self.note.read_text(), "Run 2")["issues"], [7])
+
+    def test_refusals_write_nothing(self) -> None:
+        before = self.note.read_bytes()
+        out, code = self.wave(7)
+        self.assertEqual((code, out["error"], self.note.read_bytes()), (1, "not-descendant", before))
+        self.commit("#7: fix")
+        self.assertEqual(self.wave(7)[1], 0)
+        before = self.note.read_bytes()
+        out, code = self.wave(7)
+        self.assertEqual((code, out["error"], self.note.read_bytes()), (1, "wave-exists", before))
+        self.note.write_text("## Deferred\n\n## Release audits\n")
+        before = self.note.read_bytes()
+        out, code = self.wave(7)
+        self.assertEqual((code, out["error"], self.note.read_bytes()), (1, "no-audit", before))
+
+    def test_foreign_commit(self) -> None:
+        b = self.commit("#7: fix")
+        c = self.commit("✨(x) #12: feature")
+        out, code = self.wave(7)
+        self.assertEqual((code, out["error"], out["commits"]), (1, "foreign-commit", [{"sha": c, "subject": "✨(x) #12: feature"}]))
+        out, _ = self.wave(30)
+        self.assertEqual([found["sha"] for found in out["commits"]], [c, b])
+
+    def test_unfixed(self) -> None:
+        self.commit("#7: fix")
+        self.commit("✨(x) #12: feature")
+        out, code = self.wave(7, 12, 30)
+        self.assertEqual((code, out["error"], out["issues"]), (1, "unfixed", [30]))
+
+    def test_test_doc_and_release_commits_are_not_foreign(self) -> None:
+        self.commit("#7: fix")
+        self.commit("chore: tests", {"tests/unit/test_x.py": "x", "docs/x.md": "x"})
+        self.release_commit()
+        self.assertEqual(self.wave(7)[1], 0)
+
+    def test_bad_version_files_is_foreign(self) -> None:
+        self.commit("#7: fix")
+        d = self.commit("chore: bump", {"dev-loop.json": json.dumps({"version": "1.0.0", "version_files": "package.json"})})
+        out, _ = self.wave(7)
+        self.assertEqual((out["error"], [found["sha"] for found in out["commits"]]), ("foreign-commit", [d]))
+
+    def test_names_issue(self) -> None:
+        for subject, named in (("#7: x", True), ("fix #7", True), ("#7a", True), ("#70: x", False), ("#17", False), ("7", False)):
+            self.assertEqual(release.names_issue(subject, 7), named, subject)
+        self.commit("#70: x", {"docs/x.md": "x"})
+        out, _ = self.wave(7)
+        self.assertEqual((out["error"], out["issues"]), ("unfixed", [7]))
+
+    def test_merge_commit_bringing_code_is_foreign(self) -> None:
+        self.git("checkout", "-q", "-b", "side")
+        s = self.commit("wip", {"src/other.py": "x"})
+        self.git("checkout", "-q", "main")
+        self.commit("#7: fix")
+        self.git("merge", "-q", "--no-ff", "side", "-m", "Merge side")
+        merge = self.git("rev-parse", "HEAD")
+        out, _ = self.wave(7)
+        self.assertEqual((out["error"], {found["sha"] for found in out["commits"]}), ("foreign-commit", {s, merge}))
+
+    def test_usage(self) -> None:
+        self.commit("#7: fix")
+        before = self.note.read_bytes()
+        for args in (("--fix-wave", "--run", "X", "--issue", "7"), ("--fix-wave", "--base", self.a, "--issue", "7"),
+                     ("--fix-wave", "--harness", "claude", "--issue", "7"), ("--fix-wave",), ("--fix-wave", "--issue", "0"),
+                     ("--issue", "7"), ()):
+            with self.subTest(args=args):
+                self.assertEqual(self.cli("release-record", *args)[1], 2)
+                self.assertEqual(self.note.read_bytes(), before)
