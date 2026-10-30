@@ -402,7 +402,7 @@ def kit_version(top: Path) -> str:
         version = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return "0.0.0"
-    return version if re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", version) else "0.0.0"
+    return version if re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?", version) else "0.0.0"
 
 
 def board_text(kit: str) -> str:
