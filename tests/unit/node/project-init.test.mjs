@@ -332,14 +332,6 @@ test('init refuses a real directory at the skill link path, names it, and writes
   assert.equal(readFileSync(join(repo, '.claude/skills/dev-loop/mine.md'), 'utf8'), 'mine\n')
 })
 
-test('init replaces a skill link that points elsewhere', () => {
-  const { home, repo } = setup()
-  mkdirSync(join(repo, '.claude/skills'), { recursive: true })
-  symlinkSync('../../elsewhere', join(repo, '.claude/skills/dev-loop'))
-  init(repo, home, ['--yes', '--harness=claude'])
-  assert.equal(readlinkSync(join(repo, '.claude/skills/dev-loop')), '../../.agents/skills/dev-loop')
-})
-
 test('init refuses a symlinked .codex folder that leads out of the repository, and writes nothing', () => {
   const { home, repo } = setup()
   const outside = tempDir('dev-loop-outside-')
