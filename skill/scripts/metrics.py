@@ -342,6 +342,17 @@ def numbers(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | N
     }
 
 
+def gate_logs(logs: Path) -> dict:
+    """The `gate` runs of a worktree log folder: each `gate-<start>.log` with its `-reports` folder, start to mtime."""
+    gate = {"runs": 0, "seconds": 0.0}
+    for log in sorted(logs.glob("gate-*.log")):
+        m = re.fullmatch(r"gate-(\d{8}T\d{6})(?:-\d+)?", log.stem)
+        if m and (logs / f"{log.stem}-reports").is_dir():
+            gate["runs"] += 1
+            gate["seconds"] += log.stat().st_mtime - datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").timestamp()
+    return gate
+
+
 def efforts(items: list[Counted], slug: str, bounds: list[tuple[float, str]] | None) -> dict:
     """Requests of the feature by stage, role and effort level, from its `api-request` records."""
     if bounds is None:
@@ -461,8 +472,11 @@ def write_locked(file: Path, slug: str, line: str) -> None:
         data = [i for i in rows if cells(lines[i]) != cells(HEADER) and not all(set(c) <= set("-:") for c in cells(lines[i]))]
         mine = next((i for i in data if cells(lines[i])[0] == slug), None)
         if mine is not None:
-            escaped = cells(lines[mine])[-1]
-            lines[mine] = line.rstrip().removesuffix("|").rsplit("|", 1)[0] + f"| {escaped} |"
+            old, new = cells(lines[mine]), cells(line)
+            if new[11:17] == ["?"] * 6 and len(old) == len(new):
+                new[11:17], new[18] = old[11:17], old[18]
+            new[-1] = old[-1]
+            lines[mine] = "| " + " | ".join(new) + " |"
         elif rows:
             lines.insert(rows[-1] + 1, line)
         else:
@@ -509,6 +523,9 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                **numbers(items, slug, bounds),
                "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0},
                "effort": efforts(items, slug, bounds)}
+    logs = gate_logs(Path(git(worktree, "rev-parse", "--absolute-git-dir") or worktree) / "dev-loop" / "logs")
+    if logs["runs"]:
+        payload["gate"] = logs
     payload["row"] = row(slug, track, payload["shipped"], payload, present)
     payload["file"] = None
     if args.write:
