@@ -523,3 +523,79 @@ class FixWaveTests(WaveRepo):
             with self.subTest(args=args):
                 self.assertEqual(self.cli("release-record", *args)[1], 2)
                 self.assertEqual(self.note.read_bytes(), before)
+
+
+class WaveCheckTests(WaveRepo):
+    def setUp(self) -> None:
+        super().setUp()
+        self.b = self.commit("#7: fix")
+        self.c = self.commit("#8: fix")
+        self.line = self.wave(7, 8)[0]["wave"]
+
+    def edit(self, old: str, new: str) -> None:
+        self.note.write_text(self.note.read_text().replace(old, new))
+
+    def test_wave_is_used(self) -> None:
+        out, code = self.check("--sha", self.c)
+        self.assertEqual((out["ok"], out["reasons"], out["wave"], out["wave_ignored"], code), (True, [], self.line, None, 0))
+
+    def test_code_after_wave_is_stale(self) -> None:
+        d = self.commit("#9: other")
+        out, _ = self.check("--sha", d)
+        self.assertEqual((out["reasons"], out["wave"]), ([{"reason": "stale-audit", "paths": ["src/app.py"]}], self.line))
+
+    def test_release_commit_after_wave_is_current(self) -> None:
+        out, _ = self.check("--sha", self.release_commit())
+        self.assertTrue(out["ok"], out)
+
+    def test_tag_on_wave_then_release_commit(self) -> None:
+        self.git("tag", "-a", "v1.0.0-rc.1", "-m", "x", self.c)
+        for args in (("--sha", self.c), ("--tag", "v1.0.0-rc.1")):
+            out, _ = self.check(*args)
+            self.assertEqual((out["ok"], out["wave"]), (True, self.line), args)
+        out, _ = self.check("--sha", self.release_commit())
+        reason = out["reasons"][0]
+        self.assertEqual((reason["reason"], out["wave"], out["wave_ignored"]), ("stale-audit", None, "released: v1.0.0-rc.1"))
+        self.assertIn("src/app.py", reason["paths"])
+
+    def test_other_tags(self) -> None:
+        self.git("tag", "backup", self.c)
+        d = self.release_commit()
+        self.assertTrue(self.check("--sha", d)[0]["ok"])
+        self.git("tag", "v2.0.0", self.c)
+        self.git("tag", "v1.0.0", self.c)
+        self.assertEqual(self.check("--sha", d)[0]["wave_ignored"], "released: v1.0.0")
+        self.git("tag", "-d", "v1.0.0", "v2.0.0")
+        self.git("tag", "v1.0.1", d)
+        self.assertTrue(self.check("--sha", d)[0]["ok"])
+
+    def test_edited_wave_issues(self) -> None:
+        self.edit(": #7, #8", ": #7")
+        out, _ = self.check("--sha", self.c)
+        self.assertEqual((out["reasons"][0]["reason"], out["wave"], out["wave_ignored"]), ("stale-audit", None, "foreign-commit"))
+        self.edit(": #7\n", ": #7, #8, #30\n")
+        self.assertEqual(self.check("--sha", self.c)[0]["wave_ignored"], "unfixed")
+
+    def test_wave_not_ancestor(self) -> None:
+        self.git("checkout", "-q", "-b", "side", self.a)
+        side = self.commit("#7: side")
+        self.git("checkout", "-q", "main")
+        for sha in (side, self.a):
+            with self.subTest(sha=sha):
+                self.note.write_text(self.note.read_text().replace(self.line, self.line.replace(self.c, sha)))
+                self.line = self.line.replace(self.c, sha)
+                self.assertEqual(self.check("--sha", self.c)[0]["wave_ignored"], "not-ancestor")
+                self.note.write_text(self.note.read_text().replace(self.line, self.line.replace(sha, self.c)))
+                self.line = self.line.replace(sha, self.c)
+        self.assertEqual(self.check("--sha", self.b)[0]["wave_ignored"], "not-ancestor")
+
+    def test_newer_record_ignores_old_wave(self) -> None:
+        run3 = f"- 2026-10-30 Run 3 at {self.c}: confirmed 0, needs validation 0, hardening 0, profile standard, scope {self.a}..{self.c}"
+        self.note.write_text(self.note.read_text().rstrip("\n") + f"\n{run3}\n")
+        self.run_meta("Run 3", self.c)
+        out, _ = self.check("--sha", self.c)
+        self.assertEqual((out["wave"], out["wave_ignored"], out["record"]), (None, None, run3))
+
+    def test_plan_base_stays_the_record(self) -> None:
+        out, _ = self.cli("release-plan")
+        self.assertEqual((out["base"], out["scope"]), (self.a, f"{self.a}..{self.c}"))
