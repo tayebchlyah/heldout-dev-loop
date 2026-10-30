@@ -209,6 +209,17 @@ class GateTests(Sandbox):
             ],
         )
 
+    def test_failing_gate_lists_junit_failures(self) -> None:
+        """#120: a failed or errored JUnit case is a failure even when the log line has another shape."""
+        put(self.root / "junit.xml", "<testsuite><testcase classname='m.T' name='test_ok'/>"
+            "<testcase classname='m.T' name='test_bad'><failure/></testcase>"
+            "<testcase name='crash'><error/></testcase>"
+            "<testcase classname='m.T' name='test_skip'><skipped/></testcase></testsuite>")
+        self.gate(f'#!/bin/sh\ncp "{self.root / "junit.xml"}" "$DEVLOOP_REPORT_DIR/unittest.xml"\n'
+                  'echo "FAIL: test_bad (m.T.test_bad)"\necho "✖ crash"\necho "FAILED lint.py - E501"\nexit 1\n')
+        _, out = self.run_gate()
+        self.assertEqual(out["failures"], ["FAILED crash", "FAILED m.T::test_bad", "FAILED lint.py - E501"])
+
     def test_slowest_from_junit_xml(self) -> None:
         put(self.root / "junit.xml", JUNIT)
         self.gate(f'#!/bin/sh\ncp "{self.root / "junit.xml"}" "$DEVLOOP_REPORT_DIR/pytest.xml"\n')
