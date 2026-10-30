@@ -98,6 +98,20 @@ class SandboxRunTests(unittest.TestCase):
         self.assertEqual(self.leftovers(), [], "container left behind")
         return done, scratch
 
+    def run_from_start(self, *cmd: str, opts: tuple[str, ...] = ()) -> tuple[subprocess.CompletedProcess, float, Path]:
+        scratch = Path(tempfile.mkdtemp(dir=self.tmp))
+        args = [sys.executable, str(RUNNER), "--image", "t", "--scratch", str(scratch), *opts, "--", *cmd]
+        proc = subprocess.Popen(args, cwd=self.target, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+        deadline = time.monotonic() + 90
+        while not self.leftovers() and proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        start = time.monotonic()
+        out, err = proc.communicate(timeout=90)
+        seconds = time.monotonic() - start
+        self.assertEqual(self.leftovers(), [], "container left behind")
+        return subprocess.CompletedProcess(args, proc.returncode, out, err), seconds, scratch
+
     def test_command_io(self) -> None:
         cases = [
             (("echo", "hi"), "", 0, "hi\n"),
@@ -217,8 +231,9 @@ class SandboxRunTests(unittest.TestCase):
         self.assertEqual(done.stdout.split(), ["CapEff:", "0000000000000000", "CapBnd:", "0000000000000000"])
 
     def test_timeout(self) -> None:
-        done, _ = self.run_sandbox("sleep", "600", opts=("--timeout", "2"))
+        done, seconds, _ = self.run_from_start("sleep", "600", opts=("--timeout", "2"))
         self.assertEqual(done.returncode, 124, done.stderr)
+        self.assertLess(seconds, 15)
 
     def test_runner_errors(self) -> None:
         empty = self.tmp / "empty-path"
@@ -253,9 +268,8 @@ class SandboxRunTests(unittest.TestCase):
         self.assertLessEqual(sum(files.values()), 5)
 
         stopper = "(while :; do p=$(pidof tar) && kill -STOP $p; done) >/dev/null 2>&1 & echo real > /scratch/real"
-        start = time.monotonic()
-        done, scratch = self.run_sandbox("sh", "-c", stopper, opts=("--timeout", "5"), limit=40)
-        self.assertLess(time.monotonic() - start, 30)
+        done, seconds, scratch = self.run_from_start("sh", "-c", stopper, opts=("--timeout", "5"))
+        self.assertLess(seconds, 30)
         self.assertEqual([p.name for p in scratch.iterdir()], ["real.txt"], done.stderr)
 
     def test_signal_removes_container(self) -> None:
