@@ -28,6 +28,8 @@
                                                       the release audit plan: run folder, scope, sandbox, skill
   devloop.py release-record --run PATH [--base SHA] [--harness claude|codex] [--repo PATH]
                                                       record a finished release audit run in the project note
+  devloop.py release-record --fix-wave --issue N [--issue N ...] [--repo PATH]
+                                                      record the end of the fix wave of the current audit
   devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
   devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
@@ -314,9 +316,11 @@ def main() -> int:
 
     rec = commands.add_parser("release-record")
     rec.add_argument("--repo", default=".")
-    rec.add_argument("--run", dest="run_folder", required=True)
+    rec.add_argument("--run", dest="run_folder")
     rec.add_argument("--base")
-    rec.add_argument("--harness", choices=["claude", "codex"], default="claude")
+    rec.add_argument("--harness", choices=["claude", "codex"])
+    rec.add_argument("--fix-wave", action="store_true")
+    rec.add_argument("--issue", dest="issues", action="append", type=positive_int)
     rec.set_defaults(run=("release", "cmd_release_record"))
 
     metrics = commands.add_parser("metrics")
@@ -363,6 +367,15 @@ def main() -> int:
             parser.error("--write-after takes no --pr, --before or --after")
         if not args.write_after and not args.pr:
             parser.error("--pr is required unless --write-after is given")
+    if args.command == "release-record":
+        if args.fix_wave and any(v is not None for v in (args.run_folder, args.base, args.harness)):
+            parser.error("--fix-wave takes no --run, --base or --harness")
+        if args.fix_wave and not args.issues:
+            parser.error("--fix-wave needs at least one --issue")
+        if args.issues and not args.fix_wave:
+            parser.error("--issue needs --fix-wave")
+        if not args.fix_wave and args.run_folder is None:
+            parser.error("--run is required unless --fix-wave is given")
     module, name = args.run
     return getattr(importlib.import_module(module), name)(args)
 
