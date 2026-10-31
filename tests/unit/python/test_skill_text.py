@@ -309,9 +309,14 @@ class SkillStackContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
-    def test_codex_profile_warns_that_docker_bypasses_it(self) -> None:
-        self.assertIn("With a running Docker engine it protects neither", self.codex)
-        self.assertIn("with Docker, the profile protects neither", (REPO_ROOT / "reference" / "kit.md").read_text())
+    def test_codex_profile_warns_that_a_container_engine_bypasses_it(self) -> None:
+        for text, value in [
+            (self.codex, "keeps both limits only when no container engine is reachable"),
+            ((REPO_ROOT / "reference" / "kit.md").read_text(),
+             "protects `.env` and the write limit only when no container engine is reachable"),
+        ]:
+            with self.subTest(value=value):
+                self.assertIn(value, text)
 
 
 class TracksContractTests(unittest.TestCase):
