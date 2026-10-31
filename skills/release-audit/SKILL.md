@@ -18,6 +18,8 @@ User asked for the audit before a release tag. Do this, in order. Run in the mai
    - else (`<reason>`: no container engine, or no image configured):
 
      > No approved sandbox: <reason>. Run no target code.
+
+     In Codex, `engine` false under the `dev-workspace` profile means the profile closes the Docker socket: tell the user to restart with `codex -c default_permissions=dev-docker` for a sandboxed run, then go on source-only.
 4. Invoke the `security-audit` skill (`skill` is its folder) in this session, full audit mode. Never run the audit in a subagent: it starts its own agents. Give it: output folder `output`, `profile`, `budget`, scope (`whole`, or the diff `<base>..<head>` from `scope`), the `exclude` paths as out of the audit scope (kit copies an upgrade wrote; none when `[]`), `tests/acceptance` as out of the audit scope (held-out test code, not shipped code), and that its agents search named folders or exclude the suite: the walls deny a subagent search that reaches it, `prior_runs` (it continues their ledger), the sandbox paragraph, and the guard threat model: "The git and gh guards stop agent mistakes. They are not a wall against an agent that works against its instructions. A command spelling that passes a guard and still needs a user confirmation, or reaches no release asset, is hardening (`low`)."
 5. Run `release-record --run <output> [--base <base>] --harness <harness>`. `--base` only when `base` is not null.
    - `run-incomplete`: read `incomplete_reason` in `<output>/run-metadata.json`, report it. Tell the user the next `/release-audit` (Codex `$release-audit`) continues the same ledger (it is in `prior_runs`), with `--budget` or `--profile` when the budget ran out. Stop.
