@@ -608,3 +608,66 @@ class GitGuardParityTests(unittest.TestCase):
                         input=json.dumps({"cwd": cwd, "tool_input": {"command": command}}),
                     )
                     self.assertEqual((result.returncode, result.stdout), (0, ""), f"{guard.parent.parent.name}: {command!r}")
+
+
+class ClaudeToolWallTests(unittest.TestCase):
+    """LSP, MCP and Monitor through the Claude walls (#97)."""
+
+    HELD = "tests/" + "acceptance"
+    L = "Blocked: LSP is closed to subagents: its results name files the call does not. Search named folders with Grep or Bash.\n"
+    M = "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell.\n"
+    IMPL = {"agent_id": "a", "agent_type": "implementer"}
+    TESTER = {"agent_id": "b", "agent_type": "spec-tester"}
+    REVIEWER = {"agent_id": "c", "agent_type": "general-purpose"}
+    MAIN: dict = {}
+
+    def scripts(self, caller: dict) -> list[tuple[str, tuple[str, ...]]]:
+        net = ("deny-acceptance-to-subagents.sh", ())
+        if caller is self.IMPL:
+            return [net, ("deny-path.sh", (self.HELD,))]
+        if caller is self.TESTER:
+            return [net, ("deny-path.sh", ("src/", "app/", "backend/", "frontend/"))]
+        return [net]
+
+    def expected(self, outcome: str, name: str) -> tuple[int, str]:
+        held = (f"Blocked: {self.HELD} is outside this agent's territory.\n" if name == "deny-path.sh"
+                else "Blocked: held-out suite. Subagents cannot read it.\n")
+        return {"ok": (0, ""), "L": (2, self.L), "M": (2, self.M), "held": (2, held),
+                "source": (2, "Blocked: src/ is outside this agent's territory.\n")}[outcome]
+
+    def test_lsp_mcp_and_monitor_by_caller(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            t, H = search_repo(Path(tmp) / "repo"), self.HELD
+            lsp = lambda op, path: ("LSP", {"operation": op, "filePath": path, "line": 1, "character": 5})  # noqa: E731
+            lsps = [lsp("hover", "src/app.py"), lsp("findReferences", "src/app.py"),
+                    ("LSP", {"operation": "workspaceSymbol", "query": "make", "filePath": "src/app.py"}),
+                    lsp("documentSymbol", f"{H}/test_x.py")]
+            mcp_m = [("mcp__fs__read_file", {"path": "README.md"}), ("mcp__plugin_fs_fs__read_file", {"path": "README.md"}),
+                     ("ListMcpResourcesTool", {}), ("ReadMcpResourceTool", {"server": "fs", "uri": "file:///tmp/x.md"}),
+                     ("ReadMcpResourceDirTool", {"server": "fs", "uri": "file:///tmp"})]
+            uri = lambda u: ("ReadMcpResourceTool", {"server": "fs", "uri": u})  # noqa: E731
+            mcp_held = [("mcp__fs__read_file", {"path": f"{H}/test_x.py"}), ("mcp__fs__read_file", {"filePath": f"{H}/test_x.py"}),
+                        ("mcp__fs__read_file", {"paths": ["src/app.py", f"{H}/test_x.py"]}),
+                        uri(f"file://{t}/{H}/test_x.py"), uri(f"file://localhost{t}/{H}/test_x.py"), uri(f"{H}/test_x.py")]
+            mcp_ok = [("mcp__fs__read_file", {"path": "src/app.py"}), ("mcp__chat__send", {"text": f"see {H}/test_x.py"}),
+                      ("ListMcpResourcesTool", {}), uri(f"file://{t}/src/app.py")]
+            cat_held = ("Monitor", {"command": f"cat {H}/test_x.py", "description": "d"})
+            tail = ("Monitor", {"command": "tail -f build.log"})
+            rows = [(c, *call, "L", t) for c in (self.IMPL, self.TESTER, self.REVIEWER) for call in lsps]
+            rows += [(self.MAIN, *lsp("findReferences", "src/app.py"), "ok", t), (self.MAIN, *lsp("hover", f"{H}/test_x.py"), "ok", t)]
+            rows += [(c, *call, "M", t) for c in (self.IMPL, self.TESTER) for call in mcp_m]
+            rows += [(self.REVIEWER, *call, "held", t) for call in mcp_held]
+            rows += [(self.REVIEWER, "mcp__fs__read_file", {"path": "test_x.py"}, "held", t / H)]
+            rows += [(self.REVIEWER, *call, "ok", t) for call in mcp_ok]
+            rows += [(self.MAIN, *call, "ok", t) for call in mcp_m + mcp_held]
+            rows += [(c, *call, out, t) for c in (self.IMPL, self.REVIEWER) for call, out in ((cat_held, "held"), (tail, "ok"))]
+            rows += [(self.REVIEWER, "Monitor", {"command": "cd tests && cat acceptance/test_x.py"}, "held", t),
+                     (self.TESTER, "Monitor", {"command": "cat src/app.py"}, "source", t),
+                     (self.MAIN, *cat_held, "ok", t)]
+            for caller, tool, tool_input, outcome, cwd in rows:
+                for name, args in self.scripts(caller):
+                    with self.subTest(caller=caller.get("agent_type"), tool=tool, tool_input=tool_input, script=name):
+                        hook = {**caller, "cwd": str(cwd), "tool_name": tool, "tool_input": tool_input}
+                        result = subprocess.run(["bash", str(CLAUDE_HOOKS / name), *args], text=True,
+                                                capture_output=True, check=False, input=json.dumps(hook))
+                        self.assertEqual((result.returncode, result.stderr), self.expected(outcome, name))

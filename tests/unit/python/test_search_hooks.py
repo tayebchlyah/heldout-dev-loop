@@ -88,6 +88,10 @@ class SearchHookTests(unittest.TestCase):
         rows += [bash(CLAUDE[:1], "grep -rn make .", "no-d8", {"agent_id": "a", "agent_type": "spec-tester"}),
                  tool("Grep", {"pattern": "make"}, "no-d8", {"agent_id": "a", "agent_type": "spec-tester"}, CLAUDE[:1]),
                  bash(CODEX, "grep -rn make .", "no-d8", {"agent_id": "a", "agent_type": "spec_tester"})]
+        rows += [tool("Monitor", {"command": c}, "d8") for c in ("grep -rn make .", "rg -n make", "cd tests && grep -rn make .")]
+        rows += [tool("Monitor", {"command": c}, "ok") for c in ("grep -rn make src", "tail -f build.log")]
+        rows += [tool("Monitor", {"command": "grep -rn make ."}, "d8", {"agent_id": "a", "agent_type": "general-purpose"}, CLAUDE[:1]),
+                 tool("Monitor", {"command": "grep -rn make ."}, "ok", {}, CLAUDE[:1])]
         self.check(rows)
 
     def test_cli_location_and_failure(self) -> None:
