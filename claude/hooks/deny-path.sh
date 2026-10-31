@@ -17,12 +17,21 @@
 # suite; the engine is devloop.py search-wall of the kit, skipped when no kit CLI is found, and a
 # CLI error blocks. Not walled: wrappers (xargs, env, command, sh -c, bash -c, eval), and ls -R, tree,
 # fd, ag, ack, git ls-files. The audit path rule backs up the search tools.
+# Tool walls (#97): this hook runs only for implementer and spec-tester (their frontmatter), and from
+# the net with no tool_name. It denies LSP and the MCP tools (mcp__*, ListMcpResourcesTool,
+# ReadMcpResourceTool, ReadMcpResourceDirTool) outright, reads a Monitor command as Bash, and reads
+# filePath and uri, a file:// value by its path. disallowedTools in the agent file is the second layer
+# when a frontmatter hook is skipped in an untrusted folder (#139).
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || fail "jq is missing"
 [ -n "$IN" ] || fail "empty hook input"
 printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
+case "$(printf '%s' "$IN" | jq -r '.tool_name // empty')" in
+  LSP) echo "Blocked: LSP is closed to subagents: its results name files the call does not. Search named folders with Grep or Bash." >&2; exit 2 ;;
+  mcp__*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool) echo "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell." >&2; exit 2 ;;
+esac
 WORD='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
 search_wall() {
   local dir top cli= out
@@ -53,8 +62,9 @@ CANDIDATES=$(echo "$IN" | jq -r '
     [ .tool_input.file_path?, .tool_input.path?, .tool_input.notebook_path?,
       .tool_input.pattern?, (.tool_input.command? | strings | clean), (.tool_input.glob? | unless_excluded),
       .tool_input.paths?, .tool_input.files?, .tool_input.url?,
-      .tool_input.source?, .tool_input.destination?, .tool_input.directory? ]
-    | [ .[] | .. | strings ];
+      .tool_input.source?, .tool_input.destination?, .tool_input.directory?,
+      .tool_input.filePath?, .tool_input.uri? ]
+    | [ .[] | .. | strings | ., (select(startswith("file://")) | ltrimstr("file://") | sub("^localhost(?=/)"; "")) ];
   def joins:
     [ (.tool_input.path? | .. | strings) as $p
       | (((.tool_input.glob? | unless_excluded), .tool_input.pattern?) | .. | strings) as $g
@@ -78,7 +88,7 @@ for FRAG in "$@"; do
   [ "$(printf '%s' "$FRAG" | tr 'A-Z' 'a-z' | sed 's|/*$||')" = tests/acceptance ] || continue
   case "$(printf '%s' "$IN" | jq -r '.tool_name // empty')" in
     Grep|Glob) search_wall "$IN" ;;
-    Bash) printf '%s' "$IN" | jq -r '.tool_input.command // empty' | grep -Eq "$WORD" && search_wall "$IN" ;;
+    Bash|Monitor) printf '%s' "$IN" | jq -r '.tool_input.command // empty' | grep -Eq "$WORD" && search_wall "$IN" ;;
   esac
   break
 done
