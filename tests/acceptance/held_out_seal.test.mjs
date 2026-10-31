@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -89,9 +89,11 @@ function entriesFor(settings, script) {
   return found
 }
 
-test('F11: upgrade removes the dead Codex profiles and updates the kit hook entries (O24, O25, O29)', () => {
+test('F11: upgrade removes the dead Codex profiles and updates the kit hook entries (O24, O25, O29)', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'held-out-seal-home-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'held-out-seal-repo-')))
+  t.after(() => rmSync(repo, { recursive: true, force: true }))
   execFileSync('git', ['init', '-q', repo])
   run('init', repo, home, ['--yes', '--harness=both'])
 
