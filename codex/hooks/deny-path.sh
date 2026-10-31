@@ -5,6 +5,8 @@
 # always split or wildcard a path past a substring rule. The walls are hooks;
 # the transcript audit backs them up. A block means stop and report, never
 # rephrase the input until it passes.
+# Tool walls (#97): the path fields include filePath and uri (MCP tools), and a file:// value is also
+# matched by its path.
 #
 # Path fields only, never the whole tool input: a write whose body mentions a
 # path is not access to it, and blocking that teaches evasion. Path is joined
@@ -35,8 +37,9 @@ candidates=$(printf '%s' "$input" | jq -r '
     [ .tool_input.file_path?, .tool_input.path?, .tool_input.notebook_path?,
       .tool_input.pattern?, (.tool_input.command? | strings | clean), (.tool_input.glob? | unless_excluded),
       .tool_input.paths?, .tool_input.files?, .tool_input.url?,
-      .tool_input.source?, .tool_input.destination?, .tool_input.directory? ]
-    | [ .[] | .. | strings ];
+      .tool_input.source?, .tool_input.destination?, .tool_input.directory?,
+      .tool_input.filePath?, .tool_input.uri? ]
+    | [ .[] | .. | strings | ., (select(startswith("file://")) | sub("^file://(localhost)?"; "")) ];
   def joins:
     [ (.tool_input.path? | .. | strings) as $p
       | (((.tool_input.glob? | unless_excluded), .tool_input.pattern?) | .. | strings) as $g
