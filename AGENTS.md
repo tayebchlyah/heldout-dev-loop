@@ -45,10 +45,11 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
   - `junit_report.py`, `board_fixtures.py`: the one JUnit writer; board fixtures the held-out oracle shares.
   - `support.py`: shared constants, helpers.
   - `fixtures/`: test data. No test file under `skill/`.
-- `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests (Node test runner, real Chromium).
+- `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
-- `scripts/gate.sh`: repo gate, node and skill suites side by side in an empty `TMPDIR`, a leftover fails; `GATE_SCOPE=changed` picks the suites by path.
-- `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`).
+- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
+- `scripts/temp_leak.sh`: leak rule of `gate.sh`, `acceptance.sh`: empty `TMPDIR`, leftover fails.
+- `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only).
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
 - `scripts/repo_rules.py`: repo checks `comments` (allowed comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source), this repo only.
@@ -104,7 +105,7 @@ python3 tests/unit/python/test_dev_loop.py  # skill suite
 
 Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR` set: JUnit `skill.xml` there; a dead chunk errors its ids. Argument (test name): plain unittest, no report.
 
-`scripts/gate.sh` (full gate, both suites) fails with `run npm ci && npx playwright install chromium` when `node_modules/playwright` is missing; a new feature worktree (Stage 3 start) runs it first. Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
+`scripts/gate.sh` (both suites) fails with `run npm ci && npx playwright install chromium` without `node_modules/playwright`; a new worktree (Stage 3) runs it first. Both must pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: a release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both are green or skipped.
 
 ## Project kit
 
