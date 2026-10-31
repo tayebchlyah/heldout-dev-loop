@@ -376,7 +376,7 @@ class TracksContractTests(unittest.TestCase):
             (where, "branch from `origin/main` with `--no-track`"),
             (stage_text(7), "`git push -u origin HEAD`"),
             ((REPO_ROOT / "skills" / "garden" / "SKILL.md").read_text(), "`origin/main` with `--no-track`"),
-            ((REFERENCES / "claude.md").read_text(), "`git worktree add --no-track -b <branch> <path> origin/main`"),
+            ((REFERENCES / "claude.md").read_text(), "`git worktree add --no-track -b <branch> .claude/worktrees/<slug> origin/main`"),
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
