@@ -555,6 +555,14 @@ class TempLeakRuleTests(unittest.TestCase):
             self.assertEqual(sorted(run.stdout.splitlines()), ["left one", "other"], run.stderr)
             self.assertEqual(run.returncode, 0)
 
+    def test_temp_leak_lists_a_name_that_echo_would_swallow(self) -> None:
+        rule = str(ROOT / "scripts" / "temp_leak.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("-n", "-e", "-ne"):
+                (Path(tmp) / name).mkdir()
+            run = subprocess.run(["bash", "-c", '. "$0"; temp_leak "$1"', rule, tmp], capture_output=True, text=True)
+            self.assertEqual(sorted(run.stdout.splitlines()), ["-e", "-n", "-ne"], run.stderr)
+
 
 class AcceptanceTempLeakTests(unittest.TestCase):
     LEAK = "temp leak, the tests left in TMPDIR:\n"
@@ -655,6 +663,30 @@ class AcceptanceTempLeakTests(unittest.TestCase):
             failure = self.leak_case(root).find("failure")
             assert failure is not None
             self.assertIn("a&b <c> d", failure.text or "")
+
+    def test_control_character_in_a_leftover_name_keeps_the_xml_well_formed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "os.mkdir(os.path.join(tempfile.gettempdir(), 'a\\x01b'))", "")
+            self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+            failure = self.leak_case(root).find("failure")
+            assert failure is not None
+            self.assertIn("a\\x01b", failure.text or "")
+
+    def test_run_with_no_held_out_test_is_not_green(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            suite = root / "suite"
+            put(suite / "test_none.py", "import unittest\n")
+            put(suite / "none.test.mjs", "")
+            (root / "reports").mkdir()
+            env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}
+            env["DEVLOOP_REPORT_DIR"] = str(root / "reports")
+            run = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(suite)], cwd=root,
+                                 capture_output=True, text=True, env=env, timeout=120)
+            self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+            self.assertIn("no held-out test ran", run.stdout)
+            self.assertIsNone(self.leak_case(root).find("failure"))
 
     def test_leak_without_report_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
