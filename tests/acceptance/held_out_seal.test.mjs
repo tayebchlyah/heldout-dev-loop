@@ -122,8 +122,9 @@ test('F11: upgrade removes the dead Codex profiles and updates the kit hook entr
   const updated = readJson(settingsPath)
   const entries = entriesFor(updated, DENY_ACCEPTANCE)
   assert.equal(entries.length, 1, JSON.stringify(entries))
-  assert.deepEqual(new Set(entries[0].group.matcher.split('|')),
-    new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'Grep', 'Glob', 'Bash']))
+  const kit = entriesFor(readJson(join(packageRoot, 'claude', 'settings.fragment.json')), DENY_ACCEPTANCE)
+  assert.equal(kit.length, 1, JSON.stringify(kit))
+  assert.equal(entries[0].group.matcher, kit[0].group.matcher)
   assert.equal(entries[0].hook.onFailure, 'block')
   const user = entriesFor(updated, 'audit-my-shell.sh')
   assert.equal(user.length, 1)
