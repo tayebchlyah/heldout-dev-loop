@@ -17,7 +17,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 
 ## Delivery autonomy
 
-- Stages 3 to 7 start: `EnterWorktree` with the feature worktree `path` (create it first with `git worktree add --no-track -b <branch> .claude/worktrees/<slug> origin/main` when absent, in the main checkout: a folder outside the project makes `EnterWorktree` ask the user). The session cwd, and so each hook `cwd`, is then the worktree.
+- Stages 3 to 7 start: `EnterWorktree` with the feature worktree `path` (create it first with `git -C <main worktree> worktree add --no-track -b <branch> .claude/worktrees/<slug> origin/main` when absent, from any cwd: a path outside the project makes `EnterWorktree` ask the user, and a switch from one worktree to another is refused unless the target is under `.claude/worktrees/` of the same repository). The session cwd, and so each hook `cwd`, is then the worktree.
 - Ask wall: `deny-ask.sh` (PreToolUse `AskUserQuestion`) denies the call in a feature worktree: a linked worktree, branch with `/`, `dev-loop.json` at its top. Decide and log with `devloop.py decide`, or stop and report a stop-list item. Fails open on an internal error: `main` keeps its questions.
 - Limit: `pause.sh` (`StopFailure`, matcher `rate_limit`) writes the pause note through `devloop.py pause --event`. No intent fields: `/pause` adds them. Unconfirmed until a live check: a subscription usage limit arrives as `rate_limit`.
 - Wake (same session, `/continue` or "continue"): `SendMessage` to each subagent that stopped during its work: it resumes with its full history. Source: the Claude Code docs; unconfirmed until a live check. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
