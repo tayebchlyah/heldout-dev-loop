@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/repo_rules.py (comments, subjects), the AGENTS.md budget and its CLI index, the gate scope and temp leak check, the audit sandbox image."""
+"""Tests for scripts/repo_rules.py (comments, subjects), the AGENTS.md budget and its CLI index, the gate scope and temp leak check, the acceptance.sh temp leak guard, the audit sandbox image."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -553,6 +554,115 @@ class TempLeakRuleTests(unittest.TestCase):
             run = subprocess.run(["bash", "-c", '. "$0"; temp_leak "$1"', rule, tmp], capture_output=True, text=True)
             self.assertEqual(sorted(run.stdout.splitlines()), ["left one", "other"], run.stderr)
             self.assertEqual(run.returncode, 0)
+
+
+class AcceptanceTempLeakTests(unittest.TestCase):
+    LEAK = "temp leak, the tests left in TMPDIR:\n"
+
+    def run_acceptance(self, root: Path, py: str, node: str, report: bool = True) -> subprocess.CompletedProcess:
+        caller, suite = root / "caller tmp", root / "suite"
+        caller.mkdir()
+        put(suite / "test_fix.py", "import os, json, tempfile, unittest\n\n\nclass Fix(unittest.TestCase):\n"
+            f"    def test_it(self):\n        {py}\n")
+        put(suite / "fix.test.mjs", "import test from 'node:test';\n"
+            "import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';\n"
+            "import { tmpdir } from 'node:os';\nimport { join } from 'node:path';\n"
+            f"test('it', () => {{ {node} }});\n")
+        env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}
+        env.update(TMPDIR=str(caller), SEEN=str(root / "seen.json"))
+        if report:
+            (root / "reports").mkdir()
+            env["DEVLOOP_REPORT_DIR"] = str(root / "reports")
+        run = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(suite)], cwd=root,
+                             capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(os.listdir(caller), [], run.stdout + run.stderr)
+        return run
+
+    def leak_case(self, root: Path) -> ET.Element:
+        suite = ET.parse(root / "reports" / "acceptance-temp-leak.xml").getroot().find("testsuite")
+        assert suite is not None
+        self.assertEqual(suite.get("name"), "temp-leak")
+        cases = list(suite.iter("testcase"))
+        self.assertEqual([(c.get("classname"), c.get("name")) for c in cases], [("temp-leak", "TMPDIR")])
+        return cases[0]
+
+    def leaked(self, run: subprocess.CompletedProcess) -> list[str]:
+        return run.stdout.partition(self.LEAK)[2].splitlines()
+
+    def test_tests_run_in_an_empty_scratch_that_goes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "json.dump({'dir': tempfile.gettempdir(), "
+                                      "'entries': os.listdir(tempfile.gettempdir())}, open(os.environ['SEEN'], 'w'))", "")
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            seen = json.loads((root / "seen.json").read_text())
+            self.assertEqual(seen["entries"], [])
+            self.assertNotEqual(os.path.realpath(seen["dir"]), os.path.realpath(root / "caller tmp"))
+            self.assertFalse(os.path.exists(seen["dir"]))
+
+    def test_python_leak_fails_with_one_failing_case(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "tempfile.mkdtemp(prefix='left-')", "")
+            self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+            left = self.leaked(run)
+            self.assertEqual(len(left), 1, run.stdout)
+            self.assertTrue(left[0].startswith("left-"), run.stdout)
+            failure = self.leak_case(root).find("failure")
+            assert failure is not None
+            self.assertIn(left[0], failure.text or "")
+
+    def test_node_leak_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "pass", "mkdirSync(join(tmpdir(), 'node-left'));")
+            self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+            self.assertEqual(self.leaked(run), ["node-left"])
+            self.assertIsNotNone(self.leak_case(root).find("failure"))
+
+    def test_clean_run_passes_with_three_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "os.rmdir(tempfile.mkdtemp())",
+                                      "rmSync(mkdtempSync(join(tmpdir(), 'x-')), { recursive: true });")
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertNotIn(self.LEAK, run.stdout)
+            case = self.leak_case(root)
+            self.assertIsNone(case.find("failure"))
+            self.assertIsNone(case.find("skipped"))
+            self.assertTrue((root / "reports" / "acceptance-python.xml").is_file())
+            self.assertTrue((root / "reports" / "acceptance-node.xml").is_file())
+
+    def test_allowed_entries_are_not_a_leak(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "open(os.path.join(tempfile.gettempdir(), 'ab3d_9x7'), 'w').write('blat')",
+                                      "mkdirSync(join(tmpdir(), 'node-compile-cache'));")
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertNotIn("temp leak", run.stdout)
+            self.assertIsNone(self.leak_case(root).find("failure"))
+
+    def test_failing_test_and_leak_both_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "os.mkdir(os.path.join(tempfile.gettempdir(), 'a&b <c> d')); "
+                                      "self.assertEqual(1, 2)", "")
+            self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+            self.assertEqual(self.leaked(run), ["a&b <c> d"])
+            python = {c.get("name"): c for c in
+                      ET.parse(root / "reports" / "acceptance-python.xml").getroot().iter("testcase")}
+            self.assertIsNotNone(python["test_it"].find("failure"))
+            failure = self.leak_case(root).find("failure")
+            assert failure is not None
+            self.assertIn("a&b <c> d", failure.text or "")
+
+    def test_leak_without_report_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            run = self.run_acceptance(root, "tempfile.mkdtemp(prefix='left-')", "", report=False)
+            self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+            self.assertIn(self.LEAK, run.stdout)
+            self.assertEqual(list(root.rglob("*.xml")), [])
 
 
 if __name__ == "__main__":
