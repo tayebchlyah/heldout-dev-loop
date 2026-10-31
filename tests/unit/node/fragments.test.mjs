@@ -316,6 +316,28 @@ test('the Codex TOML fragment has none of the per-agent profiles Codex never app
   for (const name of ['dev-implementer', 'dev-spec-tester', 'dev-read-only']) assert.ok(!text.includes(name), name)
 })
 
+const D3_HOSTS = ['github.com', '*.github.com', '*.githubusercontent.com', 'registry.npmjs.org', 'pypi.org', 'files.pythonhosted.org', 'proxy.golang.org', 'sum.golang.org', 'api.anthropic.com', 'cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'storage.googleapis.com']
+
+test('the Codex fragment scopes the dev-workspace network to the managed proxy and adds dev-docker', () => {
+  const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
+  const config = JSON.parse(execFileSync('python3', ['-c', 'import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: text, encoding: 'utf8' }))
+  assert.equal(config.default_permissions, 'dev-workspace')
+  assert.deepEqual(config.features, { hooks: true, network_proxy: true })
+  const network = config.permissions['dev-workspace'].network
+  assert.equal(network.enabled, true)
+  assert.equal(network.mode, 'full')
+  assert.equal(network.allow_local_binding, true)
+  assert.equal('unix_sockets' in network, false)
+  assert.equal('dangerously_allow_all_unix_sockets' in network, false)
+  assert.deepEqual(Object.entries(network.domains), D3_HOSTS.map((host) => [host, 'allow']))
+  const docker = config.permissions['dev-docker']
+  assert.equal(docker.extends, 'dev-workspace')
+  assert.ok(docker.description)
+  assert.deepEqual(docker.network, { dangerously_allow_all_unix_sockets: true })
+  const lines = text.split('\n')
+  assert.equal(lines[lines.indexOf('hooks = true') + 1], 'network_proxy = true')
+})
+
 test('no Codex agent file sets default_permissions', () => {
   for (const name of readdirSync(join(repoRoot, 'codex/agents'))) {
     assert.doesNotMatch(readFileSync(join(repoRoot, 'codex/agents', name), 'utf8'), /^\s*default_permissions\s*=/m, name)
