@@ -300,15 +300,25 @@ class CanaryScriptTests(unittest.TestCase):
     def test_network_verdict_reads_the_probe_file(self):
         work = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, work, True)
-        ok = "docker rc=125\nloopback 200\ngit rc=0\n"
+        ok = "engine rc=1 permission denied while trying to connect\ndocker rc=125\nloopback 200\ngit rc=0\n"
         for name, probe, reply, docker, lines, code in [
             ("refused", ok, "", "probe", ["docker refused", "loopback ok", "git ok"], 0),
-            ("marker", "docker rc=0\nCANARYNET1\nloopback 200\ngit rc=0\n", "", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("marker", "engine rc=1 permission denied\ndocker rc=0\nCANARYNET1\nloopback 200\ngit rc=0\n", "", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
             ("marker-in-reply", ok, "the file says CANARYNET1", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
-            ("engine-reached", "docker rc=0\nloopback 200\ngit rc=0\n", "", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("engine-reached", "engine rc=1 permission denied\ndocker rc=0\nloopback 200\ngit rc=0\n", "", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("engine-answers-container-fails", "engine rc=0 \ndocker rc=1\nloopback 200\ngit rc=0\n", "", "probe",
+             ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("mounts-denied", "engine rc=0\ndocker rc=125\nloopback 200\ngit rc=0\n", "", "probe",
+             ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("cli-error-no-refusal-text", "engine rc=1 unknown flag: -H\ndocker rc=125\nloopback 200\ngit rc=0\n", "", "probe",
+             ["docker ERROR", "loopback ok", "git ok"], 1),
+            ("cannot-connect", "engine rc=1 Cannot connect to the Docker daemon\ndocker rc=125\nloopback 200\ngit rc=0\n", "", "probe",
+             ["docker refused", "loopback ok", "git ok"], 0),
+            ("operation-not-permitted", "engine rc=1 dial unix: connect: operation not permitted\ndocker rc=125\nloopback 200\ngit rc=0\n", "", "probe",
+             ["docker refused", "loopback ok", "git ok"], 0),
             ("skipped", "loopback 200\ngit rc=0\n", "", "skipped: no engine answers at unix:///x",
              ["docker skipped: no engine answers at unix:///x", "loopback ok", "git ok"], 0),
-            ("no-loopback-no-git", "docker rc=125\nloopback 000\ngit rc=128\n", "", "probe",
+            ("no-loopback-no-git", "engine rc=1 permission denied\ndocker rc=125\nloopback 000\ngit rc=128\n", "", "probe",
              ["docker refused", "loopback ERROR", "git ERROR"], 1),
             ("no-probe-file", None, "done", "probe", ["docker ERROR", "loopback ERROR", "git ERROR"], 1),
         ]:
@@ -329,8 +339,9 @@ class CanaryScriptTests(unittest.TestCase):
         self.assertLess(loop.index("sandbox_canary"), loop.index("network_canary"))
         body = text.split("network_canary() {", 1)[1].split("\n}\n", 1)[0]
         for needle in ["docker context inspect", "unix://", "docker -H", "cat /w/.env", "http.server", "127.0.0.1",
-                       "git ls-remote https://github.com/"]:
+                       "git ls-remote https://github.com/", "version", "engine rc="]:
             self.assertIn(needle, body)
+        self.assertEqual(text.count("sha256:bdf57e528e45"), 1)
         self.assertNotIn("default_permissions=dev-docker", body)
         self.assertNotIn("--sandbox", body)
 
