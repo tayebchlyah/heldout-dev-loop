@@ -291,6 +291,39 @@ test('a table outside the D2 set keeps the table-level merge', () => {
   assert.ok(skipped.includes('[agents]'))
 })
 
+test('a same string in another quote style is the same value', () => {
+  const { text, skipped } = d2Merge("[permissions.dev-workspace.network]\nmode = 'full'\n")
+  assert.deepEqual(skipped, [])
+  assert.equal(parse(text).permissions['dev-workspace'].network.mode, 'full')
+})
+
+test('a header with a quoted segment is the kit table and gets the key merge', () => {
+  const { text, skipped } = d2Merge('[features]\nhooks = true\n[permissions."dev-workspace".network]\nenabled = true\n')
+  assert.equal(parse(text).permissions['dev-workspace'].network.mode, 'full')
+  assert.deepEqual(skipped, [])
+})
+
+test('a root inline table that names a kit table declares it', () => {
+  const { text, skipped } = d2Merge('features = { hooks = true }\n')
+  assert.deepEqual(parse(text).features, { hooks: true })
+  assert.ok(skipped.includes('[features]'))
+  assert.ok(!text.split('\n').some((line) => line.trim() === '[features]'))
+})
+
+test('text inside a multi-line string or array is not a key', () => {
+  for (const value of ['note = """\nnetwork_proxy = false\n"""', "note = '''\nnetwork_proxy = false\n'''", 'note = [\n  "a",\n  "network_proxy = false",\n]']) {
+    const { text } = d2Merge(`[features]\nhooks = true\n${value}\n`)
+    assert.equal(parse(text).features.network_proxy, true, value)
+  }
+})
+
+test('a bare dotted key is not the kit host, which is still added', () => {
+  const { text } = d2Merge('[permissions.dev-workspace.network.domains]\ngithub.com = "allow"\n')
+  const domains = parse(text).permissions['dev-workspace'].network.domains
+  assert.equal(domains['github.com'], 'allow')
+  assert.deepEqual(domains.github, { com: 'allow' })
+})
+
 const LEGACY_IMPLEMENTER = [
   '[permissions.dev-implementer]',
   'description = "Implementation access without held-out acceptance tests."',
