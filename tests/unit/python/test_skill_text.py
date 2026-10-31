@@ -309,6 +309,10 @@ class SkillStackContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
+    def test_codex_profile_warns_that_docker_bypasses_it(self) -> None:
+        self.assertIn("With a running Docker engine it protects neither", self.codex)
+        self.assertIn("with Docker, the profile protects neither", (REPO_ROOT / "reference" / "kit.md").read_text())
+
 
 class TracksContractTests(unittest.TestCase):
     """D7, D10, D11, D14, D15: tracks, chained sessions, status detection, the merge rule."""
