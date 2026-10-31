@@ -45,6 +45,18 @@ class SkillContractTests(unittest.TestCase):
         cls.skill = SKILL.read_text()
         cls.instructions = all_instructions()
 
+    def test_route_files_name_the_tool_walls(self) -> None:
+        claude = (SKILL_ROOT / "references" / "claude.md").read_text()
+        codex = (SKILL_ROOT / "references" / "codex.md").read_text()
+        for value in ("`LSP` is denied to every subagent", "`Monitor` is walled as `Bash`",
+                      "`disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool`",
+                      "an MCP search tool", "(#139)"):
+            self.assertIn(value, claude)
+        for value in ("`Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates`",
+                      "`view_image` is walled by `path`", "no hook fires on `exec`, one fires on each inner tool call",
+                      "`write_stdin`", "#140", "`custom_tool_call_output`, output only"):
+            self.assertIn(value, codex)
+
     def test_frontmatter_and_trigger_survive(self) -> None:
         self.assertIn("name: dev-loop", self.skill)
         self.assertIn("at the start of any coding session", self.skill)
