@@ -299,6 +299,13 @@ class AuditTests(unittest.TestCase):
               monitor_note("W", hit, f"{L1}\n{L2}")], None),
             ([claude_line("x", "Z"), monitor_note("Z", f"{L1}\n{L2}")], None)])
 
+    def test_monitor_events_are_unescaped_before_matching(self) -> None:
+        shell = "cd build && make all && make install  # held-out shell line"
+        arrow = "assert compute(a < b) -> b > a  # held-out arrow line"
+        self.commit(f"{ACCEPTANCE_DIR}/x/test_ops.py", f"def test_ops():\n    {shell}\n    {arrow}\n", "ops")
+        escaped = "\n".join(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for line in (shell, arrow))
+        self.taints([([claude_call("Monitor", {"command": "tail -f build.log"}, "E"), monitor_note("E", escaped)], ([], [shell, arrow]))])
+
     def test_codex_mcp_and_code_mode_results(self) -> None:
         self.taints([
             ([codex_mcp(f"{PROTECTED}:3:x")], ([PROTECTED], [])),
