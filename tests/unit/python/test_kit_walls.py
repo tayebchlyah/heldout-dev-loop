@@ -297,6 +297,43 @@ class CanaryScriptTests(unittest.TestCase):
                                          "CANARYacc", "CANARYout"], capture_output=True, text=True)
                 self.assertEqual((result.returncode, result.stdout.strip()), (code, line), result.stderr)
 
+    def test_network_verdict_reads_the_probe_file(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        ok = "docker rc=125\nloopback 200\ngit rc=0\n"
+        for name, probe, reply, docker, lines, code in [
+            ("refused", ok, "", "probe", ["docker refused", "loopback ok", "git ok"], 0),
+            ("marker", "docker rc=0\nCANARYNET1\nloopback 200\ngit rc=0\n", "", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("marker-in-reply", ok, "the file says CANARYNET1", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("engine-reached", "docker rc=0\nloopback 200\ngit rc=0\n", "", "probe", ["docker LEAK", "loopback ok", "git ok"], 1),
+            ("skipped", "loopback 200\ngit rc=0\n", "", "skipped: no engine answers at unix:///x",
+             ["docker skipped: no engine answers at unix:///x", "loopback ok", "git ok"], 0),
+            ("no-loopback-no-git", "docker rc=125\nloopback 000\ngit rc=128\n", "", "probe",
+             ["docker refused", "loopback ERROR", "git ERROR"], 1),
+            ("no-probe-file", None, "done", "probe", ["docker ERROR", "loopback ERROR", "git ERROR"], 1),
+        ]:
+            with self.subTest(name=name):
+                probe_file, reply_file = work / f"{name}.probe", work / f"{name}.reply"
+                if probe is not None:
+                    probe_file.write_text(probe)
+                reply_file.write_text(reply)
+                result = subprocess.run(["/bin/bash", str(self.script), "--self-test-network-verdict", str(probe_file),
+                                         str(reply_file), "CANARYNET1", docker], capture_output=True, text=True)
+                expected = "\n".join(f"codex network {line}" for line in lines)
+                self.assertEqual((result.returncode, result.stdout.strip()), (code, expected), result.stderr)
+
+    def test_codex_network_check_runs_after_the_sandbox_canary(self):
+        text = self.script.read_text()
+        loop = text.split('for h in "${want[@]}"; do', 1)[1]
+        self.assertIn('[ "$h" = codex ] && network_canary', loop)
+        self.assertLess(loop.index("sandbox_canary"), loop.index("network_canary"))
+        body = text.split("network_canary() {", 1)[1].split("\n}\n", 1)[0]
+        for needle in ["docker context inspect", "unix://", "docker -H", "cat /w/.env", "http.server", "127.0.0.1",
+                       "git ls-remote https://github.com/"]:
+            self.assertIn(needle, body)
+        self.assertNotIn("default_permissions=dev-docker", body)
+        self.assertNotIn("--sandbox", body)
+
     def test_main_session_denial_text_of_either_wall_reads_as_blocked(self):
         work = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, work, True)
