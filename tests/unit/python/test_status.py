@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -377,6 +379,25 @@ class StatusTests(Sandbox):
              {"feature": "remote", "stage": 3, "worktree": None}],
         )
         self.assertEqual(self.status("--feature", "F1")["stage"], 3)
+
+    def test_main_scan_cost_grows_with_neither_specs_nor_detached_worktrees(self) -> None:
+        for n in range(2):
+            self.spec(name=f"2025010{n} Old {n}.md", feature=f"old{n}")
+        detached = []
+        for n in range(2):
+            path = self.root / f"wt-agent-{n}"
+            git(self.repo, "worktree", "add", "-q", "--detach", str(path), "HEAD")
+            detached.append(str(path.resolve()))
+        log, bins = self.root / "git.log", self.root / "bins"
+        bins.mkdir()
+        shim = bins / "git"
+        shim.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\nexec "{shutil.which("git")}" "$@"\n')
+        shim.chmod(0o755)
+        env = {**self.env, "PATH": f"{bins}{os.pathsep}{self.env['PATH']}"}
+        self.assertEqual(self.status(env=env)["features"], [])
+        calls = log.read_text().splitlines()
+        self.assertEqual(sum(call.endswith("worktree list --porcelain") for call in calls), 1, calls)
+        self.assertEqual([call for call in calls if any(path in call for path in detached)], [])
 
     def test_slug_comparison_ignores_case(self) -> None:
         self.spec(feature="F1", review="draft")
