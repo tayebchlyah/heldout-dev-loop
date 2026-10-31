@@ -37,7 +37,7 @@
         ]
       },
       {
-        "matcher": "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash",
+        "matcher": "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool",
         "hooks": [
           {
             "type": "command",
