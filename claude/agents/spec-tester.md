@@ -3,9 +3,10 @@ name: spec-tester
 description: Writes held-out acceptance tests in tests/acceptance from the approved spec alone. Never reads src. Use once per feature, after the spec is approved and before writing-plans.
 model: opus
 effort: high
+disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool
 hooks:
   PreToolUse:
-    - matcher: "Read|Edit|Write|Grep|Glob|Bash"
+    - matcher: "Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool"
       hooks:
         - type: command
           command: "~/.claude/hooks/deny-path.sh src/ app/ backend/ frontend/"
