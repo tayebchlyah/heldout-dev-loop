@@ -51,7 +51,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
       ],
     },
     {
-      matcher: 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash',
+      matcher: 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool',
       hooks: [
         {
           type: 'command',
@@ -214,7 +214,7 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
       ],
     },
     {
-      matcher: 'Bash|apply_patch',
+      matcher: 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates',
       hooks: [
         {
           type: 'command',
@@ -339,4 +339,20 @@ test('the Claude SessionStart command detects dev-loop.json only', () => {
   assert.match(run({ 'dev-loop.json': '{}\n' }), /dev-loop skill/)
   assert.equal(run({ 'AGENTS.md': 'vault_notes: Software/Test.md\n' }), '')
   assert.equal(run({}), '')
+})
+
+test('the Claude agents wall LSP, MCP and Monitor (#97)', () => {
+  for (const name of ['implementer.md', 'spec-tester.md']) {
+    const head = readFileSync(join(repoRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
+    assert.match(head, /^ {4}- matcher: "Read\|Edit\|Write\|Grep\|Glob\|Bash\|Monitor\|LSP\|mcp__\.\*\|ListMcpResourcesTool\|ReadMcpResourceTool\|ReadMcpResourceDirTool"$/m, name)
+    assert.match(head, /^disallowedTools: LSP, mcp__\*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool$/m, name)
+    assert.doesNotMatch(head, /^tools:/m, name)
+    assert.match(head, /^ {10}onFailure: block$/m, name)
+  }
+})
+
+test('the Codex route file names the acceptance-wall matcher of the fragment', () => {
+  const group = readJson('codex/hooks.fragment.json').hooks.PreToolUse
+    .find((entry) => entry.hooks.some((hook) => hook.command.endsWith('/acceptance-wall.sh')))
+  assert.ok(readFileSync(join(repoRoot, 'skill/references/codex.md'), 'utf8').includes(`(PreToolUse \`${group.matcher}\`)`))
 })

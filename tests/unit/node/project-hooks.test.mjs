@@ -134,13 +134,13 @@ test('D3: Codex upgrade from 2.0.0 adds the board hook entries once', () => {
   assert.equal(board(hooks), 3)
 })
 
-test('upgrade of a 2.1.1 Claude project replaces the old deny-acceptance entry with one new entry', () => {
+for (const old of ['Read|Edit|Write|Grep|Glob|Bash', 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash']) test(`upgrade of a Claude project replaces the old deny-acceptance entry (${old}) with one new entry`, () => {
   const { home, repo } = setup()
   run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=claude'])
   const settings = join(repo, '.claude/settings.json')
   const custom = readJson(settings)
   const group = custom.hooks.PreToolUse.find((entry) => entry.hooks.some((hook) => hook.command.includes('deny-acceptance-to-subagents.sh')))
-  group.matcher = 'Read|Edit|Write|Grep|Glob|Bash'
+  group.matcher = old
   for (const hook of group.hooks) delete hook.onFailure
   custom.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] })
   writeFileSync(settings, JSON.stringify(custom, null, 2))
@@ -150,7 +150,7 @@ test('upgrade of a 2.1.1 Claude project replaces the old deny-acceptance entry w
   const groups = readJson(settings).hooks.PreToolUse
   const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('deny-acceptance-to-subagents.sh'))
   assert.equal(own.length, 1)
-  assert.equal(own[0].matcher, 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash')
+  assert.equal(own[0].matcher, 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool')
   assert.equal(own[0].hook.onFailure, 'block')
   assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
@@ -174,8 +174,8 @@ test('upgrade of a 2.1.1 Claude project keeps user groups in order and the empty
 
   upgrade(repo, home, [], fakePackage('99.0.0'))
   const matchers = readJson(settings).hooks.PreToolUse.map((entry) => entry.matcher)
-  const at = matchers.indexOf('Read|Edit|Write|NotebookEdit|Grep|Glob|Bash')
-  assert.deepEqual(matchers.slice(at - 1, at + 3), ['MineBefore', 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash', 'X', 'MineAfter'])
+  const at = matchers.indexOf('Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool')
+  assert.deepEqual(matchers.slice(at - 1, at + 3), ['MineBefore', 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool', 'X', 'MineAfter'])
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
 
@@ -198,3 +198,22 @@ for (const name of ['release-audit', 'garden', 'release', 'release-notes']) {
     assert.ok(`.claude/skills/${name}` in after.files)
   })
 }
+
+test('upgrade of a Codex project replaces the old acceptance-wall entry with one new entry', () => {
+  const { home, repo } = setup()
+  run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=codex'])
+  const hooks = join(repo, '.codex/hooks.json')
+  const custom = readJson(hooks)
+  const group = custom.hooks.PreToolUse.find((entry) => entry.hooks.some((hook) => hook.command.includes('acceptance-wall.sh')))
+  group.matcher = 'Bash|apply_patch'
+  custom.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] })
+  writeFileSync(hooks, JSON.stringify(custom, null, 2))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const groups = readJson(hooks).hooks.PreToolUse
+  const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('acceptance-wall.sh'))
+  assert.equal(own.length, 1)
+  assert.equal(own[0].matcher, 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates')
+  assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
+  assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
+})

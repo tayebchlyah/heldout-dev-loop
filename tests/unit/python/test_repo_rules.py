@@ -422,7 +422,8 @@ class RepoDocsTests(unittest.TestCase):
 
     def test_kit_and_release_files(self) -> None:
         kit = (ROOT / "reference" / "kit.md").read_text()
-        for value in ("`.dev-loop/MANIFEST.json`", "Ruling R10", "\n## Upgrade\n"):
+        for value in ("`.dev-loop/MANIFEST.json`", "Ruling R10", "\n## Upgrade\n", "Tool walls upgrade (#97)",
+                      "`/hooks` trusts it again"):
             with self.subTest(value=value):
                 self.assertIn(value, kit)
         for value in (

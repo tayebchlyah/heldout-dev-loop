@@ -95,6 +95,8 @@ Seal upgrade: ship each in-flight feature before merging the kit upgrade. A Stag
 
 Codex wall timeout upgrade: `upgrade` sets `timeout` 30 on the Codex `git-guard.sh` and `acceptance-wall.sh` entries. Codex skips both walls until `/hooks` trusts the changed entries again, so `upgrade` prints the `/hooks` line.
 
+Tool walls upgrade (#97): `upgrade` replaces the `deny-acceptance-to-subagents.sh` and `acceptance-wall.sh` entries by command, with the matchers that add `LSP`, `Monitor`, the MCP tools and Codex `view_image`, and writes `disallowedTools` into `.claude/agents/implementer.md` and `spec-tester.md`. Codex: the new matcher changes the hook `trusted_hash`, so Codex skips `acceptance-wall.sh` until `/hooks` trusts it again; until then `check_setup.py --harness codex` reports `pre_tool_use` untrusted.
+
 Effort upgrade: `upgrade` adds `effortLevel`, `autoCompactWindow`, the Codex root `model_reasoning_effort` and the `worktree-wall.sh` entry, writes `.codex/agents/planner.toml`, and keeps each value the user set.
 
 3.0.0 upgrade (breaking): from 2.1.x, in this order.
