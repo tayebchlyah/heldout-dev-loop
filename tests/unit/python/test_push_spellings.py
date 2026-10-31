@@ -62,6 +62,31 @@ class PushSpellingTests(GuardRepo, unittest.TestCase):
                              "git push origin feat/x >/dev/null", "git push origin feat/x > main", "git push origin feat/x 2> err"])
         self.assert_refused(["git push origin main 2>&1 | tail -3", "git push 2>/dev/null origin main"], "a push to main or master")
 
+    def test_a_redirect_operator_stays_one_word(self) -> None:
+        self.assert_refused(["git push origin feat/x 2>&1 main", "git push origin 2>&1 +main", "git push origin feat/x 2>&1 --force",
+                             "git push origin feat/x >&2 main", "git push origin feat/x >&- main", "git push origin >|x +main",
+                             "git push 2>&1 origin main", "git 2>&1 push origin main", "git push -o 2>&1 x origin main",
+                             "git push --repo 2>&1 origin main", "git push >&2 origin main", "git push &>/dev/null origin main",
+                             "git push origin feat/x &>/dev/null main", "git push origin 2>&1 :main", "git push origin 2>&1 --tags",
+                             "git push origin feat/x &>>log main"])
+
+    def test_a_redirect_after_the_refspec_runs(self) -> None:
+        self.assert_allowed(["git push origin feat/x 2>&1", "git push -u origin HEAD 2>&1 | tail -2", "git push origin feat/x >&2",
+                             "git push origin feat/x &>/dev/null", "git push origin feat/x 2>&1 | grep -v x",
+                             "git push origin feat/x >|out", "git push origin feat/x &>>log", "git push origin feat/x 2>&1 && echo ok"])
+
+    def test_only_a_single_digit_is_a_file_descriptor(self) -> None:
+        self.git("tag", "2026")
+        self.assert_refused(["git push origin 2026>/dev/null"], "a tag push")
+        self.assert_allowed(["git push origin feat/x 2>/dev/null"])
+
+    def test_a_process_substitution_in_a_push_asks(self) -> None:
+        self.assert_refused(["git push origin feat/x <(true) main", "git push -o <(true) origin main", "git push origin feat/x >(cat)"],
+                            "a push whose arguments the guard cannot read")
+
+    def test_a_redirect_before_a_cd_target_is_no_target(self) -> None:
+        self.assert_allowed([f"pushd >/dev/null {self.repo} && git push origin feat/x", f"cd 2>/dev/null {self.repo} && git push origin feat/x"])
+
     def test_a_name_both_branch_and_tag_is_a_tag_push(self) -> None:
         self.git("branch", "v2")
         self.git("tag", "v2")
