@@ -253,6 +253,11 @@ class ReleaseSetupTests(unittest.TestCase):
 class ReleaseKitTests(unittest.TestCase):
     SKILL = Path(__file__).resolve().parents[3] / "skills" / "release-audit"
 
+    def test_no_engine_branch_names_the_codex_restart(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        branch = text.split("- else (", 1)[1].split("\n4. ", 1)[0]
+        self.assertIn("codex -c default_permissions=dev-docker", branch)
+
     def test_skill_is_user_invoked_only(self) -> None:
         text = (self.SKILL / "SKILL.md").read_text()
         head = text.split("---")[1]

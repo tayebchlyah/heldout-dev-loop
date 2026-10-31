@@ -309,14 +309,24 @@ class SkillStackContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
-    def test_codex_profile_warns_that_a_container_engine_bypasses_it(self) -> None:
-        for text, value in [
-            (self.codex, "keeps both limits only when no container engine is reachable"),
-            ((REPO_ROOT / "reference" / "kit.md").read_text(),
-             "protects `.env` and the write limit only when no container engine is reachable"),
-        ]:
+    def test_codex_profile_names_the_managed_proxy_and_dev_docker(self) -> None:
+        for value in ["network_proxy", "dev-docker", "codex -c default_permissions=dev-docker",
+                      'Network access to "<host>" was blocked', "stop item", "[permissions.dev-workspace.network.domains]",
+                      "loopback TCP", "Minimum codex-cli 0.165.0"]:
             with self.subTest(value=value):
-                self.assertIn(value, text)
+                self.assertIn(value, self.codex)
+        self.assertNotIn("keeps both limits only when no container engine is reachable", self.codex)
+        kit = (REPO_ROOT / "reference" / "kit.md").read_text()
+        for value in ["managed proxy", "dev-docker", "loopback TCP", "user layer", "[permissions.dev-workspace.network.unix_sockets]",
+                      "macOS", "codex-cli 0.165.0", "key by key"]:
+            with self.subTest(value=value):
+                self.assertIn(value, kit)
+        self.assertNotIn("codex-cli 0.162.1", kit)
+        note = next(line for line in kit.splitlines() if line.startswith("Codex network scope upgrade:"))
+        for value in ["[features]", "[permissions.dev-workspace.network]", "[permissions.dev-workspace.network.domains]",
+                      "Update Codex to 0.165.0 first"]:
+            with self.subTest(note=value):
+                self.assertIn(value, note)
 
 
 class TracksContractTests(unittest.TestCase):
