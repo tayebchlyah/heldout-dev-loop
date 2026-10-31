@@ -375,6 +375,8 @@ class ReleaseTextTests(unittest.TestCase):
         box = text.split("sandbox_canary() {", 1)[1].split("\n}\n", 1)[0]
         self.assertNotIn("--sandbox", box)
         self.assertIn("codex exec", box)
+        exec_line = next(line for line in box.splitlines() if "codex exec" in line)
+        self.assertIn("-c default_permissions=dev-docker", exec_line)
         self.assertNotIn("grep -Eqw 65534", box)
         self.assertIn("uid=${uid:-none}", box)
 
