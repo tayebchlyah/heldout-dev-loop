@@ -126,12 +126,27 @@ class SearchWallTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(decide(hook, {"HOME": "/nonexistent", **env}), expected)
 
+    def test_monitor_is_decided_as_bash(self) -> None:
+        env = {"HOME": "/nonexistent"}
+        monitor = lambda command, **caller: payload(self.top, "Monitor", {"command": command, "description": "d"}, **caller)  # noqa: E731
+        self.assertEqual(decide(monitor("grep -rn make ."), env), DENY)
+        self.assertEqual(decide(monitor("rg -n make"), env), DENY)
+        self.assertEqual(decide(monitor("grep -rn make src"), env), ALLOW)
+        self.assertEqual(decide(monitor("tail -f build.log"), env), ALLOW)
+        self.assertEqual(decide(monitor("grep -rn make .", agent_id="a", agent_type="spec-tester"), env), ALLOW)
+        main = monitor("grep -rn make .")
+        del main["agent_id"]
+        self.assertEqual(decide(main, env), ALLOW)
+        self.assertEqual(decide(payload(self.top, "Monitor", {"ws": "wss://x"}), env), ALLOW)
+
     def test_cli(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
         rows = [(json.dumps(payload(self.top, "Grep", {"pattern": "make"})), (), 0, DENY),
                 (json.dumps(payload(self.top, "Grep", {"pattern": "make", "path": "src"})), (), 0, ALLOW),
                 (json.dumps(payload(self.top, "Bash", {"command": "grep -rn make ."})), (), 0, DENY),
                 (json.dumps(payload(self.top, "Bash", {"command": "rg make src"})), (), 0, ALLOW),
+                (json.dumps(payload(self.top, "Monitor", {"command": "grep -rn make ."})), (), 0, DENY),
+                (json.dumps(payload(self.top, "Monitor", {"command": "grep -rn make src"})), (), 0, ALLOW),
                 ("not json", (), 0, {"deny": True, "reason": "Blocked: guard error: hook input is not a JSON object"}),
                 ("{}", ("x",), 2, None)]
         for stdin, extra, code, expected in rows:
