@@ -82,7 +82,7 @@ def write(path: Path, text: str = "") -> None:
     path.write_text(text)
 
 
-def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex: str | None = "codex-cli 0.162.1",
+def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex: str | None = "codex-cli 0.165.0",
                 **extra: str) -> dict[str, str]:
     """An env whose PATH holds git and fake claude and codex binaries printing the given version text."""
     bins.mkdir(parents=True, exist_ok=True)
