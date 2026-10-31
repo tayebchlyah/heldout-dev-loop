@@ -34,7 +34,7 @@ from pathlib import Path
 sys.path.insert(0, "tests/unit/python")
 from junit_report import write_junit
 reports, left = Path(sys.argv[1]), sys.argv[2]
-left = re.sub("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]", lambda m: f"\\x{ord(m[0]):02x}", left)
+left = re.sub("[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]", lambda m: f"\\x{ord(m[0]):02x}", left)
 with tempfile.TemporaryDirectory() as outcomes:
     case = {"seconds": 0.0, "outcome": "failure" if left else "pass", "text": left}
     Path(outcomes, "temp-leak.json").write_text(json.dumps({"temp-leak.TMPDIR": case}))
