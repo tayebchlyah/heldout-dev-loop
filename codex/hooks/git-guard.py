@@ -622,16 +622,16 @@ def check(cmd, cwds, drift, top=False):
                 seen |= cwds
             if any(t.startswith("GIT_") and "=" in t for t in seg):
                 drift.add("refs")
-            # Every git word counts, not only the first: in "sudo -u git git commit" the
-            # first one is a user name.
-            for k, tok in enumerate(seg):
-                if os.path.basename(tok) == "git":
-                    fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
-                    # env -C or --chdir before git runs it in a folder the guard does not follow.
-                    chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
-                    check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
             gargs = strip_redirects(masked)
             gwords = [unmask(t) for t in gargs]
+            # Every git word counts, not only the first: in "sudo -u git git commit" the
+            # first one is a user name.
+            for k, tok in enumerate(gwords):
+                if os.path.basename(tok) == "git":
+                    fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in gwords[:k])
+                    # env -C or --chdir before git runs it in a folder the guard does not follow.
+                    chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in gwords[:k])
+                    check_git(gwords[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
             c = command_index(gwords)
             if c is None or os.path.basename(gwords[c]) not in TEXT:
                 for k, tok in enumerate(gwords):
