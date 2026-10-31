@@ -139,7 +139,10 @@ def keys_anywhere(data, names: set[str]) -> list[str]:
 
 
 def network_lines(output: str) -> list[str]:
-    return [line for line in output.splitlines() if any(mark in line for mark in NETWORK_FAILURE_MARKS)]
+    """The Codex network failure lines (D6); the version line naming 0.165.0 (D10) also names `network_proxy`
+    and is not one of them."""
+    return [line for line in output.splitlines()
+            if any(mark in line for mark in NETWORK_FAILURE_MARKS) and MINIMUM not in line]
 
 
 def kept_lines(stdout: str, item: str) -> list[str]:
