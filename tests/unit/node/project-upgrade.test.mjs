@@ -31,6 +31,43 @@ test('upgrade to a newer package sets the new version in dev-loop.json and MANIF
   assert.doesNotMatch(output, /## \[/, 'no CHANGELOG.md in the package prints no notes')
 })
 
+test('upgrade of a Claude project adds the .claude/worktrees/ line once, and no other', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  writeFileSync(join(repo, '.gitignore'), 'node_modules')
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'node_modules\n.claude/worktrees/\n')
+  upgrade(repo, home, [], fakePackage('99.0.1'))
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'node_modules\n.claude/worktrees/\n')
+})
+
+test('upgrade of a Codex-only project writes no .gitignore', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=codex'])
+  rmSync(join(repo, '.gitignore'))
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(existsSync(join(repo, '.gitignore')), false)
+})
+
+test('upgrade --dry-run leaves .gitignore alone', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  const before = readFileSync(join(repo, '.gitignore'), 'utf8')
+  rmSync(join(repo, '.gitignore'))
+  upgrade(repo, home, ['--dry-run'], fakePackage('99.0.0'))
+  assert.equal(existsSync(join(repo, '.gitignore')), false)
+  assert.ok(before.length > 0)
+})
+
+test('upgrade refuses a symlinked .gitignore of a Claude project', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  rmSync(join(repo, '.gitignore'))
+  writeFileSync(join(repo, 'elsewhere'), '')
+  symlinkSync('elsewhere', join(repo, '.gitignore'))
+  upgradeFails(repo, home, [], /\.gitignore/, fakePackage('99.0.0'))
+})
+
 test('upgrade replaces a kit file the package changed, with no backup', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes', '--harness=claude'])
