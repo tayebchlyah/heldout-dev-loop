@@ -528,12 +528,49 @@ class ProjectSetupCheckerTests(unittest.TestCase):
 
     def test_codex_older_than_the_minimum_fails(self) -> None:
         self.init("codex")
-        for found, ok in [("0.161.0", False), ("0.162.0", False), ("0.162.1", True), ("0.200.0", True), ("0.99.9", False)]:
+        for found, ok in [("0.161.0", False), ("0.164.0", False), ("0.164.9", False), ("0.165.0", True), ("0.200.0", True),
+                          ("0.99.9", False)]:
             with self.subTest(found=found):
                 self.versions = {"codex": f"codex-cli {found}"}
                 result = self.run_checker("codex")
-                line = f"- codex-cli {found} is older than 0.162.1 (hooks need agent_type). Update Codex.\n"
+                line = f"- codex-cli {found} is older than 0.165.0 (network_proxy needs it). Update Codex.\n"
                 self.assertEqual(line in result.stdout, not ok, result.stdout)
+
+    def test_codex_kit_network_config_has_no_network_failure(self) -> None:
+        self.init("codex")
+        self.assertNotIn("Codex network", self.run_checker("codex").stdout)
+
+    def test_codex_network_on_without_the_proxy_fails(self) -> None:
+        self.init("codex")
+        self.edit_codex_config("network_proxy = true\n", "")
+        self.assert_codex_failure("Codex network on without the managed proxy (features.network_proxy)")
+
+    def test_codex_all_unix_sockets_fails(self) -> None:
+        self.init("codex")
+        self.edit_codex_config("allow_local_binding = true\n",
+                               "allow_local_binding = true\ndangerously_allow_all_unix_sockets = true\n")
+        self.assert_codex_failure("Codex network dangerously_allow_all_unix_sockets opens every local socket")
+
+    def test_codex_stricter_or_off_network_has_no_network_failure(self) -> None:
+        self.init("codex")
+        config = self.repo / ".codex" / "config.toml"
+        kit_text = config.read_text()
+        for name in ("off", "stricter"):
+            with self.subTest(name=name):
+                text = kit_text
+                start = text.index("[permissions.dev-workspace.network]\n")
+                end = text.index("[permissions.dev-docker]")
+                domains = text.index("[permissions.dev-workspace.network.domains]\n")
+                if name == "off":
+                    network = "[permissions.dev-workspace.network]\nenabled = false\n\n"
+                    text = text[:start].replace("network_proxy = true\n", "") + network + text[end:]
+                else:
+                    network = (text[start:domains].replace('mode = "full"', 'mode = "limited"')
+                               .replace("allow_local_binding = true", "allow_local_binding = false"))
+                    text = (text[:start] + network + "[permissions.dev-workspace.network.domains]\n\n"
+                            + '[permissions.dev-workspace.network.unix_sockets]\n"/tmp/agent.sock" = "allow"\n\n' + text[end:])
+                write(config, text)
+                self.assertNotIn("Codex network", self.run_checker("codex").stdout)
 
     def test_only_the_checked_harness_version_is_read(self) -> None:
         self.init("claude")
