@@ -57,6 +57,11 @@ class PushSpellingTests(GuardRepo, unittest.TestCase):
         self.assert_allowed([f"git push origin {spec}" for spec in (
             "feat/x", "heads/feat/x", "refs/heads/feat/x", "HEAD:feat/y", "HEAD:refs/heads/feat/y", f"{self.a}:refs/heads/feat/y")])
 
+    def test_a_redirect_is_no_refspec(self) -> None:
+        self.assert_allowed(["git push -u origin feat/x 2>&1 | tail -3", "git push origin feat/x 2>/dev/null",
+                             "git push origin feat/x >/dev/null", "git push origin feat/x > main", "git push origin feat/x 2> err"])
+        self.assert_refused(["git push origin main 2>&1 | tail -3", "git push 2>/dev/null origin main"], "a push to main or master")
+
     def test_a_name_both_branch_and_tag_is_a_tag_push(self) -> None:
         self.git("branch", "v2")
         self.git("tag", "v2")
