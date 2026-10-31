@@ -464,7 +464,7 @@ def decide(hook: object, env: Mapping[str, str]) -> dict:
     if not isinstance(hook, dict):
         return {"deny": True, "reason": NOT_OBJECT}
     tool, tool_input = hook.get("tool_name"), hook.get("tool_input")
-    if (not hook.get("agent_id") or hook.get("agent_type") in TESTERS or tool not in ("Grep", "Glob", "Bash")
+    if (not hook.get("agent_id") or hook.get("agent_type") in TESTERS or tool not in ("Grep", "Glob", "Bash", "Monitor")
             or not isinstance(tool_input, dict)):
         return {"deny": False, "reason": None}
     dirs = [folder for folder in (hook.get("cwd"), env.get("CLAUDE_PROJECT_DIR")) if isinstance(folder, str) and folder]
@@ -472,7 +472,7 @@ def decide(hook: object, env: Mapping[str, str]) -> dict:
     if not tops:
         return {"deny": False, "reason": None}
     home, folder = env.get("HOME", "/"), dirs[0]
-    if tool == "Bash":
+    if tool in ("Bash", "Monitor"):
         command = tool_input.get("command")
         denied = isinstance(command, str) and bash_denied(command, folder, tops, home)
     else:
