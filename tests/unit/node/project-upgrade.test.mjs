@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 import { entries, fakePackage, git, init, initFails, kitContent, packageRoot, readJson, run, setup, snapshot, tempDir, upgrade, version } from './helpers.mjs'
 import { compareManifest, sha256 } from '../../../lib/manifest.mjs'
@@ -93,6 +94,72 @@ test('upgrade of a 2.1.1 Codex project removes the dead profile tables and print
   assert.equal(lines.length, 2, output)
   assert.ok(lines[0].includes('removed [permissions.dev-implementer] from .codex/config.toml'), output)
   assert.ok(!readFileSync(config, 'utf8').includes('dev-implementer'))
+})
+
+const EARLIER_CODEX_CONFIG = [
+  'default_permissions = "dev-workspace"',
+  'model_reasoning_effort = "high"',
+  '',
+  '[features]',
+  'hooks = true',
+  '',
+  '[permissions.dev-workspace]',
+  'description = "Workspace editing with environment files unreadable."',
+  'extends = ":workspace"',
+  '',
+  '[permissions.dev-workspace.filesystem.":workspace_roots"]',
+  '".env" = "deny"',
+  '".env.*" = "deny"',
+  '"**/.env" = "deny"',
+  '"**/.env.*" = "deny"',
+  '',
+  '[permissions.dev-workspace.network]',
+  'enabled = true',
+  '',
+].join('\n')
+const parseToml = (path) => JSON.parse(execFileSync('python3', ['-c', 'import json, sys, tomllib; print(json.dumps(tomllib.load(open(sys.argv[1], "rb"))))', path], { encoding: 'utf8' }))
+
+function earlierCodexProject(config = EARLIER_CODEX_CONFIG) {
+  const { home, repo } = setup()
+  run(packageRoot, 'init', repo, home, ['--yes', '--harness=codex'])
+  writeFileSync(join(repo, '.codex/config.toml'), config)
+  return { home, repo, path: join(repo, '.codex/config.toml') }
+}
+
+test('upgrade from the earlier Codex kit config adds the network keys, then settles', () => {
+  const { home, repo, path } = earlierCodexProject()
+  const before = parseToml(path).permissions['dev-workspace'].filesystem
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const config = parseToml(path)
+  const network = config.permissions['dev-workspace'].network
+  assert.equal(config.features.network_proxy, true)
+  assert.equal(network.mode, 'full')
+  assert.equal(network.allow_local_binding, true)
+  assert.equal(Object.keys(network.domains).length, 12)
+  assert.ok(config.permissions['dev-docker'])
+  assert.deepEqual(config.permissions['dev-workspace'].filesystem, before)
+  const text = readFileSync(path, 'utf8')
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(readFileSync(path, 'utf8'), text)
+  assert.doesNotMatch(output, /kept your own \[features\]|kept your own \[permissions\.dev-workspace\.network/)
+})
+
+test('upgrade keeps a user network_proxy and says so', () => {
+  const { home, repo, path } = earlierCodexProject(EARLIER_CODEX_CONFIG.replace('hooks = true\n', 'hooks = true\nnetwork_proxy = false\n'))
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.equal(parseToml(path).features.network_proxy, false)
+  assert.ok(output.includes('kept your own [features] network_proxy in .codex/config.toml'), output)
+})
+
+test('upgrade leaves a user profile table and agents table byte-identical', () => {
+  const blocks = ['[permissions.dev-read-only]\ndescription = "mine"\nextends = ":read-only"\n', '[agents]\nmax_threads = 2\n']
+  const { home, repo } = setup()
+  run(packageRoot, 'init', repo, home, ['--yes', '--harness=codex'])
+  const path = join(repo, '.codex/config.toml')
+  writeFileSync(path, `${readFileSync(path, 'utf8')}\n${blocks.join('\n')}`)
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const text = readFileSync(path, 'utf8')
+  for (const block of blocks) assert.ok(text.includes(block), block)
 })
 
 const TRUST_LINE = '  Codex: run /hooks in Codex and trust the new or changed dev-loop hooks. Codex skips them until then.'
