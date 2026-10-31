@@ -9,6 +9,6 @@ is_probe() {
 }
 temp_leak() {
   ls -A "$1" | grep -vx node-compile-cache | while IFS= read -r name; do
-    is_probe "$1" "$name" || echo "$name"
+    is_probe "$1" "$name" || printf '%s\n' "$name"
   done
 }

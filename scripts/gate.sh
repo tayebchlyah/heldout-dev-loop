@@ -5,8 +5,8 @@
 # README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh,
 # scripts/temp_leak.sh. No change: neither. Else both.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
-# Both suites run with an empty TMPDIR: anything left in it but node-compile-cache and a Python tempfile probe
-# (8 characters [a-z0-9_], empty or "blat") fails the gate (a temp leak, rule in scripts/temp_leak.sh).
+# Both suites run with an empty TMPDIR: anything the rule of scripts/temp_leak.sh does not allow fails the gate
+# (a temp leak).
 set -u
 cd "$(dirname "$0")/.."
 . scripts/temp_leak.sh
