@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { mergeCodexConfig, splitToml } from '../../../lib/merge-toml.mjs'
+import { KEY_MERGED_TABLES, mergeCodexConfig, splitToml } from '../../../lib/merge-toml.mjs'
 import { assertValidToml } from './helpers.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -130,10 +131,10 @@ test('a header with internal whitespace still matches the fragment header, and t
   assertValidToml(text)
 })
 
-test('mergeCodexConfig reports the table headers it skipped because the target already declares them', () => {
+test('mergeCodexConfig reports the items it skipped because the target already declares them', () => {
   const current = 'model = "gpt"\n\n[features]\nhooks = false\n'
   const { skipped } = mergeCodexConfig(current, realFragment)
-  assert.deepEqual(skipped, ['[features]'])
+  assert.deepEqual(skipped, ['[features] hooks'])
 })
 
 test('a clean merge with no overlapping tables reports no skipped headers', () => {
@@ -157,7 +158,7 @@ test('a target whose own root key shares a name with the fragment keeps its valu
   assert.equal(keyCount, 1, 'the fragment must not add a second default_permissions')
   assert.ok(text.includes('default_permissions = "my-own-profile"'))
   assert.ok(skipped.includes('default_permissions'))
-  assert.ok(skipped.includes('[features]'))
+  assert.ok(skipped.includes('[features] hooks'))
 
   assertValidToml(text)
 })
@@ -188,14 +189,106 @@ test('a later run still adds what a partial target is missing', () => {
   assertValidToml(text)
 })
 
-test('a settled target reports the tables the user changed on every run, and changes nothing', () => {
+test('a settled target reports the items the user changed on every run, and changes nothing', () => {
   const { text } = mergeCodexConfig('model = "gpt-5"\n', realFragment)
   const edited = text.replace('hooks = true', 'hooks = false')
   assert.notEqual(edited, text)
   const again = mergeCodexConfig(edited, realFragment)
   assert.equal(again.changed, false)
   assert.equal(again.text, edited)
-  assert.deepEqual(again.skipped, ['[features]'])
+  assert.deepEqual(again.skipped, ['[features] hooks'])
+})
+
+const D2_FRAGMENT = [
+  'default_permissions = "dev-workspace"', '',
+  '[features]', 'hooks = true', 'network_proxy = true', '',
+  '[permissions.dev-workspace]', 'extends = ":workspace"', '',
+  '[permissions.dev-workspace.network]', 'enabled = true', 'mode = "full"', 'allow_local_binding = true', '',
+  '[permissions.dev-workspace.network.domains]', '"github.com" = "allow"', '"*.github.com" = "allow"', '',
+  '[agents]', 'max_threads = 4', '',
+].join('\n')
+const parse = (text) => JSON.parse(execFileSync('python3', ['-c', 'import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: text, encoding: 'utf8' }))
+const d2Merge = (current) => {
+  const result = mergeCodexConfig(current, D2_FRAGMENT)
+  assertValidToml(result.text)
+  return result
+}
+
+test('KEY_MERGED_TABLES names the three D2 headers', () => {
+  assert.deepEqual([...KEY_MERGED_TABLES].sort(), ['[features]', '[permissions.dev-workspace.network.domains]', '[permissions.dev-workspace.network]'].sort())
+})
+
+test('a missing kit key is added to the user table after its last definition line', () => {
+  const { text, skipped } = d2Merge('[features]\nhooks = true\n\n[permissions.dev-workspace.network]\nenabled = true\n')
+  const parsed = parse(text)
+  assert.deepEqual(parsed.features, { hooks: true, network_proxy: true })
+  assert.deepEqual(parsed.permissions['dev-workspace'].network, { enabled: true, mode: 'full', allow_local_binding: true, domains: { 'github.com': 'allow', '*.github.com': 'allow' } })
+  assert.deepEqual(skipped, [])
+  const lines = text.split('\n')
+  assert.equal(lines[lines.indexOf('hooks = true') + 1], 'network_proxy = true')
+})
+
+test('a user value of a kit key stays and is reported as header and key', () => {
+  const { text, skipped } = d2Merge('[features]\nhooks = true\nnetwork_proxy = false\n\n[permissions.dev-workspace.network]\nenabled = true\nmode = "limited"\n\n[permissions.dev-workspace.network.domains]\n"example.com" = "allow"\n')
+  const parsed = parse(text)
+  assert.equal(parsed.features.network_proxy, false)
+  assert.equal(parsed.permissions['dev-workspace'].network.mode, 'limited')
+  assert.deepEqual(Object.keys(parsed.permissions['dev-workspace'].network.domains).sort(), ['*.github.com', 'example.com', 'github.com'])
+  assert.ok(skipped.includes('[features] network_proxy'))
+  assert.ok(skipped.includes('[permissions.dev-workspace.network] mode'))
+  assert.ok(!skipped.includes('[features]'))
+})
+
+test('a second merge after a key merge is byte-identical and reports nothing', () => {
+  const { text } = d2Merge('[features]\nhooks = true\n\n[permissions.dev-workspace.network]\nenabled = true\n')
+  const again = d2Merge(text)
+  assert.equal(again.changed, false)
+  assert.equal(again.text, text)
+  assert.deepEqual(again.skipped, [])
+})
+
+test('an inline domains key keeps the domains table out and names it', () => {
+  const { text, skipped } = d2Merge('[permissions.dev-workspace.network]\nenabled = true\ndomains = { "example.com" = "allow" }\n')
+  assert.deepEqual(parse(text).permissions['dev-workspace'].network.domains, { 'example.com': 'allow' })
+  assert.ok(skipped.includes('[permissions.dev-workspace.network.domains]'))
+  assert.ok(!text.split('\n').some((line) => line.trim() === '[permissions.dev-workspace.network.domains]'))
+})
+
+test('a network table set inside the profile table is not given a second definition', () => {
+  for (const line of ['network = { enabled = false }', 'network.enabled = false']) {
+    const { text, skipped } = d2Merge(`[permissions.dev-workspace]\nextends = ":workspace"\n${line}\n`)
+    assert.deepEqual(parse(text).permissions['dev-workspace'].network, { enabled: false }, line)
+    assert.ok(skipped.includes('[permissions.dev-workspace.network]'), line)
+    assert.ok(skipped.includes('[permissions.dev-workspace.network.domains]'), line)
+  }
+})
+
+test('a kit host in other quotes is not added twice', () => {
+  const { text, skipped } = d2Merge('[permissions.dev-workspace.network.domains]\n\'github.com\' = "allow"\n')
+  const domains = parse(text).permissions['dev-workspace'].network.domains
+  assert.equal(Object.keys(domains).filter((host) => host === 'github.com').length, 1)
+  assert.ok(!text.includes('"github.com" = "allow"'))
+  assert.ok(!skipped.some((item) => item.includes('github.com')))
+})
+
+test('a same value with other spacing or a comment is not reported', () => {
+  const { text, skipped } = d2Merge('[permissions.dev-workspace.network]\nenabled=true  # mine\n')
+  assert.ok(!skipped.some((item) => item.includes('enabled')))
+  assert.equal(d2Merge(text).changed, false)
+})
+
+test('the added key lands in its own table before comments and the next table', () => {
+  const { text } = d2Merge('[features]\nhooks = true\n# about plugins\n\n[plugins.x]\nenabled = true')
+  const parsed = parse(text)
+  assert.equal(parsed.features.network_proxy, true)
+  assert.deepEqual(parsed.plugins.x, { enabled: true })
+  assert.ok(text.indexOf('network_proxy = true') < text.indexOf('# about plugins'))
+})
+
+test('a table outside the D2 set keeps the table-level merge', () => {
+  const { text, skipped } = d2Merge('[agents]\nmax_threads = 8\n')
+  assert.deepEqual(parse(text).agents, { max_threads: 8 })
+  assert.ok(skipped.includes('[agents]'))
 })
 
 const LEGACY_IMPLEMENTER = [
