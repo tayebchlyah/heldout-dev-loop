@@ -101,21 +101,33 @@ test('init keeps the hooks and deny rules of an existing .claude/settings.json',
 test('init writes a .gitignore when there is none', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes', '--harness=claude'])
-  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'dev-loop.local.json\n')
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'dev-loop.local.json\n.claude/worktrees/\n')
 })
 
 test('init appends to a .gitignore with no newline at its end', () => {
   const { home, repo } = setup()
   writeFileSync(join(repo, '.gitignore'), 'node_modules')
   init(repo, home, ['--yes', '--harness=claude'])
-  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'node_modules\ndev-loop.local.json\n')
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'node_modules\ndev-loop.local.json\n.claude/worktrees/\n')
 })
 
 test('init does not add the .gitignore line twice', () => {
   const { home, repo } = setup()
   writeFileSync(join(repo, '.gitignore'), 'dev-loop.local.json\nnode_modules\n')
   init(repo, home, ['--yes', '--harness=claude'])
-  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'dev-loop.local.json\nnode_modules\n')
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'dev-loop.local.json\nnode_modules\n.claude/worktrees/\n')
+})
+
+test('init of a Codex-only project adds no .claude/worktrees/ line', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=codex'])
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'dev-loop.local.json\n')
+})
+
+test('init --dry-run writes no .gitignore', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude', '--dry-run'])
+  assert.equal(existsSync(join(repo, '.gitignore')), false)
 })
 
 test('init from a subfolder refuses, names the top level and writes nothing', () => {
