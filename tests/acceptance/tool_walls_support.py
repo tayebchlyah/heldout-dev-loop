@@ -19,11 +19,16 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "unit" / "python"))
+from board_fixtures import free_port, health
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
 # The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
@@ -226,8 +231,29 @@ class ToolWallRepo(unittest.TestCase):
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "base")
         git(self.repo, "checkout", "-q", "-b", BRANCH)
+        board_tmp = self.root / "tmp"
+        board_tmp.mkdir()
+        self.port = free_port()
+        self.board_hook_ran = False
         self.env = {**os.environ, "HOME": str(self.home), "DEV_LOOP_NOTES": str(self.notes),
-                    "CLAUDE_PROJECT_DIR": str(self.repo)}
+                    "CLAUDE_PROJECT_DIR": str(self.repo), "TMPDIR": str(board_tmp),
+                    "DEVLOOP_BOARD_PORT": str(self.port)}
+        self.addCleanup(self.stop_board)
+
+    def stop_board(self) -> None:
+        """Kill the board server the Claude SubagentStart hook started on this test's port."""
+        if not self.board_hook_ran:
+            return
+        deadline = time.monotonic() + 10
+        found = health(self.port, timeout=1)
+        while not found and time.monotonic() < deadline:
+            time.sleep(0.1)
+            found = health(self.port, timeout=1)
+        if found and isinstance(found.get("pid"), int):
+            try:
+                os.kill(found["pid"], signal.SIGKILL)
+            except OSError:
+                pass
 
     # CLI
 
@@ -278,6 +304,7 @@ class ToolWallRepo(unittest.TestCase):
         payload = {"session_id": "session-1", "cwd": str(self.repo), "hook_event_name": "SubagentStart",
                    "agent_id": agent_id, "agent_type": agent_type}
         if harness == "claude":
+            self.board_hook_ran = True
             self.hook("claude", "gate-snapshot.sh", payload)
         else:
             self.hook("codex", "seal.sh", payload, "start", folder=self.repo / ".dev-loop" / "hooks" / "codex")
