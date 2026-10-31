@@ -388,6 +388,41 @@ class CodexWallTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
                 self.assertEqual(result.stderr.count("\n"), 1 if deny else 0, result.stderr)
 
+    def test_tool_walls_by_agent_type(self) -> None:
+        """MCP tools and view_image (#97)."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        top = Path(tmp.name).resolve() / "repo"
+        put(top / "README.md")
+        put(top / "tests" / "README.md")
+        git(top, "init", "-q")
+        H = "tests/" + "acceptance"
+        M = "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell.\n"
+        held, src = f"Blocked: this agent cannot access {H}\n", "Blocked: this agent cannot access src/\n"
+        impl, tester = {"agent_id": "a", "agent_type": "implementer"}, {"agent_id": "b", "agent_type": "spec_tester"}
+        reviewer, main = {"agent_id": "c", "agent_type": "task-reviewer"}, {}
+        mcp_m = [("mcp__fs__read_file", {"path": "README.md"}), ("read_mcp_resource", {"server": "fs", "uri": "file:///tmp/x.md"}),
+                 ("list_mcp_resources", {"server": "fs"}), ("list_mcp_resource_templates", {"server": "fs"})]
+        mcp_held = [("mcp__fs__read_file", {"path": f"{H}/test_x.py"}), ("mcp__fs__read_file", {"filePath": f"{H}/test_x.py"}),
+                    ("read_mcp_resource", {"server": "fs", "uri": f"file://{top}/{H}/test_x.py"}),
+                    ("read_mcp_resource", {"server": "fs", "uri": f"file://localhost{top}/{H}/test_x.py"}),
+                    ("view_image", {"path": f"{H}/shot.png"}), ("view_image", {"path": f"{top}/{H}/shot.png"})]
+        mcp_ok = [("mcp__fs__read_file", {"path": "src/app.py"}), ("list_mcp_resources", {"server": "fs"}),
+                  ("view_image", {"path": "shots/home.png"})]
+        rows = [(c, *call, M, top) for c in (impl, tester) for call in mcp_m]
+        rows += [(reviewer, *call, held, top) for call in mcp_held]
+        rows += [(reviewer, *call, None, top) for call in mcp_ok]
+        rows += [(impl, "view_image", {"path": f"{H}/shot.png"}, held, top),
+                 (impl, "view_image", {"path": "acceptance/shot.png"}, held, top / "tests"),
+                 (impl, "view_image", {"path": "shots/home.png"}, None, top),
+                 (tester, "view_image", {"path": "src/logo.png"}, src, top),
+                 (tester, "view_image", {"path": f"{H}/shot.png"}, None, top)]
+        rows += [(main, *call, None, top) for call in mcp_m + mcp_held + mcp_ok + [("view_image", {"path": "src/logo.png"})]]
+        for caller, tool, tool_input, expected, cwd in rows:
+            with self.subTest(caller=caller.get("agent_type", "main"), tool=tool, tool_input=tool_input, cwd=cwd):
+                result = self.wall({**caller, "cwd": str(cwd), "tool_name": tool, "tool_input": tool_input})
+                self.assertEqual((result.returncode, result.stderr), (0, "") if expected is None else (2, expected))
+
     def test_a_real_repo_root_and_a_repo_under_a_source_folder_name(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
