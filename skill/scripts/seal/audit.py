@@ -13,6 +13,7 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
+from xml.sax.saxutils import unescape
 
 import devloop
 from devloop import emit
@@ -75,7 +76,7 @@ def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
                 call_id = TOOL_USE_ID.search(note["prompt"])
                 if call_id and call_id.group(1) in monitor_ids:
                     found = True
-                    for event in EVENT.findall(note["prompt"]):
+                    for event in map(unescape, EVENT.findall(note["prompt"])):
                         outputs.append(event)
                         if call_id.group(1) in search_ids:
                             searches.append(event)
