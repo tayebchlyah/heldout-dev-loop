@@ -2,12 +2,14 @@
 # dev-loop gate for this repo: the installer suite (node) and the skill suite (python), side by side.
 # GATE_SCOPE=changed (the Stop hook): any change reaches the node suite (it scans every tracked file),
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
-# README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh. No change: neither. Else both.
+# README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh,
+# scripts/temp_leak.sh. No change: neither. Else both.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
 # Both suites run with an empty TMPDIR: anything left in it but node-compile-cache and a Python tempfile probe
-# (8 characters [a-z0-9_], empty or "blat") fails the gate (a temp leak).
+# (8 characters [a-z0-9_], empty or "blat") fails the gate (a temp leak, rule in scripts/temp_leak.sh).
 set -u
 cd "$(dirname "$0")/.."
+. scripts/temp_leak.sh
 
 # core.fsmonitor in a user or repo config starts a daemon in each throwaway repo a test makes,
 # and the daemon outlives the test. This override wins over every config file. It comes before
@@ -20,7 +22,7 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
   while IFS= read -r path; do
     case "$path" in
-      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|cliff.toml) py=1 ;;
+      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|scripts/temp_leak.sh|cliff.toml) py=1 ;;
     esac
     node=1
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)
@@ -48,15 +50,7 @@ for suite in node py; do
   cat "$out/$suite"
   [ "$(cat "$out/$suite.exit")" = 0 ] || status=1
 done
-# allow-comment: dependency, Python's first gettempdir() writes "blat" to an 8-character file and unlinks it; a killed child leaves it (#106).
-is_probe() {
-  [[ $1 =~ ^[a-z0-9_]{8}$ ]] || return 1
-  [ -f "$scratch/$1" ] && [ ! -L "$scratch/$1" ] || return 1
-  [ ! -s "$scratch/$1" ] || cmp -s "$scratch/$1" <(printf blat)
-}
-left=$(ls -A "$scratch" | grep -vx node-compile-cache | while IFS= read -r name; do
-  is_probe "$name" || echo "$name"
-done)
+left=$(temp_leak "$scratch")
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
   status=1

@@ -476,6 +476,7 @@ class GateScopeTests(unittest.TestCase):
             repo = Path(tmp).resolve()
             git(repo, "init", "-q")
             put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
+            put(repo / "scripts" / "temp_leak.sh", (ROOT / "scripts" / "temp_leak.sh").read_text())
             put(repo / "tests" / "unit" / "python" / "test_dev_loop.py", "print('SKILL-RAN')\n")
             put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
             (repo / "node_modules" / "playwright").mkdir(parents=True)
@@ -485,9 +486,10 @@ class GateScopeTests(unittest.TestCase):
             git(repo, "add", "-A")
             git(repo, "commit", "-q", "-m", "base")
             for path, runs in (("reference/cli/status.md", True), ("README.md", True),
-                               ("scripts/repo_rules.py", True), ("cliff.toml", True), ("x.txt", False)):
+                               ("scripts/repo_rules.py", True), ("cliff.toml", True),
+                               ("scripts/temp_leak.sh", True), ("x.txt", False)):
                 with self.subTest(path=path):
-                    put(repo / path, "b\n")
+                    put(repo / path, (repo / path).read_text() + "true\n" if path.endswith(".sh") else "b\n")
                     out = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
                                          env={**{k: v for k, v in os.environ.items() if k != "DEVLOOP_REPORT_DIR"},
                                               "GATE_SCOPE": "changed"}, timeout=60).stdout
@@ -513,6 +515,7 @@ class GateTempLeakTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp).resolve()
             put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
+            put(repo / "scripts" / "temp_leak.sh", (ROOT / "scripts" / "temp_leak.sh").read_text())
             put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
             put(repo / "blat.txt", "blat")
             (repo / "node_modules" / "playwright").mkdir(parents=True)
@@ -532,6 +535,24 @@ class GateTempLeakTests(unittest.TestCase):
                     report = run.stdout.partition("temp leak, the tests left in TMPDIR:\n")[2].split()
                     self.assertEqual(report, left, run.stdout)
                     self.assertEqual(run.returncode, 1 if left else 0, run.stdout)
+
+
+class TempLeakRuleTests(unittest.TestCase):
+    def test_temp_leak_lists_leftovers_one_per_line(self) -> None:
+        rule = str(ROOT / "scripts" / "temp_leak.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            sourced = subprocess.run(["bash", "-c", '. "$0"', rule], capture_output=True, text=True)
+            self.assertEqual((sourced.stdout, sourced.returncode), ("", 0), sourced.stderr)
+            run = subprocess.run(["bash", "-c", '. "$0"; temp_leak "$1"', rule, tmp], capture_output=True, text=True)
+            self.assertEqual((run.stdout, run.returncode), ("", 0), run.stderr)
+            (scratch / "node-compile-cache").mkdir()
+            put(scratch / "ab3d_9x7", "blat")
+            (scratch / "left one").mkdir()
+            put(scratch / "other", "x")
+            run = subprocess.run(["bash", "-c", '. "$0"; temp_leak "$1"', rule, tmp], capture_output=True, text=True)
+            self.assertEqual(sorted(run.stdout.splitlines()), ["left one", "other"], run.stderr)
+            self.assertEqual(run.returncode, 0)
 
 
 if __name__ == "__main__":
