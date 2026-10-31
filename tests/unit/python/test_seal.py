@@ -198,6 +198,21 @@ def claude_call(name: str, tool_input: dict, call_id: str) -> dict:
     return {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]}}
 
 
+def monitor_note(call_id: str, *events: str) -> dict:
+    body = "".join(f"<event>{event}</event>\n" for event in events)
+    return {"type": "attachment", "attachment": {"type": "queued_command", "commandMode": "task-notification",
+            "prompt": f"<task-notification>\n<task-id>T</task-id>\n<tool-use-id>{call_id}</tool-use-id>\n{body}</task-notification>"}}
+
+
+def codex_mcp(text: str) -> dict:
+    return {"type": "event_msg", "payload": {"type": "item_completed", "item": {
+        "type": "McpToolCall", "result": {"content": [{"type": "text", "text": text}]}}}}
+
+
+def codex_custom(output: object) -> dict:
+    return {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "x", "output": output}}
+
+
 def codex_line(text: str, command: str = "cat") -> dict:
     return {"type": "event_msg", "payload": {"type": "item_completed", "item": {
         "type": "CommandExecution", "command": command, "aggregated_output": text}}}
@@ -248,6 +263,56 @@ class AuditTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(DEVLOOP), "audit"], cwd=self.repo, env=self.env,
                                 input=json.dumps(hook), capture_output=True, text=True, timeout=60)
         return result.returncode, json.loads(result.stdout)
+
+    def taints(self, rows: list[tuple[list, tuple[list, list] | None]]) -> None:
+        for n, (lines, expected) in enumerate(rows):
+            with self.subTest(n=n):
+                self.mark_start(f"r{n}")
+                self.commit(f"src/r{n}.py", f"x = {n}\n", f"r{n}")
+                code, out = self.audit(self.transcript(lines, f"r{n}.jsonl"), agent_id=f"r{n}")
+                self.assertEqual(code, 0, out)
+                if expected is None:
+                    self.assertEqual(out, {"taint": None, "skipped": []})
+                else:
+                    self.assertEqual((out["taint"]["paths"], out["taint"]["lines"]), expected)
+        if any(expected is not None for _, expected in rows):
+            self.assertFalse(run_cli("seal-check", cwd=self.repo)[1]["ok"])
+
+    def test_lsp_and_mcp_results_taint(self) -> None:
+        refs = f"Found 2 references across 2 files:\n\n{PROTECTED}:\n  Line 3:5\nsrc/app.py:\n  Line 1:5"
+        self.taints([
+            ([claude_call("LSP", {"operation": "findReferences", "filePath": "src/app.py", "line": 1, "character": 5}, "l1"),
+              claude_line(refs, "l1")], ([PROTECTED], [])),
+            ([claude_call("mcp__fs__search", {"pattern": "make"}, "m1"), claude_line(PROTECTED, "m1")], ([PROTECTED], [])),
+            ([claude_call("ReadMcpResourceTool", {"server": "fs", "uri": "file:///x"}, "r1"), claude_line(f"{L1}\n{L2}\n", "r1")],
+             ([], [L1, L2]))])
+
+    def test_monitor_events_taint_by_their_call(self) -> None:
+        hit = f"./{PROTECTED}:3:r = make(1)"
+        self.taints([
+            ([claude_call("Monitor", {"command": "grep -rn make .", "description": "d"}, "U"), claude_line("Monitor started", "U"),
+              monitor_note("U", hit)], ([PROTECTED], [])),
+            ([claude_call("Monitor", {"command": "grep -rn make ."}, "U2"), monitor_note("U2", "build ok", f"{PROTECTED}:3:x")],
+             ([PROTECTED], [])),
+            ([claude_call("Monitor", {"command": f"cat {PROTECTED}"}, "V"), monitor_note("V", f"{L1}\n{L2}")], ([], [L1, L2])),
+            ([claude_call("Bash", {"command": "grep -rn make .", "run_in_background": True}, "W"), claude_line("started", "W"),
+              monitor_note("W", hit, f"{L1}\n{L2}")], None),
+            ([claude_line("x", "Z"), monitor_note("Z", f"{L1}\n{L2}")], None)])
+
+    def test_codex_mcp_and_code_mode_results(self) -> None:
+        self.taints([
+            ([codex_mcp(f"{PROTECTED}:3:x")], ([PROTECTED], [])),
+            ([codex_custom([{"type": "input_text", "text": f"{L1}\n{L2}"}])], ([], [L1, L2])),
+            ([codex_custom(f"{L1}\n{L2}")], ([], [L1, L2])),
+            ([codex_custom([{"type": "input_text", "text": f"{PROTECTED}:3:x"}])], None)])
+
+    def test_tool_use_alone_does_not_taint(self) -> None:
+        self.taints([([
+            claude_call("LSP", {"operation": "findReferences", "filePath": "src/app.py", "line": 1, "character": 5}, "a"),
+            claude_line("No references found", "a"),
+            claude_call("Monitor", {"command": "tail -f build.log"}, "b"), monitor_note("b", "build ok"),
+            claude_call("mcp__fs__read_file", {"path": "README.md"}, "c"), claude_line("readme", "c")], None)])
+        self.assertTrue(run_cli("seal-check", cwd=self.repo)[1]["ok"])
 
     def test_claude_two_lines_with_commit_taints(self) -> None:
         self.mark_start("a1")
