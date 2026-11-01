@@ -3,8 +3,7 @@
 # Codex copy of claude/hooks/git-guard.sh: only deny() and ask() differ, because Codex
 # parses permissionDecision "ask" but does not support it (the call would run), so every
 # ask becomes a deny that names the rule.
-GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
-export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }

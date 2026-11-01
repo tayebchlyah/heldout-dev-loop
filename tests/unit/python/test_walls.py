@@ -594,6 +594,7 @@ class GitGuardParityTests(unittest.TestCase):
         for shell, hooks, decision in (("bash", CLAUDE_HOOKS, "ask"), ("sh", CODEX_ASSETS / "hooks", "deny")):
             with tempfile.TemporaryDirectory() as tmp:
                 shutil.copy(hooks / "git-guard.sh", tmp)
+                shutil.copy(hooks / "git-pin.sh", tmp)
                 result = subprocess.run(
                     [shell, str(Path(tmp) / "git-guard.sh")], text=True, capture_output=True, check=False,
                     input=json.dumps({"cwd": tmp, "tool_input": {"command": "git push origin feat"}}),
