@@ -338,6 +338,20 @@ class AuditRunCase(unittest.TestCase):
         path.write_bytes(value if isinstance(value, bytes) else json.dumps(value).encode())
         return path
 
+    def folded_hunter(self, *paths: str, candidates: tuple[dict, ...] | list[dict] = (), **over: object) -> tuple[str, list[str]]:
+        """Brief a hunter on new units of `paths`, write a valid result (the first unit a candidate of every given
+        candidate), promote and fold it."""
+        agent, ids = self.hunter_brief(*paths)
+        result = self.hunter_result(agent, ids, candidates=list(candidates), **over)
+        if candidates:
+            result["units"][0].update(disposition="candidate",
+                                      candidate_fingerprints=[c["fingerprint"] for c in candidates])
+        self.write_result(agent, result)
+        for name in ("promote", "fold"):
+            out, code = self.step(name, "--agent", agent)
+            self.assertEqual(code, 0, out)
+        return agent, ids
+
     def check(self, agent: str) -> tuple[dict, int]:
         return self.step("check", "--agent", agent)
 
