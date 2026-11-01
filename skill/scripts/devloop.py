@@ -358,6 +358,7 @@ def main() -> int:
     fold.add_argument("--discard")
     step("findings", "close").add_argument("--incomplete")
     step("status", "close")
+    step("report", "report").add_argument("--summary", required=True)
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
