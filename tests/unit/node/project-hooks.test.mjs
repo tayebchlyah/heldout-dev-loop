@@ -156,6 +156,23 @@ for (const old of ['Read|Edit|Write|Grep|Glob|Bash', 'Read|Edit|Write|NotebookEd
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
 
+test('upgrade of a Claude project moves the git-guard entry from Bash to Bash|Monitor (#154)', () => {
+  const { home, repo } = setup()
+  run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=claude'])
+  const settings = join(repo, '.claude/settings.json')
+  const custom = readJson(settings)
+  custom.hooks.PreToolUse.find((entry) => entry.hooks.some((hook) => hook.command.includes('git-guard.sh'))).matcher = 'Bash'
+  custom.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] })
+  writeFileSync(settings, JSON.stringify(custom, null, 2))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const groups = readJson(settings).hooks.PreToolUse
+  const guards = groups.flatMap((entry) => entry.hooks.filter((hook) => hook.command.includes('git-guard.sh')).map(() => entry.matcher))
+  assert.deepEqual(guards, ['Bash|Monitor'])
+  assert.ok(groups.some((entry) => entry.matcher === 'Bash' && entry.hooks.some((hook) => hook.command === 'echo mine')))
+  assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
+})
+
 test('upgrade of a 2.1.1 Claude project keeps user groups in order and the empty one, new entry at the old index', () => {
   const { home, repo } = setup()
   run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=claude'])

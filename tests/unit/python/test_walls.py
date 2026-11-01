@@ -448,6 +448,19 @@ class ClaudeGitGuardSubagentTests(unittest.TestCase):
             feature = self.run_guard({"cwd": repo, "agent_id": "a1", "tool_input": {"command": "git push origin feat"}})
             self.assertEqual((feature.returncode, feature.stdout), (0, ""))
 
+    def test_a_monitor_command_gets_the_bash_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            subprocess.run(["git", "-C", repo, "init", "-q", "-b", "feat"], check=True)
+            monitor = lambda command: {"cwd": repo, "tool_name": "Monitor",  # noqa: E731
+                                       "tool_input": {"command": command, "description": "d", "timeout_ms": 1000}}
+            ask = self.run_guard(monitor("git push origin main 2>&1 | grep --line-buffered x"))
+            self.assertEqual(json.loads(ask.stdout)["hookSpecificOutput"]["permissionDecision"], "ask")
+            reset = self.run_guard(monitor("git reset --hard HEAD~1"))
+            self.assertEqual(reset.returncode, 2)
+            self.assertIn("git reset --hard discards work", reset.stderr)
+            tail = self.run_guard(monitor("tail -f build.log"))
+            self.assertEqual((tail.returncode, tail.stdout), (0, ""))
+
     def test_a_subagent_lease_push_is_denied(self) -> None:
         with tempfile.TemporaryDirectory() as repo:
             subprocess.run(["git", "-C", repo, "init", "-q", "-b", "topic/x"], check=True)
