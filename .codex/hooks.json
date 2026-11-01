@@ -32,7 +32,7 @@
         ]
       },
       {
-        "matcher": "Bash|apply_patch",
+        "matcher": "Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates",
         "hooks": [
           {
             "type": "command",

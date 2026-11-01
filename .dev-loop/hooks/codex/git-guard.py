@@ -102,11 +102,26 @@ def git(repo, *args):
     return r.returncode, r.stdout.strip()
 
 
+# allow-comment: dependency, the shell reads 2>&1, >&2, &>x and >|x as one redirect, not as separators.
+REDIRECTS = {"&>>": chr(0xE101), "&>": chr(0xE102), ">&": chr(0xE100), ">|": chr(0xE103)}
+REDIRECT = re.compile(r"(?<![\\&])(&>>|&>|>&|>\|)")
+
+
+def keep_redirects(text):
+    return REDIRECT.sub(lambda m: REDIRECTS[m.group(1)], text)
+
+
+def restore_redirects(word):
+    for op, c in REDIRECTS.items():
+        word = word.replace(c, op)
+    return word
+
+
 def segments(cmd):
     # Yields each command with the operator that follows it. An operator with no
     # command before it, such as an opening (, comes with an empty one. No comment
     # syntax: a # must not hide the rest of the line from the guard.
-    lex = shlex.shlex(cmd.replace("\n", ";"), posix=True, punctuation_chars=PUNCT)
+    lex = shlex.shlex(keep_redirects(cmd.replace("\n", ";")), posix=True, punctuation_chars=PUNCT)
     lex.whitespace_split = True
     lex.commenters = ""
     seg = []
@@ -115,7 +130,7 @@ def segments(cmd):
             yield seg, tok
             seg = []
         else:
-            seg.append(tok)
+            seg.append(restore_redirects(tok))
     if seg:
         yield seg, ""
 
@@ -130,7 +145,7 @@ def unreliable(cmd, segs):
     # a subshell. True when any of these can sit in cmd. Quoted and escaped text is
     # replaced by one word character, so "a"# is still no comment. A heredoc body is
     # left only on a line that feeds a shell, or when the first pass failed (RAW).
-    bare = QUOTED.sub("x", cmd.replace("\n", ";"))
+    bare = keep_redirects(QUOTED.sub("x", cmd.replace("\n", ";")))
     body = "<<" in bare and (os.environ["RAW"] or RUNNERS & {os.path.basename(w) for w in re.split(r"[\s;&|()]+", bare)})
     if body or re.search(r"(^|[\s;&|()])#", bare) or re.search(r"(^|[\s;&|(" + chr(96) + r"])case\s", bare):
         return True
@@ -238,12 +253,12 @@ def command_index(seg):
 def strip_redirects(args):
     out, i = [], 0
     while i < len(args):
-        m = re.fullmatch(r"([^<>]*)[<>]+(.*)", args[i])
+        m = re.fullmatch(r"([^<>&]*)(&>>?|[<>]+[&|]?)(.*)", args[i])
         if not m:
             out.append(args[i])
-        elif m.group(1) and not m.group(1).isdigit():
+        elif m.group(1) and not re.fullmatch(r"\d", m.group(1)):
             out.append(m.group(1))
-        i += 2 if m and not m.group(2) else 1
+        i += 2 if m and not m.group(3) else 1
     return out
 
 
@@ -419,7 +434,7 @@ def check_push(repo, args, drift):
         ask("a push with an argument the shell expands")
     if "refs" in drift:
         ask("a push after a command that changes refs or config")
-    pos, lease, j, no_follow = [], set(), 0, False
+    pos, lease, j, no_follow, repo_opt = [], set(), 0, False, None
     while j < len(args):
         a = args[j]
         if a == "--":
@@ -433,7 +448,10 @@ def check_push(repo, args, drift):
             elif len(name) > 2 and any(m.startswith(name) for m in FORCE):
                 ask("a force, delete, mirror, all, prune or tag push")
             # allow-comment: dependency, git takes a unique prefix of an option.
-            if "=" not in a and len(name) > 2 and sum(m.startswith(name) for m in PUSH_ARG) == 1:
+            named = [m for m in PUSH_ARG if m.startswith(name)] if len(name) > 2 else []
+            if named == ["--repo"]:
+                repo_opt = a.partition("=")[2] or (args[j + 1] if j + 1 < len(args) else "")
+            if "=" not in a and len(named) == 1:
                 j += 1
         elif a.startswith("-") and len(a) > 1:
             if "f" in a[1:] or "d" in a[1:]:
@@ -449,6 +467,9 @@ def check_push(repo, args, drift):
     if (follow == "true" or rc not in (0, 1)) and not no_follow:
         ask("a tag push (push.followTags is set)")
     _, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+    # allow-comment: dependency, with --repo git reads every positional word as a refspec.
+    if repo_opt is not None:
+        pos = [repo_opt, *pos]
     remote, rest, specs = (pos[0] if pos else ""), pos[1:], []
     while rest:
         w = rest.pop(0)
@@ -589,7 +610,7 @@ def check(cmd, cwds, drift, top=False):
                     check(tok, cwds, drift)
         # NAME=value words before a cd do not stop it from running. CDPATH, HOME
         # or OLDPWD change where it lands, so its target becomes unknown.
-        words, moved = seg, False
+        words, moved = [unmask(t) for t in strip_redirects(masked)], False
         # An assignment surely ran before the next command only at the line start or
         # after ";", outside a subshell and a shell script (sh -c), on a line the
         # parser reads reliably.
@@ -622,16 +643,20 @@ def check(cmd, cwds, drift, top=False):
                 seen |= cwds
             if any(t.startswith("GIT_") and "=" in t for t in seg):
                 drift.add("refs")
-            # Every git word counts, not only the first: in "sudo -u git git commit" the
-            # first one is a user name.
-            for k, tok in enumerate(seg):
-                if os.path.basename(tok) == "git":
-                    fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in seg[:k])
-                    # env -C or --chdir before git runs it in a folder the guard does not follow.
-                    chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in seg[:k])
-                    check_git(seg[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
             gargs = strip_redirects(masked)
             gwords = [unmask(t) for t in gargs]
+            # allow-comment: dependency, in <(x) main the shell passes main to git, the parser sees a later segment.
+            if sep == "(" and masked and re.search(r"[<>]$", masked[-1]) and "push" in gwords \
+                    and any(os.path.basename(t) == "git" for t in gwords):
+                ask("a push whose arguments the guard cannot read")
+            # Every git word counts, not only the first: in "sudo -u git git commit" the
+            # first one is a user name.
+            for k, tok in enumerate(gwords):
+                if os.path.basename(tok) == "git":
+                    fed = any(os.path.basename(t) in FEEDERS or t in ("-exec", "-execdir") for t in gwords[:k])
+                    # env -C or --chdir before git runs it in a folder the guard does not follow.
+                    chdir = any(t in ("-C", "--chdir") or t.startswith("--chdir=") for t in gwords[:k])
+                    check_git(gwords[k + 1:], cwds | {None} if chdir else cwds, drift, fed)
             c = command_index(gwords)
             if c is None or os.path.basename(gwords[c]) not in TEXT:
                 for k, tok in enumerate(gwords):

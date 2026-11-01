@@ -81,6 +81,44 @@ def slowest(report_dir: Path, n: int = 10) -> list[dict]:
     return sorted(cases, key=lambda c: c["seconds"], reverse=True)[:n]
 
 
+def junit_cases(path: Path) -> list[ET.Element] | None:
+    try:
+        return list(ET.parse(path).getroot().iter("testcase"))
+    except ET.ParseError:
+        return None
+
+
+def case_id(case: ET.Element) -> str:
+    name, classname = case.get("name", ""), case.get("classname")
+    return f"{classname}::{name}" if classname else name
+
+
+def case_failed(case: ET.Element) -> bool:
+    return case.find("failure") is not None or case.find("error") is not None
+
+
+def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None, int | None]:
+    files = sorted(folder.glob("*.xml"))
+    if not files:
+        return None, None, None, None
+    ids: set[str] = set()
+    executed: set[str] = set()
+    cases = 0
+    for path in files:
+        found = junit_cases(path)
+        if found is None:
+            return None, None, None, None
+        for case in found:
+            if case.find("skipped") is None:
+                cases += 1
+                name, classname = case.get("name", ""), case.get("classname")
+                test = name.split(" (", 1)[0]
+                executed.add(f"{classname}::{test}" if classname else test)
+            if case_failed(case):
+                ids.add(case_id(case))
+    return len(ids), sorted(ids), cases, len(executed)
+
+
 def cmd_logged(args: argparse.Namespace) -> int:
     cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
     if not cmd:
@@ -113,7 +151,8 @@ def cmd_gate(args: argparse.Namespace) -> int:
     reports = log.parent / f"{log.stem}-reports"
     reports.mkdir()
     payload = run_logged(cmd, log, top, {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
-    payload["failures"] = parse_failures(log.read_text(errors="replace"))
+    ids = sorted({case_id(c) for p in reports.glob("*.xml") for c in junit_cases(p) or [] if case_failed(c)})
+    payload["failures"] = [f"FAILED {i}" for i in ids] or parse_failures(log.read_text(errors="replace"))
     payload["slowest"] = slowest(reports)
     if not any(reports.glob("*.xml")):
         payload["hint"] = JUNIT_HINT

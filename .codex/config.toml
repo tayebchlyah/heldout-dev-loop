@@ -3,6 +3,7 @@ model_reasoning_effort = "high"
 
 [features]
 hooks = true
+network_proxy = true
 
 [permissions.dev-workspace]
 description = "Workspace editing with environment files unreadable."
@@ -16,4 +17,26 @@ extends = ":workspace"
 
 [permissions.dev-workspace.network]
 enabled = true
+mode = "full"
+allow_local_binding = true
 
+[permissions.dev-workspace.network.domains]
+"github.com" = "allow"
+"*.github.com" = "allow"
+"*.githubusercontent.com" = "allow"
+"registry.npmjs.org" = "allow"
+"pypi.org" = "allow"
+"files.pythonhosted.org" = "allow"
+"proxy.golang.org" = "allow"
+"sum.golang.org" = "allow"
+"api.anthropic.com" = "allow"
+"cdn.playwright.dev" = "allow"
+"playwright.download.prss.microsoft.com" = "allow"
+"storage.googleapis.com" = "allow"
+
+[permissions.dev-docker]
+description = "Workspace editing plus every local unix socket (Docker): a full bypass of the socket limit."
+extends = "dev-workspace"
+
+[permissions.dev-docker.network]
+dangerously_allow_all_unix_sockets = true

@@ -10,9 +10,9 @@ User asked for a release: `/release [--rc]` (Codex `$release [--rc]`). Do this, 
 
 Release command (`commands.release_prepare`, `commands.release_check`, `commands.release_verify` in `dev-loop.json`, each optional): run only when mapped, as `RELEASE_VERSION=<version> RELEASE_TAG=<tag> python3 .agents/skills/dev-loop/scripts/devloop.py logged --name <key> -- sh -c '<command>'`. `<version>`: `X.Y.Z` or `X.Y.Z-rc.N`; `<tag>`: `v<version>`. Exit not 0: stop; the report names the command and its `log`.
 
-1. Start. Main checkout, on `main`: `git fetch origin`, `git rebase origin/main`. Local commits or changes on `main`: stop, report them. Run `release-check --sha HEAD`: a reason `open-security` or `unparsed-security`: stop, report it. List the open features from `status` (its `features`).
+1. Start. Main checkout, on `main`: `git fetch origin`, `git rebase origin/main`. Local commits or changes on `main`: stop, report them. Run `release-check --sha HEAD`: a reason `open-security` or `unparsed-security`: stop, report it. An `open-security` item ruled `fix #<n>` whose fix merged: report it, ask the user to rule it `close fixed by #<n>`; stop. List the open features from `status` (its `features`).
 2. Version. Read the last final tag (`vX.Y.Z`) and the changes after it. Propose major, minor or patch: a change that makes an existing install fail without a user step is major. `--rc`: `X.Y.Z-rc.N`, N one above the highest rc tag of `X.Y.Z`, else 1. A version file (`version_files`) that already holds the target version and no tag for it: a resumed release; the later steps only do what is left.
-3. Audit, before any version change. `A` = `HEAD`. `release-check --sha A` with `ok` true: no new audit. Else follow the steps of `skills/release-audit/SKILL.md` (installed at `.agents/skills/release-audit/SKILL.md`) in this session; then `release-check --sha A` must give `ok` true. A confirmed finding: stop. After the fix slice merges, `/release` starts again at step 1.
+3. Audit, before any version change. One audit and at most one fix wave per release tag. `A` = `HEAD`. `release-check --sha A` with `ok` true: no new audit. A `stale-audit` when the commits after the record are the fix slices of items ruled `fix #<n> <reason>`: run `release-record --fix-wave --issue <n> [--issue <n> ...]` with those issues, then `release-check --sha A` again; `ok` true: no new audit. Its `unfixed`: stop, report the issues. Any other `--fix-wave` error (`foreign-commit`, `wave-exists`, `not-descendant`, `no-audit`, `no-project-note`), or any other `stale-audit`: follow the steps of `skills/release-audit/SKILL.md` (installed at `.agents/skills/release-audit/SKILL.md`) in this session; then `release-check --sha A` must give `ok` true. An open security item: stop, report it. The user rules each with a sub-bullet under its line: `- Ruling <date>: fix #<n> <reason>` (open until the fix merges, then `close fixed by #<n>`), `accept <reason>` or `close <reason>`. After the fix slices merge, `/release` starts again at step 1.
 4. Release branch `release/<tag>` from `A`, in its own worktree: `git worktree add -b release/<tag> <folder> A`. All of steps 4 to 6 run there.
    - Setup: the same as a new worktree of a feature: the dependency install the project's `AGENTS.md` names for a new worktree, before the direct gate.
    - No `version_files` key in `dev-loop.json` (first run): read the repo, propose the list of files that hold the version, write the key. `[]` when none.
@@ -32,7 +32,7 @@ Never a merge before stop 1. Never a tag push or a release creation before stop 
 
 ## CI skip job
 
-A release PR or a kit upgrade PR changes no code. This job lets the project CI skip the other jobs for it. It runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo.
+A release PR or a kit upgrade PR changes no code. This job lets the project CI skip the other jobs for it. It runs the `ci-skip` of the base kit, never the kit of the PR. A kit upgrade PR skips only in the kit-source repo. The job skips only for a PR on, or a push to, the default branch.
 
 ```yaml
   changes:
@@ -49,8 +49,11 @@ A release PR or a kit upgrade PR changes no code. This job lets the project CI s
           ref: ${{ github.event.pull_request.base.sha || github.event.before }}
           path: .devloop-base
       - id: skip
+        env:
+          TARGET: ${{ github.base_ref || github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
+          if [ "$TARGET" != "$DEFAULT_BRANCH" ] || [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output
