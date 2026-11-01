@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
 from audit import common  # noqa: E402
@@ -351,6 +352,22 @@ class AuditRunCase(unittest.TestCase):
             out, code = self.step(name, "--agent", agent)
             self.assertEqual(code, 0, out)
         return agent, ids
+
+    def critic_result(self, **over: object) -> dict:
+        return {"missing_units": [], "reassign_ids": [], "resolved_prior_leads": [], "stop": False, "notes": {}, **over}
+
+    def verifier_result(self, agent: str, fp: str, verdict: str = "confirmed", paths: tuple[str, ...] = ("a.py",)) -> dict:
+        return {"decision": verdict, "record": self.record(fp, verdict), "checks": [self.src_check(agent, paths)]}
+
+    def folded(self, kind: str, result_of: Callable[[str], dict], *args: str) -> tuple[str, dict]:
+        """Brief an agent of `kind`, write the result `result_of(agent)` gives, fold it; the agent and fold JSON."""
+        out, code = self.step("brief", "--kind", kind, *args)
+        self.assertEqual(code, 0, out)
+        agent = out["agent"]
+        self.write_result(agent, result_of(agent))
+        out, code = self.step("fold", "--agent", agent)
+        self.assertEqual(code, 0, out)
+        return agent, out
 
     def check(self, agent: str) -> tuple[dict, int]:
         return self.step("check", "--agent", agent)
