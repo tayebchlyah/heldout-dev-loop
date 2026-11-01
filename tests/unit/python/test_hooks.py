@@ -143,22 +143,116 @@ class ClaudeGateTests(unittest.TestCase):
                     self.assertFalse(marker.exists())
 
 
-class HookFsmonitorPinTests(unittest.TestCase):
-    """Each kit hook script pins core.fsmonitor off before its first git or CLI call (#155)."""
+class HookGitPinTests(unittest.TestCase):
+    """Each kit hook sources git-pin.sh before its first git or CLI call, and the pin starts no repo program (#155)."""
 
-    def test_each_hook_pins_fsmonitor_before_git(self) -> None:
+    HOOKS = {"claude": CLAUDE_HOOKS, "codex": CODEX_ASSETS / "hooks"}
+
+    def test_each_hook_sources_the_pin_before_git(self) -> None:
         sys.path.insert(0, str(CLAUDE_HOOKS.parent.parent / "skill" / "scripts"))
-        from check_setup import GIT_CALL, GUARD_PARTS
+        from check_setup import GIT_CALL
 
         cli = re.compile(r"\bpython3\b|devloop\.py")
-        scripts = sorted([*CLAUDE_HOOKS.glob("*.sh"), *(CODEX_ASSETS / "hooks").glob("*.sh")])
+        source = '. "${0%/*}/git-pin.sh"'
+        scripts = sorted(script for hooks in self.HOOKS.values() for script in hooks.glob("*.sh") if script.name != "git-pin.sh")
         self.assertGreater(len(scripts), 15)
         for script in scripts:
             with self.subTest(script=f"{script.parent.parent.name}/{script.name}"):
                 lines = [line for line in script.read_text().splitlines() if not line.lstrip().startswith("#")]
-                pin = next((i for i, line in enumerate(lines) if all(part.search(line) for part in GUARD_PARTS)), None)
+                pin = next((i for i, line in enumerate(lines) if line.strip() == source), None)
                 self.assertIsNotNone(pin)
                 self.assertFalse([line for line in lines[:pin] if GIT_CALL.search(line) or cli.search(line)])
+
+    def test_both_payloads_ship_the_same_pin(self) -> None:
+        self.assertEqual((CLAUDE_HOOKS / "git-pin.sh").read_bytes(), (CODEX_ASSETS / "hooks" / "git-pin.sh").read_bytes())
+
+
+class HookPlantedProgramTests(unittest.TestCase):
+    """A repo config an agent wrote starts no program from a hook: textconv, clean and process filters, signature
+    verification. A failing required filter or a failing status runs the gate (#155)."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.marker = self.root / "ran"
+        self.program = self.root / "plant.sh"
+        write(self.program, f"#!/bin/sh\necho x >> {self.marker}\ncat\n")
+        os.chmod(self.program, 0o755)
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_CONFIG_")}
+        self.git("init", "-q", str(self.repo))
+        write(self.repo / ".gitattributes", "*.txt filter=plant diff=plant\n")
+        write(self.repo / "tracked.txt", "before\n")
+        self.git("-C", str(self.repo), "add", ".")
+        self.git("-C", str(self.repo), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "fixture")
+
+    def git(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], env=self.env, check=True, capture_output=True, text=True)
+
+    def plant(self, *keys: str) -> None:
+        for key in keys:
+            self.git("-C", str(self.repo), "config", key, str(self.program))
+
+    def run_hook(self, harness: str, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
+        shell = "bash" if harness == "claude" else "sh"
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.repo)}
+        return subprocess.run([shell, str(HookGitPinTests.HOOKS[harness] / script)], input=json.dumps(payload),
+                              text=True, capture_output=True, check=False, cwd=self.repo, env=env)
+
+    def stop(self, harness: str) -> subprocess.CompletedProcess[str]:
+        return self.run_hook(harness, "gate.sh", {"hook_event_name": "Stop", "cwd": str(self.repo)})
+
+    def test_tree_hash_runs_no_textconv_or_clean_filter(self) -> None:
+        self.plant("diff.plant.textconv", "filter.plant.clean")
+        write(self.repo / "tracked.txt", "after\n")
+        write(self.repo / "untracked.txt", "new\n")
+        result = self.run_hook("claude", "tree-hash.sh", {})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.marker.exists())
+
+    def test_gate_status_runs_no_clean_or_process_filter(self) -> None:
+        self.plant("filter.plant.clean", "filter.plant.process")
+        write(self.repo / "dev-loop.json", json.dumps({"commands": {"gate": "exit 1"}}))
+        (self.repo / "tracked.txt").touch()
+        for harness in ("claude", "codex"):
+            with self.subTest(harness=harness):
+                self.stop(harness)
+                self.assertFalse(self.marker.exists())
+
+    def test_a_failing_required_filter_runs_the_gate(self) -> None:
+        self.git("-C", str(self.repo), "config", "filter.plant.clean", "false")
+        self.git("-C", str(self.repo), "config", "filter.plant.required", "true")
+        write(self.repo / "dev-loop.json", json.dumps({"commands": {"gate": "echo gate ran; exit 1"}}))
+        (self.repo / "tracked.txt").write_text("after\n")
+        for harness in ("claude", "codex"):
+            with self.subTest(harness=harness):
+                self.assertIn("gate ran", json.loads(self.stop(harness).stdout)["reason"])
+
+    def test_a_failing_status_runs_the_gate(self) -> None:
+        write(self.repo / "dev-loop.json", json.dumps({"commands": {"gate": "echo gate ran; exit 1"}}))
+        (self.repo / ".git" / "index").write_bytes(b"not an index")
+        for harness in ("claude", "codex"):
+            with self.subTest(harness=harness):
+                self.assertIn("gate ran", json.loads(self.stop(harness).stdout)["reason"])
+
+    def test_the_pin_stops_signature_verification_in_log(self) -> None:
+        gpg = self.root / "gpg.sh"
+        write(gpg, f'#!/bin/sh\ncase "$*" in *--verify*) echo x >> {self.marker} ;; esac\n'
+                   'echo "[GNUPG:] SIG_CREATED " >&2\necho "-----BEGIN PGP SIGNATURE-----"\necho x\necho "-----END PGP SIGNATURE-----"\n')
+        os.chmod(gpg, 0o755)
+        self.git("-C", str(self.repo), "config", "gpg.program", str(gpg))
+        (self.repo / "tracked.txt").write_text("signed\n")
+        self.git("-C", str(self.repo), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qa", "-S", "-m", "signed")
+        self.git("-C", str(self.repo), "config", "log.showSignature", "true")
+        self.git("-C", str(self.repo), "log", "-1", "--format=%H")
+        self.assertTrue(self.marker.exists(), "control: the unpinned log verifies the signature")
+        self.marker.unlink()
+        for harness, hooks in HookGitPinTests.HOOKS.items():
+            with self.subTest(harness=harness):
+                subprocess.run(["sh", "-c", f'. "{hooks}/git-pin.sh"; git log -1 -p --format=%H'], cwd=self.repo,
+                               env=self.env, check=True, capture_output=True)
+                self.assertFalse(self.marker.exists())
 
 
 class BoardHookLaunchTests(unittest.TestCase):

@@ -2,8 +2,7 @@
 # Stop and SubagentStop gate. Run a dirty repository's commands.gate from
 # dev-loop.json (sh -c) when mapped, else its executable scripts/gate.sh.
 # The hook asks for the selective gate (GATE_SCOPE=changed). A full gate is a direct call.
-GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
-export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
+. "${0%/*}/git-pin.sh"
 input=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
 board() {
@@ -17,7 +16,8 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 cd "$cwd" 2>/dev/null || { board; exit 0; }
 gate=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$gate" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
-[ -n "$(git status --porcelain 2>/dev/null)" ] || { board; exit 0; }
+git_pin_repo .
+dirty=$(git status --porcelain 2>/dev/null) && [ -z "$dirty" ] && { board; exit 0; }
 
 if [ -n "$gate" ]; then set -- sh -c "$gate"; else set -- scripts/gate.sh; fi
 output=$(mktemp)
