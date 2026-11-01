@@ -1,4 +1,4 @@
-"""The `security-audit` skill text a brief copies: sections and fenced blocks by heading, D8 block refs, and the verdict
+"""The `security-audit` skill text a brief copies: sections and fenced blocks by heading, block refs, and the verdict
 branches of `report-schema.json`. A miss is `skill-changed` with the file and section."""
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ def changed(exc: SkillChanged) -> NoReturn:
 
 
 def lines(skill: Path, file: str, section: str) -> list[str]:
+    if "/" in file or "\\" in file or file in ("", ".", ".."):
+        raise SkillChanged(file, section)
     try:
         return (skill / file).read_text(encoding="utf-8").splitlines(keepends=True)
     except (OSError, ValueError):

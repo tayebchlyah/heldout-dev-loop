@@ -27,15 +27,19 @@ def field_errors(entry: dict) -> list[str]:
         else:
             errors += [f"starting_paths: {p!r}: {why}" for p in paths if (why := common.path_error(p))]
     block = entry.get("ordinary_attack_class_block")
-    if block is not None and not visible(block):
-        errors.append("ordinary_attack_class_block: expected null or visible text")
+    if block is not None and (why := common.block_ref_error(block)):
+        errors.append(f"ordinary_attack_class_block: {why}")
     blocks = entry.get("selected_companion_blocks", [])
-    if not isinstance(blocks, list) or not all(visible(b) for b in blocks):
-        errors.append("selected_companion_blocks: expected a list of visible text")
+    if not isinstance(blocks, list):
+        errors.append("selected_companion_blocks: expected a list of FILE.md#Name")
+    else:
+        errors += [f"selected_companion_blocks: {b!r}: {why}" for b in blocks if (why := common.block_ref_error(b))]
     excluded = entry.get("excluded_blocks", [])
-    if not isinstance(excluded, list) or not all(
-            isinstance(e, dict) and visible(e.get("block")) and visible(e.get("reason")) for e in excluded):
+    if not isinstance(excluded, list) or not all(isinstance(e, dict) and visible(e.get("reason")) for e in excluded):
         errors.append("excluded_blocks: expected a list of {block, reason}")
+    else:
+        errors += [f"excluded_blocks: {e.get('block')!r}: {why}" for e in excluded
+                   if (why := common.block_ref_error(e.get("block")))]
     return errors
 
 
@@ -54,6 +58,9 @@ def entry_errors(entry: object, *, refs_given: bool) -> list[str]:
     if "starting_paths" not in entry:
         errors.append("starting_paths: missing")
     errors += field_errors(entry)
+    attack = entry.get("attack_class")
+    if isinstance(attack, str) and "#" in attack and (why := common.block_ref_error(attack)):
+        errors.append(f"attack_class: {why}")
     if refs_given:
         if entry.get("prior_status", "none") not in common.PRIOR_STATUSES:
             errors.append("prior_status: not a prior status of the skill")
@@ -90,7 +97,7 @@ def build_unit(entry: dict, state: dict) -> dict:
     if not attack.startswith("ATTACK-CLASSES.md#") and "#" in attack and attack not in blocks:
         blocks.append(attack)
     unit = new_unit(refs, {**entry, "selected_companion_blocks": blocks,
-                           "ordinary_attack_class_block": entry.get("ordinary_attack_class_block") or (
+                           "ordinary_attack_class_block": (
                                attack if attack.startswith("ATTACK-CLASSES.md#") else None)},
                     "new" if state.get("prior") else "none")
     if not common.in_scope(state["scope"], unit["starting_paths"]):

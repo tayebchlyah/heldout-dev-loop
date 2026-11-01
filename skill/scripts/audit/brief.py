@@ -202,18 +202,22 @@ def cmd_brief(args: argparse.Namespace) -> int:
         except FileExistsError:
             common.fail("agent-exists", agent=str(folder))
         try:
-            for unit in held:
-                unit.update(status="in_progress", agent_id=agent)
-            if held:
-                common.write_ledger(run, skill, ledger)
-            inputs = {"units": [u["coverage_id"] for u in held]} if kind == "hunter" else (
-                {"fingerprint": fp} if fp else {})
-            final = bool(args.final)
-            meta = json.dumps({"kind": kind, **inputs, "final": final}, ensure_ascii=False) + "\n"
-            safefs.create_file(agent_fd, "brief.json", meta.encode("utf-8"))
-            safefs.create_file(agent_fd, "prompt.md", prompt.encode("utf-8"))
-        finally:
-            os.close(agent_fd)
+            try:
+                inputs = {"units": [u["coverage_id"] for u in held]} if kind == "hunter" else (
+                    {"fingerprint": fp} if fp else {})
+                final = bool(args.final)
+                meta = json.dumps({"kind": kind, **inputs, "final": final}, ensure_ascii=False) + "\n"
+                safefs.create_file(agent_fd, "brief.json", meta.encode("utf-8"))
+                safefs.create_file(agent_fd, "prompt.md", prompt.encode("utf-8"))
+                for unit in held:
+                    unit.update(status="in_progress", agent_id=agent)
+                if held:
+                    common.write_ledger(run, skill, ledger)
+            finally:
+                os.close(agent_fd)
+        except BaseException:
+            safefs.remove_agent_folder(run, agent)
+            raise
         state["briefs"][agent] = {"kind": kind, "units": [u["coverage_id"] for u in held], "fingerprint": fp,
                                   "final": final, "state": "open", "order": None, "reason": None, "promoted": {}}
         common.save_state(run, state)

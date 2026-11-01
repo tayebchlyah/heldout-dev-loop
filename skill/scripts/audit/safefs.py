@@ -58,6 +58,39 @@ def make_agent_folder(run: Path, agent: str) -> int:
     return agent_fd
 
 
+def remove_agent_folder(run: Path, agent: str) -> None:
+    """Remove what `make_agent_folder` and the brief files created under `run/agents/<agent>`, through folder fds, no
+    link followed. A part already gone is skipped."""
+    try:
+        agents_fd = walk(run, ["agents"])
+    except OSError:
+        return
+    try:
+        try:
+            agent_fd = open_dir(agents_fd, agent)
+        except OSError:
+            return
+        try:
+            for name in ("brief.json", "prompt.md"):
+                try:
+                    os.unlink(name, dir_fd=agent_fd)
+                except OSError:
+                    pass
+            for name in ("scratch", "artifacts"):
+                try:
+                    os.rmdir(name, dir_fd=agent_fd)
+                except OSError:
+                    pass
+        finally:
+            os.close(agent_fd)
+        try:
+            os.rmdir(agent, dir_fd=agents_fd)
+        except OSError:
+            pass
+    finally:
+        os.close(agents_fd)
+
+
 def create_file(dir_fd: int, name: str, data: bytes) -> None:
     """Create the file `name` of `dir_fd`, exclusive and no-follow, holding `data`."""
     fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
