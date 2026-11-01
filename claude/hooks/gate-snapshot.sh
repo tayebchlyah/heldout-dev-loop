@@ -3,8 +3,7 @@
 # gate.sh reads it on SubagentStop and runs no gate when nothing changed.
 # Also writes <agent_id>.head, the HEAD `devloop.py audit` starts from, before the board call: a board failure
 # cannot skip it. Then tells the board the subagent runs: a Stop while it runs waits for nobody.
-GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
-export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 ID=$(echo "$IN" | jq -r '.agent_id // empty')
 [ -n "$ID" ] || exit 0
