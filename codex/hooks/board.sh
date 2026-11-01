@@ -22,5 +22,5 @@ main=$(git -C "$cwd" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree
 cli="$main/.agents/skills/dev-loop/scripts/devloop.py"
 [ -f "$cli" ] || exit 0
 git_pin_repo "$cwd"
-{ printf '%s' "$input" | (cd "$cwd" && python3 "$cli" board --event "$1"); } </dev/null >/dev/null 2>&1 &
+{ printf '%s' "$input" | (cd "$cwd" && python3 -I "$cli" board --event "$1"); } </dev/null >/dev/null 2>&1 &
 exit 0

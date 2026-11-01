@@ -1,0 +1,101 @@
+"""Trusted checker execution through Codex hooks with linked feature inputs."""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+from support import CODEX_ASSETS, SKILL_ROOT, write
+
+
+class CodexTrustedChecksTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.main, self.feature = self.root/'main', self.root/'feature'
+        self.main.mkdir()
+        self.git(self.main, 'init', '-qb', 'main')
+        write(self.main/'dev-loop.json', '{"version":"0.0.0"}')
+        write(self.main/'.gitignore', '.agents/\n.dev-loop/\njson.py\n')
+        self.git(self.main, 'add', '.')
+        self.git(self.main, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'base')
+        self.git(self.main, 'worktree', 'add', '-qb', 'fix/feature', str(self.feature))
+        self.log, self.marker = self.root/'calls.jsonl', self.root/'host-marker'
+        self.scripts = self.main/'.agents/skills/dev-loop/scripts'
+        fake = '''import json,os,sys
+with open(os.environ['CHECK_LOG'],'a') as f:
+ f.write(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),'isolated':sys.flags.isolated})+'\\n')
+if sys.argv[1]=='search-wall': print(json.dumps({'deny':True,'reason':'trusted search denial'}))
+elif sys.argv[1]=='seal-check': print(json.dumps({'violations':[],'taint':[]}))
+elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
+'''
+        write(self.scripts/'devloop.py', fake)
+        write(self.scripts/'check_setup.py', fake.replace("if sys.argv[1]=='search-wall':", "if sys.argv[1]=='--harness': print('stop')\nelif sys.argv[1]=='search-wall':"))
+        planted = "from pathlib import Path\nPath("+repr(str(self.marker))+").write_text('feature code')\nraise SystemExit\n"
+        for name in ['devloop.py','check_setup.py','json.py']:
+            write(self.feature/'.agents/skills/dev-loop/scripts'/name, planted)
+        write(self.feature/'json.py', planted)
+        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature)}
+        self.env.pop('DEV_LOOP_NOTES', None)
+
+    def git(self, cwd, *args):
+        return subprocess.check_output(['git','-C',str(cwd),*args],text=True,stderr=subprocess.DEVNULL)
+
+    def hook(self, script, *args, **extra):
+        payload={'cwd':str(self.feature), **extra}
+        return subprocess.run(['bash' if script == 'git-guard.sh' else 'sh',str(CODEX_ASSETS/'hooks'/script),*args],cwd=self.feature,
+                              input=json.dumps(payload),capture_output=True,text=True,env=self.env)
+
+    def calls(self, expected=1):
+        end=time.monotonic()+5
+        while time.monotonic()<end:
+            rows=[json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
+            if len(rows)>=expected: break
+            time.sleep(.02)
+        self.assertEqual(len(rows), expected)
+        self.assertFalse(self.marker.exists())
+        for row in rows:
+            self.assertEqual(row['cwd'],str(self.feature))
+            self.assertEqual(row['isolated'],1)
+        return rows
+
+    def test_seal_uses_main_code_and_checks_the_feature_commit(self):
+        shutil.rmtree(self.scripts)
+        shutil.copytree(SKILL_ROOT/'scripts',self.scripts,ignore=shutil.ignore_patterns('__pycache__'))
+        write(self.feature/'tests/acceptance/probe.py','def test_probe(): pass\n')
+        self.git(self.feature,'add','tests/acceptance/probe.py')
+        self.git(self.feature,'-c','user.name=Test','-c','user.email=test@example.com','commit','-qm','unsealed')
+        sha=self.git(self.feature,'rev-parse','HEAD').strip()
+        for mode in ['turn','stop']:
+            with self.subTest(mode=mode):
+                r=self.hook('seal.sh',mode,agent_id='probe',agent_type='implementer')
+                self.assertIn('unsealed '+sha,json.loads(r.stdout)['reason'])
+                self.assertFalse(self.marker.exists())
+
+    def test_search_uses_main_checker_with_feature_payload(self):
+        r=self.hook('acceptance-wall.sh',agent_id='probe',agent_type='implementer',tool_name='Bash',
+                    tool_input={'command':'rg needle .'})
+        self.assertEqual(r.returncode,2)
+        self.assertIn('trusted search denial',r.stderr)
+        self.assertEqual(self.calls()[0]['argv'],['search-wall'])
+
+    def test_session_start_uses_main_setup_checker(self):
+        r=self.hook('session-start.sh')
+        self.assertIn('untrusted dev-loop hooks: stop',r.stdout)
+        self.assertEqual(self.calls()[0]['argv'],['--harness','codex','--repo',str(self.feature),'--hooks-trust'])
+
+    def test_board_uses_main_code_with_isolated_python(self):
+        r=self.hook('board.sh','prompt')
+        self.assertEqual((r.returncode,r.stdout),(0,''))
+        self.assertEqual(self.calls()[0]['argv'],['board','--event','prompt'])
+
+    def test_release_check_uses_main_code_with_isolated_python(self):
+        r=self.hook('git-guard.sh',tool_input={'command':'git push origin HEAD:refs/tags/v1.0.0'})
+        self.assertIn('release-check: ok',json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])
+        self.assertEqual(self.calls()[0]['argv'][:3],['release-check','--repo',str(self.feature)])
