@@ -479,7 +479,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             self.assertIn("    needs: changes\n", job)
             self.assertIn("    if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}\n", job)
 
-    def test_a_retarget_runs_every_job_again(self) -> None:
+    def test_a_retarget_runs_ci_again_on_the_new_base(self) -> None:
         ci = self.workflow("ci.yml")
         self.assertIn("  pull_request:\n    types: [opened, synchronize, reopened, edited]\n", ci)
         self.assertNotIn("github.event.action", ci)
