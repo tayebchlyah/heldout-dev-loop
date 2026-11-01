@@ -23,6 +23,7 @@
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
   devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
                                                       merge the reviewer tables by file and line
+  devloop.py review-save --reviewer NAME | --done    save a reviewer table (stdin) or the Track S marker in the git dir
   devloop.py acceptance [--failed]                    run the acceptance command, read its JUnit, record the run
   devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
                                                       the release audit plan: run folder, scope, sandbox, skill
@@ -282,6 +283,12 @@ def main() -> int:
     review = commands.add_parser("review-merge")
     review.add_argument("pairs", nargs="+")
     review.set_defaults(run=("feature_gate", "cmd_review_merge"))
+
+    save = commands.add_parser("review-save")
+    which = save.add_mutually_exclusive_group(required=True)
+    which.add_argument("--reviewer")
+    which.add_argument("--done", action="store_true")
+    save.set_defaults(run=("feature_gate", "cmd_review_save"))
 
     accept = commands.add_parser("acceptance")
     accept.add_argument("--failed", action="store_true")

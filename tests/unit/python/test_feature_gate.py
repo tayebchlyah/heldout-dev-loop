@@ -133,6 +133,67 @@ class ReviewMergeTests(TempDir):
 
 
 
+class ReviewSaveTests(TempDir):
+    def setUp(self) -> None:
+        super().setUp()
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        self.worktree = self.tmp / "wt"
+        for args in (["init", "-q", "-b", "main"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                                                      "--allow-empty", "-m", "init"],
+                     ["worktree", "add", "-q", "-b", "feat", str(self.worktree)]):
+            subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+        self.gitdir = Path(subprocess.run(["git", "-C", str(self.worktree), "rev-parse", "--absolute-git-dir"],
+                                          check=True, capture_output=True, text=True).stdout.strip())
+
+    def save(self, *args: str, text: str = "") -> tuple[int, dict]:
+        result = subprocess.run([sys.executable, str(DEVLOOP), "review-save", *args], cwd=self.worktree, input=text,
+                                capture_output=True, text=True)
+        return result.returncode, json.loads(result.stdout)
+
+    def test_saves_table_in_the_worktree_git_dir(self) -> None:
+        text = table("a.py | 3 | x | correctness | CONFIRMED: y")
+        code, out = self.save("--reviewer", "code-review", text=text)
+        target = self.gitdir / "dev-loop" / "review" / "code-review.md"
+        self.assertEqual((code, Path(out["file"]), out["findings"]), (0, target, 1))
+        self.assertIn("worktrees", target.parts)
+        self.assertEqual(target.read_text(), text)
+
+    def test_bad_table_writes_nothing(self) -> None:
+        code, out = self.save("--reviewer", "code-review", text=table("a.py | 1 | x | nope | PLAUSIBLE"))
+        self.assertEqual(code, 1)
+        self.assertIn("bad class", out["error"])
+        self.assertEqual(out["row"], 1)
+        self.assertFalse((self.gitdir / "dev-loop").exists())
+
+    def test_bad_names_are_refused(self) -> None:
+        for name in ("../x", "a/b", "..", ".", "", ".hidden", "a\\b"):
+            with self.subTest(name=name):
+                code, out = self.save("--reviewer", name, text=HEADER)
+                self.assertEqual(code, 2)
+                self.assertIn("error", out)
+        self.assertFalse((self.gitdir / "dev-loop").exists())
+
+    def test_empty_table_is_valid(self) -> None:
+        code, out = self.save("--reviewer", "security-review", text=HEADER)
+        self.assertEqual((code, out["findings"]), (0, 0))
+        self.assertTrue((self.gitdir / "dev-loop" / "review" / "security-review.md").is_file())
+
+    def test_done_writes_head(self) -> None:
+        head = subprocess.run(["git", "-C", str(self.worktree), "rev-parse", "HEAD"], check=True,
+                              capture_output=True, text=True).stdout.strip()
+        code, out = self.save("--done")
+        marker = self.gitdir / "dev-loop" / "review-done"
+        self.assertEqual((code, Path(out["file"]), out["sha"]), (0, marker, head))
+        self.assertEqual(marker.read_text().strip(), head)
+
+    def test_usage_errors(self) -> None:
+        for args in ([], ["--done", "--reviewer", "a"]):
+            result = subprocess.run([sys.executable, str(DEVLOOP), "review-save", *args], cwd=self.worktree,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, args)
+
+
 RUN_TAGS = itertools.count()
 
 
@@ -646,9 +707,9 @@ class FeatureGateTextTests(unittest.TestCase):
     def test_routes(self) -> None:
         claude = (ROOT / "skill" / "references" / "claude.md").read_text()
         codex = (ROOT / "skill" / "references" / "codex.md").read_text()
-        for needle in ("review-merge", "dev-loop/review/", "devloop.py acceptance", "run_in_background"):
+        for needle in ("review-merge", "review-save --reviewer", "devloop.py acceptance", "run_in_background"):
             self.assertIn(needle, claude)
-        for needle in ("review-merge", "dev-loop/review/", "devloop.py acceptance"):
+        for needle in ("review-merge", "review-save --reviewer", "devloop.py acceptance"):
             self.assertIn(needle, codex)
         self.assertNotIn("Monitor", codex)
         self.assertNotIn("verdict or severity", claude + codex)
