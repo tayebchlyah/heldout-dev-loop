@@ -20,6 +20,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
 - `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry of `release-record`; `sandbox-run.py`: audit sandbox runner (Docker).
+- `skill/scripts/audit/`: `audit-run` package: one module per step (`seed`, `units`, `brief`, `check`, `promote`, `fold`, `fold_review`, `close`, `report`), shared `common`, `skilltext`, `safefs`.
 - `skill/scripts/feature_gate.py`: `review-merge`, `review-save`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
 - `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, the `gate` `weakened` report; `board/`: progress board writer, server and page; `board/cli.py`: `board`.
