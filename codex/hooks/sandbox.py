@@ -9,8 +9,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 from pathlib import Path
+
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import policy
 
 
 def merge(left, right):
@@ -22,17 +27,14 @@ def merge(left, right):
     return left
 
 
-def trusted_profile(main):
-    home = Path(os.environ.get('CODEX_HOME', Path.home() / '.codex'))
-    paths = [Path('/etc/codex/config.toml'), home / 'config.toml']
-    paths += [p / '.codex/config.toml' for p in [*reversed(main.parents), main]]
-    config, seen = {}, set()
-    for path in paths:
-        if path in seen or not path.is_file():
-            continue
-        seen.add(path)
-        merge(config, tomllib.loads(path.read_text()))
-    profiles = config.get('permissions', {})
+def trusted_profile(codex, main):
+    config, requirements = policy.load(codex, main)
+    allowed = requirements.get('allowedPermissionProfiles')
+    if allowed is not None and allowed.get('dev-workspace') is not True:
+        raise ValueError('administrator disallows dev-workspace')
+    if sys.platform == 'darwin' and requirements.get('allowBrowserAndComputerUse') is False:
+        raise ValueError('administrator disallows browser compatibility')
+    profiles = config['permissions']
 
     def inherit(name, stack):
         if name in (':workspace', ':read-only'):
@@ -42,13 +44,14 @@ def trusted_profile(main):
         own = profiles[name]
         if not isinstance(own, dict):
             raise ValueError('invalid permission profile')
-        return merge(inherit(own.get('extends', ':read-only'), stack | {name}), own)
+        own = without_nulls(own)
+        return merge(inherit(own.get('extends') or ':read-only', stack | {name}), own)
 
-    return inherit('dev-workspace', set())
+    return inherit('dev-workspace', set()), requirements
 
 
 def filesystem(profile, main, feature):
-    rules = {str(Path('/tmp').resolve()): 'write'}
+    rules = {'/': 'read', str(Path('/tmp').resolve()): 'write'}
     if sys.platform == 'darwin':
         darwin_temp = subprocess.run(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'],
                                      capture_output=True, text=True, check=True).stdout.strip()
@@ -56,7 +59,11 @@ def filesystem(profile, main, feature):
             raise ValueError('invalid Darwin temporary root')
         rules[str(Path(darwin_temp).resolve())] = 'write'
     rules.update({str(main): 'read', str(feature): 'write'})
-    for root, value in profile.get('filesystem', {}).items():
+    for root, value in (profile.get('filesystem') or {}).items():
+        if root == 'glob_scan_max_depth':
+            if value is not None:
+                raise ValueError('unsupported filesystem scan limit')
+            continue
         if root == ':workspace_roots':
             bases = [main, feature]
         elif root == ':root':
@@ -78,6 +85,12 @@ def filesystem(profile, main, feature):
     return rules
 
 
+def without_nulls(value):
+    if isinstance(value, dict):
+        return {key: without_nulls(item) for key, item in value.items() if item is not None}
+    return value
+
+
 def toml(value):
     if isinstance(value, dict):
         return '{' + ','.join(json.dumps(k) + '=' + toml(v) for k, v in value.items()) + '}'
@@ -96,10 +109,12 @@ def main():
         found = re.search(r'codex-cli (\d+)\.(\d+)\.(\d+)', version.stdout)
         if not found or tuple(map(int, found.groups())) < (0, 166, 0):
             raise ValueError('require codex-cli 0.166.0 or later')
-        profile = trusted_profile(trusted)
-        network = profile.get('network', {})
+        profile, requirements = trusted_profile(codex, trusted)
+        network = without_nulls(profile.get('network') or {})
         if not isinstance(network, dict):
             raise ValueError('invalid network policy')
+        if (requirements.get('network') or {}).get('allowLocalBinding') is False:
+            network['allow_local_binding'] = False
         network |= {'unix_sockets': {}, 'dangerously_allow_all_unix_sockets': False}
         if network.get('enabled') is True:
             network['mode'] = 'full'
@@ -110,6 +125,11 @@ def main():
         args = [codex, 'sandbox', '-C', str(trusted), '-P', 'dev-workspace', '--include-managed-config']
         for key, value in overrides.items():
             args += ['-c', key + '=' + toml(value)]
+        if sys.platform == 'darwin':
+            import macos
+            return macos.run(args, overrides['permissions.dev-workspace.filesystem'], feature,
+                             sys.argv[4:], network.get('enabled') is True,
+                             network.get('allow_local_binding') is True)
         with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir='/tmp') as temp:
             started = Path(temp) / 'started'
             wrapper = 'export TMPDIR="${2%/*}" TMP="${2%/*}" TEMP="${2%/*}"; cd "$1" || exit 125; printf started >"$2" || exit 125; shift 2; exec "$@"'
