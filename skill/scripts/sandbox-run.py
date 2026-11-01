@@ -262,7 +262,7 @@ def run(args: argparse.Namespace) -> int:
         signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
         started = docker(
             "run", "-d", "--rm", "--pull", "never", "--name", ctr, "--label", "devloop.sandbox=1",
-            "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--label", f"devloop.sandbox.target={args.target}", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--user", "65534:65534", "--memory", args.memory, "--memory-swap", args.memory,
             "--pids-limit", str(args.pids), "--cpus", str(args.cpus),
             "--ulimit", f"fsize={args.file_size}", "--ulimit", "nofile=256:256", "--ulimit", "core=0",

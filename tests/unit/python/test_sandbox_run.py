@@ -80,13 +80,24 @@ class SandboxRunTests(unittest.TestCase):
 
     @classmethod
     def leftovers(cls) -> list[str]:
-        ids = docker("ps", "-a", "-q", "--filter", "label=devloop.sandbox=1").stdout.split()
-        mine = []
-        for cid in ids:
-            mounts = docker("inspect", "--format", "{{range .Mounts}}{{.Source}}\n{{end}}", cid).stdout.split("\n")
-            if any(m and Path(m).resolve() == cls.target for m in mounts):
-                mine.append(cid)
-        return mine
+        return docker("ps", "-a", "-q", "--filter", "label=devloop.sandbox=1",
+                      "--filter", f"label=devloop.sandbox.target={cls.target}").stdout.split()
+
+    def test_container_labels_name_the_target(self) -> None:
+        scratch = Path(tempfile.mkdtemp(dir=self.tmp))
+        args = [sys.executable, str(RUNNER), "--image", "t", "--scratch", str(scratch), "--", "sleep", "5"]
+        proc = subprocess.Popen(args, cwd=self.target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+        try:
+            deadline = time.monotonic() + 60
+            while not (ids := self.leftovers()) and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertEqual(len(ids), 1)
+            labels = json.loads(docker("inspect", "--format", "{{json .Config.Labels}}", ids[0]).stdout)
+            self.assertEqual(labels, {"devloop.sandbox": "1", "devloop.sandbox.target": str(self.target)})
+        finally:
+            proc.communicate(timeout=60)
+        self.assertEqual(self.leftovers(), [], "container left behind")
 
     def run_sandbox(self, *cmd: str, opts: tuple[str, ...] = (), image: str = "t", stdin: str = "",
                     env: dict | None = None, target: Path | None = None, limit: float = 90) -> tuple[subprocess.CompletedProcess, Path]:
