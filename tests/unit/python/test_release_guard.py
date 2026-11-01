@@ -318,6 +318,8 @@ class ReleaseSkillTextTests(unittest.TestCase):
         for name in ["release-record --fix-wave", "fix #<n>", "accept", "close"]:
             self.assertIn(name, step3, name)
         self.assertLess(step3.index("release-record --fix-wave"), step3.index("skills/release-audit/SKILL.md"))
+        self.assertIn("An open security item: stop, report it as `references/deferred.md` of the dev-loop skill says", step3)
+        self.assertIn("a live check when one is cheap, its output quoted under the item", step3)
         self.assertIn("Any other `--fix-wave` error (`foreign-commit`, `wave-exists`, `not-descendant`, `no-audit`, `no-project-note`), or any other `stale-audit`: follow the steps of `skills/release-audit/SKILL.md`", step3)
 
     def test_release_step_1_fixed_item_close(self) -> None:
