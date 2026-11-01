@@ -1,5 +1,6 @@
 #!/bin/sh
-# Codex PreToolUse wall (D9), matcher Bash|apply_patch. agent_id is present only in a subagent call.
+# Codex PreToolUse wall (D9), matcher
+# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates. agent_id is present only in a subagent call.
 # spec_tester: no path names src/, app/, backend/ or frontend/. Any other subagent: no path names
 # tests/acceptance. Main session: no apply_patch of a file under tests/acceptance/; its Bash stays open.
 # apply_patch (and its Edit, Write aliases): the paths are the patch file headers, never the body.
@@ -13,6 +14,13 @@
 # suite; the engine is devloop.py search-wall of the kit, skipped when no kit CLI is found, and a
 # CLI error blocks. Not walled: wrappers (xargs, env, command, sh -c, bash -c, eval), and ls -R, tree,
 # fd, ag, ack, git ls-files. The audit path rule backs up the search tools.
+# Tool walls (#97): MCP tools (mcp__*, read_mcp_resource, list_mcp_resources, list_mcp_resource_templates)
+# are denied to implementer and spec_tester; any other subagent gets the name rule on the path fields,
+# filePath and uri included, a file:// value by its path. view_image is walled by path: spec_tester the
+# source folders, any other subagent tests/acceptance. The main session keeps every tool. Code mode: no
+# hook fires on exec, one fires on each inner tool call. Not walled: write_stdin into a shell that
+# exec_command started (no hook event, #140); for other subagents an MCP search tool, an MCP tool that
+# runs code or reads a remote copy, a resource listing; the audit reads their results.
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
@@ -42,7 +50,15 @@ rel='($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] el
     | sort_by(-length)) as $tops
   | def rel: reduce $tops[] as $x (.; split($x + "/") | join("./") | split($x) | join("."));'
 
-if [ "$tool" = Bash ]; then
+case "$tool" in
+  Bash) route=shell ;;
+  view_image|mcp__*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates) route=fields ;;
+  *) route=patch ;;
+esac
+if [ "$route" = fields ] && [ -n "$agent_id" ] && [ "$tool" != view_image ]; then
+  case "$agent_type" in implementer|spec_tester) echo "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell." >&2; exit 2 ;; esac
+fi
+if [ "$route" != patch ]; then
   [ -n "$agent_id" ] || exit 0
   call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" "$rel"'
   .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)' 2>/dev/null) || fail "cannot rewrite cwd"
@@ -57,7 +73,7 @@ fi
 # The header paths come out as ./x (absolute in the repo) or <base>/x (relative); outside a git repo
 # base is the cwd, so the repo top is the cwd. Any other absolute path is dropped (not a kit path).
 # A shell write is left to seal-check (kit-changed).
-if [ "$tool" != Bash ]; then
+if [ "$route" = patch ]; then
   kit='^(\.agents/skills/(dev-loop|pause|continue|release-audit|garden|release|release-notes)|\.claude/skills/(dev-loop|pause|continue|release-audit|garden|release|release-notes)|\.dev-loop)(/|$)|^\.codex/rules/dev-loop\.rules$|^\.claude/agents/(implementer|spec-tester)\.md$|^\.codex/agents/(final-reviewer|implementer|planner|security-reviewer|spec-tester|task-reviewer)\.toml$'
   normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
   repo_rel() { awk -v t="$1" 'BEGIN { p = index(t, "/private/") == 1 ? substr(t, 9) : "/private" t }

@@ -305,7 +305,7 @@ def check_gate_guard(repo: Path) -> list[str]:
 
 MIN_VERSIONS = {
     "claude": ((2, 1, 295), "Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code."),
-    "codex": ((0, 162, 1), "codex-cli {found} is older than 0.162.1 (hooks need agent_type). Update Codex."),
+    "codex": ((0, 165, 0), "codex-cli {found} is older than 0.165.0 (network_proxy needs it). Update Codex."),
 }
 KIT_GUARDS = (".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/hooks/claude/deny-acceptance-to-subagents.sh")
 WALLED_AGENTS = ("implementer", "spec-tester")
@@ -410,6 +410,11 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
     for pattern in ["**/.env", "**/.env.*"]:
         if workspace_rules.get(pattern) != "deny":
             failures.append(f"missing Codex filesystem deny: {pattern}")
+    network = profile.get("network", {})
+    if network.get("enabled") is True and config.get("features", {}).get("network_proxy") is not True:
+        failures.append("Codex network on without the managed proxy (features.network_proxy)")
+    if network.get("dangerously_allow_all_unix_sockets") is True:
+        failures.append("Codex network dangerously_allow_all_unix_sockets opens every local socket")
 
     hooks = load_json(root / "hooks.json", failures).get("hooks", {})
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:

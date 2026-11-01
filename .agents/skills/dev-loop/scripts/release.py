@@ -29,11 +29,12 @@ from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
-RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) ")
+RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) +\S")
 RECORD_RE = re.compile(
     r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
     r"profile \S+, scope (whole|[0-9a-f]{40}\.\.[0-9a-f]{40})$"
 )
+WAVE_RE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) fix wave at ([0-9a-f]{40}): (#[1-9]\d*(?:, #[1-9]\d*)*)$")
 CLOSING_WORDS = ("accept", "close")
 FINGERPRINT_RE = re.compile(r"Fingerprint `([^`]+)`")
 SECURITY_RE = re.compile(r"(?i)\bsecurity\b")
@@ -67,8 +68,8 @@ def section(text: str, heading: str) -> list[str]:
 def security_items(text: str) -> tuple[list[dict], list[str]]:
     """(open items, unparsed lines) of `## Deferred`.
 
-    An item is `{line, verdict, source, fingerprint}`. A `needs-validation` item with a ruling `accept` or `close`
-    is closed and left out. A top-level bullet that names security and does not match the item format is unparsed.
+    An item is `{line, verdict, source, fingerprint}`. An item with a ruling `accept` or `close` is closed and left
+    out. A top-level bullet that names security and does not match the item format is unparsed.
     """
     items: list[dict] = []
     unparsed: list[str] = []
@@ -98,7 +99,7 @@ def security_items(text: str) -> tuple[list[dict], list[str]]:
         elif line.strip() and not line[0].isspace():
             finish()
             current, closed = None, False
-        elif current is not None and current["verdict"] == "needs-validation":
+        elif current is not None:
             ruling = RULING_RE.match(line)
             if ruling and ruling.group(1) in CLOSING_WORDS:
                 closed = True
@@ -116,8 +117,57 @@ def current_record(text: str) -> dict | None:
     return found
 
 
+def current_wave(text: str, run: str) -> dict | None:
+    """`{line, run, sha, issues}` of the last fix wave bullet of `## Release audits` for `run`, or None."""
+    found = None
+    for line in section(text, "Release audits"):
+        match = WAVE_RE.match(line.rstrip())
+        if match and match.group(2) == run:
+            issues = [int(n) for n in re.findall(r"#(\d+)", match.group(4))]
+            found = {"line": line.rstrip(), "run": run, "sha": match.group(3), "issues": issues}
+    return found
+
+
 def run_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+
+
+def names_issue(subject: str, n: int) -> bool:
+    return re.search(rf"#{n}(?!\d)", subject) is not None
+
+
+def code_commit(repo: Path, sha: str) -> bool:
+    """True when the commit changes, against its first parent, a path that is neither a test or doc path nor allowed
+    by the `ci-skip` rules. A root commit: any path. A bad `version_files`: every non-test, non-doc path."""
+    parent = run_git(repo, "rev-parse", "--verify", "--quiet", f"{sha}^1")
+    if parent.returncode != 0:
+        listed = run_git(repo, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", sha)
+        return bool(listed.stdout.strip("\0"))
+    base = parent.stdout.strip()
+    diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, sha)
+    paths = [p for p in diff.stdout.split("\0") if p]
+    code = [p for p in paths if not is_test_or_doc(p)]
+    if not code:
+        return False
+    try:
+        return bool(set(ci_skip.blocking(repo, base, sha, paths)).intersection(code))
+    except ci_skip.ConfigError:
+        return True
+
+
+def wave_check(repo: Path, record_sha: str, head: str, issues: list[int]) -> dict | None:
+    """Why `record_sha..head` is not a fix wave of `issues`: `foreign-commit` (a code commit that names none of them)
+    or `unfixed` (an issue no subject names), else None. Subjects first: paths only for a commit that names none."""
+    log = run_git(repo, "log", "--format=%H%x00%s", f"{record_sha}..{head}")
+    commits = [line.split("\0", 1) for line in log.stdout.splitlines() if "\0" in line]
+    foreign = [{"sha": sha, "subject": subject} for sha, subject in commits
+               if not any(names_issue(subject, n) for n in issues) and code_commit(repo, sha)]
+    if foreign:
+        return {"error": "foreign-commit", "commits": foreign}
+    unfixed = sorted({n for n in issues if not any(names_issue(subject, n) for _, subject in commits)})
+    if unfixed:
+        return {"error": "unfixed", "issues": unfixed}
+    return None
 
 
 def mismatch(notes: Path, record: dict) -> str | None:
@@ -161,6 +211,21 @@ def is_release_tag(name: str) -> bool:
     return fnmatch.fnmatchcase(name, "v*")
 
 
+def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str) -> str | None:
+    """Why `release-check` does not measure from the fix wave: `not-ancestor`, `foreign-commit`, `unfixed` or
+    `released: <tag>` (a `v*` tag that holds the wave and points elsewhere than the target), else None."""
+    sha = wave["sha"]
+    if (sha == record_sha or run_git(repo, "merge-base", "--is-ancestor", record_sha, sha).returncode != 0
+            or run_git(repo, "merge-base", "--is-ancestor", sha, target).returncode != 0):
+        return "not-ancestor"
+    if (refused := wave_check(repo, record_sha, sha, wave["issues"])) is not None:
+        return refused["error"]
+    for tag in run_git(repo, "tag", "--list", "--sort=refname", "v*", "--contains", sha).stdout.split():
+        if run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}").stdout.strip() != target:
+            return f"released: {tag}"
+    return None
+
+
 def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple[dict, int]:
     """The release gate: a current audit record and no open security item. Exit 0 when ok.
 
@@ -170,7 +235,8 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple
         return {"error": f"cannot resolve {target}"}, 1
     sha = resolved.stdout.strip()
     if tag is not None and not is_release_tag(tag):
-        return {"ok": True, "tag": tag, "target": sha, "record": None, "reasons": [], "skipped": "not-a-release-tag"}, 0
+        return {"ok": True, "tag": tag, "target": sha, "record": None, "reasons": [], "wave": None, "wave_ignored": None,
+                "skipped": "not-a-release-tag"}, 0
     if notes is None:
         return {"error": "notes path unresolved"}, 1
     note = project_note(notes)
@@ -181,20 +247,28 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple
     except (OSError, ValueError) as exc:
         return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
     reasons: list[dict] = []
+    wave = ignored = None
     record = current_record(text)
     if record is None:
         reasons.append({"reason": "no-audit"})
     elif (detail := mismatch(notes, record)) is not None:
         reasons.append({"reason": "record-mismatch", "detail": detail})
-    elif record["sha"] != sha and (paths := stale_paths(repo, record["sha"], sha)) is not None:
-        reasons.append({"reason": "stale-audit", "paths": paths})
+    else:
+        base = record["sha"]
+        if (found := current_wave(text, record["run"])) is not None:
+            ignored = wave_ignored(repo, base, found, sha)
+            if ignored is None:
+                wave, base = found["line"], found["sha"]
+        if base != sha and (paths := stale_paths(repo, base, sha)) is not None:
+            reasons.append({"reason": "stale-audit", "paths": paths})
     items, unparsed = security_items(text)
     if items:
         reasons.append({"reason": "open-security", "items": [i["line"] for i in items]})
     if unparsed:
         reasons.append({"reason": "unparsed-security", "lines": unparsed})
     ok = not reasons
-    return {"ok": ok, "tag": tag, "target": sha, "record": record["line"] if record else None, "reasons": reasons}, 0 if ok else 1
+    return {"ok": ok, "tag": tag, "target": sha, "record": record["line"] if record else None, "wave": wave,
+            "wave_ignored": ignored, "reasons": reasons}, 0 if ok else 1
 
 
 def skill_dir(harness: str, env: Mapping[str, str]) -> Path:
@@ -478,6 +552,43 @@ def add_lines(lines: list[str], heading: str, new: list[str], blank_before: bool
         lines.insert(last + 1 + len(block), "")
 
 
+def note_lock(repo: Path) -> Path:
+    """The lock file every project note write of the release commands holds (`decide` holds it too)."""
+    common = run_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    lock = Path(common or repo) / "dev-loop" / "decide.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    return lock
+
+
+def fix_wave(repo: Path, notes: Path, issues: list[int]) -> tuple[dict, int]:
+    """Write the fix wave line of the current record at HEAD. Exit 0, else 1 with `error` and the note untouched."""
+    note = project_note(notes)
+    if note is None:
+        return {"error": "no-project-note"}, 1
+    head = run_git(repo, "rev-parse", "--verify", "--quiet", "HEAD^{commit}").stdout.strip()
+    with open(note_lock(repo), "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        try:
+            text = note.read_text()
+        except (OSError, ValueError) as exc:
+            return {"error": f"cannot read {note.name}: {type(exc).__name__}"}, 1
+        current = current_record(text)
+        if current is None:
+            return {"error": "no-audit"}, 1
+        if current_wave(text, current["run"]) is not None:
+            return {"error": "wave-exists"}, 1
+        if head == current["sha"] or run_git(repo, "merge-base", "--is-ancestor", current["sha"], head).returncode != 0:
+            return {"error": "not-descendant"}, 1
+        if (refused := wave_check(repo, current["sha"], head, issues)) is not None:
+            return refused, 1
+        line = f"- {date.today().isoformat()} {current['run']} fix wave at {head}: {', '.join(f'#{n}' for n in sorted(set(issues)))}"
+        lines = text.split("\n")
+        add_lines(lines, "Release audits", [line])
+        out = "\n".join(lines)
+        write_atomic(note, out if out.endswith("\n") else out + "\n")
+    return {"wave": line}, 0
+
+
 def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, env: Mapping[str, str]) -> tuple[dict, int]:
     """Validate a finished audit run, then write its Deferred lines, Gardener line and record line in one write of the
     project note. Exit 0, else 1 with `error` and the note untouched."""
@@ -512,10 +623,7 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
     today = date.today().isoformat()
     name = run.name
     scope = "whole" if base is None else f"{base}..{sha}"
-    common = run_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
-    lock = Path(common or repo) / "dev-loop" / "decide.lock"
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock, "w") as held:
+    with open(note_lock(repo), "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
         try:
             text = note.read_text()
@@ -530,17 +638,21 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
             if base != expected:
                 return {"error": "bad-base", "expected_base": expected}, 1
         open_prints = {i["fingerprint"] for i in security_items(text)[0] if i["fingerprint"]}
+        garden_prints = {m.group(1) for line in section(text, "Gardener") if (m := FINGERPRINT_RE.search(line))}
         deferred: list[str] = []
+        low: list[str] = []
         skipped: list[str] = []
         for item in findings:
             verdict = verdicts.get(item.get("verdict"))
             if verdict is None:
                 continue
+            severity = item.get("severity")
+            is_low = verdict == "confirmed" and isinstance(severity, dict) and severity.get("overall_severity") in ("low", "informational")
             fingerprint = one_line(item["fingerprint"]) if item.get("fingerprint") else ""
-            if fingerprint and fingerprint in open_prints:
+            if fingerprint and (fingerprint in open_prints or is_low and fingerprint in garden_prints):
                 skipped.append(fingerprint)
                 continue
-            open_prints.add(fingerprint)
+            (garden_prints if is_low else open_prints).add(fingerprint)
             detail = "FINDINGS-DETAIL.md" if verdict == "confirmed" else "NEEDS-VALIDATION.md"
             blockers = item.get("blockers")
             blocker = one_line(blockers[0]) if verdict == "needs-validation" and isinstance(blockers, list) and blockers and blockers[0] else ""
@@ -550,7 +662,10 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
             if blocker:
                 parts.append(f"Blocker: {blocker}.")
             parts.append(f"Details: {AUDITS}/{name}/{detail}.")
-            deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
+            if is_low:
+                low.append(f"- {today} (security, low, {name}): {' '.join(parts)}")
+            else:
+                deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
         counts = {v: sum(1 for r in findings if r.get("verdict") == v) for v in verdicts}
         hardening = hardening_count(run / "REPORT.md")
         gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see {AUDITS}/{name}/REPORT.md" if hardening else None
@@ -559,12 +674,12 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         lines = text.split("\n")
         if deferred:
             add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *deferred], blank_before=True)
-        if gardener:
-            add_lines(lines, "Gardener", [gardener])
+        if low or gardener:
+            add_lines(lines, "Gardener", [*low, *([gardener] if gardener else [])])
         add_lines(lines, "Release audits", [line])
         out = "\n".join(lines)
         write_atomic(note, out if out.endswith("\n") else out + "\n")
-    return {"record": line, "deferred": deferred, "skipped": skipped, "gardener": gardener}, 0
+    return {"record": line, "deferred": deferred, "low": low, "skipped": skipped, "gardener": gardener}, 0
 
 
 def section_body(text: str, version: str) -> list[str] | None:
@@ -636,4 +751,6 @@ def cmd_release_record(args: argparse.Namespace) -> int:
         return emit({"error": str(exc)}, 1)
     if "security-audit" in old_layout(notes):
         return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
-    return emit(*record(repo, notes, Path(args.run_folder), args.base, args.harness, os.environ))
+    if args.fix_wave:
+        return emit(*fix_wave(repo, notes, args.issues))
+    return emit(*record(repo, notes, Path(args.run_folder), args.base, args.harness or "claude", os.environ))

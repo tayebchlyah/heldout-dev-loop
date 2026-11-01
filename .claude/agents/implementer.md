@@ -3,9 +3,10 @@ name: implementer
 description: Implements one plan task from a brief. Never reads the held-out acceptance suite in tests/acceptance. Use for every SDD implementer dispatch.
 model: sonnet
 effort: medium
+disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool
 hooks:
   PreToolUse:
-    - matcher: "Read|Edit|Write|Grep|Glob|Bash"
+    - matcher: "Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool"
       hooks:
         - type: command
           command: '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny-path.sh" tests/acceptance'
