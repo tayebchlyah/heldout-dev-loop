@@ -238,8 +238,8 @@ class HookPlantedProgramTests(unittest.TestCase):
 
     def test_the_pin_stops_signature_verification_in_log(self) -> None:
         gpg = self.root / "gpg.sh"
-        write(gpg, f'#!/bin/sh\ncase "$*" in *--verify*) echo x >> {self.marker} ;; esac\n'
-                   'echo "[GNUPG:] SIG_CREATED " >&2\necho "-----BEGIN PGP SIGNATURE-----"\necho x\necho "-----END PGP SIGNATURE-----"\n')
+        write(gpg, f'#!/bin/sh\ncat >/dev/null\ncase "$*" in *--verify*) echo x >> {self.marker} ;; esac\n'
+                   'printf "\\n[GNUPG:] SIG_CREATED \\n" >&2\necho "-----BEGIN PGP SIGNATURE-----"\necho x\necho "-----END PGP SIGNATURE-----"\n')
         os.chmod(gpg, 0o755)
         self.git("-C", str(self.repo), "config", "gpg.program", str(gpg))
         (self.repo / "tracked.txt").write_text("signed\n")
