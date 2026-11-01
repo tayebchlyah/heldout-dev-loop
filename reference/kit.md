@@ -100,6 +100,8 @@ Tool walls upgrade (#97): `upgrade` replaces the `deny-acceptance-to-subagents.s
 
 Git guard on Monitor (#154): `upgrade` moves the Claude `git-guard.sh` entry from matcher `Bash` to `Bash|Monitor`, so a `Monitor` command gets the same push, `gh`, reset and seal decisions as a Bash command. No user step.
 
+Hook git config pin (#155): every kit hook script (Claude and Codex) appends `core.fsmonitor=false` to the `GIT_CONFIG_*` entries before its first git or CLI call, as `scripts/gate.sh` does, and the audit patch ids run with `--no-textconv`: a `core.fsmonitor` or `diff.<driver>.textconv` program in the repo config, or in a git dir a rewritten `.git` pointer names, no longer runs from a hook. No user step; Codex hook entries are unchanged, so no `/hooks` trust.
+
 Effort upgrade: `upgrade` adds `effortLevel`, `autoCompactWindow`, the Codex root `model_reasoning_effort` and the `worktree-wall.sh` entry, writes `.codex/agents/planner.toml`, and keeps each value the user set.
 
 Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fails below it). `upgrade` merges `[features]`, `[permissions.dev-workspace.network]` and `[permissions.dev-workspace.network.domains]` key by key: each missing kit key is added, each project value is kept and named in a `kept your own <table> <key>` line. It adds `network_proxy`, `mode`, `allow_local_binding`, the domains and the `dev-docker` tables. Other tables keep the table-level merge.

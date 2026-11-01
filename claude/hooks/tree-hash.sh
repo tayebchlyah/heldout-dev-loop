@@ -2,6 +2,8 @@
 # Prints one hash of the working tree: HEAD, every tracked change and every
 # untracked file that is not ignored, by name and content. Shared by gate.sh
 # and gate-snapshot.sh, so a subagent that wrote nothing compares equal.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 {
   git rev-parse --verify --quiet HEAD || true
   git diff HEAD --binary --no-ext-diff 2>/dev/null || true

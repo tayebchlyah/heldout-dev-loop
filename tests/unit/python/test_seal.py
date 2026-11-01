@@ -248,6 +248,18 @@ class AuditTests(unittest.TestCase):
         git(self.repo, "commit", "-q", "-m", message)
         return self.head()
 
+    def test_patch_ids_run_no_textconv_program(self) -> None:
+        marker = self.tmp / "ran"
+        conv = self.tmp / "conv.sh"
+        put(conv, f"#!/bin/sh\necho x >> {marker}\ncat \"$1\"\n")
+        conv.chmod(0o755)
+        git(self.repo, "config", "diff.probe.textconv", str(conv))
+        put(self.repo / ".gitattributes", "* diff=probe\n")
+        sha = self.commit("README.md", "changed\n", "change")
+        self.assertTrue(audit_module.patch_ids(self.repo, "diff", f"{sha}^", sha))
+        self.assertTrue(audit_module.patch_ids(self.repo, "log", "-p", "--format=commit %H", "HEAD"))
+        self.assertFalse(marker.exists())
+
     def mark_start(self, agent_id: str) -> None:
         put(Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop-subagents" / f"{agent_id}.head",
             self.head() + "\n")

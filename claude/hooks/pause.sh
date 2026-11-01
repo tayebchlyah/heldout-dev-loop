@@ -2,6 +2,8 @@
 # StopFailure(rate_limit): write the pause note of the feature worktree, so another session can take the work over.
 # Hook input JSON on stdin goes to `devloop.py pause --event`, the CLI of the hook cwd's top level (it skips a cwd that
 # is not a feature worktree). Output and exit code are ignored by Claude Code: always silent, exit 0.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 input=$(cat)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] || exit 0

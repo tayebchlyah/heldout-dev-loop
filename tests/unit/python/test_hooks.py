@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -121,6 +122,43 @@ class ClaudeGateTests(unittest.TestCase):
                                             check=False, env={**os.environ, **env})
                     self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
                     self.assertFalse(marker.exists())
+
+    def test_a_repo_fsmonitor_runs_no_program(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            repo = self.repo(root)
+            marker = repo / "ran"
+            monitor = Path(root) / "monitor.sh"
+            write(monitor, f"#!/bin/sh\necho x >> {marker}\n")
+            os.chmod(monitor, 0o755)
+            subprocess.run(["git", "-C", str(repo), "config", "core.fsmonitor", str(monitor)], check=True)
+            unpinned = {key: value for key, value in os.environ.items() if not key.startswith("GIT_CONFIG_")}
+            for command, payload, env in (
+                    (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
+                    (["sh", str(CODEX_ASSETS / "hooks" / "gate.sh")], {"hook_event_name": "Stop", "cwd": str(repo)}, {})):
+                marker.unlink(missing_ok=True)
+                with self.subTest(hook=command[1]):
+                    result = subprocess.run(command, input=json.dumps(payload), text=True, capture_output=True,
+                                            check=False, cwd=repo, env={**unpinned, **env})
+                    self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
+                    self.assertFalse(marker.exists())
+
+
+class HookFsmonitorPinTests(unittest.TestCase):
+    """Each kit hook script pins core.fsmonitor off before its first git or CLI call (#155)."""
+
+    def test_each_hook_pins_fsmonitor_before_git(self) -> None:
+        sys.path.insert(0, str(CLAUDE_HOOKS.parent.parent / "skill" / "scripts"))
+        from check_setup import GIT_CALL, GUARD_PARTS
+
+        cli = re.compile(r"\bpython3\b|devloop\.py")
+        scripts = sorted([*CLAUDE_HOOKS.glob("*.sh"), *(CODEX_ASSETS / "hooks").glob("*.sh")])
+        self.assertGreater(len(scripts), 15)
+        for script in scripts:
+            with self.subTest(script=f"{script.parent.parent.name}/{script.name}"):
+                lines = [line for line in script.read_text().splitlines() if not line.lstrip().startswith("#")]
+                pin = next((i for i, line in enumerate(lines) if all(part.search(line) for part in GUARD_PARTS)), None)
+                self.assertIsNotNone(pin)
+                self.assertFalse([line for line in lines[:pin] if GIT_CALL.search(line) or cli.search(line)])
 
 
 class BoardHookLaunchTests(unittest.TestCase):

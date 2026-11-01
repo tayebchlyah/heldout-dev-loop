@@ -2,6 +2,8 @@
 # Tell Codex when the active repository runs the dev loop.
 # Codex skips an untrusted project hook without a message: name the untrusted events. This line shows
 # only when this hook itself is trusted; check_setup.py stays the full check.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 input=$(cat)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] || exit 0

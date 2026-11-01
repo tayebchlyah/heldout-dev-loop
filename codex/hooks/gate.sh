@@ -2,6 +2,8 @@
 # Stop and SubagentStop gate. Run a dirty repository's commands.gate from
 # dev-loop.json (sh -c) when mapped, else its executable scripts/gate.sh.
 # The hook asks for the selective gate (GATE_SCOPE=changed). A full gate is a direct call.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 input=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
 board() {
