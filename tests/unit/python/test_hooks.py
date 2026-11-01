@@ -113,11 +113,8 @@ class ClaudeGateTests(unittest.TestCase):
             repo = self.repo(root)
             marker = repo / "ran"
             write(repo / "json.py", f"open({str(marker)!r}, 'a').write('json')\nraise SystemExit\n")
-            fake = repo / "bin" / "codex"
-            write(fake, '#!/bin/sh\nif [ "$1" = --version ]; then echo codex-cli 0.166.0; exit; fi\nwhile [ "$1" != -- ]; do shift; done\nshift; exec "$@"\n')
-            fake.chmod(0o755)
-            write(repo / ".codex/config.toml", '[permissions.dev-workspace]\nextends=":workspace"\n')
-            codex_env = {"PATH": str(fake.parent) + os.pathsep + os.environ["PATH"], "CODEX_HOME": str(repo / "home")}
+            from support import codex_gate_env
+            codex_env = codex_gate_env(repo)
             for command, payload, env in (
                     (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
                     (["sh", str(CODEX_ASSETS / "hooks" / "gate.sh")], {"hook_event_name": "Stop", "cwd": str(repo)}, codex_env)):
