@@ -96,10 +96,11 @@ if [ -n "$verdict" ]; then
   exit 2
 fi
 word='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
-cli=$top/.agents/skills/dev-loop/scripts/devloop.py
+main=$(git -C "$top" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+cli=$main/.agents/skills/dev-loop/scripts/devloop.py
 if [ "$tool" = Bash ] && [ -n "$agent_id" ] && [ "$agent_type" != spec_tester ] && [ -n "$top" ] && [ -f "$cli" ] \
   && field .tool_input.command | grep -Eq "$word"; then
-  out=$(printf '%s' "$input" | python3 "$cli" search-wall 2>/dev/null) || fail "search check failed"
+  out=$(printf '%s' "$input" | python3 -I "$cli" search-wall 2>/dev/null) || fail "search check failed"
   printf '%s' "$out" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "search check failed"
   if [ "$(printf '%s' "$out" | jq -r '.deny')" = true ]; then
     printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason')" >&2
