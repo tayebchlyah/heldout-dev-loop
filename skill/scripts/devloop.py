@@ -353,6 +353,9 @@ def main() -> int:
     brief.add_argument("--fingerprint")
     step("check", "check").add_argument("--agent", required=True)
     step("promote", "promote").add_argument("--agent", required=True)
+    fold = step("fold", "fold")
+    fold.add_argument("--agent", required=True)
+    fold.add_argument("--discard")
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
