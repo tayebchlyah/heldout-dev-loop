@@ -110,6 +110,7 @@ wire("test_push_spellings")
 wire("test_hooks")
 wire("test_kit_contracts")
 wire("test_mutation")
+wire("test_audit_common")
 
 
 class JUnitReportTests(unittest.TestCase):
