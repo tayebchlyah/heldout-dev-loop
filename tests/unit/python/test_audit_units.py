@@ -60,6 +60,25 @@ class AuditUnitsTests(AuditRunCase):
         out, code = self.step("units", "--add", self.file([self.entry("b.py", status="deferred")]))
         self.assertEqual((code, out["error"], out["entry"]), (1, "invalid", 0))
 
+    def test_block_refs_name_a_bare_skill_file(self) -> None:
+        self.add_units(self.entry("a.py"))
+        for change in ({"attack": "../outside.md#H"}, {"selected_companion_blocks": ["/abs/outside.md#H"]},
+                       {"ordinary_attack_class_block": "sub/x.md#H"},
+                       {"excluded_blocks": [{"block": "../x.md#H", "reason": "r"}]}):
+            before = self.snapshot()
+            out, code = self.step("units", "--add", self.file([self.entry("b.py", **change)]))
+            self.assertEqual((code, out["error"]), (1, "invalid"), change)
+            self.assertEqual(self.snapshot(), before)
+        (uid,) = [u["coverage_id"] for u in self.ledger()]
+        out, code = self.step("units", "--update", self.file([{"coverage_id": uid, "selected_companion_blocks": ["../x.md#H"]}]))
+        self.assertEqual((code, out["error"]), (1, "invalid"))
+
+    def test_fold_derives_the_ordinary_block_from_the_attack_class_only(self) -> None:
+        unit = units.build_unit({**UNCOVERED, "attack_class": "AI-AND-LLM.md#Core discipline",
+                                 "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control"}, STATE)
+        self.assertIsNone(unit["ordinary_attack_class_block"])
+        self.assertEqual(unit["selected_companion_blocks"], ["AI-AND-LLM.md#Core discipline"])
+
     def test_update_planned_unit(self) -> None:
         (uid,) = self.add_units(self.entry("a.py"))
         out, code = self.step("units", "--update", self.file(

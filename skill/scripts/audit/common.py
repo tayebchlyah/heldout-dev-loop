@@ -170,6 +170,19 @@ def ref_errors(value: object) -> list[str]:
     return errors
 
 
+def block_ref_error(value: object) -> str | None:
+    """Why `value` is no block ref `FILE.md#Name`, else `None`: the file part is a bare `.md` file name of the skill
+    folder (no `/`, no `\\`, not `.` or `..`), the name part visible text."""
+    if not isinstance(value, str) or ref_errors(value):
+        return "expected visible text"
+    file, _, name = value.partition("#")
+    if "#" not in value or ref_errors(name):
+        return "expected FILE.md#Name"
+    if "/" in file or "\\" in file or file in (".", "..") or not file.endswith(".md") or file == ".md":
+        return "the file part must be a bare .md file name"
+    return None
+
+
 def coverage_id(refs: dict) -> str:
     """The coverage id of canonical refs: each ref percent-encoded (RFC 3986 unreserved kept), joined with `::`."""
     keys = REF_KEYS + (("lifecycle",) if "lifecycle" in refs else ())

@@ -63,6 +63,22 @@ class AuditCheckTests(AuditRunCase):
                 self.write_result(agent, result)
                 self.invalid(agent, named)
 
+    def test_block_refs_name_a_bare_skill_file(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        base = {"surface": "n", "boundary": "B", "subsystem": "S", "attack_class": "AI-AND-LLM.md#Tool",
+                "starting_paths": ["a.py"], "reason": "r"}
+        bad = {"dotdot attack class": {"attack_class": "../outside.md#H"},
+               "absolute companion block": {"selected_companion_blocks": ["/abs/outside.md#H"]},
+               "folder ordinary block": {"ordinary_attack_class_block": "sub/x.md#H"},
+               "excluded block": {"excluded_blocks": [{"block": "..\\x.md#H", "reason": "r"}]},
+               "not a markdown file": {"selected_companion_blocks": ["x.txt#H"]}}
+        for name, change in bad.items():
+            with self.subTest(name):
+                self.write_result(agent, self.hunter_result(agent, ids, uncovered=[{**base, **change}]))
+                self.invalid(agent, "uncovered[0]")
+        self.write_result(agent, self.hunter_result(agent, ids, uncovered=[base]))
+        self.assertEqual(self.check(agent), ({"ok": True}, 0))
+
     def test_candidate_through_the_findings_validator(self) -> None:
         agent, ids = self.hunter_brief("a.py")
         result = self.hunter_result(agent, ids, candidates=[self.candidate("f-1")])
