@@ -5,6 +5,8 @@
 # stop_hook_active true: no block. Input that is not JSON, no dev-loop.json, or no CLI: exit 0, silent.
 # The CLI is the one of the worktree that holds the hook cwd (CLAUDE_PROJECT_DIR when the input has none).
 # Never starts the board.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 mode=$1
 input=$(cat)
 printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || exit 0

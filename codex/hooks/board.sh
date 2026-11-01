@@ -5,6 +5,8 @@
 # git worktree add (also with -C <path>), gh pr create, gh pr merge). The CLI comes from the main worktree of the
 # hook cwd.
 # The background group holds none of the hook's pipes, so the hook returns at once.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 input=$(cat)
 if [ "$1" = post-tool ]; then
   command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
