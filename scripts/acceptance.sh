@@ -4,9 +4,12 @@
 # run and is listed (rule in scripts/temp_leak.sh). DEVLOOP_REPORT_DIR set: JUnit XML there, acceptance-python.xml,
 # acceptance-node.xml and acceptance-temp-leak.xml (one case temp-leak TMPDIR, failing on a leak).
 # Exit 1 when one part fails, the tests leave a temp leak, or (reports on) no held-out test ran.
+# It waits for the suite lock (scripts/suite_lock.sh): one suite run at a time across the worktrees.
 set -u
 cd "$(dirname "$0")/.."
 . scripts/temp_leak.sh
+. scripts/suite_lock.sh
+suite_lock || exit 1
 folder=${1:-tests/acceptance}
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -19,8 +22,8 @@ if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
 fi
 
 status=0
-TMPDIR="$scratch" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"} || status=1
-TMPDIR="$scratch" node --test ${node_report[@]+"${node_report[@]}"} "$folder"/*.test.mjs || status=1
+TMPDIR="$scratch" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"} 9>&- || status=1
+TMPDIR="$scratch" node --test ${node_report[@]+"${node_report[@]}"} "$folder"/*.test.mjs 9>&- || status=1
 left=$(temp_leak "$scratch")
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
