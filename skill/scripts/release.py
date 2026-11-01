@@ -433,8 +433,10 @@ def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
     return sorted(p for p in kit_matches(repo, head, changed, ref) & changed if only_upgrades(p))
 
 
-def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:
-    """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created."""
+def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None,
+         require_sandbox: bool = False) -> tuple[dict, int]:
+    """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created.
+    `require_sandbox`: `no-sandbox` (`no-images`, else `no-engine`) after every other check."""
     if notes is None:
         return {"error": "notes path unresolved"}, 1
     note = project_note(notes)
@@ -471,10 +473,6 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     ) if audits.is_dir() else []
     n = runs[-1][0] + 1 if runs else 1
     out = audits / f"Run {n}"
-    try:
-        out.mkdir(parents=True)
-    except FileExistsError:
-        return {"error": "run-folder-exists", "output": str(out)}, 1
     top = run_git(repo, "rev-parse", "--show-toplevel").stdout.strip() or str(repo)
     try:
         config = json.loads((Path(top) / "dev-loop.json").read_text())
@@ -482,6 +480,15 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         config = {}
     audit = config.get("security_audit") if isinstance(config, dict) else None
     images = audit.get("images") if isinstance(audit, dict) else None
+    if require_sandbox and not (isinstance(images, dict) and images):
+        return {"error": "no-sandbox", "reason": "no-images"}, 1
+    engine = docker_up()
+    if require_sandbox and not engine:
+        return {"error": "no-sandbox", "reason": "no-engine"}, 1
+    try:
+        out.mkdir(parents=True)
+    except FileExistsError:
+        return {"error": "run-folder-exists", "output": str(out)}, 1
     return {
         "run": f"Run {n}",
         "output": str(out),
@@ -494,7 +501,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         "exclude": exclude,
         "prior_runs": [str(p) for _, p in runs],
         "sandbox": {
-            "engine": docker_up(),
+            "engine": engine,
             "images": images if isinstance(images, dict) else {},
             "runner": str(Path(__file__).resolve().parent / "sandbox-run.py"),
         },
@@ -740,7 +747,7 @@ def cmd_release_plan(args: argparse.Namespace) -> int:
         return emit({"error": str(exc)}, 1)
     if "security-audit" in old_layout(notes):
         return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
-    return emit(*plan(repo, notes, args.harness, args.profile, args.budget))
+    return emit(*plan(repo, notes, args.harness, args.profile, args.budget, args.require_sandbox))
 
 
 def cmd_release_record(args: argparse.Namespace) -> int:

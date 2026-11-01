@@ -418,6 +418,54 @@ class ReleasePlanTests(PlanRepo):
         self.assertTrue(Path(out["sandbox"]["runner"]).is_absolute())
         self.assertTrue(out["sandbox"]["runner"].endswith("scripts/sandbox-run.py"))
 
+    def bin_path(self, docker: bool) -> str:
+        only = self.root / ("bin-docker" if docker else "bin")
+        only.mkdir(exist_ok=True)
+        for tool in ("git", Path(sys.executable).name):
+            if not (only / tool).exists():
+                (only / tool).symlink_to(shutil.which(tool) or sys.executable)
+        if docker:
+            (only / "docker").write_text("#!/bin/sh\nexit 0\n")
+            (only / "docker").chmod(0o755)
+        return str(only)
+
+    def config(self, config: dict) -> None:
+        (self.repo / "dev-loop.json").write_text(json.dumps(config))
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "cfg")
+
+    def test_require_sandbox_refusals(self) -> None:
+        audits = self.notes / "Security Audit"
+        rows = [(None, False, "no-images"), ({"images": {}}, True, "no-images"), ({"images": ["x"]}, True, "no-images"),
+                ({"images": "x"}, True, "no-images"), ({"images": {"t": "x"}}, False, "no-engine")]
+        for audit, docker, reason in rows:
+            with self.subTest(audit=audit, docker=docker):
+                self.config({} if audit is None else {"security_audit": audit})
+                out, code = self.plan("--require-sandbox", path=self.bin_path(docker))
+                self.assertEqual((code, out), (1, {"error": "no-sandbox", "reason": reason}))
+                self.assertFalse(audits.exists() and any(audits.iterdir()))
+        out, code = self.plan(path=self.bin_path(False))
+        self.assertEqual((code, out["sandbox"]["engine"]), (0, False))
+
+    def test_require_sandbox_passes_with_engine(self) -> None:
+        self.config({"security_audit": {"images": {"t": "x"}}})
+        out, code = self.plan("--require-sandbox", path=self.bin_path(True))
+        self.assertEqual((code, out["sandbox"]["engine"], out["sandbox"]["images"], out["run"]), (0, True, {"t": "x"}, "Run 1"))
+        self.assertTrue((self.notes / "Security Audit" / "Run 1").is_dir())
+
+    def test_require_sandbox_comes_after_other_checks(self) -> None:
+        audits = self.notes / "Security Audit"
+        (self.repo / "a.txt").write_text("changed")
+        out, code = self.plan("--require-sandbox", path=self.bin_path(False))
+        self.assertEqual((code, out["error"]), (1, "dirty"))
+        self.assertFalse(audits.exists())
+        self.git("checkout", "a.txt")
+        (audits / "Run 1").mkdir(parents=True)
+        (audits / "Run 1" / ".findings.json.icloud").write_text("")
+        out, code = self.plan("--require-sandbox", path=self.bin_path(False))
+        self.assertEqual((code, out["error"]), (1, "placeholder"))
+        self.assertEqual([p.name for p in audits.iterdir()], ["Run 1"])
+
     def test_skill_folder_per_harness(self) -> None:
         home = Path.home()
         self.assertEqual(release.skill_dir("claude", {}), home / ".claude/skills/security-audit")

@@ -25,7 +25,7 @@
                                                       merge the reviewer tables by file and line
   devloop.py review-save --reviewer NAME | --done    save a reviewer table (stdin) or the Track S marker in the git dir
   devloop.py acceptance [--failed]                    run the acceptance command, read its JUnit, record the run
-  devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
+  devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N] [--require-sandbox]
                                                       the release audit plan: run folder, scope, sandbox, skill
   devloop.py release-record --run PATH [--base SHA] [--harness claude|codex] [--repo PATH]
                                                       record a finished release audit run in the project note
@@ -319,6 +319,7 @@ def main() -> int:
     plan.add_argument("--harness", choices=["claude", "codex"], default="claude")
     plan.add_argument("--profile", choices=["quick", "standard", "deep"])
     plan.add_argument("--budget", type=positive_int)
+    plan.add_argument("--require-sandbox", action="store_true")
     plan.set_defaults(run=("release", "cmd_release_plan"))
 
     rec = commands.add_parser("release-record")
