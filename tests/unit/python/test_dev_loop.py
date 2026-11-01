@@ -112,6 +112,7 @@ wire("test_kit_contracts")
 wire("test_mutation")
 wire("test_audit_common")
 wire("test_audit_seed")
+wire("test_audit_units")
 
 
 class JUnitReportTests(unittest.TestCase):
