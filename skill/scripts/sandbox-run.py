@@ -2,7 +2,8 @@
 """Run one command in a locked-down Docker container and copy its /scratch files back.
 
 The command is target code under audit: treat it as hostile. Exit: the command's own
-code, 124 on timeout, 125 with one `sandbox-run: <reason>` stderr line on a runner error.
+code, 124 on timeout, 125 with one `sandbox-run: <reason>` stderr line on a runner error. A container
+stopped or removed after the command (out of memory) gives the command's code, one such stderr line, no copy.
 The image needs `env`, `mkdir`, `sleep`, `tar`, `chmod` and `sh`.
 The copy holds only inert names: a file with a `.git` path part (any case) is dropped, and every
 other file whose name does not end in `.txt` (any case) gets `.txt` appended, so no tool of the host
@@ -148,9 +149,16 @@ def failed(step: str, done: subprocess.CompletedProcess) -> RunnerError:
     return RunnerError(f"{step} failed: {lines[-1] if lines else f'exit {done.returncode}'}")
 
 
+def container_gone(ctr: str) -> bool:
+    state = docker("inspect", "--format", "{{.State.Running}}", ctr)
+    if state.returncode == 0:
+        return state.stdout.strip() == "false"
+    return "no such" in state.stderr.lower()
+
+
 def kill_leftovers(ctr: str) -> bool:
     # A process the command left behind could stop tar or write into its stdout: none may survive.
-    # allow-comment: dependency: the OOM killer can stop PID 1 too; `--rm` then drops the container and /scratch: False.
+    # allow-comment: dependency: the OOM killer can stop PID 1 too; `--rm` then removes the container and its /scratch.
     deadline = time.monotonic() + LEFTOVER_WAIT_SECONDS
     while True:
         killed = docker("exec", "-u", "65534:65534", ctr, "sh", "-c", "kill -9 -1")
@@ -161,7 +169,7 @@ def kill_leftovers(ctr: str) -> bool:
         alive = [tuple(row[:2]) for row in rows if len(row) < 2 or not row[1].startswith("Z")]
         if top.returncode == 0 and len(alive) == 1:  # only PID 1, `sleep infinity`
             return True
-        if top.returncode != 0 and docker("inspect", "--format", "{{.State.Running}}", ctr).stdout.strip() != "true":
+        if top.returncode != 0 and container_gone(ctr):
             return False
         if time.monotonic() >= deadline:
             if top.returncode != 0:
@@ -274,6 +282,7 @@ def run(args: argparse.Namespace) -> int:
         except subprocess.TimeoutExpired:
             return 124
         if not kill_leftovers(ctr):
+            print("sandbox-run: container stopped after the command (out of memory?): /scratch not copied", file=sys.stderr)
             return code
         try:
             # shortcut: the copy gets a fresh --timeout; a full 64 MB tmpfs copies in about a second.

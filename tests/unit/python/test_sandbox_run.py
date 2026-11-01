@@ -370,12 +370,12 @@ class SandboxExtractTests(unittest.TestCase):
 
 
 class KillLeftoversTests(unittest.TestCase):
-    def run_wait(self, exits_at: float, top_fails: bool = False, running: str | None = "true") -> bool:
+    def run_wait(self, exits_at: float, top_fails: bool = False, inspect: tuple[int, str, str] = (0, "true\n", "")) -> bool:
         now = [0.0]
 
         def docker(*args: str) -> subprocess.CompletedProcess:
-            if args[0] == "inspect":  # None: the container is gone (`--rm`)
-                return subprocess.CompletedProcess(args, 1 if running is None else 0, f"{running or ''}\n", "")
+            if args[0] == "inspect":
+                return subprocess.CompletedProcess(args, *inspect)
             if args[0] != "top":
                 return subprocess.CompletedProcess(args, 1, "", "")
             if top_fails:
@@ -398,10 +398,14 @@ class KillLeftoversTests(unittest.TestCase):
              "leftover processes \\(init included\\): 416411 S; 415501 D$"),
             ("docker top failing on a running container", dict(exits_at=0.0, top_fails=True),
              "docker top failed: Error: No such container: c$"),
-            ("container removed, init killed too", dict(exits_at=0.0, top_fails=True, running=None), False),
-            ("container stopped, not yet removed", dict(exits_at=0.0, top_fails=True, running="false"), False),
+            ("container removed, init killed too",
+             dict(exits_at=0.0, top_fails=True, inspect=(1, "", "error: no such object: c\n")), False),
+            ("container stopped, not yet removed", dict(exits_at=0.0, top_fails=True, inspect=(0, "false\n", "")), False),
+            ("docker top and inspect failing on a running container",
+             dict(exits_at=0.0, top_fails=True, inspect=(1, "", "Error response from daemon: timeout\n")),
+             "docker top failed: Error: No such container: c$"),
         ]
-        for name, args, expected in rows:  # a bool: the return; a string: the error
+        for name, args, expected in rows:
             with self.subTest(name):
                 if isinstance(expected, bool):
                     self.assertIs(self.run_wait(**args), expected)
