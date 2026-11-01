@@ -21,6 +21,17 @@ User asked for the audit before a release tag. Do this, in order. Run in the mai
 
      In Codex, `engine` false under the `dev-workspace` profile means the profile closes the Docker socket: tell the user to restart with `codex -c default_permissions=dev-docker` for a sandboxed run, then go on source-only.
 4. Invoke the `security-audit` skill (`skill` is its folder) in this session, full audit mode. Never run the audit in a subagent: it starts its own agents. Give it: output folder `output`, `profile`, `budget`, scope (`whole`, or the diff `<base>..<head>` from `scope`), the `exclude` paths as out of the audit scope (kit copies an upgrade wrote; none when `[]`), `tests/acceptance` as out of the audit scope (held-out test code, not shipped code), and that its agents search named folders or exclude the suite: the walls deny a subagent search that reaches it, `prior_runs` (it continues their ledger), the sandbox paragraph, and the guard threat model: "The git and gh guards stop agent mistakes. They are not a wall against an agent that works against its instructions. A command spelling that passes a guard and still needs a user confirmation, or reaches no release asset, is hardening (`low`)."
+   - Before the first brief, write `context.md` in `output`: the sandbox paragraph of step 3, the scope, the `exclude` paths, the held-out scope sentence and the search rule above, and the guard threat model, all verbatim. Write `architecture.md` in `output`: the skill's architecture summary.
+   - Run the loop through the CLI, `audit-run <step> --run <output>`, in this order. Each step prints one JSON object; on `error`, read it before the next step:
+     - `audit-run seed`: the prior run, the carried units, `touched`.
+     - `audit-run units --add <file>`: your unit plan, `touched` units planned again. `units --update <file>` changes a planned unit.
+     - `audit-run brief --kind hunter|critic|verifier|recheck`: one brief per agent. Start one agent per brief with your own harness tool, and give it the `prompt` path of the brief. Each agent runs `check` before it hands back.
+     - `audit-run check --agent <id>`: the agent's own check of its result.
+     - `audit-run promote --agent <id>`, then `audit-run fold --agent <id>` (or `fold --agent <id> --discard <reason>` for a brief you drop).
+     - `audit-run status` after each agent notification: which briefs are ready, invalid or still missing.
+     - `audit-run findings` when nothing is open (`findings --incomplete <reason>` on a budget stop).
+     - `audit-run report --summary <file>`: the three report files, from your security posture summary.
+   - The budget, wave and priority rules stay the skill's.
 5. Run `release-record --run <output> [--base <base>] --harness <harness>`. `--base` only when `base` is not null.
    - `run-incomplete`: read `incomplete_reason` in `<output>/run-metadata.json`, report it. Tell the user the next `/release-audit` (Codex `$release-audit`) continues the same ledger (it is in `prior_runs`), with `--budget` or `--profile` when the budget ran out. Stop.
    - Other `error` (`invalid-run`, `bad-run`, `already-recorded`): report it with its `tail`, stop.
