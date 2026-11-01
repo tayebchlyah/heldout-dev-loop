@@ -351,6 +351,7 @@ def main() -> int:
     brief.add_argument("--units", nargs="+")
     brief.add_argument("--final", action="store_true")
     brief.add_argument("--fingerprint")
+    step("check", "check").add_argument("--agent", required=True)
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
