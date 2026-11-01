@@ -9,10 +9,9 @@ from pathlib import Path, PurePosixPath
 from seal import merge_base, run_git
 
 TEST_FILES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*")
-RUNNER = r"\b(?:it|test|describe|context|suite|t)"
 SKIP_MARKERS = re.compile("|".join((
     r"\bpytest\.mark\.(?:skip|skipif|xfail)\b", r"\bpytest\.(?:skip|xfail)\(", r"\bunittest\.skip(?:If|Unless)?\b",
-    rf"{RUNNER}\.(?:skip|only|todo)\(", r"(?<![\w.$])(?:xit|xdescribe)\(", r"\bt\.Skip\(")))
+    r"\.(?:skip|only|todo|Skip)\(", r"(?<![\w.$])(?:xit|xdescribe)\(")))
 ASSERTIONS = ("assert", "expect(", "t.Error", "t.Fatal", "require.")
 
 
