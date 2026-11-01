@@ -370,10 +370,12 @@ class SandboxExtractTests(unittest.TestCase):
 
 
 class KillLeftoversTests(unittest.TestCase):
-    def run_wait(self, exits_at: float, top_fails: bool = False) -> None:
+    def run_wait(self, exits_at: float, top_fails: bool = False, running: str | None = "true") -> bool:
         now = [0.0]
 
         def docker(*args: str) -> subprocess.CompletedProcess:
+            if args[0] == "inspect":  # None: the container is gone (`--rm`)
+                return subprocess.CompletedProcess(args, 1 if running is None else 0, f"{running or ''}\n", "")
             if args[0] != "top":
                 return subprocess.CompletedProcess(args, 1, "", "")
             if top_fails:
@@ -387,22 +389,24 @@ class KillLeftoversTests(unittest.TestCase):
         stub = unittest.mock.patch.multiple(sandbox_run, docker=docker)
         timing = unittest.mock.patch.multiple(sandbox_run.time, monotonic=lambda: now[0], sleep=sleep)
         with stub, timing:
-            sandbox_run.kill_leftovers("c")
+            return sandbox_run.kill_leftovers("c")
 
     def test_kill_leftovers(self) -> None:
         rows = [
-            ("a slow exit inside the deadline", dict(exits_at=5.0), None),
+            ("a slow exit inside the deadline", dict(exits_at=5.0), True),
             ("a process that never exits", dict(exits_at=60.0),
              "leftover processes \\(init included\\): 416411 S; 415501 D$"),
-            ("docker top failing", dict(exits_at=0.0, top_fails=True),
+            ("docker top failing on a running container", dict(exits_at=0.0, top_fails=True),
              "docker top failed: Error: No such container: c$"),
+            ("container removed, init killed too", dict(exits_at=0.0, top_fails=True, running=None), False),
+            ("container stopped, not yet removed", dict(exits_at=0.0, top_fails=True, running="false"), False),
         ]
-        for name, args, error in rows:
+        for name, args, expected in rows:  # a bool: the return; a string: the error
             with self.subTest(name):
-                if error is None:
-                    self.run_wait(**args)
+                if isinstance(expected, bool):
+                    self.assertIs(self.run_wait(**args), expected)
                 else:
-                    with self.assertRaisesRegex(sandbox_run.RunnerError, error):
+                    with self.assertRaisesRegex(sandbox_run.RunnerError, expected):
                         self.run_wait(**args)
 
 
