@@ -76,6 +76,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `release-plan [--repo <path>] [--harness claude|codex] [--profile quick|standard|deep] [--budget <n>] [--require-sandbox]`: Plan a release security audit run: folder, profile, budget, scope, sandbox; `--require-sandbox`: stop with `no-sandbox` when no image or no engine. `reference/cli/release-plan.md`
 - `notes-migrate [--repo <path>] [--apply [--plan <hash>]]`: Move an old notes layout to feature folders; dry run, then `--apply --plan <hash>`. `reference/cli/notes-migrate.md`
 - `release-record --run <folder> [--base <sha>] [--harness claude|codex] [--repo <path>]`: Write a release audit result into the project note; JSON `carried`, `reopened`. `reference/cli/release-record.md`
+- `audit-run <step> --run <folder> [--repo <path>]`: Parent-side steps of a release audit run: `seed`, `units`, `brief`, `check`, `promote`, `fold`, `findings`, `report`, `status`. `reference/cli/audit-run.md`
 
 ## Build and test
 
