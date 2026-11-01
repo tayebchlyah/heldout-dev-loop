@@ -4,7 +4,7 @@
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
 # README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh,
 # scripts/temp_leak.sh. No change: neither. Else both.
-# DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there, and one FAILED line per failed test.
+# DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there.
 # Both suites run with an empty TMPDIR: anything the rule of scripts/temp_leak.sh does not allow fails the gate
 # (a temp leak).
 set -u
@@ -54,15 +54,5 @@ left=$(temp_leak "$scratch")
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
   status=1
-fi
-if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
-  python3 - "$DEVLOOP_REPORT_DIR" <<'EOF'
-import sys, xml.etree.ElementTree as ET
-from pathlib import Path
-for xml in sorted(Path(sys.argv[1]).glob("*.xml")):
-    for case in ET.parse(xml).getroot().iter("testcase"):
-        if case.find("failure") is not None or case.find("error") is not None:
-            print(f"FAILED {case.get('classname')}::{case.get('name')}")
-EOF
 fi
 exit $status
