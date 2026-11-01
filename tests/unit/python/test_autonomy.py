@@ -399,7 +399,8 @@ class AutonomyHookTests(PauseSandbox):
         settings = json.loads((HERE.parents[2] / "claude" / "settings.fragment.json").read_text())
         cases = [("PreToolUse", "AskUserQuestion", "missing Claude hook: PreToolUse AskUserQuestion deny-ask.sh"),
                  ("StopFailure", "rate_limit", "missing Claude hook: StopFailure rate_limit pause.sh"),
-                 ("PreToolUse", "Edit|Write|NotebookEdit", "missing Claude hook: PreToolUse Edit|Write|NotebookEdit worktree-wall.sh")]
+                 ("PreToolUse", "Edit|Write|NotebookEdit", "missing Claude hook: PreToolUse Edit|Write|NotebookEdit worktree-wall.sh"),
+                 ("PreToolUse", "Bash|Monitor", "missing Claude hook: PreToolUse Bash|Monitor git-guard.sh")]
         for event, matcher, line in cases:
             with self.subTest(event=event):
                 trimmed = json.loads(json.dumps(settings))
@@ -413,6 +414,18 @@ class AutonomyHookTests(PauseSandbox):
                 failures = []
                 check_setup.check_claude_settings(path, failures)
                 self.assertNotIn(line, failures)
+
+    def test_check_setup_flags_a_guard_still_on_bash(self) -> None:
+        import check_setup
+        settings = json.loads((HERE.parents[2] / "claude" / "settings.fragment.json").read_text())
+        for group in settings["hooks"]["PreToolUse"]:
+            if "git-guard.sh" in json.dumps(group):
+                group["matcher"] = "Bash"
+        path = self.root / "settings.json"
+        path.write_text(json.dumps(settings))
+        failures: list[str] = []
+        check_setup.check_claude_settings(path, failures)
+        self.assertIn("missing Claude hook: PreToolUse Bash|Monitor git-guard.sh", failures)
 
 
 class KitSkillTests(unittest.TestCase):
