@@ -568,7 +568,7 @@ class AcceptanceTempLeakTests(unittest.TestCase):
             "import { tmpdir } from 'node:os';\nimport { join } from 'node:path';\n"
             f"test('it', () => {{ {node} }});\n")
         env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}
-        env.update(TMPDIR=str(caller), SEEN=str(root / "seen.json"))
+        env.update(TMPDIR=str(caller), SEEN=str(root / "seen.json"), DEVLOOP_SUITE_LOCK_HELD="1")
         if report:
             (root / "reports").mkdir()
             env["DEVLOOP_REPORT_DIR"] = str(root / "reports")
@@ -672,7 +672,7 @@ class AcceptanceTempLeakTests(unittest.TestCase):
             put(suite / "none.test.mjs", "")
             (root / "reports").mkdir()
             env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}
-            env["DEVLOOP_REPORT_DIR"] = str(root / "reports")
+            env.update(DEVLOOP_REPORT_DIR=str(root / "reports"), DEVLOOP_SUITE_LOCK_HELD="1")
             run = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(suite)], cwd=root,
                                  capture_output=True, text=True, env=env, timeout=120)
             self.assertEqual(run.returncode, 1, run.stdout + run.stderr)

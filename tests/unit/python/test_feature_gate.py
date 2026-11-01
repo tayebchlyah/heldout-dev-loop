@@ -621,7 +621,7 @@ class AcceptanceScriptTests(TempDir):
             "    def test_bad(self):\n        self.assertEqual(1, 2)\n")
         (folder / "one.test.mjs").write_text("import test from 'node:test';\ntest('passes', () => {});\n")
         result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
-                                capture_output=True, text=True, env={**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
+                                capture_output=True, text=True, env={**os.environ, "DEVLOOP_REPORT_DIR": str(reports), "DEVLOOP_SUITE_LOCK_HELD": "1"})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         python = {c.get("name"): c for c in ET.parse(reports / "acceptance-python.xml").getroot().iter("testcase")}
         self.assertEqual(set(python), {"test_ok", "test_bad"})
@@ -640,7 +640,7 @@ class AcceptanceScriptTests(TempDir):
         (folder / "test_seal.py").write_text(ok + "\n    def test_bad(self):\n        self.assertEqual(1, 2)\n")
         (folder / "one.test.mjs").write_text("import test from 'node:test';\ntest('passes', () => {});\n")
         result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
-                                capture_output=True, text=True, env={**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
+                                capture_output=True, text=True, env={**os.environ, "DEVLOOP_REPORT_DIR": str(reports), "DEVLOOP_SUITE_LOCK_HELD": "1"})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         python = {(c.get("classname"), c.get("name")): c
                   for c in ET.parse(reports / "acceptance-python.xml").getroot().iter("testcase")}
@@ -656,7 +656,7 @@ class AcceptanceScriptTests(TempDir):
         (folder / "one.test.mjs").write_text("import test from 'node:test';\ntest('passes', () => {});\n")
         env = {k: v for k, v in os.environ.items() if k != "DEVLOOP_REPORT_DIR"}
         result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
-                                capture_output=True, text=True, env=env)
+                                capture_output=True, text=True, env={**env, "DEVLOOP_SUITE_LOCK_HELD": "1"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(list(self.tmp.glob("*.xml")), [])
 
