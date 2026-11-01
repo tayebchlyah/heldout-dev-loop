@@ -555,12 +555,12 @@ class ProjectSetupCheckerTests(unittest.TestCase):
 
     def test_codex_older_than_the_minimum_fails(self) -> None:
         self.init("codex")
-        for found, ok in [("0.161.0", False), ("0.164.0", False), ("0.164.9", False), ("0.165.0", True), ("0.200.0", True),
+        for found, ok in [("0.161.0", False), ("0.164.0", False), ("0.164.9", False), ("0.165.0", False), ("0.165.9", False), ("0.166.0", True), ("0.200.0", True),
                           ("0.99.9", False)]:
             with self.subTest(found=found):
                 self.versions = {"codex": f"codex-cli {found}"}
                 result = self.run_checker("codex")
-                line = f"- codex-cli {found} is older than 0.165.0 (network_proxy needs it). Update Codex.\n"
+                line = f"- codex-cli {found} is older than 0.166.0 (native hook sandbox needs it). Update Codex.\n"
                 self.assertEqual(line in result.stdout, not ok, result.stdout)
 
     def test_codex_kit_network_config_has_no_network_failure(self) -> None:

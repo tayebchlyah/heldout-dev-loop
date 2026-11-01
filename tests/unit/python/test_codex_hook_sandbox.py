@@ -90,6 +90,12 @@ sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
         self.assertEqual(r.returncode, 19, r.stderr)
         self.assertEqual(json.loads(r.stdout), [str(self.feature), arg, 'hook stdin'])
         self.assertNotIn('Sandbox startup failed', r.stderr)
+        r = self.launch('/bin/sh', '-c', 'dir=$(mktemp -d) || exit 1; printf "%s" "$dir"; rmdir "$dir"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        roots = [Path('/tmp').resolve(), Path(tempfile.gettempdir()).resolve()]
+        if sys.platform == 'darwin':
+            roots.append(Path(subprocess.check_output(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'], text=True).strip()).resolve())
+        self.assertTrue(any(Path(r.stdout).resolve().is_relative_to(root) for root in roots), r.stdout)
 
     def test_early_launch_failure_blocks_without_host_fallback(self):
         self.env['PROBE_EARLY'] = '1'
@@ -129,6 +135,7 @@ sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
         self.assertIn(json.dumps(str(self.feature/'**/.private'))+'="deny"', table)
         self.assertNotIn(str(self.root/'outside'), table)
         self.assertIn(json.dumps(str(self.feature))+'="write"', table)
+        self.assertIn(json.dumps(str(self.main))+'="read"', table)
         network = next(x for x in args if x.startswith('permissions.dev-workspace.network='))
         self.assertIn('\"unix_sockets\"={}', network)
         self.assertIn('\"dangerously_allow_all_unix_sockets\"=false', network)
@@ -149,4 +156,7 @@ sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
             with self.subTest(early=early):
                 self.env['PROBE_EARLY'] = early
                 self.launch('/usr/bin/true')
-                self.assertEqual(list(self.feature.glob('.devloop-hook-*')), [])
+                args = json.loads(self.log.read_text())
+                command = args[args.index('--')+1:]
+                started = Path(command[command.index(str(self.feature))+1])
+                self.assertFalse(started.parent.exists())
