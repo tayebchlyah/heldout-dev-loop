@@ -539,6 +539,62 @@ class GateTempLeakTests(unittest.TestCase):
                     self.assertEqual(run.returncode, 1 if left else 0, run.stdout)
 
 
+class GateFailureReportTests(unittest.TestCase):
+    def run_gate(self, repo: Path, reports: Path | None) -> subprocess.CompletedProcess:
+        env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")}
+        if reports:
+            env["DEVLOOP_REPORT_DIR"] = str(reports)
+        return subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
+                              env=env, timeout=60)
+
+    def make_repo(self, root: Path, py: str, playwright: bool = True) -> Path:
+        repo = root / "repo"
+        for name in ("gate.sh", "temp_leak.sh"):
+            put(repo / "scripts" / name, (ROOT / "scripts" / name).read_text())
+        put(repo / "tests" / "unit" / "python" / "junit_report.py",
+            (ROOT / "tests" / "unit" / "python" / "junit_report.py").read_text())
+        put(repo / "tests" / "unit" / "python" / "test_dev_loop.py", py)
+        put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
+        if playwright:
+            (repo / "node_modules" / "playwright").mkdir(parents=True)
+        return repo
+
+    def temp_leak_case(self, reports: Path) -> ET.Element:
+        cases = list(ET.parse(reports / "temp-leak.xml").getroot().iter("testcase"))
+        self.assertEqual([c.get("name") for c in cases], ["TMPDIR"])
+        return cases[0]
+
+    def test_a_temp_leak_is_a_failing_junit_case(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            repo = self.make_repo(root, "import os\nopen(os.path.join(os.environ['TMPDIR'], 'left-over'), 'w')\n")
+            reports = root / "reports"
+            reports.mkdir()
+            run = self.run_gate(repo, reports)
+            self.assertEqual(run.returncode, 1, run.stdout)
+            case = self.temp_leak_case(reports)
+            self.assertEqual(case.get("classname"), "temp-leak")
+            self.assertIsNotNone(case.find("failure"))
+            self.assertIn("left-over", case.find("failure").text or "")
+
+    def test_a_clean_run_has_a_passing_temp_leak_case(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            repo = self.make_repo(root, "pass\n")
+            reports = root / "reports"
+            reports.mkdir()
+            run = self.run_gate(repo, reports)
+            self.assertEqual(run.returncode, 0, run.stdout)
+            self.assertIsNone(self.temp_leak_case(reports).find("failure"))
+
+    def test_missing_playwright_prints_a_failed_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp).resolve(), "pass\n", playwright=False)
+            run = self.run_gate(repo, None)
+            self.assertEqual(run.returncode, 1)
+            self.assertEqual(run.stdout.strip(), "FAILED setup: run npm ci && npx playwright install chromium")
+
+
 class TempLeakRuleTests(unittest.TestCase):
     def test_temp_leak_lists_leftovers_one_per_line(self) -> None:
         rule = str(ROOT / "scripts" / "temp_leak.sh")

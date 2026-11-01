@@ -30,7 +30,7 @@ fi
 
 # The node suite drives a real Chromium (drive.test.mjs). The gate installs nothing itself.
 if [ $node = 1 ] && [ ! -d node_modules/playwright ]; then
-  echo "run npm ci && npx playwright install chromium"
+  echo "FAILED setup: run npm ci && npx playwright install chromium"
   exit 1
 fi
 
@@ -54,5 +54,19 @@ left=$(temp_leak "$scratch")
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
   status=1
+fi
+if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
+  python3 - "$DEVLOOP_REPORT_DIR" "$left" <<'EOF' || status=1
+import json, re, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, "tests/unit/python")
+from junit_report import write_junit
+reports, left = Path(sys.argv[1]), sys.argv[2]
+left = re.sub("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]", lambda m: f"\\x{ord(m[0]):02x}", left)
+with tempfile.TemporaryDirectory() as outcomes:
+    case = {"seconds": 0.0, "outcome": "failure" if left else "pass", "text": left}
+    Path(outcomes, "temp-leak.json").write_text(json.dumps({"temp-leak.TMPDIR": case}))
+    write_junit(reports / "temp-leak.xml", Path(outcomes), "temp-leak")
+EOF
 fi
 exit $status
