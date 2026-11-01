@@ -719,8 +719,8 @@ class FeatureGateTextTests(unittest.TestCase):
         for needle in ("review-merge", "acceptance [--failed]", "scripts/acceptance.sh"):
             self.assertIn(needle, agents)
             self.assertIn(needle, readme)
-        for needle in ("feature_gate.py", "test_feature_gate.py"):
-            self.assertIn(needle, agents)
+        self.assertIn("feature_gate.py", agents)
+        self.assertIn("test_feature_gate.py", (ROOT / "tests" / "unit" / "python" / "README.md").read_text())
 
 
 if __name__ == "__main__":

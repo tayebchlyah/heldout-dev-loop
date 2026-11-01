@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
@@ -75,6 +76,19 @@ def all_instructions() -> str:
     if refs.exists():
         parts.extend(path.read_text() for path in sorted(refs.glob("*.md")))
     return "\n".join(parts)
+
+
+def budget_report(path: Path, limit: int) -> str | None:
+    size = len(path.read_bytes())
+    if size <= limit:
+        return None
+    text = path.read_text()
+    pinned = sorted({node.value for test in Path(__file__).resolve().parent.glob("test_*.py")
+                     for node in ast.walk(ast.parse(test.read_text()))
+                     if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                     and len(node.value) >= 12 and node.value in text})
+    return "\n".join([f"{path.name}: {size} bytes, {size - limit} over {limit}. Trim it; the suite pins these phrases in it:",
+                      *pinned])
 
 
 def write(path: Path, text: str = "") -> None:
