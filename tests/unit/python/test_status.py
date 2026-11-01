@@ -71,7 +71,7 @@ class StatusTests(Sandbox):
         out = self.status()
         self.assertEqual(out["stage"], 6)
         self.assertIn("review-done", out["next"])
-        self.assertIn("fix wave, then write the review-done marker", out["next"])
+        self.assertIn("fix wave, then write the review-done marker (review-save --done)", out["next"])
         marker = self.repo / ".git" / "dev-loop" / "review-done"
         put(marker, git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual(self.status()["stage"], 7)

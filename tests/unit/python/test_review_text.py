@@ -74,7 +74,7 @@ class ReviewWaveContractTests(unittest.TestCase):
 
     def test_track_s_marker_comes_after_the_fix_wave_and_the_drive(self) -> None:
         line = next(line for line in self.stage.splitlines() if line.startswith("Track S:"))
-        self.assertIn("After the drive: `review-save --done`", line)
+        self.assertIn("After the drive: `scripts/devloop.py review-save --done`", line)
         self.assertLess(line.index("fix wave and drive only"), line.index("review-save --done"))
 
     def test_gate_writes_ledger_line(self) -> None:
