@@ -281,6 +281,32 @@ class WeakenedTests(GateSealRepo):
                 self.assertEqual((code, out["weakened"]), (0, expected), out)
 
 
+class SkipMarkerTests(unittest.TestCase):
+    def test_each_marker_and_its_near_miss(self) -> None:
+        from seal.weakened import skip_marker
+        rows = [
+            ("@pytest.mark.skip", "@mypytest.mark.skipper"),
+            ("@pytest.mark.skipif(x)", "pytest.mark.skipped"),
+            ("pytest.skip('slow')", "mypytest.skip('slow')"),
+            ("@pytest.mark.xfail", "@pytest.mark.xfailing"),
+            ("pytest.xfail('bug')", "notpytest.xfail('bug')"),
+            ("@unittest.skip('slow')", "@unittest.skipping"),
+            ("@unittest.skipIf(x, 'y')", "myunittest.skip('slow')"),
+            ("it.skip('a', () => {})", "parser.skip(2)"),
+            ("describe.skip('a', () => {})", "stream.skip(1)"),
+            ("test.only('a', () => {})", "query.only(['a'])"),
+            ("test.describe.only('a', () => {})", "options.only('a')"),
+            ("xit('a', () => {})", "sys.exit(1)"),
+            ("xdescribe('a', () => {})", "maxdescribe('a')"),
+            ("test.todo('a')", "list.todo('a')"),
+            ("t.Skip(\"slow\")", "assert.Skip(\"slow\")"),
+        ]
+        for hit, miss in rows:
+            with self.subTest(hit=hit):
+                self.assertTrue(skip_marker(hit))
+                self.assertFalse(skip_marker(miss), miss)
+
+
 KIT_FILE = ".agents/skills/dev-loop/scripts/seal/check.py"
 
 
