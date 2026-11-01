@@ -201,6 +201,114 @@ if sys.argv[2] == "parent":
                         "loopback": "allowed", "docker": "denied", "scope": "changed"})
                 self.assertFalse(outside.exists(), "gate wrote outside workspace")
 
+    def test_macos_browser_and_process_checks_run_inside_confined_gate(self) -> None:
+        """F4, O13: browser and signed ps work while gate and child retain host denials."""
+        if sys.platform != "darwin":
+            self.skipTest("macOS compatibility flow")
+        native = Path.home() / ".nvm/versions/node/v24.12.0/bin/codex"
+        launcher = str(native) if native.is_file() else shutil.which("codex", path=os.environ.get("PATH", ""))
+        if not launcher:
+            self.skipTest("native Codex launcher unavailable")
+        version = subprocess.run([launcher, "--version"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(version.returncode, 0, version.stderr)
+        match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
+        self.assertIsNotNone(match, version.stdout)
+        self.assertGreaterEqual(tuple(map(int, match.groups())), (0, 166, 0))
+        node = shutil.which("node", path=os.environ.get("PATH", ""))
+        playwright = ROOT / "node_modules/playwright"
+        if not node or not playwright.is_dir():
+            self.skipTest("Node and installed Playwright are browser prerequisites")
+        browser = subprocess.run([node, "-e", "console.log(require(process.argv[1]).chromium.executablePath())",
+                                  str(playwright)], capture_output=True, text=True, timeout=10)
+        self.assertEqual(browser.returncode, 0, browser.stderr)
+        if not Path(browser.stdout.strip()).is_file():
+            self.skipTest("Playwright Chromium is not installed")
+        (self.bin / "codex").unlink()
+        (self.bin / "codex").symlink_to(launcher)
+        system_ps = Path("/bin/ps")
+        before = subprocess.run(["shasum", "-a", "256", str(system_ps)],
+                                capture_output=True, text=True, check=True).stdout
+        before_stat = system_ps.stat()
+        outside = Path.home() / f"devloop-macos-probe-{uuid.uuid4().hex}"
+        self.addCleanup(outside.unlink, missing_ok=True)
+        put(self.feature / ".env", "macos-private-" + uuid.uuid4().hex)
+        put(self.feature / ".codex/config.toml", 'default_permissions = ":full-access"\n')
+        docker_home = tempfile.TemporaryDirectory(prefix="codex-docker-", dir="/tmp")
+        self.addCleanup(docker_home.cleanup)
+        endpoint = Path(docker_home.name) / ".docker/run/docker.sock"
+        endpoint.parent.mkdir(parents=True)
+        listener = socket.socket(socket.AF_UNIX)
+        self.addCleanup(listener.close)
+        listener.bind(str(endpoint))
+        listener.listen(8)
+        with socket.socket(socket.AF_UNIX) as baseline:
+            baseline.connect(str(endpoint))
+        connection, _ = listener.accept()
+        connection.close()
+        probe = r'''import errno, json, os, shutil, socket, stat, subprocess, sys, tempfile
+from pathlib import Path
+outside, endpoint, node, playwright, who = sys.argv[1:]
+def denied(action):
+    try:
+        action()
+    except OSError as error:
+        if error.errno in (errno.EPERM, errno.EACCES):
+            return "denied"
+        raise
+    return "allowed"
+def docker_connect():
+    with socket.socket(socket.AF_UNIX) as client:
+        client.settimeout(5)
+        client.connect(endpoint)
+report = {
+    "outside": denied(lambda: Path(outside).write_text("escaped")),
+    "env": denied(lambda: Path(".env").read_text()),
+    "docker": denied(docker_connect),
+    "scope": os.environ.get("GATE_SCOPE"),
+}
+Path("workspace-" + who).write_text("ok")
+with socket.socket() as local:
+    local.bind(("127.0.0.1", 0))
+report["workspace"] = "allowed"
+report["loopback"] = "allowed"
+if who == "parent":
+    ps = Path(shutil.which("ps")).resolve()
+    assert ps != Path("/bin/ps").resolve(), str(ps)
+    assert any(ps.is_relative_to(root.resolve()) for root in
+               (Path(tempfile.gettempdir()), Path("/tmp"))), str(ps)
+    mode = ps.stat()
+    assert mode.st_uid == os.getuid() and not mode.st_mode & (stat.S_ISUID | stat.S_ISGID)
+    subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(ps)], check=True)
+    processes = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, check=True)
+    assert any(line.split(maxsplit=1)[0] == str(os.getpid()) for line in processes.stdout.splitlines())
+    subprocess.run([node, "-e", "(async()=>{const b=await require(process.argv[1]).chromium.launch({headless:true});await b.close()})().catch(e=>{console.error(e);process.exit(1)})", playwright], check=True, timeout=45)
+    report["browser"] = "launched-and-closed"
+    report["ps"] = "signed-temporary-copy"
+    subprocess.run([sys.executable, __file__, outside, endpoint, node, playwright, "child"], check=True)
+Path("macos-result-" + who + ".json").write_text(json.dumps(report))
+'''
+        put(self.feature / "macos_probe.py", probe)
+        args = (sys.executable, "macos_probe.py", str(outside), str(endpoint), node, str(playwright), "parent")
+        self.configure_gate(shlex.join(args), self.feature)
+        try:
+            done = self.call("Stop", "gate.sh")
+            self.assertEqual((done.returncode, done.stdout), (0, ""), done.stdout[-1800:] + done.stderr[-1800:])
+            for who in ("parent", "child"):
+                report = self.feature / f"macos-result-{who}.json"
+                self.assertTrue(report.is_file(), f"{who} did not finish; no denial can be inferred")
+                expected = {"outside": "denied", "env": "denied", "docker": "denied", "scope": "changed",
+                            "workspace": "allowed", "loopback": "allowed"}
+                if who == "parent":
+                    expected.update(browser="launched-and-closed", ps="signed-temporary-copy")
+                self.assertEqual(json.loads(report.read_text()), expected)
+            self.assertFalse(outside.exists(), "confined gate wrote under host home")
+        finally:
+            after = subprocess.run(["shasum", "-a", "256", str(system_ps)],
+                                   capture_output=True, text=True, check=True).stdout
+            self.assertEqual(after, before, "system ps content changed")
+            self.assertEqual(system_ps.stat().st_mode, before_stat.st_mode, "system ps mode changed")
+            self.assertEqual(system_ps.stat().st_uid, before_stat.st_uid, "system ps owner changed")
+
     def test_upgrade_trusts_main_hooks_and_preserves_claude_and_network_scope(self) -> None:
         """F3, O5/O9/O10 plus Network Scope: migrate old entries, keep user hooks and network rules."""
         claude = (self.main / ".claude/settings.json").read_bytes()
