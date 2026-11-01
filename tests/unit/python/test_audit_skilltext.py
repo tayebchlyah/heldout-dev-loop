@@ -57,6 +57,8 @@ class AuditSkillTextTests(unittest.TestCase):
     def test_misses_name_file_and_section(self) -> None:
         cases = [(lambda: skilltext.block(self.skill, "ATTACK-CLASSES.md#Nope"), ("ATTACK-CLASSES.md", "Nope")),
                  (lambda: skilltext.block(self.skill, "GONE.md#X"), ("GONE.md", "X")),
+                 (lambda: skilltext.block(self.skill, "../outside.md#H"), ("../outside.md", "H")),
+                 (lambda: skilltext.block(self.skill, "/abs/outside.md#H"), ("/abs/outside.md", "H")),
                  (lambda: skilltext.section(self.skill, "HUNTING.md", "## Gone"), ("HUNTING.md", "## Gone")),
                  (lambda: skilltext.fences(self.skill, "HUNTING.md", "## Structured hunter result", 1),
                   ("HUNTING.md", "## Structured hunter result")),

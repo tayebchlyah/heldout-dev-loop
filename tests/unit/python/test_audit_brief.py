@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 sys.path.insert(1, str(HERE))
-from audit_fixtures import AuditRunCase  # noqa: E402
+from audit_fixtures import AuditRunCase, validator_exit  # noqa: E402
 
 
 def ordered(test: unittest.TestCase, text: str, marks: list[str]) -> None:
@@ -178,6 +178,18 @@ class AuditBriefTests(AuditRunCase):
         def plant(agent: Path, outside: Path) -> None:
             (agent / "scratch").mkdir(parents=True)
         self.refused_agent_exists(plant)
+
+    def test_failed_brief_leaves_no_agent_folder(self) -> None:
+        ids = self.add_units(self.entry("a.py"))
+        self.write_context()
+        skill = self.skill
+        validator_exit(skill, "validate-coverage-ledger.cjs", 1)
+        out, code = self.step("brief", "--kind", "hunter", "--units", *ids)
+        self.assertEqual((code, out["error"]), (1, "ledger-invalid"), out)
+        self.assertFalse(self.path("agents/h01").exists())
+        validator_exit(skill, "validate-coverage-ledger.cjs", 0)
+        out, code = self.step("brief", "--kind", "hunter", "--units", *ids)
+        self.assertEqual((code, out["agent"]), (0, "h01"), out)
 
     def test_second_verifier_brief_leaves_out_the_first_verifier_checks(self) -> None:
         self.release_plan("--profile", "standard")
