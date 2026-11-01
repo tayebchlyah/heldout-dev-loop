@@ -194,6 +194,12 @@ def check_release_sandbox(repo: Path) -> list[str]:
     ]
 
 
+def _prompts(word: str) -> bool:
+    if word == "--interactive" or word.startswith("--interactive="):
+        return True
+    return re.fullmatch(r"-[A-Za-z]*i[A-Za-z]*", word) is not None
+
+
 def check_agent_shell(harness: str, env: Mapping[str, str]) -> list[str]:
     """#165: the harness shell snapshot copies the interactive shell config, no terminal: no noclobber, no `-i` alias."""
     shell = env.get("SHELL")
@@ -209,7 +215,7 @@ def check_agent_shell(harness: str, env: Mapping[str, str]) -> list[str]:
         if line.startswith("flags=") and "C" in line:
             found.append("noclobber")
         name, eq, value = line.removeprefix("alias ").partition("=")
-        if eq and name in SAFE_OPS and "-i" in value.strip("'\"").split():
+        if eq and name in SAFE_OPS and any(_prompts(word) for word in value.strip("'\"").split()):
             found.append(f"{name} -i")
     if not found:
         return []
