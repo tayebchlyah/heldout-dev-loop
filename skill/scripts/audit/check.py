@@ -82,8 +82,12 @@ def scratch_file(run: Path, agent: str, rel: str) -> bool:
 
 def local_artifacts(result: dict) -> list[str]:
     """Every artifact of a `local` check of the result (unit checks, then top-level checks), unique, in order."""
-    checks = [c for u in result.get("units") or [] if isinstance(u, dict) for c in u.get("checks") or []]
-    checks += list(result.get("checks") or [])
+    def entries(holder: object) -> list:
+        value = holder.get("checks") if isinstance(holder, dict) else None
+        return value if isinstance(value, list) else []
+
+    units = result.get("units")
+    checks = [c for u in (units if isinstance(units, list) else []) for c in entries(u)] + entries(result)
     found: list[str] = []
     for check in checks:
         if isinstance(check, dict) and check.get("method") == "local" and isinstance(check.get("artifact"), str):
@@ -99,8 +103,9 @@ def new_entry_errors(prefix: str, entry: object) -> list[str]:
     return errors
 
 
-def lists(result: dict, fields: tuple[str, ...]) -> list[str]:
-    return [f"{field}: expected a list" for field in fields if not isinstance(result.get(field, []), list)]
+def lists(result: dict, fields: tuple[str, ...], required: bool = False) -> list[str]:
+    default: list | None = None if required else []
+    return [f"{field}: expected a list" for field in fields if not isinstance(result.get(field, default), list)]
 
 
 def hunter_errors(run: Path, state: dict, brief: dict, agent: str, result: dict) -> list[str]:
@@ -181,7 +186,7 @@ def unit_errors(prefix: str, unit: dict, agent: str, run: Path, known: set[str])
 
 
 def critic_errors(run: Path, result: dict) -> list[str]:
-    errors = lists(result, ("missing_units", "reassign_ids", "resolved_prior_leads"))
+    errors = lists(result, ("missing_units", "reassign_ids", "resolved_prior_leads"), required=True)
     if errors:
         return errors
     ledger = {u["coverage_id"]: u for u in common.read_ledger(run)}
@@ -192,13 +197,15 @@ def critic_errors(run: Path, result: dict) -> list[str]:
         notes = {}
     for index, entry in enumerate(result["missing_units"]):
         errors += new_entry_errors(f"missing_units[{index}]", entry)
-    for uid in result["reassign_ids"]:
+    for index, uid in enumerate(result["reassign_ids"]):
+        if isinstance(uid, str) and uid in result["reassign_ids"][:index]:
+            errors.append(f"reassign_ids: {uid} repeated")
         if not isinstance(uid, str) or ledger.get(uid, {}).get("status") not in ("blocked", "covered", "candidate"):
             errors.append(f"reassign_ids: {uid!r} is no blocked, covered or candidate unit")
         if not visible(notes.get(uid) if isinstance(uid, str) else None):
             errors.append(f"notes: no reason for reassign id {uid!r}")
     for fp in result["resolved_prior_leads"]:
-        if fp not in leads:
+        if not isinstance(fp, str) or fp not in leads:
             errors.append(f"resolved_prior_leads: {fp!r} is linked to no unit")
         if not visible(notes.get(fp) if isinstance(fp, str) else None):
             errors.append(f"notes: no reason for resolved lead {fp!r}")
@@ -234,7 +241,19 @@ def verifier_errors(run: Path, state: dict, agent: str, result: dict) -> list[st
     if isinstance(record, dict) and record.get("verdict") != decision:
         errors.append(f"record.verdict: {record.get('verdict')!r} is not the decision {decision!r}")
     errors += checks_errors(run, agent, result.get("checks"), True)
-    return errors or record_rules(run, state, record, None, "record")
+    errors = errors or record_rules(run, state, record, None, "record")
+    return errors or other_fingerprint_errors(run, state, agent, record)
+
+
+def other_fingerprint_errors(run: Path, state: dict, agent: str, record: dict) -> list[str]:
+    """A verifier record keeps the brief fingerprint or takes a new one; a fingerprint the run knows is refused."""
+    new = record["fingerprint"]
+    if new == state["briefs"][agent]["fingerprint"]:
+        return []
+    known = {*state["final"], *state["candidates"], *state["renamed"], *state["renamed"].values()}
+    for unit in common.read_ledger(run):
+        known |= set(unit.get("result_fingerprints") or []) | set(unit.get("prior_fingerprints") or [])
+    return [f"record.fingerprint: {new} is another fingerprint of the run"] if new in known else []
 
 
 def recheck_errors(run: Path, state: dict, brief: dict, agent: str, result: dict) -> list[str]:
