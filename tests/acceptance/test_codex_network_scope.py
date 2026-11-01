@@ -30,7 +30,7 @@ CANARY = REPO_ROOT / "scripts" / "canary.sh"
 
 CONFIG = ".codex/config.toml"
 DOCKER_COMMAND = "codex -c default_permissions=dev-docker"
-MINIMUM = "0.165.0"
+MINIMUM = "0.166.0"
 
 FEATURES = ("features",)
 NETWORK = ("permissions", "dev-workspace", "network")
@@ -278,8 +278,8 @@ class NewProjectTests(CodexProjectCase):
             self.assertEqual(network_lines(output), [], output)
         with self.subTest(oracle=19, codex=MINIMUM):
             self.assertNotIn(MINIMUM, output)
-        with self.subTest(oracle=19, codex="0.164.0"):
-            code, output = self.check_setup(project, "0.164.0")
+        with self.subTest(oracle=19, codex="0.165.0"):
+            code, output = self.check_setup(project, "0.165.0")
             self.assertNotEqual(code, 0, output)
             self.assertTrue([line for line in output.splitlines() if MINIMUM in line], output)
             self.assertEqual(network_lines(output), [], output)
