@@ -3,13 +3,15 @@
 # GATE_SCOPE=changed (the Stop hook): any change reaches the node suite (it scans every tracked file),
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
 # README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh,
-# scripts/temp_leak.sh. No change: neither. Else both.
+# scripts/temp_leak.sh, scripts/suite_lock.sh. No change: neither. Else both. A run of either suite waits for the
+# suite lock (scripts/suite_lock.sh): one suite run at a time across the worktrees.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there.
 # Both suites run with an empty TMPDIR: anything the rule of scripts/temp_leak.sh does not allow fails the gate
 # (a temp leak).
 set -u
 cd "$(dirname "$0")/.."
 . scripts/temp_leak.sh
+. scripts/suite_lock.sh
 
 # core.fsmonitor in a user or repo config starts a daemon in each throwaway repo a test makes,
 # and the daemon outlives the test. This override wins over every config file. It comes before
@@ -22,7 +24,7 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
   while IFS= read -r path; do
     case "$path" in
-      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|scripts/temp_leak.sh|cliff.toml) py=1 ;;
+      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|scripts/temp_leak.sh|scripts/suite_lock.sh|cliff.toml) py=1 ;;
     esac
     node=1
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)
@@ -33,6 +35,7 @@ if [ $node = 1 ] && [ ! -d node_modules/playwright ]; then
   echo "FAILED setup: run npm ci && npx playwright install chromium"
   exit 1
 fi
+[ $node$py = 00 ] || suite_lock || exit 1
 
 out=$(mktemp -d) scratch=$(mktemp -d)
 trap 'rm -rf "$out" "$scratch"' EXIT
@@ -40,8 +43,8 @@ report=()
 [ -n "${DEVLOOP_REPORT_DIR:-}" ] && report=(--test-reporter=spec --test-reporter-destination=stdout
   --test-reporter=junit --test-reporter-destination="$DEVLOOP_REPORT_DIR/node.xml")
 export TMPDIR="$scratch"
-[ $node = 1 ] && { node --test ${report[@]+"${report[@]}"} tests/unit/node/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } &
-[ $py = 1 ] && { python3 tests/unit/python/test_dev_loop.py >"$out/py" 2>&1; echo $? >"$out/py.exit"; } &
+[ $node = 1 ] && { node --test ${report[@]+"${report[@]}"} tests/unit/node/*.test.mjs >"$out/node" 2>&1 9>&-; echo $? >"$out/node.exit"; } &
+[ $py = 1 ] && { python3 tests/unit/python/test_dev_loop.py >"$out/py" 2>&1 9>&-; echo $? >"$out/py.exit"; } &
 wait
 
 status=0

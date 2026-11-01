@@ -18,6 +18,7 @@ One file per subject. A new test file adds its line here.
 - `test_case_floor.py`: case floor.
 - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
 - `test_repo_rules.py`, `test_repo_docs.py`: `repo_rules.py`, gate scope; `AGENTS.md` budget, CLI index, this file index, kit and release docs.
+- `test_suite_lock.py`: `scripts/suite_lock.sh`, one suite run at a time across worktrees.
 - `junit_report.py`, `board_fixtures.py`: the one JUnit writer; board fixtures the held-out oracle shares.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
