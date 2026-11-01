@@ -3,8 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
+from audit import common  # noqa: E402
+
+DEVLOOP = Path(__file__).resolve().parents[3] / "skill" / "scripts" / "devloop.py"
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+EVIDENCE = ("covered", "candidate", "blocked")
 FENCE = "```"
 
 HUNTING = f"""# Hunting
@@ -136,3 +147,112 @@ def validator_calls(skill: Path, script: str) -> list[str]:
     """The target path of each call of the stub validator `script`, in order."""
     log = skill / f"{script}.log"
     return log.read_text().splitlines() if log.exists() else []
+
+
+class AuditRunCase(unittest.TestCase):
+    """A scratch repo with `a.py`, `b.py`, `c.py`, a notes folder, the stub skill, and `audit-run` step runners."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo, self.notes, self.skill = self.root / "repo", self.root / "notes", self.root / "skill"
+        self.repo.mkdir()
+        self.notes.mkdir()
+        stub_skill(self.skill)
+        (self.notes / "Project Note.md").write_text("## Deferred\n")
+        self.env = {**os.environ, **GIT_ENV, "DEV_LOOP_NOTES": str(self.notes),
+                    "DEVLOOP_TEST_SECURITY_AUDIT_DIR": str(self.skill)}
+        self.git("init", "-q", "-b", "main")
+        for name in ("a.py", "b.py", "c.py"):
+            (self.repo / name).write_text(name)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "start")
+        self.run_dir: Path | None = None
+
+    def git(self, *args: str) -> str:
+        done = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True, env=self.env)
+        return done.stdout.strip()
+
+    def commit(self, path: str, text: str) -> str:
+        (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.repo / path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", path)
+        return self.git("rev-parse", "HEAD")
+
+    def devloop(self, *args: str) -> tuple[dict, int]:
+        done = subprocess.run([sys.executable, str(DEVLOOP), *args], capture_output=True, text=True, env=self.env)
+        return json.loads(done.stdout or "{}"), done.returncode
+
+    def release_plan(self, *args: str) -> tuple[dict, int]:
+        out, code = self.devloop("release-plan", "--repo", str(self.repo), *args)
+        if code == 0:
+            self.run_dir = Path(out["output"])
+        return out, code
+
+    def step(self, name: str, *args: str) -> tuple[dict, int]:
+        return self.devloop("audit-run", name, "--run", str(self.run_dir), "--repo", str(self.repo), *args)
+
+    def seed(self) -> dict:
+        if self.run_dir is None:
+            self.release_plan()
+        out, code = self.step("seed")
+        self.assertEqual(code, 0, out)
+        return out
+
+    def path(self, name: str) -> Path:
+        assert self.run_dir is not None
+        return self.run_dir / name
+
+    def write_context(self) -> None:
+        self.path("context.md").write_text("CONTEXT-TEXT\n")
+        self.path("architecture.md").write_text("ARCHITECTURE-TEXT\n")
+
+    def snapshot(self) -> dict[str, bytes]:
+        run = self.path(".")
+        files: dict[str, bytes] = {}
+        for path in sorted(run.rglob("*")):
+            key = str(path.relative_to(run))
+            if path.is_symlink():
+                files[key] = b"link:" + os.readlink(path).encode()
+            elif path.is_file():
+                files[key] = path.read_bytes()
+            else:
+                files[key] = b"dir"
+        return files
+
+    def ledger(self) -> list[dict]:
+        return json.loads(self.path("coverage-ledger.json").read_text())
+
+    def state(self) -> dict:
+        return json.loads(self.path("audit-run.json").read_text())
+
+    def metadata(self) -> dict:
+        return json.loads(self.path("run-metadata.json").read_text())
+
+    def prior_unit(self, surface: str, status: str, paths: tuple[str, ...] = ("a.py",), fps: tuple[str, ...] = (),
+                   reviewed: tuple[str, ...] = ()) -> dict:
+        refs = {"surface": surface, "boundary": "B", "subsystem": "S", "attack_class": "ATTACK-CLASSES.md#Access control"}
+        reviewed_list = list(reviewed or (paths if status in EVIDENCE else ()))
+        checks = [{"agent_id": "h01", "reviewed_paths": reviewed_list, "invariant": "i", "method": "source",
+                   "result": "r", "artifact": None}] if reviewed_list else []
+        return {"coverage_id": common.coverage_id(refs), "canonical_refs": refs, **refs, "starting_paths": list(paths),
+                "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control", "selected_companion_blocks": [],
+                "excluded_blocks": [], "prior_status": "new", "attempts": [], "wave": 1, "status": status,
+                "agent_id": "h01" if status in EVIDENCE or status == "in_progress" else None,
+                "reviewed_paths": reviewed_list, "local_checks": checks, "result_fingerprints": list(fps),
+                "unresolved": ["r"] if status in ("deferred", "blocked", "out_of_scope") else []}
+
+    def prior_run(self, n: int, status: str, units: list[dict], findings: list[dict], commit: str) -> Path:
+        folder = self.notes / "Security Audit" / f"Run {n}"
+        folder.mkdir(parents=True)
+        (folder / "run-metadata.json").write_text(json.dumps(
+            {"run_status": status, "profile": "standard", "source_ref": {"commit": commit}}))
+        (folder / "coverage-ledger.json").write_text(json.dumps(units))
+        (folder / "findings.json").write_text(json.dumps(findings))
+        return folder
+
+    def record(self, fp: str, verdict: str, trace: tuple[str, ...] = ("a.py",)) -> dict:
+        return {"fingerprint": fp, "verdict": verdict, "title": f"Title {fp}", "severity": "medium",
+                "trace": [{"file": f, "line": 1} for f in trace]}

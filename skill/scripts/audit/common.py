@@ -62,7 +62,7 @@ def run_folder(repo: Path, folder: str) -> Path:
 def run_step(args: argparse.Namespace, body: Callable[[Path, dict | None], dict], seeded: bool = True) -> int:
     """Run one step: the run folder, the state when `seeded` (else `not-seeded`), then `body`; print its JSON."""
     try:
-        run = run_folder(Path(args.repo), args.run)
+        run = run_folder(Path(args.repo), args.run_folder)
         state = None
         if seeded:
             if not ((run / METADATA).is_file() and (run / STATE).is_file()):

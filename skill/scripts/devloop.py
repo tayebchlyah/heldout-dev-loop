@@ -31,6 +31,8 @@
                                                       record a finished release audit run in the project note
   devloop.py release-record --fix-wave --issue N [--issue N ...] [--repo PATH]
                                                       record the end of the fix wave of the current audit
+  devloop.py audit-run <step> --run FOLDER [--repo PATH] ...
+                                                      the parent-side steps of a release audit run (reference/cli/audit-run.md)
   devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
   devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
@@ -330,6 +332,17 @@ def main() -> int:
     rec.add_argument("--fix-wave", action="store_true")
     rec.add_argument("--issue", dest="issues", action="append", type=positive_int)
     rec.set_defaults(run=("release", "cmd_release_record"))
+
+    audit_steps = commands.add_parser("audit-run").add_subparsers(dest="audit_step", required=True)
+
+    def step(name: str, module: str) -> argparse.ArgumentParser:
+        sub = audit_steps.add_parser(name)
+        sub.add_argument("--run", dest="run_folder", required=True)
+        sub.add_argument("--repo", default=".")
+        sub.set_defaults(run=(f"audit.{module}", "cmd_" + name.replace("-", "_")))
+        return sub
+
+    step("seed", "seed")
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
