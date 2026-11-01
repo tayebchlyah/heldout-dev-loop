@@ -119,6 +119,7 @@ wire("test_audit_check")
 wire("test_audit_promote")
 wire("test_audit_fold")
 wire("test_audit_fold_review")
+wire("test_audit_close")
 
 
 class JUnitReportTests(unittest.TestCase):
