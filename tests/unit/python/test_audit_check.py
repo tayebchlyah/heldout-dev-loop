@@ -123,6 +123,41 @@ class AuditCheckTests(AuditRunCase):
                 self.write_result(c, result)
                 self.invalid(c, named)
 
+    def critic_agent(self) -> tuple[str, str]:
+        self.release_plan("--profile", "standard")
+        _, (uid,) = self.folded_hunter("a.py")
+        out, code = self.step("brief", "--kind", "critic")
+        self.assertEqual(code, 0, out)
+        return out["agent"], uid
+
+    def test_critic_result_with_a_missing_or_odd_field_is_invalid(self) -> None:
+        c, uid = self.critic_agent()
+        full = self.critic_result(reassign_ids=[uid], notes={uid: "why"})
+        cases = (
+            ("no reassign_ids", {k: v for k, v in full.items() if k != "reassign_ids"}, "reassign_ids"),
+            ("no missing_units", {k: v for k, v in full.items() if k != "missing_units"}, "missing_units"),
+            ("no resolved_prior_leads", {k: v for k, v in full.items() if k != "resolved_prior_leads"},
+             "resolved_prior_leads"),
+            ("list lead", {**full, "resolved_prior_leads": [["x"]]}, "resolved_prior_leads"),
+            ("repeated reassign id", {**full, "reassign_ids": [uid, uid]}, f"{uid} repeated"),
+        )
+        for name, result, named in cases:
+            with self.subTest(name):
+                self.write_result(c, result)
+                self.invalid(c, named)
+
+    def test_unusable_checks_do_not_crash_fold_or_promote(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        self.write_result(agent, {**self.hunter_result(agent, ids), "checks": 1})
+        for name in ("promote", "fold"):
+            out, code = self.step(name, "--agent", agent)
+            self.assertEqual(code, 0, out)
+        other, ids = self.hunter_brief("b.py")
+        result = self.hunter_result(other, ids)
+        result["units"][0]["checks"] = 1
+        self.write_result(other, result)
+        self.assertEqual(self.step("promote", "--agent", other)[1], 0)
+
     def test_verifier_and_recheck_rules(self) -> None:
         self.carried_run()
         self.write_context()

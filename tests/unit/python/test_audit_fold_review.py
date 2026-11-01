@@ -21,6 +21,21 @@ class AuditFoldReviewTests(AuditRunCase):
         return {"surface": surface, "boundary": "B", "subsystem": "S", "attack_class": "ATTACK-CLASSES.md#Injection",
                 "starting_paths": list(paths), "reason": "gap"}
 
+    def test_verifier_cannot_take_another_fingerprint_of_the_run(self) -> None:
+        self.release_plan("--profile", "standard")
+        self.folded_hunter("a.py", candidates=[self.candidate("f-a"), self.candidate("f-b")])
+        self.folded("critic", lambda c: self.critic_result(stop=True), "--final")
+        self.folded("verifier", lambda v: self.verifier_result(v, "f-a"), "--fingerprint", "f-a")
+        self.folded("recheck", lambda r: {"decision": "verified", "fingerprint": "f-a"}, "--fingerprint", "f-a")
+        out, code = self.step("brief", "--kind", "verifier", "--fingerprint", "f-b")
+        self.assertEqual(code, 0, out)
+        v = out["agent"]
+        self.write_result(v, self.verifier_result(v, "f-a", "rejected"))
+        self.assertEqual(self.check(v)[0]["errors"], ["record.fingerprint: f-a is another fingerprint of the run"])
+        self.write_result(v, self.verifier_result(v, "f-new", "rejected"))
+        self.assertEqual(self.check(v)[1], 0)
+        self.assertEqual(self.state()["final"]["f-a"]["verdict"], "confirmed")
+
     def test_critic_adds_and_reassigns(self) -> None:
         self.release_plan("--profile", "standard")
         hunter, (uid,) = self.folded_hunter("a.py")
