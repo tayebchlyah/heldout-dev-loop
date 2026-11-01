@@ -30,6 +30,13 @@ class AuditCheckTests(AuditRunCase):
         self.write_result(agent, self.hunter_result(agent, ids, hardening=["note"]))
         self.assertEqual(self.check(agent), ({"ok": True}, 0))
 
+    def test_candidate_unit_may_list_unresolved(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        result = self.hunter_result(agent, ids, candidates=[self.candidate("f-one")])
+        result["units"][0].update(disposition="candidate", candidate_fingerprints=["f-one"], unresolved=["open point"])
+        self.write_result(agent, result)
+        self.assertEqual(self.check(agent), ({"ok": True}, 0))
+
     def test_each_broken_field(self) -> None:
         agent, ids = self.hunter_brief("a.py")
         uid = ids[0]

@@ -219,7 +219,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
             safefs.remove_agent_folder(run, agent)
             raise
         state["briefs"][agent] = {"kind": kind, "units": [u["coverage_id"] for u in held], "fingerprint": fp,
-                                  "final": final, "state": "open", "order": None, "reason": None, "promoted": {}}
+                                  "final": final, "state": "open", "order": None, "reason": None}
         common.save_state(run, state)
         return {"agent": agent, "prompt": str(folder / "prompt.md"), "result": str(result)}
 

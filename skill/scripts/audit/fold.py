@@ -7,9 +7,10 @@ import copy
 from pathlib import Path
 from typing import Callable
 
-from audit import common
+from audit import common, safefs
 from audit.brief import carried_units
 from audit.check import check_result, known_agent, local_artifacts
+from audit.promote import FILE_LIMIT
 from audit.units import build_unit, merge_new
 
 
@@ -78,8 +79,10 @@ def cmd_fold(args: argparse.Namespace) -> int:
             found, errors, result = check_result(run, saved, args.agent)
             if found != "ready" or result is None:
                 common.fail("invalid", state=found, errors=errors)
-            promoted = saved["briefs"][args.agent]["promoted"]
-            if missing := [p for p in local_artifacts(result) if p not in promoted]:
+            own = f"agents/{args.agent}/artifacts/"
+            if missing := [p for p in local_artifacts(result)
+                           if not (p.startswith(own) and safefs.read_file(run / "agents" / args.agent / "artifacts",
+                                                                         p[len(own):], FILE_LIMIT) is not None)]:
                 common.fail("unpromoted", paths=missing)
             kinds = dict(KINDS)
             if state["briefs"][args.agent]["kind"] != "hunter":
