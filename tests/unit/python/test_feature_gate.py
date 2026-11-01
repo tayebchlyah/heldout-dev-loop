@@ -167,7 +167,7 @@ class ReviewSaveTests(TempDir):
         self.assertFalse((self.gitdir / "dev-loop").exists())
 
     def test_bad_names_are_refused(self) -> None:
-        for name in ("../x", "a/b", "..", ".", "", ".hidden", "a\\b"):
+        for name in ("../x", "a/b", "..", ".", "", ".hidden", "a\\b", "café", "٣"):
             with self.subTest(name=name):
                 code, out = self.save("--reviewer", name, text=HEADER)
                 self.assertEqual(code, 2)
