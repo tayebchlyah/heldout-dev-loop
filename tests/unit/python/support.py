@@ -78,6 +78,9 @@ def all_instructions() -> str:
     return "\n".join(parts)
 
 
+MIN_PINNED_PHRASE = 12
+
+
 def budget_report(path: Path, limit: int) -> str | None:
     size = len(path.read_bytes())
     if size <= limit:
@@ -86,8 +89,8 @@ def budget_report(path: Path, limit: int) -> str | None:
     pinned = sorted({node.value for test in Path(__file__).resolve().parent.glob("test_*.py")
                      for node in ast.walk(ast.parse(test.read_text()))
                      if isinstance(node, ast.Constant) and isinstance(node.value, str)
-                     and len(node.value) >= 12 and node.value in text})
-    return "\n".join([f"{path.name}: {size} bytes, {size - limit} over {limit}. Trim it; the suite pins these phrases in it:",
+                     and len(node.value) >= MIN_PINNED_PHRASE and node.value in text})
+    return "\n".join([f"{path.name}: {size} bytes, {size - limit} over {limit}. Trim it; the suite pins these phrases in it (pins under {MIN_PINNED_PHRASE} characters are not listed):",
                       *pinned])
 
 

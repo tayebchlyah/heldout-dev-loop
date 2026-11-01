@@ -28,7 +28,9 @@ class RepoDocsTests(unittest.TestCase):
         self.cli = self.agents.split("## devloop CLI", 1)[1].split("\n## ", 1)[0]
 
     def test_budget(self) -> None:
-        self.assertIsNone(budget_report(ROOT / "AGENTS.md", 16000))
+        report = budget_report(ROOT / "AGENTS.md", 16000)
+        if report:
+            self.fail(report)
 
     def test_budget_report_names_the_bytes_over_and_the_pinned_phrases(self) -> None:
         phrase = "Read `reference/cli/<command>.md` before you change, test or debug a command"
@@ -38,14 +40,14 @@ class RepoDocsTests(unittest.TestCase):
             self.assertIsNone(budget_report(path, 1000))
             report = budget_report(path, 10)
         lines = (report or "").splitlines()
-        self.assertEqual(lines[0], "AGENTS.md: 87 bytes, 77 over 10. Trim it; the suite pins these phrases in it:")
+        self.assertEqual(lines[0], "AGENTS.md: 87 bytes, 77 over 10. Trim it; the suite pins these phrases in it (pins under 12 characters are not listed):")
         self.assertIn(phrase, lines[1:])
 
     def test_test_file_index_lives_in_the_suite_readme(self) -> None:
         index = (HERE / "README.md").read_text()
         for test in sorted(HERE.glob("test_*.py")):
             with self.subTest(test=test.name):
-                self.assertTrue(test.name in index or (test.stem.startswith("test_metrics") and "test_metrics{,_cli}.py" in index))
+                self.assertIn(f"`{test.name}`", index)
         self.assertIn("`tests/unit/python/README.md`", self.agents)
         self.assertNotIn("`test_dev_loop.py`: entry", self.agents)
 
