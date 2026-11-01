@@ -6,7 +6,7 @@ import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs
 import { packageRoot, tempDir } from './helpers.mjs'
 
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
-const CODEX = '"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/'
+const CODEX = `"$(git worktree list --porcelain | sed -n '1s/^worktree //p')/.dev-loop/hooks/codex/`
 
 test('a Claude hook command points at the project hook folder and keeps its arguments', () => {
   assert.equal(
