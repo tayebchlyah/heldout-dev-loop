@@ -29,7 +29,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
 - `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
-- `scripts/temp_leak.sh`: leak rule of `gate.sh`, `acceptance.sh`: empty `TMPDIR`, leftover fails.
+- `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh`: empty `TMPDIR`, leftover fails; suite lock: one run at a time across worktrees.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only).
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).

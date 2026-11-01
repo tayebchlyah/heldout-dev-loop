@@ -411,6 +411,7 @@ class GateScopeTests(unittest.TestCase):
             git(repo, "init", "-q")
             put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
             put(repo / "scripts" / "temp_leak.sh", (ROOT / "scripts" / "temp_leak.sh").read_text())
+            put(repo / "scripts" / "suite_lock.sh", (ROOT / "scripts" / "suite_lock.sh").read_text())
             put(repo / "tests" / "unit" / "python" / "test_dev_loop.py", "print('SKILL-RAN')\n")
             put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
             (repo / "node_modules" / "playwright").mkdir(parents=True)
@@ -421,7 +422,7 @@ class GateScopeTests(unittest.TestCase):
             git(repo, "commit", "-q", "-m", "base")
             for path, runs in (("reference/cli/status.md", True), ("README.md", True),
                                ("scripts/repo_rules.py", True), ("cliff.toml", True),
-                               ("scripts/temp_leak.sh", True), ("x.txt", False)):
+                               ("scripts/temp_leak.sh", True), ("scripts/suite_lock.sh", True), ("x.txt", False)):
                 with self.subTest(path=path):
                     put(repo / path, (repo / path).read_text() + "true\n" if path.endswith(".sh") else "b\n")
                     out = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True,
@@ -450,6 +451,7 @@ class GateTempLeakTests(unittest.TestCase):
             repo = Path(tmp).resolve()
             put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
             put(repo / "scripts" / "temp_leak.sh", (ROOT / "scripts" / "temp_leak.sh").read_text())
+            put(repo / "scripts" / "suite_lock.sh", (ROOT / "scripts" / "suite_lock.sh").read_text())
             put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
             put(repo / "blat.txt", "blat")
             (repo / "node_modules" / "playwright").mkdir(parents=True)
@@ -481,7 +483,7 @@ class GateFailureReportTests(unittest.TestCase):
 
     def make_repo(self, root: Path, py: str, playwright: bool = True) -> Path:
         repo = root / "repo"
-        for name in ("gate.sh", "temp_leak.sh"):
+        for name in ("gate.sh", "temp_leak.sh", "suite_lock.sh"):
             put(repo / "scripts" / name, (ROOT / "scripts" / name).read_text())
         put(repo / "tests" / "unit" / "python" / "junit_report.py",
             (ROOT / "tests" / "unit" / "python" / "junit_report.py").read_text())
