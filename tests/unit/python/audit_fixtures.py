@@ -272,6 +272,32 @@ class AuditRunCase(unittest.TestCase):
         (folder / "findings.json").write_text(json.dumps(findings))
         return folder
 
+    def carried_run(self, change: str = "b.py", profile: tuple[str, ...] = ()) -> dict:
+        """The prior Run 1 of U1 (`f-c` confirmed), U2 (`f-n`), U3, U4 (covered), U5 (deferred), U6 (`f-r` rejected),
+        an empty Run 2, a commit to `change`, then Run 3 planned and seeded; sets `self.U1` and so on."""
+        start = self.git("rev-parse", "HEAD")
+        units = {
+            "U1": self.prior_unit("u1", "candidate", fps=("f-c",)),
+            "U2": self.prior_unit("u2", "candidate", fps=("f-n",)),
+            "U3": self.prior_unit("u3", "covered", paths=("b.py",)),
+            "U4": self.prior_unit("u4", "covered", paths=("c.py",)),
+            "U5": self.prior_unit("u5", "deferred", paths=("c.py",)),
+            "U6": self.prior_unit("u6", "candidate", fps=("f-r",)),
+        }
+        findings = [self.record("f-c", "confirmed"), self.record("f-n", "needs_validation"), self.record("f-r", "rejected")]
+        self.prior_run(1, "complete", list(units.values()), findings, start)
+        (self.notes / "Security Audit" / "Run 2").mkdir()
+        self.commit(change, "changed")
+        self.release_plan(*profile)
+        for name, unit in units.items():
+            setattr(self, name, unit["coverage_id"])
+        return self.seed()
+
+    def put_candidate(self, fp: str, body: dict, hunter: str = "h01") -> None:
+        state = self.state()
+        state["candidates"][fp] = {"body": body, "hunter": hunter, "later": []}
+        common.save_state(self.path("."), state)
+
     def record(self, fp: str, verdict: str, trace: tuple[str, ...] = ("a.py",)) -> dict:
         return {"fingerprint": fp, "verdict": verdict, "title": f"Title {fp}", "severity": "medium",
                 "trace": [{"file": f, "line": 1} for f in trace]}

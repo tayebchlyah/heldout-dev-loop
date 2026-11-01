@@ -346,6 +346,11 @@ def main() -> int:
     units = step("units", "units").add_mutually_exclusive_group(required=True)
     units.add_argument("--add")
     units.add_argument("--update")
+    brief = step("brief", "brief")
+    brief.add_argument("--kind", choices=["hunter", "critic", "verifier", "recheck"], required=True)
+    brief.add_argument("--units", nargs="+")
+    brief.add_argument("--final", action="store_true")
+    brief.add_argument("--fingerprint")
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
@@ -400,6 +405,13 @@ def main() -> int:
             parser.error("--issue needs --fix-wave")
         if not args.fix_wave and args.run_folder is None:
             parser.error("--run is required unless --fix-wave is given")
+    if args.command == "audit-run" and args.audit_step == "brief":
+        if args.kind == "hunter" and (not args.units or args.fingerprint or args.final):
+            parser.error("--kind hunter takes --units, no --fingerprint or --final")
+        if args.kind == "critic" and (args.units or args.fingerprint):
+            parser.error("--kind critic takes no --units or --fingerprint")
+        if args.kind in ("verifier", "recheck") and (not args.fingerprint or args.units or args.final):
+            parser.error(f"--kind {args.kind} takes --fingerprint, no --units or --final")
     module, name = args.run
     return getattr(importlib.import_module(module), name)(args)
 
