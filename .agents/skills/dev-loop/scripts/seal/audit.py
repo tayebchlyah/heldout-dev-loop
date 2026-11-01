@@ -13,6 +13,7 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
+from xml.sax.saxutils import unescape
 
 import devloop
 from devloop import emit
@@ -29,6 +30,9 @@ MAX_BYTES = 1024 * 1024
 BINARY_PROBE = 8192
 # `[feat/x abc1234] msg` (or `[main (root-commit) abc1234]`) from git commit, `"commit": "<sha>"` from devloop.py seal.
 COMMIT_SHA = re.compile(r'^\[\S+(?: \([^)]*\))? ([0-9a-f]{7,64})\]|"commit": "([0-9a-f]{40,64})"', re.MULTILINE)
+MCP_TOOLS = ("ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool")
+TOOL_USE_ID = re.compile(r"<tool-use-id>(.*?)</tool-use-id>", re.S)
+EVENT = re.compile(r"<event>(.*?)</event>", re.S)
 
 
 def now() -> str:
@@ -39,6 +43,7 @@ def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
     outputs: list[str] = []
     searches: list[str] = []
     search_ids: set[str] = set()
+    monitor_ids: set[str] = set()
     found = False
     with path.open(encoding="utf-8", errors="replace") as lines:
         for line in lines:
@@ -51,17 +56,37 @@ def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
             payload = entry.get("payload")
             if entry.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") == "item_completed":
                 item = payload.get("item")
+                if isinstance(item, dict) and item.get("type") == "McpToolCall":
+                    found = True
+                    result = item.get("result")
+                    outputs.append(result_text(result.get("content")) if isinstance(result, dict) else "")
+                    searches.append(outputs[-1])
                 if isinstance(item, dict) and item.get("type") == "CommandExecution":
                     found = True
                     outputs.append(str(item.get("aggregated_output") or ""))
                     command = item.get("command")
                     if reads_files(" ".join(map(str, command)) if isinstance(command, list) else str(command or "")):
                         searches.append(outputs[-1])
+            if entry.get("type") == "response_item" and isinstance(payload, dict) and payload.get("type") == "custom_tool_call_output":
+                found = True
+                outputs.append(result_text(payload.get("output")))
+            note = entry.get("attachment")
+            if (entry.get("type") == "attachment" and isinstance(note, dict) and note.get("type") == "queued_command"
+                    and note.get("commandMode") == "task-notification" and isinstance(note.get("prompt"), str)):
+                call_id = TOOL_USE_ID.search(note["prompt"])
+                if call_id and call_id.group(1) in monitor_ids:
+                    found = True
+                    for event in map(unescape, EVENT.findall(note["prompt"])):
+                        outputs.append(event)
+                        if call_id.group(1) in search_ids:
+                            searches.append(event)
             message = entry.get("message")
             if entry.get("type") == "assistant" and isinstance(message, dict) and isinstance(message.get("content"), list):
                 for item in message["content"]:
                     if isinstance(item, dict) and item.get("type") == "tool_use" and is_search(item):
                         search_ids.add(str(item.get("id")))
+                    if isinstance(item, dict) and item.get("type") == "tool_use" and item.get("name") == "Monitor":
+                        monitor_ids.add(str(item.get("id")))
             if entry.get("type") == "user" and isinstance(message, dict) and isinstance(message.get("content"), list):
                 for item in message["content"]:
                     if isinstance(item, dict) and item.get("type") == "tool_result":
@@ -75,8 +100,9 @@ def tool_outputs(path: Path) -> tuple[list[str], list[str]] | None:
 def is_search(call: dict) -> bool:
     tool_input = call.get("input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
-    return call.get("name") in ("Grep", "Glob") or (call.get("name") == "Bash" and isinstance(command, str)
-                                                     and reads_files(command))
+    name = str(call.get("name"))
+    return (name in ("Grep", "Glob", "LSP", *MCP_TOOLS) or name.startswith("mcp__")
+            or (name in ("Bash", "Monitor") and isinstance(command, str) and reads_files(command)))
 
 
 def is_filter(name: str, args: list[str]) -> bool:

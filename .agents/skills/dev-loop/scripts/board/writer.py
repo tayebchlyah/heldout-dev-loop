@@ -397,11 +397,12 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, s
 
 
 def kit_version(top: Path) -> str:
-    """The `version` of `.dev-loop/MANIFEST.json`, else "0.0.0"."""
+    """The `version` of `.dev-loop/MANIFEST.json` when it is a version (#119), else "0.0.0"."""
     try:
-        return str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
+        version = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return "0.0.0"
+    return version if re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?", version) else "0.0.0"
 
 
 def board_text(kit: str) -> str:
@@ -575,7 +576,11 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     for _, path in sorted(shipped, reverse=True)[SHIPPED_KEPT:]:
         path.unlink()
         payload["removed"].append(str(path))
-    features = [f for f in features if f in kept or f in own_features]
+    # Issue #114: a slug whose own note this run did not see stays only while that note exists in a board folder.
+    old_folder = board.parent / "dev-loop-board" / "features"
+    features = [f for f in features if f in kept or f in own_features
+                or store.note_name(machine["id"], project, f) not in own_names
+                and any((d / store.note_name(machine["id"], project, f)).exists() for d in (folder, old_folder))]
     if features != old_features:
         features_file.write_text(json.dumps(features) + "\n")
     # D1: an entry goes once its feature is out of the write set and has no own-name note in either folder.
