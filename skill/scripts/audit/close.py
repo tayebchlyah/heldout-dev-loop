@@ -48,17 +48,22 @@ def cmd_findings(args: argparse.Namespace) -> int:
         assert state is not None
         skill = Path(state["skill"])
         ledger = common.read_ledger(run)
+        records = [state["final"][fp] for fp in sorted(state["final"])]
+        common.write_json_atomic(run / common.FINDINGS, records)
+        if (tail := common.run_validator(skill, "validate-findings.cjs", run / common.FINDINGS)) is not None:
+            common.fail("invalid-run", tail=tail)
         if args.incomplete is not None:
             for unit in ledger:
                 if unit["status"] == "planned":
                     unit.update(status="deferred", unresolved=[args.incomplete])
-            common.write_ledger(run, skill, ledger)
-        records = [state["final"][fp] for fp in sorted(state["final"])]
-        common.write_json_atomic(run / common.FINDINGS, records)
-        for script, target in (("validate-findings.cjs", run / common.FINDINGS),
-                               ("validate-coverage-ledger.cjs", run / common.LEDGER)):
-            if (tail := common.run_validator(skill, script, target)) is not None:
-                common.fail("invalid-run", tail=tail)
+            try:
+                common.write_ledger(run, skill, ledger)
+            except common.StepError as exc:
+                if exc.payload.get("error") != "ledger-invalid":
+                    raise
+                common.fail("invalid-run", tail=exc.payload["tail"])
+        if (tail := common.run_validator(skill, "validate-coverage-ledger.cjs", run / common.LEDGER)) is not None:
+            common.fail("invalid-run", tail=tail)
         items = open_items(state, ledger)
         metadata = common.read_json(run / common.METADATA)
         if args.incomplete is not None:

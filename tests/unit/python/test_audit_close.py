@@ -81,6 +81,18 @@ class AuditCloseTests(AuditRunCase):
         self.assertEqual((code, out["error"], self.metadata()["run_status"]), (1, "invalid-run", "in_progress"))
         self.assertIn("stub failure", out["tail"])
 
+    def test_incomplete_validator_failure_keeps_the_ledger(self) -> None:
+        self.release_plan("--profile", "standard")
+        self.seed()
+        self.add_units(self.entry("a.py"))
+        ledger = self.path("coverage-ledger.json")
+        before = ledger.read_bytes()
+        validator_exit(self.skill, "validate-findings.cjs", 1)
+        out, code = self.step("findings", "--incomplete", "x")
+        self.assertEqual((code, out["error"], self.metadata()["run_status"]), (1, "invalid-run", "in_progress"))
+        self.assertIn("stub failure", out["tail"])
+        self.assertEqual(ledger.read_bytes(), before)
+
     def test_quick_needs_one_critic_and_no_recheck(self) -> None:
         self.closed_flow(profile="quick")
         self.assertEqual(self.step("findings")[0]["run_status"], "complete")
