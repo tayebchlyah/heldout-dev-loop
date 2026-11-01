@@ -95,7 +95,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
         scope: dict = {"kind": "whole", "spec": plan["scope"], "paths": None, "exclude": exclude}
         if plan["scope"] != "whole":
             base = plan["scope"].split("..", 1)[0]
-            diff = common.git_paths(repo, "diff", "--name-only", base, head)
+            diff = common.git_paths(repo, "diff", "--no-renames", "--name-only", base, head)
             if diff is None:
                 common.fail("git-failed", command=f"git diff --name-only {plan['scope']}")
             gone = set(exclude)
@@ -111,7 +111,8 @@ def cmd_seed(args: argparse.Namespace) -> int:
             prior_units, findings = read_prior(path, metadata)
             records = {r["fingerprint"]: r for r in findings if isinstance(r, dict) and "fingerprint" in r}
             commit = (metadata.get("source_ref") or {}).get("commit")
-            diff = common.git_paths(repo, "diff", "--name-only", commit, head) if commit else None
+            sha = isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit)
+            diff = common.git_paths(repo, "diff", "--no-renames", "--name-only", commit, head) if sha else None
             changed = set(diff) if diff is not None else None
             for unit in prior_units:
                 status = prior_status(unit, records, changed)
