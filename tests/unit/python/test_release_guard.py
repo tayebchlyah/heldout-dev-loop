@@ -479,6 +479,14 @@ class ReleaseWorkflowTests(unittest.TestCase):
             self.assertIn("    needs: changes\n", job)
             self.assertIn("    if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}\n", job)
 
+    def test_a_retarget_runs_every_job_again(self) -> None:
+        ci = self.workflow("ci.yml")
+        self.assertIn("  pull_request:\n    types: [opened, synchronize, reopened, edited]\n", ci)
+        self.assertNotIn("github.event.action", ci)
+        for path in ("reference/kit.md", "skills/release/SKILL.md"):
+            with self.subTest(path=path):
+                self.assertIn("List `edited` in the `pull_request` types", (self.ROOT / path).read_text())
+
     def test_changes_job_skips_only_on_a_default_branch_base(self) -> None:
         sources = {"ci.yml": self.workflow("ci.yml"), "reference/kit.md": (self.ROOT / "reference/kit.md").read_text(),
                    "skills/release/SKILL.md": (self.ROOT / "skills/release/SKILL.md").read_text()}
