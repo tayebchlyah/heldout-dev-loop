@@ -62,6 +62,25 @@ class ReleaseParseTests(unittest.TestCase):
                 found, _ = self.items(deferred(item, *rulings))
                 self.assertEqual([i["line"] for i in found], [item] if is_open else [])
 
+    def test_deferred_items_keep_closed_items_and_last_ruling(self) -> None:
+        item = "- 2026-10-25 (security, needs-validation, Run 3): x. Fingerprint `f-n1`."
+        accept = "  - Ruling 2026-10-30: accept single owner"
+        cases = [
+            ([], False, None),
+            ([accept], True, {"date": "2026-10-30", "word": "accept"}),
+            ([accept, "  - Ruling 2026-10-31: close fixed by #1"], True, {"date": "2026-10-31", "word": "close"}),
+            ([accept, "  - Ruling 2026-10-31: fix in a slice"], True, {"date": "2026-10-31", "word": "fix"}),
+            (["  - Ruling 2026-10-30: accept "], False, None),
+        ]
+        for subs, closed, ruling in cases:
+            with self.subTest(subs=subs):
+                [found], _ = release.deferred_items(deferred(item, *subs))
+                self.assertEqual((found["closed"], found["ruling"], found["source"], found["fingerprint"]), (closed, ruling, "Run 3", "f-n1"))
+        again = "- 2026-10-31 (security, needs-validation, Run 4): y. Fingerprint `f-n1`."
+        text = deferred(item, accept, again)
+        self.assertEqual([i["line"] for i in release.deferred_items(text)[0]], [item, again])
+        self.assertEqual([i["line"] for i in self.items(text)[0]], [again])
+
     def test_checkbox_and_subsection_and_fingerprint(self) -> None:
         text = "## Deferred\n### Some gate\n- [ ] 2026-10-25 (security, needs-validation, my-feature): y. Fingerprint `abc123`. Blocker: z.\n- [x] 2026-10-25 (security, confirmed, Run 2): w\n"
         found, unparsed = self.items(text)
