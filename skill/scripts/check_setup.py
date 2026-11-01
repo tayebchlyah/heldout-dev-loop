@@ -36,6 +36,7 @@ PROJECT_SKILL_DENIES = [
     "Skill(superpowers:brainstorming)",
     "Skill(superpowers:finishing-a-development-branch)",
 ]
+SAFE_OPS = ("rm", "cp", "mv", "ln")
 COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed",
                 "release_prepare", "release_check", "release_verify")
 MERGE_VALUES = ("auto", "human")
@@ -191,6 +192,29 @@ def check_release_sandbox(repo: Path) -> list[str]:
         for name, image in images.items()
         if not docker("image", "inspect", image)
     ]
+
+
+def check_agent_shell(harness: str, env: Mapping[str, str]) -> list[str]:
+    """#165: the harness shell snapshot copies the interactive shell config, no terminal: no noclobber, no `-i` alias."""
+    shell = env.get("SHELL")
+    if not shell:
+        return []
+    try:
+        out = subprocess.run([shell, "-ic", f'echo "flags=$-"; alias {" ".join(SAFE_OPS)}'], stdin=subprocess.DEVNULL,
+                             capture_output=True, text=True, timeout=30, check=False).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for line in out.splitlines():
+        if line.startswith("flags=") and "C" in line:
+            found.append("noclobber")
+        name, eq, value = line.removeprefix("alias ").partition("=")
+        if eq and name in SAFE_OPS and "-i" in value.strip("'\"").split():
+            found.append(f"{name} -i")
+    if not found:
+        return []
+    return [f"Turn off in the {harness} shell snapshot ({shell} -ic, no terminal): {', '.join(found)} "
+            "(guard each with [[ ! -t 0 && ! -t 1 ]] in the shell config; dev-loop reference/kit.md, Verify after install)"]
 
 
 def check_second_review(repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
@@ -747,6 +771,7 @@ def main() -> int:
     failures += gh_line(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
     action_groups += [(line, []) for line in check_release_sandbox(args.repo)]
+    action_groups += [(line, []) for line in check_agent_shell(args.harness, os.environ)]
     action_groups += [(line, []) for line in ci.check_github(args.repo)]
 
     if failures or action_groups:

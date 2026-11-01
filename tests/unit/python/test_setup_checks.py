@@ -214,3 +214,54 @@ class SecurityAuditCheckTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "GIT_CONFIG_GLOBAL"}
         with unittest.mock.patch.dict(os.environ, {**env, "HOME": str(self.home)}, clear=True):
             self.assertEqual(check_setup.tree_id(folder), self.reference_tree(scratch))
+
+
+class AgentShellCheckTests(unittest.TestCase):
+    def shell(self, tmp: str, body: str) -> Path:
+        shell = Path(tmp) / "fake-shell"
+        shell.write_text("#!/bin/sh\n"
+                         f"{{ echo \"$1\"; [ -t 0 ] && echo tty0; [ -t 1 ] && echo tty1; }} > '{tmp}/seen'\n{body}")
+        shell.chmod(0o755)
+        return shell
+
+    def actions(self, body: str) -> tuple[list[str], str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            shell = self.shell(tmp, body)
+            lines = check_setup.check_agent_shell("claude", {"SHELL": str(shell)})
+            return lines, (Path(tmp) / "seen").read_text()
+
+    def test_noclobber_and_each_interactive_alias_are_reported(self) -> None:
+        names = ("r" + "m", "cp", "mv", "ln")
+        aliases = "".join(f"echo \"{name}='nocorrect {name} -i'\"\n" for name in names)
+        lines, seen = self.actions("echo flags=569CXik\n" + aliases)
+        self.assertEqual(seen, "-ic\n")
+        self.assertEqual(len(lines), 1)
+        self.assertIn("noclobber, " + ", ".join(f"{name} -i" for name in names), lines[0])
+        self.assertIn("the claude shell snapshot", lines[0])
+        self.assertIn("reference/kit.md", lines[0])
+
+    def test_bash_alias_lines_are_read(self) -> None:
+        lines, _ = self.actions("echo flags=hBi\necho \"alias cp='cp -i'\"\necho \"alias mv='mv -v'\"\n")
+        self.assertEqual(len(lines), 1)
+        self.assertIn(": cp -i (", lines[0])
+
+    def test_clean_shell_has_no_line(self) -> None:
+        self.assertEqual(self.actions("echo flags=569Xik\necho \"cp='nocorrect cp'\"\necho \"lc='ls -i'\"\n")[0], [])
+
+    def test_no_shell_or_a_broken_one_has_no_line(self) -> None:
+        self.assertEqual(check_setup.check_agent_shell("codex", {}), [])
+        self.assertEqual(check_setup.check_agent_shell("codex", {"SHELL": "/no/such/shell"}), [])
+        self.assertEqual(self.actions("exit 3\n")[0], [])
+
+    def test_line_prints_under_user_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            write(repo / "dev-loop.json", "{}")
+            env = checker_env(Path(tmp) / "bin", SHELL=str(self.shell(tmp, "echo flags=C\n")))
+            result = subprocess.run(
+                [sys.executable, str(CHECKER), "--harness", "codex", "--home", str(Path(tmp) / "home"), "--repo", str(repo)],
+                capture_output=True, text=True, check=False, env=env)
+            head, _, actions = result.stdout.partition("User actions required")
+            self.assertIn("- Turn off in the codex shell snapshot", actions)
+            self.assertIn("-ic, no terminal): noclobber (", actions)
+            self.assertNotIn("noclobber", head)
