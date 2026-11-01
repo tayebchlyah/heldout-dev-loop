@@ -31,7 +31,25 @@ class AuditPromoteTests(AuditRunCase):
         dest = self.path(f"agents/{agent}/artifacts/out/r.txt")
         self.assertEqual((out, dest.read_bytes()), ({"promoted": [f"agents/{agent}/artifacts/out/r.txt"], "rejected": []},
                                                     b"0123456789"))
-        self.assertEqual(self.state()["briefs"][agent]["promoted"], {f"agents/{agent}/artifacts/out/r.txt": 10})
+
+    def test_writes_only_artifacts_and_counts_earlier_ones(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        result = self.hunter_result(agent, ids)
+        result["units"][0]["checks"] = [self.local_check(agent, "good.txt"), self.local_check(agent, "bad.txt")]
+        self.write_result(agent, result)
+        (self.path(f"agents/{agent}/scratch/bad.txt")).unlink()
+        before = self.snapshot()
+        out = self.promote(agent)
+        after = self.snapshot()
+        self.assertEqual((len(out["promoted"]), len(out["rejected"])), (1, 1))
+        self.assertEqual(after["audit-run.json"], before["audit-run.json"])
+        self.assertEqual(sorted(set(after) - set(before)), [f"agents/{agent}/artifacts/good.txt"])
+        big = self.hunter_result(agent, ids)
+        names = ("q1", "q2", "q3", "q4")
+        big["units"][0]["checks"] = [self.local_check(agent, n, data=b"q" * (256 * 1024)) for n in names]
+        self.write_result(agent, big)
+        out = self.promote(agent)
+        self.assertEqual([r["reason"] for r in out["rejected"]], ["agent-limit"])
 
     def test_rejections(self) -> None:
         agent, ids = self.hunter_brief("a.py")

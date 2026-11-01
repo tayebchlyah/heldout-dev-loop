@@ -87,6 +87,36 @@ def write_artifact(run: Path, agent: str, rel: str, data: bytes) -> None:
         os.close(fd)
 
 
+def folder_bytes(dir_fd: int) -> int:
+    """The bytes of the regular files under `dir_fd`; links are not followed, a non-regular entry counts nothing."""
+    total = 0
+    for name in os.listdir(dir_fd):
+        info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        if stat.S_ISREG(info.st_mode):
+            total += info.st_size
+        elif stat.S_ISDIR(info.st_mode):
+            try:
+                child = safefs.open_dir(dir_fd, name)
+            except OSError:
+                continue
+            try:
+                total += folder_bytes(child)
+            finally:
+                os.close(child)
+    return total
+
+
+def artifacts_bytes(run: Path, agent: str) -> int:
+    try:
+        fd = safefs.walk(run, ["agents", agent, "artifacts"])
+    except OSError:
+        return 0
+    try:
+        return folder_bytes(fd)
+    finally:
+        os.close(fd)
+
+
 def cmd_promote(args: argparse.Namespace) -> int:
     def body(run: Path, state: dict | None) -> dict:
         assert state is not None
@@ -94,25 +124,21 @@ def cmd_promote(args: argparse.Namespace) -> int:
         found, errors, result = read_result(run, args.agent)
         if result is None:
             common.fail("invalid", state=found, errors=errors)
-        brief = state["briefs"][args.agent]
         own = f"agents/{args.agent}/artifacts/"
+        used = artifacts_bytes(run, args.agent)
         promoted, rejected = [], []
         for artifact in local_artifacts(result):
             rel = artifact[len(own):] if artifact.startswith(own) else ""
             try:
                 if not rel or rel.endswith("/") or common.path_error(rel):
                     raise Rejected("unsafe-path")
-                if artifact in brief["promoted"]:
-                    raise Rejected("exists")
-                data = read_scratch(run, args.agent, rel, AGENT_LIMIT - sum(brief["promoted"].values()))
+                data = read_scratch(run, args.agent, rel, AGENT_LIMIT - used)
                 write_artifact(run, args.agent, rel, data)
             except Rejected as exc:
                 rejected.append({"path": artifact, "reason": str(exc)})
                 continue
-            brief["promoted"][artifact] = len(data)
+            used += len(data)
             promoted.append(artifact)
-        if promoted:
-            common.save_state(run, state)
         return {"promoted": promoted, "rejected": rejected}
 
     return common.run_step(args, body)

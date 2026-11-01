@@ -160,8 +160,8 @@ def unit_errors(prefix: str, unit: dict, agent: str, run: Path, known: set[str])
         errors.append(f"{prefix}.disposition: expected covered, candidate or blocked")
     if not paths or not checks:
         errors.append(f"{prefix}: reviewed_paths and checks must not be empty")
-    if disposition in ("covered", "candidate") and unresolved:
-        errors.append(f"{prefix}.unresolved: a {disposition} unit has none")
+    if disposition == "covered" and unresolved:
+        errors.append(f"{prefix}.unresolved: a covered unit has none")
     if disposition == "blocked" and not unresolved:
         errors.append(f"{prefix}.unresolved: a blocked unit needs one")
     if disposition == "candidate" and not fps:

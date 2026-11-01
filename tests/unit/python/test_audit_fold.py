@@ -41,6 +41,34 @@ class AuditFoldTests(AuditRunCase):
         self.assertEqual((self.state()["briefs"][agent]["state"], self.state()["briefs"][agent]["order"]), ("folded", 1))
         self.assertGreater(len(validator_calls(self.skill, "validate-coverage-ledger.cjs")), before)
 
+    def test_candidate_unit_keeps_unresolved(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        result = self.hunter_result(agent, ids, candidates=[self.candidate("f-one")])
+        result["units"][0].update(disposition="candidate", candidate_fingerprints=["f-one"], unresolved=["open point"])
+        self.write_result(agent, result)
+        out, code = self.fold(agent)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((self.unit(ids[0])["status"], self.unit(ids[0])["unresolved"]), ("candidate", ["open point"]))
+
+    def test_unpromoted_when_artifact_is_missing_or_a_link(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        result = self.hunter_result(agent, ids)
+        result["units"][0]["checks"] = [self.local_check(agent, "r.txt")]
+        self.write_result(agent, result)
+        self.promote_ok(agent)
+        artifact = self.path(f"agents/{agent}/artifacts/r.txt")
+        artifact.unlink()
+        out, code = self.fold(agent)
+        self.assertEqual((code, out["error"]), (1, "unpromoted"))
+        artifact.symlink_to(self.path(f"agents/{agent}/scratch/r.txt"))
+        before = self.snapshot()
+        out, code = self.fold(agent)
+        self.assertEqual((code, out["error"], out["paths"]), (1, "unpromoted", [f"agents/{agent}/artifacts/r.txt"]))
+        self.assertEqual(self.snapshot(), before)
+
+    def promote_ok(self, agent: str) -> None:
+        self.assertEqual(self.step("promote", "--agent", agent)[1], 0)
+
     def test_refusals_write_nothing(self) -> None:
         agent, ids = self.hunter_brief("a.py")
         result = self.hunter_result(agent, ids)
