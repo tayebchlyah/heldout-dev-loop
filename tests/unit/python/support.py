@@ -101,7 +101,7 @@ def write(path: Path, text: str = "") -> None:
 
 def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex: str | None = "codex-cli 0.165.0",
                 **extra: str) -> dict[str, str]:
-    """An env whose PATH holds git and fake claude and codex binaries printing the given version text."""
+    """An env whose PATH holds git and fake claude and codex binaries printing the given version text, and a clean SHELL."""
     bins.mkdir(parents=True, exist_ok=True)
     if not (bins / "git").exists():
         (bins / "git").symlink_to(shutil.which("git") or "git")
@@ -111,7 +111,10 @@ def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex:
         if text is not None:
             script.write_text(f"#!/bin/sh\n[ \"$1\" = --version ] || exit 2\necho '{text}'\n" if text != "FAIL" else "#!/bin/sh\nexit 1\n")
             script.chmod(0o755)
-    return {**os.environ, "PATH": str(bins), **extra}
+    shell = bins / "agent-shell"
+    shell.write_text("#!/bin/sh\necho flags=hBi\n")
+    shell.chmod(0o755)
+    return {**os.environ, "PATH": str(bins), "SHELL": str(shell), **extra}
 
 
 PACKAGE_ROOT = SKILL_ROOT.parent
