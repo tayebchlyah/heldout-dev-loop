@@ -72,7 +72,28 @@ class SuiteLockTests(unittest.TestCase):
                              env=env(), timeout=20)
         self.assertEqual((run.stdout, run.stderr, run.returncode), ("got\n", "", 0))
         lock = Path(git(self.main, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
-        self.assertEqual((lock / "dev-loop" / "suite.lock").read_text(), f"{self.other}\n")
+        top, pid = (lock / "dev-loop" / "suite.lock").read_text().splitlines()
+        self.assertEqual(top, str(self.other))
+        self.assertTrue(pid.isdigit(), pid)
+
+    def test_a_run_under_the_holder_takes_no_lock_with_a_clean_env(self) -> None:
+        script = ('. "$0"; suite_lock || exit 9; '
+                  'env -u DEVLOOP_SUITE_LOCK_HELD bash -c \'. "$0"; suite_lock || exit 9; echo got\' "$0"')
+        run = subprocess.run(["bash", "-c", script, LOCK], cwd=self.other, capture_output=True, text=True,
+                             env=env(), timeout=20)
+        self.assertEqual((run.stdout, run.stderr, run.returncode), ("got\n", "", 0))
+
+    def test_gate_copied_alone_runs_with_no_lock(self) -> None:
+        repo = self.main
+        put(repo / "scripts" / "gate.sh", (ROOT / "scripts" / "gate.sh").read_text())
+        put(repo / "tests" / "unit" / "python" / "test_dev_loop.py", "print('SKILL-RAN')\n")
+        put(repo / "tests" / "unit" / "node" / "a.test.mjs", "")
+        (repo / "node_modules" / "playwright").mkdir(parents=True)
+        run = subprocess.run(["bash", "scripts/gate.sh"], cwd=repo, capture_output=True, text=True, timeout=60,
+                             env={k: v for k, v in env().items() if k not in ("DEVLOOP_REPORT_DIR", "GATE_SCOPE")})
+        self.assertIn("SKILL-RAN", run.stdout, run.stdout + run.stderr)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertFalse((repo / ".git" / "dev-loop" / "suite.lock").exists())
 
     def test_a_nested_run_takes_no_lock(self) -> None:
         self.hold(self.main)

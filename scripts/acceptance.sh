@@ -4,12 +4,15 @@
 # run and is listed (rule in scripts/temp_leak.sh). DEVLOOP_REPORT_DIR set: JUnit XML there, acceptance-python.xml,
 # acceptance-node.xml and acceptance-temp-leak.xml (one case temp-leak TMPDIR, failing on a leak).
 # Exit 1 when one part fails, the tests leave a temp leak, or (reports on) no held-out test ran.
-# It waits for the suite lock (scripts/suite_lock.sh): one suite run at a time across the worktrees.
+# It waits for the suite lock (scripts/suite_lock.sh, when beside this file): one suite run at a time across the
+# worktrees.
 set -u
 cd "$(dirname "$0")/.."
 . scripts/temp_leak.sh
-. scripts/suite_lock.sh
-suite_lock || exit 1
+if [ -f scripts/suite_lock.sh ]; then
+  . scripts/suite_lock.sh
+  suite_lock || exit 1
+fi
 folder=${1:-tests/acceptance}
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
