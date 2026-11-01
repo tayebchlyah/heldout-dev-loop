@@ -19,7 +19,7 @@ One file per subject. A new test file adds its line here.
 - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
 - `test_repo_rules.py`, `test_repo_docs.py`: `repo_rules.py`, gate scope; `AGENTS.md` budget, CLI index, this file index, kit and release docs.
 - `test_suite_lock.py`: `scripts/suite_lock.sh`, one suite run at a time across worktrees.
-- `test_audit_common.py`: `audit-run` shared core: ids, refs, paths, scope, ledger write.
+- `test_audit_common.py`, `test_audit_seed.py`: `audit-run` shared core: ids, refs, paths, scope, ledger write; `audit-run seed`: prior run, carry, `touched`, metadata.
 - `junit_report.py`, `board_fixtures.py`, `audit_fixtures.py`: the one JUnit writer; board fixtures the held-out oracle shares; stub `security-audit` skill, audit run fixtures.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
