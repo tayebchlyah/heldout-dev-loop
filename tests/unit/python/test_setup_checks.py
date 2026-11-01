@@ -245,6 +245,16 @@ class AgentShellCheckTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn(": cp -i (", lines[0])
 
+    def test_interactive_flag_spellings(self) -> None:
+        rows = (("-iv", True), ("-pi", True), ("--interactive", True), ("--interactive=always", True),
+                ("-v", False), ("-I", False), ("--verbose", False))
+        for flag, reported in rows:
+            with self.subTest(flag=flag):
+                lines, _ = self.actions(f"echo \"alias cp='cp {flag}'\"\n")
+                self.assertEqual(len(lines), 1 if reported else 0)
+                if reported:
+                    self.assertIn(": cp -i (", lines[0])
+
     def test_clean_shell_has_no_line(self) -> None:
         self.assertEqual(self.actions("echo flags=569Xik\necho \"cp='nocorrect cp'\"\necho \"lc='ls -i'\"\n")[0], [])
 
