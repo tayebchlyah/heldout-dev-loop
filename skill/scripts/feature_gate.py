@@ -1,8 +1,9 @@
 """devloop.py review-merge, review-save and acceptance: the mechanical steps of the Stage 6 feature gate.
 
 `review-merge` reads the reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) and merges the
-findings with the same file and line. `acceptance` runs the project acceptance command, reads its JUnit XML,
-records the run and gives the progress guard verdict.
+findings with the same file and line. `review-save` writes one checked reviewer table, or the Track S marker, to
+the worktree git dir. `acceptance` runs the project acceptance command, reads its JUnit XML, records the run and
+gives the progress guard verdict.
 """
 
 from __future__ import annotations
@@ -157,7 +158,7 @@ def review_save(reviewer: str | None, text: str, cwd: Path) -> tuple[dict, int]:
             return {"error": "no HEAD commit"}, 2
         target, body, extra = folder / "review-done", sha + "\n", {"sha": sha}
     else:
-        if not re.fullmatch(r"[\w][\w.:-]*", reviewer) or ".." in reviewer:
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:-]*", reviewer) or ".." in reviewer:
             return {"error": f"not a plain file name: {reviewer}"}, 2
         try:
             findings = parse_table(text, git(cwd, "rev-parse", "--show-toplevel"))
