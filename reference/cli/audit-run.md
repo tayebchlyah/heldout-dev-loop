@@ -12,3 +12,9 @@
 - Scope: `whole`: every path but `exclude` and `tests/acceptance/`; `<base>..<head>`: the paths of `git diff --name-only <base> <head>`, less those. A path or a folder over one of them is in scope.
 - `touched`: each prior `covered` unit with a `reviewed_paths` entry changed in `<prior commit>..<head>`, with those paths.
 - Errors, nothing written: `already-seeded` (`run-metadata.json` exists), `no-plan`, `prior-invalid` (`file`: an unreadable prior ledger or `findings.json`), `git-failed`, `ledger-invalid`.
+
+## units
+
+`units --add FILE`: `FILE` a JSON array of units: `canonical_refs` (`surface`, `boundary`, `subsystem`, `attack_class`, optional `lifecycle`; absent: the four labels), the labels, `starting_paths` (non-empty, relative, no `.`, `..` or empty part), `ordinary_attack_class_block`, `selected_companion_blocks`, `excluded_blocks` (`[{block, reason}]`), `prior_status` (absent: `new` with a prior run, else `none`), optional `status` (`planned`, `not_applicable`, `out_of_scope`, `deferred`) and `reason` (needed when not `planned`; it becomes `unresolved`). Each ref: NFC, no outer whitespace, no control or invisible character, a visible character. The id: each ref percent-encoded (UTF-8, `A-Za-z0-9-._~` kept), joined with `::`. JSON `added` (ids). The ledger stays sorted by id; `run-metadata.json` `selected_companion_files` follows the companion blocks of the ledger. Errors, nothing written: `invalid` (`entry`: the index, or null for a file that is not a readable JSON array; `errors`), `duplicate` (`coverage_id`: twice in the file, or already in the ledger), `ledger-invalid`.
+
+`units --update FILE`: `FILE` a JSON array of `{coverage_id, starting_paths?, ordinary_attack_class_block?, selected_companion_blocks?, excluded_blocks?}`; refs and id never change. JSON `updated`. Errors, nothing written: `invalid`, `unknown-unit`, `not-planned` (the unit is not `planned`, or an open brief holds it), `ledger-invalid`.
