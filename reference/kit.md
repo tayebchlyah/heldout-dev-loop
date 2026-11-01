@@ -98,6 +98,8 @@ Codex wall timeout upgrade: `upgrade` sets `timeout` 30 on the Codex `git-guard.
 
 Tool walls upgrade (#97): `upgrade` replaces the `deny-acceptance-to-subagents.sh` and `acceptance-wall.sh` entries by command, with the matchers that add `LSP`, `Monitor`, the MCP tools and Codex `view_image`, and writes `disallowedTools` into `.claude/agents/implementer.md` and `spec-tester.md`. Codex: the new matcher changes the hook `trusted_hash`, so Codex skips `acceptance-wall.sh` until `/hooks` trusts it again; until then `check_setup.py --harness codex` reports `pre_tool_use` untrusted.
 
+Git guard on Monitor (#154): `upgrade` moves the Claude `git-guard.sh` entry from matcher `Bash` to `Bash|Monitor`, so a `Monitor` command gets the same push, `gh`, reset and seal decisions as a Bash command. No user step.
+
 Effort upgrade: `upgrade` adds `effortLevel`, `autoCompactWindow`, the Codex root `model_reasoning_effort` and the `worktree-wall.sh` entry, writes `.codex/agents/planner.toml`, and keeps each value the user set.
 
 Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fails below it). `upgrade` merges `[features]`, `[permissions.dev-workspace.network]` and `[permissions.dev-workspace.network.domains]` key by key: each missing kit key is added, each project value is kept and named in a `kept your own <table> <key>` line. It adds `network_proxy`, `mode`, `allow_local_binding`, the domains and the `dev-docker` tables. Other tables keep the table-level merge.

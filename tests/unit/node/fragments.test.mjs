@@ -45,7 +45,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
 
   assert.deepEqual(fragment.hooks.PreToolUse, [
     {
-      matcher: 'Bash',
+      matcher: 'Bash|Monitor',
       hooks: [
         { type: 'command', command: '~/.claude/hooks/git-guard.sh', timeout: 5, onFailure: 'block' },
       ],
