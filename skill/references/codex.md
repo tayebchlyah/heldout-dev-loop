@@ -23,6 +23,7 @@ Read this file only in Codex. Use Codex names and walls, not Claude paths or sla
 - Wake (same session): `send_input` (v1) or `followup_task` (v2) to each subagent that stopped during its work; a closed one: `resume_agent` first. A wake that fails: a fresh agent, full brief, plus "the uncommitted work in the worktree is yours, continue it".
 - `$pause`: `interrupt_agent` (v2), else `close_agent` (v1), on each running subagent; background runs stay alive.
 - No ask tool outside plan mode: no ask wall needed.
+- Waits: run `python3 .agents/skills/dev-loop/scripts/devloop.py gate --summary` directly as a background run and read its JSON: it keeps its own `log`, so no `logged` wrapper, no grep of escaped JSON. `ci wait --timeout <m>` (default 30): a command timeout of at least `<m>` plus 5 minutes.
 - Hand-off at spec approval (SKILL.md Stage 2), each line in its own code block: 1 `/reasoning` with the medium level, 2 `/compact`, 3 `Start Delivery of <slug>`. Track S (Stage 1): `/reasoning` medium, then `Accept Track S`.
 - Gaps, written down, not closed: no failure event (Codex `Stop` has no error field), so only `$pause` writes a pause note, a usage limit writes none; the wake of an `errored` agent and the `$pause`, `$continue` entries of the `/` menu are unconfirmed until a live check. Confirmed on 0.162.1: a shell command sees `CODEX_THREAD_ID`, the id of the session file `rollout-<time>-<id>.jsonl`.
 
@@ -47,9 +48,9 @@ Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), wit
 
 Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
-1. **Review wave, once.** First the second review (SKILL.md Stage 6), a background run watched to its end: `python3 .agents/skills/dev-loop/scripts/devloop.py logged --name second-review -- python3 .agents/skills/dev-loop/scripts/devloop.py second-review --harness codex` (reviewer `claude`). Then three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `main...GATE_SHA`: whole branch, report only, and returns its table (SKILL.md Stage 6 table contract). The reviewers are read-only: the controller saves each table with `python3 .agents/skills/dev-loop/scripts/devloop.py review-save --reviewer <reviewer>` from the feature worktree, table on stdin, to `<git-dir>/dev-loop/review/<reviewer>.md` (`<reviewer>`: `final-reviewer`, `code-review`, `security-reviewer`).
+1. **Review wave, once.** First the second review (SKILL.md Stage 6), a background run watched to its end: `python3 .agents/skills/dev-loop/scripts/devloop.py logged --name second-review -- python3 .agents/skills/dev-loop/scripts/devloop.py second-review --harness codex` (reviewer `claude`). Then three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `origin/main...GATE_SHA`: whole branch, report only, and returns its table (SKILL.md Stage 6 table contract). The reviewers are read-only: the controller saves each table with `python3 .agents/skills/dev-loop/scripts/devloop.py review-save --reviewer <reviewer>` from the feature worktree, table on stdin, to `<git-dir>/dev-loop/review/<reviewer>.md` (`<reviewer>`: `final-reviewer`, `code-review`, `security-reviewer`).
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
-   - Invoke skill `code-review` with fixed point `main`.
+   - Invoke skill `code-review` with fixed point `origin/main`.
    - Custom read-only agent `security_reviewer`.
    - Both custom reviewers run at `model_reasoning_effort = "high"` (their agent files).
    - The Claude reviewer runs inside `dev-workspace`: the managed proxy allows `api.anthropic.com`. It cannot write its config folder and does not need to.

@@ -376,10 +376,32 @@ class TracksContractTests(unittest.TestCase):
             (where, "branch from `origin/main` with `--no-track`"),
             (stage_text(7), "`git push -u origin HEAD`"),
             ((REPO_ROOT / "skills" / "garden" / "SKILL.md").read_text(), "`origin/main` with `--no-track`"),
-            ((REFERENCES / "claude.md").read_text(), "`git -C <main worktree> worktree add --no-track -b <branch> .claude/worktrees/<slug> origin/main`"),
+            ((REFERENCES / "claude.md").read_text(), "`git worktree add --no-track -b <branch> .claude/worktrees/<slug> origin/main` when absent, run from the main checkout"),
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
+        self.assertNotIn("`git -C <main worktree> worktree add", (REFERENCES / "claude.md").read_text())
+
+    def test_claude_worktree_session_and_waits(self) -> None:
+        claude = (REFERENCES / "claude.md").read_text()
+        codex = (REFERENCES / "codex.md").read_text()
+        for value in ["- Worktree session: in an `EnterWorktree` session", "One git command per Bash call",
+                      "`git commit -F <file>`", "`grep -r --include=<glob> <pattern> <dir>`",
+                      "`ExitWorktree` with `keep` first"]:
+            with self.subTest(value=value):
+                self.assertIn(value, claude)
+        for text in (claude, codex):
+            for value in ["devloop.py gate --summary` directly", "no `logged` wrapper",
+                          "`ci wait --timeout <m>` (default 30)", "at least `<m>` plus 5 minutes"]:
+                with self.subTest(value=value):
+                    self.assertIn(value, text)
+
+    def test_deferred_triage_rule(self) -> None:
+        deferred = (REFERENCES / "deferred.md").read_text()
+        for value in ["Security item", "live check is cheap", "quote its output under the item", "`--help`"]:
+            with self.subTest(value=value):
+                self.assertIn(value, deferred)
+        self.assertIn("triage it (`references/deferred.md`)", stage_text(1))
 
     def test_verification_budget_moved(self) -> None:
         tests_md = (SKILL_ROOT / "references" / "tests.md").read_text()

@@ -136,7 +136,7 @@ class SkillContractTests(unittest.TestCase):
 
     def test_claude_worktree_reviewers_pin_the_sha(self) -> None:
         claude = (SKILL_ROOT / "references" / "claude.md").read_text()
-        self.assertIn("`main...GATE_SHA`", claude)
+        self.assertIn("`origin/main...GATE_SHA`", claude)
         self.assertNotIn("isolation: worktree", claude)
         self.assertNotIn("Rerun step 1.", claude)
 
