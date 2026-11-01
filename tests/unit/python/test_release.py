@@ -67,9 +67,10 @@ class ReleaseParseTests(unittest.TestCase):
         accept = "  - Ruling 2026-10-30: accept single owner"
         cases = [
             ([], False, None),
-            ([accept], True, {"date": "2026-10-30", "word": "accept"}),
-            ([accept, "  - Ruling 2026-10-31: close fixed by #1"], True, {"date": "2026-10-31", "word": "close"}),
-            ([accept, "  - Ruling 2026-10-31: fix in a slice"], True, {"date": "2026-10-31", "word": "fix"}),
+            ([accept], True, {"date": "2026-10-30", "word": "accept", "carried": False}),
+            ([accept, "  - Ruling 2026-10-31: close fixed by #1"], True, {"date": "2026-10-31", "word": "close", "carried": False}),
+            ([accept, "  - Ruling 2026-10-31: fix in a slice"], True, {"date": "2026-10-31", "word": "fix", "carried": False}),
+            (["  - Ruling 2026-11-01: accept carried from the 2026-10-30 ruling (Run 3): x."], True, {"date": "2026-11-01", "word": "accept", "carried": True}),
             (["  - Ruling 2026-10-30: accept "], False, None),
         ]
         for subs, closed, ruling in cases:

@@ -28,7 +28,8 @@ def record(**kw) -> dict:
 @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
 class ReleaseCarryTests(unittest.TestCase):
     def case(self, change: bool = False, deferred: list[str] | None = None, record_run: str = "Run 3", record_sha: str | None = None,
-             findings: list | None = None, repo_arg: str | None = None, base: str | None = "A", check: bool = False) -> tuple[dict, int, str, list[str]]:
+             findings: list | None = None, repo_arg: str | None = None, base: str | None = "A", check: bool = False,
+             records: list[str] | None = None, run_name: str = "Run 4") -> tuple[dict, int, str, list[str]]:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -44,10 +45,13 @@ class ReleaseCarryTests(unittest.TestCase):
 
         git("init", "-q", "-b", "main")
         (repo / "src" / "a.py").write_text("x = 1\n")
+        (repo / "b.py").write_text("b = 1\n")
+        (repo / "src" / "l.py").symlink_to("a.py")
         git("add", "-A")
         git("commit", "-q", "-m", "A")
         a = git("rev-parse", "HEAD")
         (repo / "b.txt").write_text("b\n")
+        (repo / "b.py").write_text("b = 2\n")
         if change:
             (repo / "src" / "a.py").write_text("x = 2\n")
         git("add", "-A")
@@ -56,8 +60,9 @@ class ReleaseCarryTests(unittest.TestCase):
         lines = [ITEM, ACCEPT] if deferred is None else deferred
         note = notes / "Project Note.md"
         note.write_text("## Deferred\n\n" + "".join(f"{line}\n" for line in lines) + "\n## Gardener\n\n## Release audits\n"
-                        f"- 2026-10-29 {record_run} at {record_sha or a}: confirmed 0, needs validation 1, hardening 0, profile quick, scope whole\n")
-        run = notes / "Security Audit" / "Run 4"
+                        f"- 2026-10-29 {record_run} at {record_sha or a}: confirmed 0, needs validation 1, hardening 0, profile quick, scope whole\n"
+                        + "".join(f"{r.replace('{A}', a).replace('{B}', b)}\n" for r in records or []))
+        run = notes / "Security Audit" / run_name
         run.mkdir(parents=True)
         (run / "run-metadata.json").write_text(json.dumps({"run_status": "complete", "profile": "standard", "source_ref": {"commit": b}}))
         (run / "coverage-ledger.json").write_text("[]")
@@ -105,16 +110,32 @@ class ReleaseCarryTests(unittest.TestCase):
             ("unknown prior sha", {"record_sha": "c" * 40, "base": None}, reopen("no-commit")),
         ]
         bad = [[{"file": "/abs/a.py"}], [{"file": "src/../src/a.py"}], [{"file": ""}], [{"file": "src/gone.py"}], [{"file": "src"}],
-               None, [], "src/a.py", ["src/a.py"], [{"file": 3}]]
+               None, [], "src/a.py", ["src/a.py"], [{"file": 3}], [{"file": "\ud800"}]]
         for trace in bad:
             finding = record(trace=trace)
             if trace is None:
                 del finding["trace"]
             rows.append((f"bad-trace {trace!r}", {"findings": [finding]}, reopen("bad-trace")))
+        rows.append(("symlink", {"change": True, "findings": [record(trace=[{"file": "src/l.py"}])]}, reopen("bad-trace")))
         for name, kw, reopened in rows:
             with self.subTest(name):
                 out, code, _, prints = self.case(**kw)
                 self.assertEqual((code, out["carried"], out["reopened"], "f-n1" in prints), (0, [], reopened, True))
+
+    def test_carry_chain_compares_against_the_human_ruling(self) -> None:
+        run4 = "- 2026-10-31 (security, needs-validation, Run 4): Again. Fingerprint `f-n1`."
+        carried = "  - Ruling 2026-10-31: accept carried from the 2026-10-30 ruling (Run 3): fingerprint and trace files unchanged since aaaaaaa."
+        record4 = "- 2026-10-31 Run 4 at {B}: confirmed 0, needs validation 1, hardening 0, profile quick, scope whole"
+        both = [{"file": "src/a.py"}, {"file": "b.py"}]
+        deferred = [ITEM, ACCEPT, run4, carried]
+        out, code, _, _ = self.case(deferred=deferred, records=[record4], run_name="Run 5", base="B", findings=[record(trace=both)])
+        self.assertEqual((code, out["carried"], out["reopened"]), (0, [], [{"fingerprint": "f-n1", "why": "changed", "files": ["b.py"]}]))
+        out, code, text, _ = self.case(deferred=deferred, records=[record4], run_name="Run 5", base="B")
+        want = f"  - Ruling {date.today().isoformat()}: accept carried from the 2026-10-30 ruling (Run 3): fingerprint and trace files unchanged since {self.a[:7]}."
+        self.assertEqual((code, out["carried"], want in text.splitlines()), (0, [{"fingerprint": "f-n1", "from": "Run 3", "ruling": "2026-10-30"}], True))
+        only_carried = ACCEPT.replace("accept single owner", "accept carried from the x")
+        out, code, _, _ = self.case(deferred=[ITEM, only_carried, run4, carried], records=[record4], run_name="Run 5", base="B")
+        self.assertEqual((code, out["carried"], out["reopened"]), (0, [], [{"fingerprint": "f-n1", "why": "no-commit", "files": []}]))
 
     def test_abuse_trace_and_title(self) -> None:
         for file in ("--output=LEAK", ":(top)src/a.py"):
