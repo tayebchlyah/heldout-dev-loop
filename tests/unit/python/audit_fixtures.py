@@ -369,6 +369,15 @@ class AuditRunCase(unittest.TestCase):
         self.assertEqual(code, 0, out)
         return agent, out
 
+    def closed_flow(self, profile: str = "standard", verdict: str = "confirmed") -> None:
+        """Flow 1 up to `findings`: one hunter with candidate `f-1`, a final-clean critic, a verifier, a recheck."""
+        self.release_plan("--profile", profile)
+        self.folded_hunter("a.py", candidates=[self.candidate("f-1", verdict=verdict)], hardening=["note one"])
+        self.folded("critic", lambda c: self.critic_result(stop=True), "--final")
+        self.folded("verifier", lambda v: self.verifier_result(v, "f-1", verdict), "--fingerprint", "f-1")
+        if profile != "quick":
+            self.folded("recheck", lambda r: {"decision": "verified", "fingerprint": "f-1"}, "--fingerprint", "f-1")
+
     def check(self, agent: str) -> tuple[dict, int]:
         return self.step("check", "--agent", agent)
 
