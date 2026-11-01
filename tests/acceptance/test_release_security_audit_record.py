@@ -79,6 +79,10 @@ class ReleaseRecordTests(RecordCase):
             self.assertEqual(code, 0, payload)
             self.assertEqual(len(self.new_subsection(r)), 3)
             self.assertEqual(payload.get("skipped"), [], payload)
+            # Superseded by Audit Plan And Record Fixes: no record line names Run 1, so the f-n1 line is open
+            # and in `reopened` (the carried case is that spec's oracle 10).
+            self.assertEqual(payload.get("carried"), [], payload)
+            self.assertEqual([x.get("fingerprint") for x in payload.get("reopened") or []], ["f-n1"], payload)
 
     def test_o25_gardener_line(self) -> None:
         r, run = self.setup_record()
