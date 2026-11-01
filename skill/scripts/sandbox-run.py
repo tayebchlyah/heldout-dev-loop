@@ -148,8 +148,9 @@ def failed(step: str, done: subprocess.CompletedProcess) -> RunnerError:
     return RunnerError(f"{step} failed: {lines[-1] if lines else f'exit {done.returncode}'}")
 
 
-def kill_leftovers(ctr: str) -> None:
+def kill_leftovers(ctr: str) -> bool:
     # A process the command left behind could stop tar or write into its stdout: none may survive.
+    # allow-comment: dependency: the OOM killer can stop PID 1 too; `--rm` then drops the container and /scratch: False.
     deadline = time.monotonic() + LEFTOVER_WAIT_SECONDS
     while True:
         killed = docker("exec", "-u", "65534:65534", ctr, "sh", "-c", "kill -9 -1")
@@ -159,7 +160,9 @@ def kill_leftovers(ctr: str) -> None:
         rows = [line.split() for line in top.stdout.splitlines()[1:] if line.strip()]
         alive = [tuple(row[:2]) for row in rows if len(row) < 2 or not row[1].startswith("Z")]
         if top.returncode == 0 and len(alive) == 1:  # only PID 1, `sleep infinity`
-            return
+            return True
+        if top.returncode != 0 and docker("inspect", "--format", "{{.State.Running}}", ctr).stdout.strip() != "true":
+            return False
         if time.monotonic() >= deadline:
             if top.returncode != 0:
                 raise failed("docker top", top)
@@ -270,7 +273,8 @@ def run(args: argparse.Namespace) -> int:
             code = subprocess.run(exec_cmd, timeout=args.timeout).returncode
         except subprocess.TimeoutExpired:
             return 124
-        kill_leftovers(ctr)
+        if not kill_leftovers(ctr):
+            return code
         try:
             # shortcut: the copy gets a fresh --timeout; a full 64 MB tmpfs copies in about a second.
             extract(read_scratch(ctr, args.scratch_max_bytes, args.timeout), args.scratch, args.scratch_max_bytes)
