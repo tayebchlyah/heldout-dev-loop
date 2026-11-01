@@ -6,6 +6,8 @@
 # git commit, git worktree add (also with -C <path>), gh pr create, gh pr merge).
 # The CLI comes from the main worktree of CLAUDE_PROJECT_DIR (the hook input cwd when unset). The cwd is only data on
 # stdin and the process cwd. The background group holds none of the hook's pipes, so the hook returns at once.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 input=$(cat)
 if [ "$1" = post-tool ]; then
   tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)

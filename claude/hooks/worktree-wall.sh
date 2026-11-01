@@ -4,6 +4,8 @@
 # directory of the target, physical. Feature worktree: as deny-ask.sh, and the branch not under release/.
 # Forms of the target checked: as given and with . and .. folded as text, each also with its own symlinks followed.
 # Fails open (no jq, no git, bad input). A path goes only as a quoted argument, never through eval.
+GIT_CONFIG_N=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$GIT_CONFIG_N=core.fsmonitor" "GIT_CONFIG_VALUE_$GIT_CONFIG_N=false" GIT_CONFIG_COUNT=$((GIT_CONFIG_N + 1))
 IN=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 command -v git >/dev/null 2>&1 || exit 0
