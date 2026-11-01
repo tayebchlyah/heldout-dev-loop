@@ -350,7 +350,7 @@ def check_claude_settings(path: Path, failures: list[str]) -> None:
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Claude hook event: {event}")
-    for event, matcher, script in [("PreToolUse", "AskUserQuestion", "deny-ask.sh"), ("PreToolUse", "Edit|Write|NotebookEdit", "worktree-wall.sh"), ("StopFailure", "rate_limit", "pause.sh")]:
+    for event, matcher, script in [("PreToolUse", "AskUserQuestion", "deny-ask.sh"), ("PreToolUse", "Edit|Write|NotebookEdit", "worktree-wall.sh"), ("PreToolUse", "Bash|Monitor", "git-guard.sh"), ("StopFailure", "rate_limit", "pause.sh")]:
         groups = hooks.get(event, [])
         if not any(isinstance(g, dict) and g.get("matcher") == matcher
                    and any(script in str(h.get("command", "")) for h in g.get("hooks", []) if isinstance(h, dict))
