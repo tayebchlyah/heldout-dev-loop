@@ -73,6 +73,36 @@ class AuditSeedTests(AuditRunCase):
         units = {u["coverage_id"]: u for u in self.ledger()}
         self.assertEqual(units[ids["U1"]]["prior_status"], "prior_confirmed_changed_source")
 
+    def test_prior_commit_that_is_not_a_sha_is_not_passed_to_git(self) -> None:
+        start = self.git("rev-parse", "HEAD")
+        victim = self.root / "victim.txt"
+        victim.write_text("keep")
+        u1 = self.prior_unit("u1", "candidate", fps=("f-c",))
+        folder = self.prior_run(1, "complete", [u1], [self.record("f-c", "confirmed")], start)
+        meta = json.loads((folder / "run-metadata.json").read_text())
+        meta["source_ref"]["commit"] = f"--output={victim}"
+        (folder / "run-metadata.json").write_text(json.dumps(meta))
+        self.commit("a.py", "changed")
+        self.release_plan()
+        out = self.seed()
+        self.assertEqual(victim.read_text(), "keep")
+        (unit,) = self.ledger()
+        self.assertEqual(unit["prior_status"], "prior_confirmed_changed_source")
+        self.assertEqual(out["carried"], [u1["coverage_id"]])
+
+    def test_rename_is_a_change_of_the_old_path(self) -> None:
+        start = self.git("rev-parse", "HEAD")
+        u1 = self.prior_unit("u1", "candidate", fps=("f-c",))
+        u3 = self.prior_unit("u3", "covered", paths=("a.py",))
+        self.prior_run(1, "complete", [u1, u3], [self.record("f-c", "confirmed")], start)
+        self.git("mv", "a.py", "z.py")
+        self.git("commit", "-q", "-m", "rename")
+        self.release_plan()
+        out = self.seed()
+        (unit,) = self.ledger()
+        self.assertEqual(unit["prior_status"], "prior_confirmed_changed_source")
+        self.assertEqual(out["touched"], [{"coverage_id": u3["coverage_id"], "paths": ["a.py"]}])
+
     def test_incomplete_prior_unvalidated_candidate(self) -> None:
         start = self.git("rev-parse", "HEAD")
         u7 = self.prior_unit("u7", "candidate", fps=("f-u",))
