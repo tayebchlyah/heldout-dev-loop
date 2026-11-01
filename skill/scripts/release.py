@@ -29,7 +29,7 @@ from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
-RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) +\S")
+RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling (\d{4}-\d{2}-\d{2}): (\w+) +\S")
 RECORD_RE = re.compile(
     r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
     r"profile \S+, scope (whole|[0-9a-f]{40}\.\.[0-9a-f]{40})$"
@@ -65,25 +65,19 @@ def section(text: str, heading: str) -> list[str]:
     return out
 
 
-def security_items(text: str) -> tuple[list[dict], list[str]]:
-    """(open items, unparsed lines) of `## Deferred`.
+def deferred_items(text: str) -> tuple[list[dict], list[str]]:
+    """(every item in file order, unparsed lines) of `## Deferred`.
 
-    An item is `{line, verdict, source, fingerprint}`. An item with a ruling `accept` or `close` is closed and left
-    out. A top-level bullet that names security and does not match the item format is unparsed.
+    An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: a ruling `accept` or `close` under
+    it. `ruling`: `{date, word}` of its last ruling line, else None. A top-level bullet that names security and does
+    not match the item format is unparsed.
     """
     items: list[dict] = []
     unparsed: list[str] = []
     current: dict | None = None
-    closed = False
-
-    def finish() -> None:
-        if current is not None and not closed:
-            items.append(current)
-
     for line in section(text, "Deferred"):
         if line.startswith("- "):
-            finish()
-            current, closed = None, False
+            current = None
             body = CHECKBOX_RE.sub("", line[2:])
             match = ITEM_RE.match(body)
             if match:
@@ -93,18 +87,26 @@ def security_items(text: str) -> tuple[list[dict], list[str]]:
                     "verdict": match.group(2),
                     "source": match.group(3),
                     "fingerprint": fingerprint.group(1) if fingerprint else None,
+                    "closed": False,
+                    "ruling": None,
                 }
+                items.append(current)
             elif SECURITY_RE.search(line):
                 unparsed.append(line.rstrip())
         elif line.strip() and not line[0].isspace():
-            finish()
-            current, closed = None, False
+            current = None
         elif current is not None:
             ruling = RULING_RE.match(line)
-            if ruling and ruling.group(1) in CLOSING_WORDS:
-                closed = True
-    finish()
+            if ruling:
+                current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2)}
+                current["closed"] = current["closed"] or ruling.group(2) in CLOSING_WORDS
     return items, unparsed
+
+
+def security_items(text: str) -> tuple[list[dict], list[str]]:
+    """(open items, unparsed lines) of `## Deferred`: the items of `deferred_items` that are not closed."""
+    items, unparsed = deferred_items(text)
+    return [i for i in items if not i["closed"]], unparsed
 
 
 def current_record(text: str) -> dict | None:
