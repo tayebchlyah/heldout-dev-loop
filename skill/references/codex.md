@@ -63,7 +63,7 @@ Do not substitute Claude-only review, security, or verification slash commands i
 
 ## Release audit
 
-User-invoked only: `$release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Delivery, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No container engine or image: source-only run, no target code. Under `dev-workspace` the engine is unreachable and `release-plan` `sandbox.engine` is false: a source-only run. For a sandboxed run, restart the session with `codex -c default_permissions=dev-docker`. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
+User-invoked only: `$release-audit` (kit skill `release-audit`), main session, at the commit to tag on `main`. Never in Delivery, never in a subagent: the `security-audit` skill starts its own agents. Target-controlled execution goes only through `sandbox-run.py` (OS-enforced container, no network). No engine or no image: skill stops (`no-sandbox`) unless user passed `--no-sandbox`, then source-only run, no target code. `dev-workspace` closes the engine (`sandbox.engine` false): restart with `codex -c default_permissions=dev-docker`. Cost: a run takes hours and costs tens of dollars (trial: 30 min, 19 USD, 2 subsystems, `quick`): the skill says so before it starts. Steps and CLI: the skill's `SKILL.md`.
 
 `/release` (Codex: `$release`, kit skill `release`) runs the whole release and the audit steps inside it.
 
