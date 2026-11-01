@@ -369,10 +369,14 @@ class AuditRunCase(unittest.TestCase):
         self.assertEqual(code, 0, out)
         return agent, out
 
-    def closed_flow(self, profile: str = "standard", verdict: str = "confirmed") -> None:
-        """Flow 1 up to `findings`: one hunter with candidate `f-1`, a final-clean critic, a verifier, a recheck."""
+    def closed_flow(self, profile: str = "standard", verdict: str = "confirmed",
+                    hardening: tuple[list[str], ...] = (["note one"],)) -> None:
+        """Flow 1 up to `findings`: a hunter with candidate `f-1` on `a.py` (and one more hunter per further
+        `hardening` list, on `b.py`, `c.py`), a final-clean critic, a verifier, a recheck."""
         self.release_plan("--profile", profile)
-        self.folded_hunter("a.py", candidates=[self.candidate("f-1", verdict=verdict)], hardening=["note one"])
+        self.folded_hunter("a.py", candidates=[self.candidate("f-1", verdict=verdict)], hardening=hardening[0])
+        for path, notes in zip(("b.py", "c.py"), hardening[1:]):
+            self.folded_hunter(path, hardening=notes)
         self.folded("critic", lambda c: self.critic_result(stop=True), "--final")
         self.folded("verifier", lambda v: self.verifier_result(v, "f-1", verdict), "--fingerprint", "f-1")
         if profile != "quick":
@@ -382,5 +386,5 @@ class AuditRunCase(unittest.TestCase):
         return self.step("check", "--agent", agent)
 
     def record(self, fp: str, verdict: str, trace: tuple[str, ...] = ("a.py",)) -> dict:
-        return {"fingerprint": fp, "verdict": verdict, "title": f"Title {fp}", "severity": "medium",
+        return {"fingerprint": fp, "verdict": verdict, "title": f"Title {fp}", "severity": {"overall_severity": "high"},
                 "trace": [{"file": f, "line": 1} for f in trace]}

@@ -88,16 +88,21 @@ def read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json_atomic(path: Path, value: object) -> None:
-    """Write `value` to a temp file beside `path`, then rename it onto `path`; no temp file is left on an error."""
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write `text` to a temp file beside `path`, then rename it onto `path`; no temp file is left on an error."""
     temp = path.parent / f".{path.name}.{secrets.token_hex(6)}"
     try:
         with open(temp, "x", encoding="utf-8") as handle:
-            handle.write(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+            handle.write(text)
         os.replace(temp, path)
     finally:
         if temp.exists() or temp.is_symlink():
             temp.unlink()
+
+
+def write_json_atomic(path: Path, value: object) -> None:
+    """Write `value` as indented JSON by temp file and rename."""
+    write_text_atomic(path, json.dumps(value, indent=2, ensure_ascii=False) + "\n")
 
 
 def run_validator(skill: Path, script: str, target: Path) -> str | None:
