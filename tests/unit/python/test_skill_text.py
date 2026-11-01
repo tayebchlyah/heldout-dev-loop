@@ -390,11 +390,19 @@ class TracksContractTests(unittest.TestCase):
                       "`ExitWorktree` with `keep` first"]:
             with self.subTest(value=value):
                 self.assertIn(value, claude)
+        self.assertIn("writes the table to a file with `Write` outside the repo (under `$TMPDIR`), runs `review-save --reviewer <reviewer> < <file>`, then removes the file", claude)
+        self.assertNotIn("quoted heredoc", claude)
+        self.assertIn("Exception to the SKILL.md Monitor rule", claude)
+        self.assertIn("Exception to the SKILL.md rule to watch a long command", codex)
         for text in (claude, codex):
             for value in ["devloop.py gate --summary` directly", "no `logged` wrapper",
+                          "counts as watched",
                           "`ci wait --timeout <m>` (default 30)", "at least `<m>` plus 5 minutes"]:
                 with self.subTest(value=value):
                     self.assertIn(value, text)
+
+    def test_review_wave_runs_against_origin_main(self) -> None:
+        self.assertIn("whole branch against `origin/main`", (SKILL_ROOT / "SKILL.md").read_text())
 
     def test_deferred_triage_rule(self) -> None:
         deferred = (REFERENCES / "deferred.md").read_text()
