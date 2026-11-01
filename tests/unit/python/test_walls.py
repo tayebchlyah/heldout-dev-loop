@@ -335,6 +335,14 @@ class CodexHookBehaviorTests(unittest.TestCase):
     def run_hook(
         self, name: str, payload: dict, *args: str, env: dict | None = None
     ) -> subprocess.CompletedProcess[str]:
+        if name == "gate.sh":
+            repo = Path(payload["cwd"])
+            fake = repo / "bin/codex"
+            write(fake, '#!/bin/sh\nif [ "$1" = --version ]; then echo codex-cli 0.166.0; exit; fi\nwhile [ "$1" != -- ]; do shift; done\nshift; exec "$@"\n')
+            fake.chmod(0o755)
+            write(repo / ".codex/config.toml", '[permissions.dev-workspace]\nextends=":workspace"\n')
+            env = {**os.environ, **(env or {}), "PATH": str(fake.parent) + os.pathsep + os.environ["PATH"],
+                   "CODEX_HOME": str(repo / "home")}
         return subprocess.run(
             ["sh", str(CODEX_ASSETS / "hooks" / name), *args],
             input=json.dumps(payload),
