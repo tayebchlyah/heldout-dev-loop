@@ -6,7 +6,7 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 
 ## Repo map
 
-Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`). Else edit normally.
+Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`).
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
 - `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`.
@@ -20,7 +20,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
 - `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `sandbox-run.py`: audit sandbox runner (Docker).
-- `skill/scripts/feature_gate.py`: `review-merge`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
+- `skill/scripts/feature_gate.py`: `review-merge`, `review-save`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
 - `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, the `gate` `weakened` report; `board/`: progress board writer, server and page; `board/cli.py`: `board`.
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
@@ -83,6 +83,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `pause [--event] [--intent <t>] [--verified <t>] [--open <t>] [--next <t>] [--agent <id>=<task> ...] [--run <log> ...] [--repo <path>]`: Write the worktree pause note; `--clear` removes it. `reference/cli/pause.md`
 - `second-review --harness claude|codex [--timeout <minutes>]`: Run the other family's CLI as second reviewer, correctness and security only. `reference/cli/second-review.md`
 - `review-merge <reviewer>=<file> [...]`: Merge the Stage 6 reviewer tables by file and line. `reference/cli/review-merge.md`
+- `review-save --reviewer <name> | --done`: Save a reviewer table (stdin) or the Track S marker. `reference/cli/review-save.md`
 - `acceptance [--failed]`: Run the held-out suite; read its JUnit, check stale images, apply progress guard. `reference/cli/acceptance.md`
 - `ci wait [--pr <n>] [--timeout <min>]`: Wait for the PR verdict of local `HEAD`: pass, fail, conflicts, threads, blocked, timeout. `reference/cli/ci.md`
 - `merge-check [--repo <path>] [--feature <slug>]`: The Stage 7 merge decision, `auto` or `human`, with its reasons. `reference/cli/merge-check.md`
@@ -117,20 +118,19 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 
 - Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in Review Yield.md (`$NOTES/Review Yield.md`).
 - Cost data rule: no process cut for cost (drop a reviewer, no `tdd`, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (`metrics --write`, Stage 7).
-- Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required (e.g. `🐛(install) #12: Back up a replaced skill outside its skills folder`).
+- Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required.
 - Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
 - Changelog: `release_notes` `written`: prose `CHANGELOG.md` by `/release-notes`. `cliff.toml` kept for `repo_rules.py subjects`. Releases tag-driven (`vX.Y.Z`, `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check (tag equals `package.json`), `promoted`, `release-notes`, `ncipollo/release-action`.
-- Release: `reference/release.md`.
-- Stage 7 after a merge: report line `rc: now|later: <reason>`; rule in `reference/release.md`.
+- Release: `reference/release.md`. Stage 7 after a merge: report line `rc: now|later: <reason>`.
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
-- Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase, before push.
+- Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase.
 - No tracked file holds an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never its expansion (guard test).
 - No tracked file names an internal client or project (employer, its customers, private projects). `tests/unit/node/payload.test.mjs` holds only `sha256` (first 16 hex) of the lowercased name words joined by one space. New name: add hash to `INTERNAL_NAME_HASHES`, never the name.
 - The 3 merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`): merged, never copied whole.
 
 ## Gotchas
 
-- Repo private. No anonymous reader: no badges, no links needing a public repo. `npx github:tchlyah/dev-loop` install needs Git or SSH credentials that reach it.
+- Repo private: no badges, no links needing a public repo. `npx github:tchlyah/dev-loop` install needs Git or SSH credentials that reach it.
 
 ## Working principles
 
