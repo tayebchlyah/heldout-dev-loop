@@ -11,7 +11,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from support import GuardRepo
+from support import GuardRepo, budget_report
 
 import check_setup  # noqa: E402
 
@@ -399,7 +399,7 @@ class ReleaseTextTests(unittest.TestCase):
         self.assertIn("release-record --fix-wave", rule)
         self.assertIn("until a ruling under it says", rule)
         self.assertNotIn("until its line is removed", rule)
-        self.assertLessEqual(len(raw), 40000)
+        self.assertIsNone(budget_report(self.ROOT / "skill" / "SKILL.md", 40000))
 
     def test_repo_release_steps_are_plain_numbers(self) -> None:
         steps = self.read("reference/release.md")

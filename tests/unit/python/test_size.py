@@ -369,8 +369,9 @@ class SizeTextTests(unittest.TestCase):
 
     def test_repo_docs(self) -> None:
         agents = self.text("AGENTS.md")
-        for word in ("`size-check", "`skill/scripts/size.py`", "`test_size.py`"):
+        for word in ("`size-check", "`skill/scripts/size.py`"):
             self.assertIn(word, agents)
+        self.assertIn("`test_size.py`", self.text("tests/unit/python/README.md"))
         self.assertIn("`file_size_exempt`", self.text("reference/cli/size-check.md"))
         self.assertIn("`file_size_exempt`", self.text("reference/kit.md"))
         self.assertIn("`size-check", self.text("README.md"))
