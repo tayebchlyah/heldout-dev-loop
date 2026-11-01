@@ -48,7 +48,14 @@ def trusted_profile(main):
 
 
 def filesystem(profile, main, feature):
-    rules = {str(feature): 'write'}
+    rules = {str(Path('/tmp').resolve()): 'write'}
+    if sys.platform == 'darwin':
+        darwin_temp = subprocess.run(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'],
+                                     capture_output=True, text=True, check=True).stdout.strip()
+        if not darwin_temp or not Path(darwin_temp).is_absolute():
+            raise ValueError('invalid Darwin temporary root')
+        rules[str(Path(darwin_temp).resolve())] = 'write'
+    rules.update({str(main): 'read', str(feature): 'write'})
     for root, value in profile.get('filesystem', {}).items():
         if root == ':workspace_roots':
             bases = [main, feature]
@@ -103,9 +110,9 @@ def main():
         args = [codex, 'sandbox', '-C', str(trusted), '-P', 'dev-workspace', '--include-managed-config']
         for key, value in overrides.items():
             args += ['-c', key + '=' + toml(value)]
-        with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir=feature) as temp:
+        with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir='/tmp') as temp:
             started = Path(temp) / 'started'
-            wrapper = 'cd "$1" || exit 125; printf started >"$2" || exit 125; shift 2; exec "$@"'
+            wrapper = 'export TMPDIR="${2%/*}" TMP="${2%/*}" TEMP="${2%/*}"; cd "$1" || exit 125; printf started >"$2" || exit 125; shift 2; exec "$@"'
             result = subprocess.run([*args, '--', '/bin/sh', '-c', wrapper, 'dev-loop-gate',
                                      str(feature), str(started), *sys.argv[4:]])
             if not started.is_file():

@@ -335,7 +335,7 @@ def check_gate_guard(repo: Path) -> list[str]:
 
 MIN_VERSIONS = {
     "claude": ((2, 1, 295), "Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code."),
-    "codex": ((0, 165, 0), "codex-cli {found} is older than 0.165.0 (network_proxy needs it). Update Codex."),
+    "codex": ((0, 166, 0), "codex-cli {found} is older than 0.166.0 (native hook sandbox needs it). Update Codex."),
 }
 KIT_GUARDS = (".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/hooks/claude/deny-acceptance-to-subagents.sh")
 WALLED_AGENTS = ("implementer", "spec-tester")

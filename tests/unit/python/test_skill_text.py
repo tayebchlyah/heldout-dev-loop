@@ -314,7 +314,7 @@ class SkillStackContractTests(unittest.TestCase):
     def test_codex_profile_names_the_managed_proxy_and_dev_docker(self) -> None:
         for value in ["network_proxy", "dev-docker", "codex -c default_permissions=dev-docker",
                       'Network access to "<host>" was blocked', "stop item", "[permissions.dev-workspace.network.domains]",
-                      "loopback TCP", "Minimum codex-cli 0.165.0"]:
+                      "loopback TCP", "Minimum codex-cli 0.166.0"]:
             with self.subTest(value=value):
                 self.assertIn(value, self.codex)
         self.assertNotIn("keeps both limits only when no container engine is reachable", self.codex)
