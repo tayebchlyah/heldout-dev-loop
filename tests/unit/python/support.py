@@ -258,3 +258,48 @@ class Box:
 def routed():
     return 2
 """
+
+
+CODEX_GATE_FIXTURE = r'''import json,os,subprocess,sys,tomllib
+from pathlib import Path
+args=sys.argv[1:]
+if args==['--version']:
+ print('codex-cli '+os.environ.get('PROBE_VERSION','0.166.0'));sys.exit(0)
+if 'app-server' in args:
+ if os.environ.get('DEVLOOP_MACOS_BROKER'):
+  if 'PROBE_ARGV' in os.environ:Path(os.environ['PROBE_ARGV']).write_text(json.dumps(args))
+  if os.environ.get('PROBE_EARLY'):sys.exit(19)
+ main=Path(args[args.index('-C')+1])
+ for line in sys.stdin:
+  request=json.loads(line);ident=request.get('id');method=request['method']
+  if ident is None:continue
+  try:
+   if os.environ.get('PROBE_POLICY_BAD'): raise ValueError('invalid')
+   result={}
+   if method=='config/read':
+    config=tomllib.loads((main/'.codex/config.toml').read_text())
+    if os.environ.get('PROBE_NATIVE_NULLS'):
+     for profile in config['permissions'].values():
+      profile.setdefault('filesystem',None);profile.setdefault('network',None)
+    denied=os.environ.get('PROBE_MDM_DENY')
+    if denied:config['permissions']['dev-workspace'].setdefault('filesystem',{})[denied]='deny'
+    result={'config':config}
+   elif method=='configRequirements/read':
+    result={'requirements':{'allowedPermissionProfiles':{'dev-workspace':False}} if os.environ.get('PROBE_ADMIN_DENY') else {}}
+   print(json.dumps({'id':ident,'result':result}),flush=True)
+  except Exception:print(json.dumps({'id':ident,'error':{'code':-1}}),flush=True)
+ sys.exit(0)
+if 'PROBE_ARGV' in os.environ:Path(os.environ['PROBE_ARGV']).write_text(json.dumps(args))
+if os.environ.get('PROBE_EARLY'):sys.exit(19)
+for key in ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy']:
+ os.environ.pop(key,None)
+sys.exit(subprocess.run(args[args.index('--')+1:]).returncode)
+'''
+
+
+def codex_gate_env(repo):
+    fake = repo / 'bin/codex'
+    write(fake, '#!' + sys.executable + '\n' + CODEX_GATE_FIXTURE)
+    fake.chmod(0o755)
+    write(repo / '.codex/config.toml', '[permissions.dev-workspace]\nextends=":workspace"\n')
+    return {'PATH': str(fake.parent) + os.pathsep + os.environ['PATH'], 'CODEX_HOME': str(repo / 'home')}

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import CODEX_ASSETS, write
+from support import CODEX_ASSETS, CODEX_GATE_FIXTURE, write
 
 
 class CodexHookSandboxTests(unittest.TestCase):
@@ -29,13 +29,7 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.git(self.main, 'worktree', 'add', '-qb', 'fix/probe', str(self.feature))
         self.bin = self.root / 'bin'
         self.log = self.root / 'argv.json'
-        write(self.bin / 'codex', '#!' + sys.executable + '\n' + '''import json,os,subprocess,sys
-if sys.argv[1:] == ['--version']:
- print('codex-cli '+os.environ.get('PROBE_VERSION','0.166.0')); sys.exit(0)
-a=sys.argv[1:]; open(os.environ['PROBE_ARGV'],'w').write(json.dumps(a))
-if os.environ.get('PROBE_EARLY'): sys.exit(19)
-sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
-''')
+        write(self.bin / 'codex', '#!' + sys.executable + '\n' + CODEX_GATE_FIXTURE)
         (self.bin / 'codex').chmod(0o755)
         self.env = {**os.environ, 'PATH': str(self.bin)+os.pathsep+os.environ['PATH'],
                     'CODEX_HOME': str(self.root / 'home/.codex'), 'PROBE_ARGV': str(self.log)}
@@ -67,7 +61,11 @@ sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
                     self.assertIn(str(self.feature)+' scope=changed', json.loads(r.stdout)['reason'])
                     args = json.loads(self.log.read_text())
                     self.assertEqual(args[args.index('-C')+1], str(self.main))
-                    self.assertIn('--include-managed-config', args)
+                    if os.environ.get('DEVLOOP_MACOS_BROKER'):
+                        self.assertIn('app-server', args)
+                        self.assertIn('default_permissions="dev-workspace"', args)
+                    else:
+                        self.assertIn('--include-managed-config', args)
 
     def test_gate_success_and_existing_skips_are_silent(self):
         for command, active in [('exit 0', False), ('exit 9', True)]:
@@ -118,15 +116,26 @@ sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
                 self.assertFalse((self.feature/'host-marker').exists())
 
     def test_policy_keeps_trusted_denies_but_removes_write_grants(self):
+        self.env['PROBE_NATIVE_NULLS'] = '1'
         self.config.write_text('[permissions.parent]\nextends=":workspace"\n'
                                '[permissions.parent.filesystem]\n'+json.dumps(str(self.root/'outside'))+'="write"\n'
                                +json.dumps(str(self.main/'secret'))+'="deny"\n'
-                               '[permissions.dev-workspace]\nextends="parent"\n'
-                               '[permissions.dev-workspace.filesystem.":workspace_roots"]\n"**/.private"="deny"\n')
+                               '[permissions.parent.filesystem.":workspace_roots"]\n"**/.private"="deny"\n'
+                               '[permissions.dev-workspace]\nextends="parent"\n')
         write(self.feature/'.codex/config.toml', '[permissions.dev-workspace]\nextends=":full-access"\n')
-        r = self.launch('/usr/bin/true')
+        write(self.main/'secret', 'trusted-secret')
+        write(self.feature/'.private', 'feature-secret')
+        r = self.launch(sys.executable, '-I', '-c',
+                        'from pathlib import Path; import sys; '
+                        '\nfor path in sys.argv[1:]:\n'
+                        ' try: Path(path).read_text()\n except PermissionError: pass\n else: raise AssertionError(path)\n',
+                        str(self.main/'secret'), str(self.feature/'.private'))
         self.assertEqual(r.returncode, 0, r.stderr)
         args = json.loads(self.log.read_text())
+        if os.environ.get('DEVLOOP_MACOS_BROKER'):
+            self.assertIn('app-server', args)
+            self.assertEqual(args[args.index('-C')+1], str(self.main))
+            return
         tables = [x for x in args if x.startswith('permissions.dev-workspace.filesystem=')]
         self.assertEqual(len(tables), 1)
         table = tables[0]
@@ -148,15 +157,41 @@ sys.exit(subprocess.run(a[a.index('--')+1:]).returncode)
                 self.log.unlink(missing_ok=True)
                 r = self.gate('touch host-marker')
                 self.assertIn('Sandbox startup failed', json.loads(r.stdout)['reason'])
-                self.assertFalse(self.log.exists())
+                self.assertNotIn('sandbox', json.loads(self.log.read_text()) if self.log.exists() else [])
                 self.assertFalse((self.feature/'host-marker').exists())
+
+    def test_native_resolver_keeps_managed_filesystem_rules(self):
+        denied = self.main / 'managed-secret'
+        self.env['PROBE_MDM_DENY'] = str(denied)
+        write(denied, 'managed-secret')
+        result = self.launch(sys.executable, '-I', '-c',
+                             'from pathlib import Path; import sys; '
+                             '\ntry: Path(sys.argv[1]).read_text()\nexcept PermissionError: pass\nelse: raise AssertionError("managed deny lost")', str(denied))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = json.loads(self.log.read_text())
+        if os.environ.get('DEVLOOP_MACOS_BROKER'):
+            self.assertIn('app-server', args)
+            self.assertEqual(args[args.index('-C')+1], str(self.main))
+            return
+        table = next(x for x in args if x.startswith('permissions.dev-workspace.filesystem='))
+        self.assertIn(json.dumps(str(denied))+'="deny"', table)
+
+    def test_native_policy_errors_and_admin_rejection_block(self):
+        for key in ['PROBE_POLICY_BAD', 'PROBE_ADMIN_DENY']:
+            with self.subTest(key=key):
+                self.env[key] = '1'
+                result = self.gate('touch host-marker')
+                self.assertIn('Sandbox startup failed', json.loads(result.stdout)['reason'])
+                self.assertFalse((self.feature/'host-marker').exists())
+                del self.env[key]
 
     def test_launch_cleans_start_marker_after_success_or_failure(self):
         for early in ['', '1']:
             with self.subTest(early=early):
                 self.env['PROBE_EARLY'] = early
-                self.launch('/usr/bin/true')
-                args = json.loads(self.log.read_text())
-                command = args[args.index('--')+1:]
-                started = Path(command[command.index(str(self.feature))+1])
-                self.assertFalse(started.parent.exists())
+                result = self.launch('/bin/sh', '-c', 'printf "%s" "$TMPDIR"')
+                self.assertEqual(result.returncode, 125 if early else 0, result.stderr)
+                if not early:
+                    self.assertFalse(Path(result.stdout).exists())
+                else:
+                    self.assertEqual(result.stdout, '')
