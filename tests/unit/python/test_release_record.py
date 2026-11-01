@@ -112,6 +112,7 @@ class ReleaseRecordTests(unittest.TestCase):
         self.note.write_text("## Deferred\n\n- 2026-01-01 (security, needs-validation, Run 1): Old. Fingerprint `f-n1`.\n  - Ruling 2026-01-02: accept fine\n")
         out, _ = self.record()
         self.assertEqual((len(out["deferred"]), out["skipped"]), (3, []))
+        self.assertEqual((out["carried"], out["reopened"]), ([], [{"fingerprint": "f-n1", "why": "no-commit", "files": []}]))
 
     def test_gardener_line(self) -> None:
         out, _ = self.record()

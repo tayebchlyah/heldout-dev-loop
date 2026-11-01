@@ -19,7 +19,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
-- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `sandbox-run.py`: audit sandbox runner (Docker).
+- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry of `release-record`; `sandbox-run.py`: audit sandbox runner (Docker).
 - `skill/scripts/feature_gate.py`: `review-merge`, `review-save`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
 - `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, the `gate` `weakened` report; `board/`: progress board writer, server and page; `board/cli.py`: `board`.
@@ -75,7 +75,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `release-notes --tag <tag> [--repo <path>] [--output <file>]`: Write the `CHANGELOG.md` section of a tag to `--output`: the GitHub Release body. `reference/cli/release-notes.md`
 - `release-plan [--repo <path>] [--harness claude|codex] [--profile quick|standard|deep] [--budget <n>] [--require-sandbox]`: Plan a release security audit run: folder, profile, budget, scope, sandbox; `--require-sandbox`: stop with `no-sandbox` when no image or no engine. `reference/cli/release-plan.md`
 - `notes-migrate [--repo <path>] [--apply [--plan <hash>]]`: Move an old notes layout to feature folders; dry run, then `--apply --plan <hash>`. `reference/cli/notes-migrate.md`
-- `release-record --run <folder> [--base <sha>] [--harness claude|codex] [--repo <path>]`: Write a release audit result into the project note. `reference/cli/release-record.md`
+- `release-record --run <folder> [--base <sha>] [--harness claude|codex] [--repo <path>]`: Write a release audit result into the project note; JSON `carried`, `reopened`. `reference/cli/release-record.md`
 
 ## Build and test
 

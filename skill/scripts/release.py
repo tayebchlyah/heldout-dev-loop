@@ -23,6 +23,7 @@ from datetime import date
 from pathlib import Path
 
 import ci_skip
+import release_carry
 from autonomy import write_atomic
 from devloop import AUDITS, emit, old_layout
 from merge_check import is_test_or_doc, read_config
@@ -649,6 +650,9 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         open_prints = {i["fingerprint"] for i in security_items(text)[0] if i["fingerprint"]}
         garden_prints = {m.group(1) for line in section(text, "Gardener") if (m := FINGERPRINT_RE.search(line))}
         deferred: list[str] = []
+        block: list[str] = []
+        carried: list[dict] = []
+        reopened: list[dict] = []
         low: list[str] = []
         skipped: list[str] = []
         for item in findings:
@@ -675,6 +679,11 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
                 low.append(f"- {today} (security, low, {name}): {' '.join(parts)}")
             else:
                 deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
+                block.append(deferred[-1])
+                found = release_carry.carry(repo, text, fingerprint, item.get("trace"), sha, today) if verdict == "needs-validation" and fingerprint else None
+                if found is not None:
+                    (carried if found[0] == "carried" else reopened).append(found[1])
+                    block.extend([found[2]] if found[2] else [])
         counts = {v: sum(1 for r in findings if r.get("verdict") == v) for v in verdicts}
         hardening = hardening_count(run / "REPORT.md")
         gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see {AUDITS}/{name}/REPORT.md" if hardening else None
@@ -682,13 +691,14 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
                 f"hardening {hardening}, profile {profile}, scope {scope}")
         lines = text.split("\n")
         if deferred:
-            add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *deferred], blank_before=True)
+            add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *block], blank_before=True)
         if low or gardener:
             add_lines(lines, "Gardener", [*low, *([gardener] if gardener else [])])
         add_lines(lines, "Release audits", [line])
         out = "\n".join(lines)
         write_atomic(note, out if out.endswith("\n") else out + "\n")
-    return {"record": line, "deferred": deferred, "low": low, "skipped": skipped, "gardener": gardener}, 0
+    return {"record": line, "deferred": deferred, "carried": carried, "reopened": reopened, "low": low, "skipped": skipped,
+            "gardener": gardener}, 0
 
 
 def section_body(text: str, version: str) -> list[str] | None:
