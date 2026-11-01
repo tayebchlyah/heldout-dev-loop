@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import subprocess
 import shutil
 import sys
 import unittest
@@ -157,6 +158,8 @@ class AuditBriefTests(AuditRunCase):
         words = shlex.split(line)
         self.assertIn(str(self.path(".").resolve()), [str(Path(w).resolve()) for w in words])
         self.assertEqual(words[words.index("--agent") + 1], "h01")
+        done = subprocess.run(words, capture_output=True, text=True, env=self.env)
+        self.assertEqual((done.returncode, json.loads(done.stdout)["state"]), (1, "missing"))
 
 
 if __name__ == "__main__":

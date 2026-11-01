@@ -115,6 +115,7 @@ wire("test_audit_seed")
 wire("test_audit_units")
 wire("test_audit_skilltext")
 wire("test_audit_brief")
+wire("test_audit_check")
 
 
 class JUnitReportTests(unittest.TestCase):
