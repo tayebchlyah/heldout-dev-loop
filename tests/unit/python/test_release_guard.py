@@ -258,6 +258,19 @@ class ReleaseKitTests(unittest.TestCase):
         branch = text.split("- else (", 1)[1].split("\n4. ", 1)[0]
         self.assertIn("codex -c default_permissions=dev-docker", branch)
 
+    def test_sandbox_check_and_carry_text(self) -> None:
+        text = (self.SKILL / "SKILL.md").read_text()
+        step1 = text.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
+        step3 = text.split("\n3. ", 1)[1].split("\n4. ", 1)[0]
+        step7 = text.split("\n7. ", 1)[1].split("\n\n", 1)[0]
+        for phrase in ["--require-sandbox", "--no-sandbox", "no-sandbox", "no-images", "security_audit.images", "dev-loop.json",
+                       "no-engine", "start Docker", "codex -c default_permissions=dev-docker", "change nothing"]:
+            self.assertIn(phrase, step1, phrase)
+        for phrase in ["--no-sandbox", "source-only"]:
+            self.assertIn(phrase, step3, phrase)
+        for phrase in ["carried", "reopened"]:
+            self.assertIn(phrase, step7, phrase)
+
     def test_skill_is_user_invoked_only(self) -> None:
         text = (self.SKILL / "SKILL.md").read_text()
         head = text.split("---")[1]
