@@ -20,6 +20,7 @@ One file per subject. A new test file adds its line here.
 - `test_repo_rules.py`, `test_repo_docs.py`: `repo_rules.py`, gate scope; `AGENTS.md` budget, CLI index, this file index, kit and release docs.
 - `test_suite_lock.py`: `scripts/suite_lock.sh`, one suite run at a time across worktrees.
 - `test_audit_common.py`, `test_audit_seed.py`, `test_audit_units.py`, `test_audit_skilltext.py`, `test_audit_brief.py`, `test_audit_check.py`, `test_audit_promote.py`, `test_audit_fold.py`, `test_audit_fold_review.py`, `test_audit_close.py`, `test_audit_report.py`: `audit-run` shared core: ids, refs, paths, scope, ledger write; `audit-run seed`: prior run, carry, `touched`, metadata; `audit-run units`, the new-unit builder of fold; `audit/skilltext.py`: skill text by heading, fence, block, schema branch; `audit-run brief`: ids, prompt parts, refusals; `audit-run check`: result file, kind rules; `audit-run promote`: no-follow copy, limits; `audit-run fold`: hunter, discard; critic, verifier, recheck; `audit-run findings`, `status`; `audit-run report`, `release-record` on a tool-made run.
+- `test_audit_text.py`: `release-audit` step 4, `audit-run` contract, `AGENTS.md` lines.
 - `junit_report.py`, `board_fixtures.py`, `audit_fixtures.py`: the one JUnit writer; board fixtures the held-out oracle shares; stub `security-audit` skill, audit run fixtures.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
