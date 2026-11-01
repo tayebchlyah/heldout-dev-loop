@@ -150,6 +150,44 @@ class AuditBriefTests(AuditRunCase):
                                 "VERIFIER-PROMOTION-TEXT", "agents/r01/scratch/result.json", "audit-run check"])
         self.assertNotIn("ARCHITECTURE-TEXT", recheck)
 
+    def refused_agent_exists(self, plant) -> None:
+        self.hunter_brief("a.py")
+        (b,) = self.add_units(self.entry("b.py", paths=("b.py",)))
+        outside = self.root / "outside"
+        outside.mkdir()
+        plant(self.path("agents/h02"), outside)
+        before = self.snapshot()
+        out, code = self.step("brief", "--kind", "hunter", "--units", b)
+        self.assertEqual((code, out["error"]), (1, "agent-exists"), out)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(sorted(p.name for p in outside.iterdir()), ["target"] if (outside / "target").exists() else [])
+        if (outside / "target").exists():
+            self.assertEqual((outside / "target").read_text(), "OUTSIDE")
+
+    def test_agent_folder_with_a_prompt_link_is_refused(self) -> None:
+        def plant(agent: Path, outside: Path) -> None:
+            (outside / "target").write_text("OUTSIDE")
+            agent.mkdir()
+            (agent / "prompt.md").symlink_to(outside / "target")
+        self.refused_agent_exists(plant)
+
+    def test_agent_folder_that_is_a_link_is_refused(self) -> None:
+        self.refused_agent_exists(lambda agent, outside: agent.symlink_to(outside))
+
+    def test_agent_folder_with_a_scratch_is_refused(self) -> None:
+        def plant(agent: Path, outside: Path) -> None:
+            (agent / "scratch").mkdir(parents=True)
+        self.refused_agent_exists(plant)
+
+    def test_second_verifier_brief_leaves_out_the_first_verifier_checks(self) -> None:
+        self.release_plan("--profile", "standard")
+        self.folded_hunter("a.py", candidates=[self.candidate("f1")])
+        agent, _ = self.folded("verifier", lambda v: self.verifier_result(v, "f1"), "--fingerprint", "f1")
+        self.assertIn(agent, json.dumps(self.ledger()))
+        prompt = Path(self.brief("--kind", "verifier", "--fingerprint", "f1")["prompt"]).read_text()
+        self.assertNotIn('"agent_id": "v01"', prompt)
+        self.assertIn('"agent_id": "h01"', prompt)
+
     def test_check_line_quotes_a_run_path_with_spaces(self) -> None:
         (a,) = self.add_units(self.entry("a.py"))
         self.write_context()

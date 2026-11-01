@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 from pathlib import Path
 
 import devloop
-from audit import common, skilltext
+from audit import common, safefs, skilltext
 from release import one_line
 
 KIND_LETTER = {"hunter": "h", "critic": "c", "verifier": "v", "recheck": "r"}
@@ -44,7 +45,7 @@ def check_line(run: Path, repo: str, agent: str) -> str:
 
 
 def carried_units(ledger: list[dict], fp: str) -> list[dict]:
-    """The in-scope carried units a verifier of `fp` owns (D17a)."""
+    """The in-scope carried units a verifier of `fp` owns."""
     return [u for u in ledger if fp in (u.get("prior_fingerprints") or []) and u.get("prior_status") in VERIFIER_OWNED
             and u["status"] != "out_of_scope"]
 
@@ -113,7 +114,9 @@ def verifier_parts(state: dict, ledger: list[dict], fp: str, skill: Path) -> lis
         parts.append(("Final record check", skilltext.span(skill, VALIDATION, "### Phase 5", "### Phase 6")))
     candidate = state["candidates"].get(fp, {}).get("body") or state["prior_records"].get(fp)
     linked = [u for u in ledger if fp in (u.get("result_fingerprints") or [])]
-    checks = [{"coverage_id": u["coverage_id"], "local_checks": u.get("local_checks") or []} for u in linked]
+    later = {a for a, b in state["briefs"].items() if b["kind"] in ("verifier", "recheck")}
+    checks = [{"coverage_id": u["coverage_id"],
+               "local_checks": [c for c in u.get("local_checks") or [] if c.get("agent_id") not in later]} for u in linked]
     files: list[str] = []
     for u in linked + carried_units(ledger, fp):
         for ref in u.get("selected_companion_blocks") or []:
@@ -193,18 +196,24 @@ def cmd_brief(args: argparse.Namespace) -> int:
             tail.append(("Limits", limits(agent)))
         tail.append(("Check command", f"```sh\n{check_line(run, state['repo'], agent)}\n```"))
         prompt = "\n\n".join(f"## {title}\n\n{text.strip()}" for title, text in head + parts + tail) + "\n"
-        for unit in held:
-            unit.update(status="in_progress", agent_id=agent)
-        if held:
-            common.write_ledger(run, skill, ledger)
         folder = run / "agents" / agent
-        (folder / "scratch").mkdir(parents=True)
-        (folder / "artifacts").mkdir()
-        inputs = {"units": [u["coverage_id"] for u in held]} if kind == "hunter" else (
-            {"fingerprint": fp} if fp else {})
-        final = bool(args.final)
-        (folder / "brief.json").write_text(json.dumps({"kind": kind, **inputs, "final": final}, ensure_ascii=False) + "\n")
-        (folder / "prompt.md").write_text(prompt, encoding="utf-8")
+        try:
+            agent_fd = safefs.make_agent_folder(run, agent)
+        except FileExistsError:
+            common.fail("agent-exists", agent=str(folder))
+        try:
+            for unit in held:
+                unit.update(status="in_progress", agent_id=agent)
+            if held:
+                common.write_ledger(run, skill, ledger)
+            inputs = {"units": [u["coverage_id"] for u in held]} if kind == "hunter" else (
+                {"fingerprint": fp} if fp else {})
+            final = bool(args.final)
+            meta = json.dumps({"kind": kind, **inputs, "final": final}, ensure_ascii=False) + "\n"
+            safefs.create_file(agent_fd, "brief.json", meta.encode("utf-8"))
+            safefs.create_file(agent_fd, "prompt.md", prompt.encode("utf-8"))
+        finally:
+            os.close(agent_fd)
         state["briefs"][agent] = {"kind": kind, "units": [u["coverage_id"] for u in held], "fingerprint": fp,
                                   "final": final, "state": "open", "order": None, "reason": None, "promoted": {}}
         common.save_state(run, state)
