@@ -29,6 +29,42 @@ def walk(root: Path, parts: list[str]) -> int:
     return fd
 
 
+def make_agent_folder(run: Path, agent: str) -> int:
+    """Create `run/agents/<agent>` with `scratch` and `artifacts`, no-follow, and return its fd. `agents` is created
+    when missing. A folder or link already there, or a link in `agents`, raises `FileExistsError` with nothing written."""
+    run_fd = walk(run, [])
+    try:
+        try:
+            os.mkdir("agents", dir_fd=run_fd)
+        except FileExistsError:
+            pass
+        try:
+            agents_fd = open_dir(run_fd, "agents")
+        except OSError as exc:
+            raise FileExistsError("agents") from exc
+    finally:
+        os.close(run_fd)
+    try:
+        os.mkdir(agent, dir_fd=agents_fd)
+        agent_fd = open_dir(agents_fd, agent)
+    finally:
+        os.close(agents_fd)
+    try:
+        os.mkdir("scratch", dir_fd=agent_fd)
+        os.mkdir("artifacts", dir_fd=agent_fd)
+    except OSError:
+        os.close(agent_fd)
+        raise
+    return agent_fd
+
+
+def create_file(dir_fd: int, name: str, data: bytes) -> None:
+    """Create the file `name` of `dir_fd`, exclusive and no-follow, holding `data`."""
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+
+
 def open_leaf(dir_fd: int, name: str) -> int:
     """Open the file `name` of `dir_fd` for reading, no-follow and non-blocking (a FIFO does not hang)."""
     return os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
