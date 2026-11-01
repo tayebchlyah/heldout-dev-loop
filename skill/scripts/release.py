@@ -70,7 +70,7 @@ def deferred_items(text: str) -> tuple[list[dict], list[str]]:
     """(every item in file order, unparsed lines) of `## Deferred`.
 
     An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: a ruling `accept` or `close` under
-    it. `ruling`: `{date, word}` of its last ruling line, else None. A top-level bullet that names security and does
+    it. `ruling`: `{date, word, carried}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling), else None. A top-level bullet that names security and does
     not match the item format is unparsed.
     """
     items: list[dict] = []
@@ -99,7 +99,8 @@ def deferred_items(text: str) -> tuple[list[dict], list[str]]:
         elif current is not None:
             ruling = RULING_RE.match(line)
             if ruling:
-                current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2)}
+                carried = line[ruling.start(2):].startswith("accept carried from the ")
+                current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2), "carried": carried}
                 current["closed"] = current["closed"] or ruling.group(2) in CLOSING_WORDS
     return items, unparsed
 
