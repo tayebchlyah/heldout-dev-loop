@@ -298,6 +298,49 @@ class AuditRunCase(unittest.TestCase):
         state["candidates"][fp] = {"body": body, "hunter": hunter, "later": []}
         common.save_state(self.path("."), state)
 
+    def hunter_brief(self, *paths: str) -> tuple[str, list[str]]:
+        ids = self.add_units(*(self.entry(p, paths=(p,)) for p in paths))
+        self.write_context()
+        out, code = self.step("brief", "--kind", "hunter", "--units", *ids)
+        self.assertEqual(code, 0, out)
+        return out["agent"], ids
+
+    def src_check(self, agent: str, paths: tuple[str, ...] = ("a.py",)) -> dict:
+        return {"agent_id": agent, "reviewed_paths": list(paths), "invariant": "inv", "method": "source",
+                "result": "holds", "artifact": None}
+
+    def local_check(self, agent: str, rel: str, paths: tuple[str, ...] = ("a.py",), data: bytes = b"0123456789") -> dict:
+        scratch = self.path(f"agents/{agent}/scratch") / rel
+        scratch.parent.mkdir(parents=True, exist_ok=True)
+        scratch.write_bytes(data)
+        return {**self.src_check(agent, paths), "method": "local", "artifact": f"agents/{agent}/artifacts/{rel}"}
+
+    def candidate(self, fp: str, verdict: str = "confirmed", title: str = "T") -> dict:
+        return {"proposed_verdict": verdict, "fingerprint": fp, "title": title,
+                "trace": [{"kind": "sink", "file": "a.py", "line": 1}]}
+
+    def unit_result(self, uid: str, agent: str, disposition: str = "covered", checks: list | None = None,
+                    fps: tuple[str, ...] = (), unresolved: tuple[str, ...] = (), paths: tuple[str, ...] = ("a.py",)) -> dict:
+        checks = checks if checks is not None else [self.src_check(agent, paths)]
+        reviewed = sorted({p for c in checks for p in c["reviewed_paths"]})
+        return {"coverage_id": uid, "disposition": disposition, "reviewed_paths": reviewed, "checks": checks,
+                "candidate_fingerprints": list(fps), "unresolved": list(unresolved)}
+
+    def hunter_result(self, agent: str, ids: list[str], **over: object) -> dict:
+        units = [self.unit_result(uid, agent, paths=(self.unit(uid)["starting_paths"][0],)) for uid in ids]
+        return {"units": units, "candidates": [], "hardening": [], "uncovered": [], **over}
+
+    def unit(self, uid: str) -> dict:
+        return next(u for u in self.ledger() if u["coverage_id"] == uid)
+
+    def write_result(self, agent: str, value: object) -> Path:
+        path = self.path(f"agents/{agent}/scratch/result.json")
+        path.write_bytes(value if isinstance(value, bytes) else json.dumps(value).encode())
+        return path
+
+    def check(self, agent: str) -> tuple[dict, int]:
+        return self.step("check", "--agent", agent)
+
     def record(self, fp: str, verdict: str, trace: tuple[str, ...] = ("a.py",)) -> dict:
         return {"fingerprint": fp, "verdict": verdict, "title": f"Title {fp}", "severity": "medium",
                 "trace": [{"file": f, "line": 1} for f in trace]}
