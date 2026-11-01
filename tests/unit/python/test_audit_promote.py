@@ -67,6 +67,19 @@ class AuditPromoteTests(AuditRunCase):
         artifacts = self.path(f"agents/{agent}/artifacts")
         self.assertEqual(sorted(p.name for p in artifacts.rglob("*")), ["q1", "q2", "q3", "q4"])
 
+    def test_missing_scratch_folder_is_missing_and_a_link_is_a_link(self) -> None:
+        agent, ids = self.hunter_brief("a.py")
+        result = self.hunter_result(agent, ids)
+        result["units"][0]["checks"] = [self.local_check(agent, "out/r.txt")]
+        self.write_result(agent, result)
+        scratch = self.path(f"agents/{agent}/scratch")
+        shutil.rmtree(scratch / "out")
+        out = self.promote(agent)
+        self.assertEqual(out["rejected"], [{"path": f"agents/{agent}/artifacts/out/r.txt", "reason": "missing"}])
+        (scratch / "out").symlink_to(self.root, target_is_directory=True)
+        out = self.promote(agent)
+        self.assertEqual(out["rejected"], [{"path": f"agents/{agent}/artifacts/out/r.txt", "reason": "link"}])
+
     def test_existing_artifact_not_overwritten(self) -> None:
         agent, ids = self.hunter_brief("a.py")
         result = self.hunter_result(agent, ids)
