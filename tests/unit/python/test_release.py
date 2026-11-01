@@ -30,6 +30,12 @@ class ReleaseParseTests(unittest.TestCase):
     def items(self, text: str) -> tuple[list[dict], list[str]]:
         return release.security_items(text)
 
+    def test_one_line_folds_every_line_break(self) -> None:
+        for sep in ("\r", "\n", "\t", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", " ", " "):
+            text = f"a{sep}{sep}- b"
+            self.assertEqual(release.one_line(text), "a - b")
+        self.assertEqual(release.one_line(" `a`\x0b\x0b "), "'a'")
+
     def test_needs_validation_rulings(self) -> None:
         item = "- 2026-10-25 (security, needs-validation, Run 1): x"
         cases = [

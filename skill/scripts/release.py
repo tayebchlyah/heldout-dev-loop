@@ -517,15 +517,15 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
 
 
 def one_line(value: object) -> str:
-    """A text value on one line: breaks and tabs become a space, backticks an apostrophe (a title cannot forge a
-    `Fingerprint` marker or a ruling sub-bullet)."""
-    return re.sub(r"[\r\n\t]+", " ", str(value)).replace("`", "'").strip()
+    """A text value on one line: every line break `str.splitlines()` knows and tabs become a space, backticks an
+    apostrophe (a title cannot forge a `Fingerprint` marker or a ruling sub-bullet)."""
+    return re.sub(r"[\r\n\t\x0b\x0c\x1c-\x1e\x85  ]+", " ", str(value)).replace("`", "'").strip()
 
 
 def hardening_count(report: Path) -> int:
     """Top-level `- ` bullets under the first heading (any level) of `report` whose text starts with `Hardening`."""
     try:
-        lines = report.read_text().splitlines()
+        lines = report.read_text().split("\n")
     except (OSError, ValueError):
         return 0
     count = 0

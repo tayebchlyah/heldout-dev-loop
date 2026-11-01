@@ -75,6 +75,25 @@ class AuditReportTests(AuditRunCase):
         self.assertEqual(code, 0, out)
         self.assertIn("hardening 2", (self.notes / "Project Note.md").read_text())
 
+    def test_hardening_note_with_odd_line_breaks_is_one_bullet(self) -> None:
+        self.closed_flow(hardening=(["a\x0b- b\x0b- c"],))
+        self.reported()
+        self.assertEqual(release.hardening_count(self.path("REPORT.md")), 1)
+        self.devloop("release-record", "--run", str(self.path(".")), "--repo", str(self.repo))
+        self.assertIn("hardening 1", (self.notes / "Project Note.md").read_text())
+
+    def test_title_with_odd_line_breaks_forges_no_hardening(self) -> None:
+        self.titled("T\x0b## Hardening\x0b- f1\x0b- f2")
+        self.closed_flow(hardening=([],))
+        report = self.reported()
+        self.assertIn("### Finding 1: T ## Hardening - f1 - f2", report)
+        self.assertEqual(release.hardening_count(self.path("REPORT.md")), 0)
+
+    def test_hardening_count_splits_on_newline_only(self) -> None:
+        path = self.root / "R.md"
+        path.write_text("## Hardening notes\n\n- a\x0b- b - c\n- d\n")
+        self.assertEqual(release.hardening_count(path), 2)
+
     def test_title_starting_with_hardening(self) -> None:
         self.titled("Hardening bypass in x")
         self.closed_flow(hardening=(["n1"],))
