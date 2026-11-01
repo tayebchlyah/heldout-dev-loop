@@ -16,6 +16,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
 from test_devloop import git, put, run_cli  # noqa: E402
 import size  # noqa: E402
+from support import budget_report  # noqa: E402
 
 
 def blob(n: int, line: bytes = b"x" * 79 + b"\n") -> bytes:
@@ -350,7 +351,9 @@ class SizeTextTests(unittest.TestCase):
 
     def test_skill(self) -> None:
         self.assertNotIn("`gate --summary` (`exit` 0)", self.text("skill/SKILL.md"))
-        self.assertLessEqual(len((self.ROOT / "skill/SKILL.md").read_bytes()), size.LIMIT)
+        report = budget_report(self.ROOT / "skill/SKILL.md", size.LIMIT)
+        if report:
+            self.fail(report)
         self.assertIn("size-check --all", self.section("4 Plan"))
         self.assertIn("`seam`", self.section("5 Build"))
         self.assertTrue([line for line in self.section("6 Feature gate").splitlines()
