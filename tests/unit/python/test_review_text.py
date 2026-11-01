@@ -32,7 +32,7 @@ class ReviewWaveContractTests(unittest.TestCase):
         self.assertNotIn("three Agent calls", self.claude)
         for text in (self.claude, self.codex):
             self.assertNotIn("fixed point `main`", text)
-            self.assertNotIn(" `main...GATE_SHA`", text)
+            self.assertNotRegex(text, r"(?<!origin/)main\.\.\.GATE_SHA")
         for value in [
             "`final_reviewer`", "skill `code-review` with fixed point `origin/main`", "`security_reviewer`",
             "works in the feature worktree on `origin/main...GATE_SHA`",
