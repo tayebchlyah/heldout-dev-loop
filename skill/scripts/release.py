@@ -439,7 +439,8 @@ def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
 
 def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None,
          require_sandbox: bool = False) -> tuple[dict, int]:
-    """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created.
+    """The release-audit plan: run folder (created, the plan in its `plan.json`), scope, sandbox and skill. Exit 0, else 1
+    with `error`, nothing created.
     `require_sandbox`: `no-sandbox` (`no-images`, else `no-engine`) after every other check."""
     if notes is None:
         return {"error": "notes path unresolved"}, 1
@@ -493,7 +494,7 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         out.mkdir(parents=True)
     except FileExistsError:
         return {"error": "run-folder-exists", "output": str(out)}, 1
-    return {
+    result = {
         "run": f"Run {n}",
         "output": str(out),
         "head": head_sha,
@@ -510,7 +511,9 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
             "runner": str(Path(__file__).resolve().parent / "sandbox-run.py"),
         },
         "skill": str(skill_dir(harness, os.environ)),
-    }, 0
+    }
+    (out / "plan.json").write_text(json.dumps(result))
+    return result, 0
 
 
 def one_line(value: object) -> str:

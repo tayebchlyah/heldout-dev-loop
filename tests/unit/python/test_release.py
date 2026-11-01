@@ -379,6 +379,17 @@ class ReleasePlanTests(PlanRepo):
         self.assertEqual(out["output"], str(folder))
         self.assertTrue(folder.is_dir())
 
+    def test_plan_json_equals_stdout(self) -> None:
+        out, code = self.plan()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads((Path(out["output"]) / "plan.json").read_text()), out)
+
+    def test_failed_plan_writes_no_plan_json(self) -> None:
+        (self.repo / "a.txt").write_text("dirty")
+        out, code = self.plan()
+        self.assertEqual((code, out["error"]), (1, "dirty"))
+        self.assertEqual(list(self.notes.rglob("plan.json")), [])
+
     def test_next_plan_scopes_from_record(self) -> None:
         for n in (1, 3):
             (self.notes / "Security Audit" / f"Run {n}").mkdir(parents=True)
@@ -414,7 +425,7 @@ class ReleasePlanTests(PlanRepo):
     def test_dirty_tracked_file_blocks_untracked_does_not(self) -> None:
         (self.repo / "untracked.txt").write_text("u")
         self.assertEqual(self.plan()[1], 0)
-        (self.notes / "Security Audit" / "Run 1").rmdir()
+        shutil.rmtree(self.notes / "Security Audit" / "Run 1")
         (self.repo / "a.txt").write_text("changed")
         out, code = self.plan()
         self.assertEqual((code, out["error"], out["paths"]), (1, "dirty", ["a.txt"]))
