@@ -24,6 +24,8 @@ def read_scratch(run: Path, agent: str, rel: str, room: int) -> bytes:
     *folders, leaf = rel.split("/")
     try:
         dir_fd = safefs.walk(run, ["agents", agent, "scratch", *folders])
+    except FileNotFoundError:
+        raise Rejected("missing") from None
     except OSError:
         raise Rejected("link") from None
     try:
