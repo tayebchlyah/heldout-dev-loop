@@ -205,6 +205,25 @@ class AuditRunCase(unittest.TestCase):
         assert self.run_dir is not None
         return self.run_dir / name
 
+    def file(self, value: object, name: str = "input.json") -> str:
+        path = self.root / name
+        path.write_text(json.dumps(value))
+        return str(path)
+
+    def entry(self, surface: str, *, boundary: str = "B", subsystem: str = "S",
+              attack: str = "ATTACK-CLASSES.md#Access control", paths: tuple[str, ...] = ("a.py",), **extra: object) -> dict:
+        refs = {"surface": surface, "boundary": boundary, "subsystem": subsystem, "attack_class": attack}
+        return {"canonical_refs": refs, **refs, "starting_paths": list(paths),
+                "ordinary_attack_class_block": attack if attack.startswith("ATTACK-CLASSES.md#") else None,
+                "selected_companion_blocks": [], "excluded_blocks": [], "prior_status": "none", **extra}
+
+    def add_units(self, *entries: dict) -> list[str]:
+        if self.run_dir is None or not self.path("run-metadata.json").exists():
+            self.seed()
+        out, code = self.step("units", "--add", self.file(list(entries)))
+        self.assertEqual(code, 0, out)
+        return out["added"]
+
     def write_context(self) -> None:
         self.path("context.md").write_text("CONTEXT-TEXT\n")
         self.path("architecture.md").write_text("ARCHITECTURE-TEXT\n")

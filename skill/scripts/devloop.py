@@ -343,6 +343,9 @@ def main() -> int:
         return sub
 
     step("seed", "seed")
+    units = step("units", "units").add_mutually_exclusive_group(required=True)
+    units.add_argument("--add")
+    units.add_argument("--update")
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
