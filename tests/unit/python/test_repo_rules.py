@@ -320,17 +320,30 @@ class CommentRuleTests(unittest.TestCase):
             with self.subTest(path=path, text=text):
                 self.assertEqual(repo_rules.comment_lines(path, text), expected)
 
+    def test_trailing_comments_table(self) -> None:
+        for path, text, expected in [
+            ("a.py", 'def f():\n    # full\n    x = 1  # trailing\n    y = "# no"\n    z = 2 # noqa: E402\n',
+             {3: "# trailing", 5: "# noqa: E402"}),
+            ("a.py", 'x = """a\n# b\n"""  # after\n', {3: "# after"}),
+            ("a.py", "def f(:\n    x = 1  # t\n", {}),
+            ("a.sh", "echo x  # t\n", {}),
+            ("a.mjs", "const a = 1 // z\n", {}),
+        ]:
+            with self.subTest(path=path, text=text):
+                self.assertEqual(repo_rules.trailing_comments(path, text), expected)
+
     def test_allowed_lines(self) -> None:
         text = "#!/bin/sh\n# head one\n\n# head two\nset -u\n# plain\n# more\n# shortcut: x, y\n# next\n# after\necho\n# z\n"
         self.assertEqual(repo_rules.allowed_lines("a.sh", text), {1, 2, 4, 8, 9, 10})
         self.assertEqual(repo_rules.allowed_lines("a.py", '"""Doc."""\n# x\n'), set())
+        self.assertEqual(repo_rules.allowed_lines("a.py", "x = 1  # t\n# a\n# shortcut: x, y\n# b\n"), {3, 4})
 
 
 class CommentCommandTests(RulesRepo):
     def base_files(self) -> None:
         put(self.repo / "a.sh", "#!/bin/bash\n# head\nset -u\n\n# 3. A plain push asks.\nhas x\n")
         put(self.repo / "m.py", '"""Mod."""\n\n\ndef f():\n    return 1\n')
-        put(self.repo / "old.py", '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 2\n')
+        put(self.repo / "old.py", '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 2  # kept words\n')
 
     def comments(self) -> tuple[int, dict]:
         return run_rules(self.repo, "comments")
@@ -383,6 +396,30 @@ class CommentCommandTests(RulesRepo):
         self.assert_violations([])
         put(self.repo / "new.py", '"""New."""\n\n\ndef g():\n    # moved words changed\n    return 2\n')
         self.assert_violations([("new.py", 5, "# moved words changed")])
+
+    def test_trailing_comments(self) -> None:
+        head = '"""Mod."""\n\n\ndef f():\n'
+        for body, expected in [
+            ("    return 1  # plain words\n", [("m.py", 5, "# plain words")]),
+            ("    return 1  # noqa: E402\n    y = 2  # see https://example.invalid/x\n", []),
+            ("    return 1  # shortcut: a, b\n    y = 2  # next\n", [("m.py", 6, "# next")]),
+            ("    return 'https://example.invalid/x'  # plain words\n", [("m.py", 5, "# plain words")]),
+            ("    return 1  # fixes #123\n    y = 2  # plain\n", [("m.py", 6, "# plain")]),
+        ]:
+            with self.subTest(body=body):
+                put(self.repo / "m.py", head + body)
+                self.assert_violations(expected)
+
+    def test_trailing_comment_kept_on_an_edited_line_passes(self) -> None:
+        edit = '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 3  # {}\n'
+        put(self.repo / "old.py", edit.format("kept words"))
+        self.assert_violations([])
+        put(self.repo / "old.py", edit.format("new words"))
+        self.assert_violations([("old.py", 6, "# new words")])
+
+    def test_trailing_comment_at_the_top_does_not_extend_the_header(self) -> None:
+        put(self.repo / "h.py", "x = 1  # first\n# second\n")
+        self.assert_violations([("h.py", 1, "# first"), ("h.py", 2, "# second")])
 
 
 class RepoCommentsTests(unittest.TestCase):
