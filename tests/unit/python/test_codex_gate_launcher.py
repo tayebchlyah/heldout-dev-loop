@@ -192,6 +192,21 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertEqual(table[':workspace_roots'], {'.git': 'read', '**/.private': 'deny'})
         self.assertEqual(values['permissions.dev-workspace.network']['unix_sockets'], {'/var/run/docker.sock': 'deny'})
 
+    def native_route(self, *command, env=None):
+        source = ('import sys; sys.platform="linux"; sys.argv=["sandbox.py"]+sys.argv[1:]; '
+                  'sys.path.insert(0,sys.argv[1]); import sandbox; sys.argv.pop(1); sys.exit(sandbox.main())')
+        return subprocess.run([sys.executable, '-I', '-c', source, str(CODEX_ASSETS / 'hooks'),
+                               str(self.main), str(self.feature), '--', *command],
+                              input='', text=True, capture_output=True, env={**self.env, **(env or {})})
+
+    def test_native_route_sets_gate_scope_under_core_environment(self):
+        bootstrap = 'import os,sys\nif "sandbox" in sys.argv: os.environ.pop("GATE_SCOPE",None)\n'
+        write(self.bin / 'codex', '#!' + sys.executable + '\n' + bootstrap + CODEX_GATE_FIXTURE)
+        for scope in ('changed', 'full'):
+            with self.subTest(scope=scope):
+                r = self.native_route('/bin/sh', '-c', 'printf "%s" "$GATE_SCOPE"', env={'GATE_SCOPE': scope})
+                self.assertEqual((r.returncode, r.stdout), (0, scope), r.stderr)
+
     def test_launch_keeps_trusted_home_deny_rules(self):
         decoy = self.root / 'home-like/x/secret'
         write(decoy, 'decoy')
