@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Codex Hook Sandbox flows through installed hooks in linked scratch worktrees.
 
-The native confinement flow uses a real Codex launcher when available. The other
-flows use a transparent launcher only to isolate routing and startup outcomes.
+The routing and native confinement flows use a real Codex launcher when available.
+The upgrade and launcher-failure flows use a fake launcher only to isolate routing and
+startup outcomes.
 """
 
 from __future__ import annotations
@@ -44,10 +45,14 @@ class CodexHookSandboxFlows(unittest.TestCase):
         self.home = self.root / "home"
         self.notes = self.root / "notes"
         self.bin = self.root / "bin"
-        for folder in (self.main, self.home, self.notes, self.bin):
+        self.tmp = self.root / "tmp"
+        for folder in (self.main, self.home, self.notes, self.bin, self.tmp):
             folder.mkdir()
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("GIT_", "CODEX", "CLAUDE", "DEVLOOP", "DEV_LOOP"))}
+        for key in ("TMPDIR", "TMP", "TEMP"):
+            if key == "TMPDIR" or key in self.env:
+                self.env[key] = str(self.tmp)
         with socket.socket() as bound:
             bound.bind(("127.0.0.1", 0))
             port = bound.getsockname()[1]
@@ -86,6 +91,17 @@ class CodexHookSandboxFlows(unittest.TestCase):
         subprocess.run([sys.executable, "-I", str(cli), "board", "--stop-server"], cwd=self.main,
                        env=self.env, capture_output=True, timeout=20)
 
+    def use_native_launcher(self) -> None:
+        native = shutil.which("codex", path=os.environ.get("PATH", ""))
+        if not native or sys.platform not in ("darwin", "linux"):
+            self.skipTest("native Codex launcher unavailable on this host")
+        version = subprocess.run([native, "--version"], capture_output=True, text=True, timeout=10)
+        match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
+        if not match or tuple(map(int, match.groups())) < (0, 166, 0):
+            self.skipTest("native confinement needs codex-cli >= 0.166.0")
+        (self.bin / "codex").unlink()
+        (self.bin / "codex").symlink_to(native)
+
     def configure_gate(self, gate: str | None, project: Path | None = None) -> None:
         project = project or self.main
         path = project / "dev-loop.json"
@@ -116,6 +132,7 @@ class CodexHookSandboxFlows(unittest.TestCase):
 
     def test_feature_changes_are_automatically_checked(self) -> None:
         """F1, O1/O2/O8: both Stop events test dirty feature files through both gate routes."""
+        self.use_native_launcher()
         put(self.feature / "unit_probe.py", "import os\n"
             "assert os.environ['GATE_SCOPE'] == 'changed'\n"
             "raise AssertionError('pelican feature-only test failed')\n")
@@ -223,6 +240,9 @@ if sys.argv[2] == "parent":
         self.assertEqual(browser.returncode, 0, browser.stderr)
         if not Path(browser.stdout.strip()).is_file():
             self.fail("Playwright Chromium is not installed")
+        installed = Path(browser.stdout.strip())
+        self.env.setdefault("PLAYWRIGHT_BROWSERS_PATH",
+                            str(next(p for p in installed.parents if p.name.startswith("chromium")).parent))
         (self.bin / "codex").unlink()
         (self.bin / "codex").symlink_to(launcher)
         system_ps = Path("/bin/ps")
@@ -245,7 +265,7 @@ if sys.argv[2] == "parent":
             baseline.connect(str(endpoint))
         connection, _ = listener.accept()
         connection.close()
-        probe = r'''import errno, json, os, shutil, socket, stat, subprocess, sys, tempfile
+        probe = r'''import errno, json, os, shutil, socket, stat, subprocess, sys
 from pathlib import Path
 outside, endpoint, node, playwright, who = sys.argv[1:]
 def denied(action):
@@ -274,8 +294,6 @@ report["loopback"] = "allowed"
 if who == "parent":
     ps = Path(shutil.which("ps")).resolve()
     assert ps != Path("/bin/ps").resolve(), str(ps)
-    assert any(ps.is_relative_to(root.resolve()) for root in
-               (Path(tempfile.gettempdir()), Path("/tmp"))), str(ps)
     mode = ps.stat()
     assert mode.st_uid == os.getuid() and not mode.st_mode & (stat.S_ISUID | stat.S_ISGID)
     subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(ps)], check=True)
@@ -284,6 +302,7 @@ if who == "parent":
     subprocess.run([node, "-e", "(async()=>{const b=await require(process.argv[1]).chromium.launch({headless:true});await b.close()})().catch(e=>{console.error(e);process.exit(1)})", playwright], check=True, timeout=45)
     report["browser"] = "launched-and-closed"
     report["ps"] = "signed-temporary-copy"
+    report["ps_path"] = str(ps)
     subprocess.run([sys.executable, __file__, outside, endpoint, node, playwright, "child"], check=True)
 Path("macos-result-" + who + ".json").write_text(json.dumps(report))
 '''
@@ -298,9 +317,12 @@ Path("macos-result-" + who + ".json").write_text(json.dumps(report))
                 self.assertTrue(report.is_file(), f"{who} did not finish; no denial can be inferred")
                 expected = {"outside": "denied", "env": "denied", "docker": "denied", "scope": "changed",
                             "workspace": "allowed", "loopback": "allowed"}
+                result = json.loads(report.read_text())
                 if who == "parent":
                     expected.update(browser="launched-and-closed", ps="signed-temporary-copy")
-                self.assertEqual(json.loads(report.read_text()), expected)
+                    copy = Path(result.pop("ps_path"))
+                    self.assertFalse(copy.exists(), f"temporary ps copy left at {copy}")
+                self.assertEqual(result, expected)
             self.assertFalse(outside.exists(), "confined gate wrote under host home")
         finally:
             after = subprocess.run(["shasum", "-a", "256", str(system_ps)],
