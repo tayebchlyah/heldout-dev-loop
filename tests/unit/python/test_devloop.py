@@ -398,11 +398,14 @@ class ConfigHomeTests(unittest.TestCase):
                 self.assertEqual(dl.codex_home(env, Path("/h")), Path(expected))
 
     def test_only_devloop_reads_the_config_roots(self) -> None:
-        read = re.compile(r"""(?:get(?:env)?\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']""")
+        reads = (re.compile(r"""(?:get(?:env)?\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']"""),
+                 re.compile(r"""\bhome(?:\(\))?\s*/\s*\(?\s*["']\.(?:claude|codex)["']"""))
         for path in sorted((SKILL_ROOT / "scripts").rglob("*.py")):
             if path != SKILL_ROOT / "scripts" / "devloop.py":
                 with self.subTest(path=str(path.relative_to(SKILL_ROOT))):
-                    self.assertEqual([line.strip() for line in path.read_text().splitlines() if read.search(line)], [])
+                    lines = [f"{number}: {line.strip()}" for number, line in enumerate(path.read_text().splitlines(), 1)
+                             if any(read.search(line) for read in reads)]
+                    self.assertEqual(lines, [])
 
 
 def load_check_setup():

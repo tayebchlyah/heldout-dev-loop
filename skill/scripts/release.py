@@ -25,7 +25,7 @@ from pathlib import Path
 import ci_skip
 import release_carry
 from autonomy import write_atomic
-from devloop import AUDITS, emit, old_layout
+from devloop import AUDITS, claude_home, emit, old_layout
 from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
@@ -279,7 +279,8 @@ def skill_dir(harness: str, env: Mapping[str, str]) -> Path:
     """The `security-audit` skill folder of the harness; `DEVLOOP_TEST_SECURITY_AUDIT_DIR` overrides it (tests)."""
     if env.get("DEVLOOP_TEST_SECURITY_AUDIT_DIR"):
         return Path(env["DEVLOOP_TEST_SECURITY_AUDIT_DIR"])
-    return Path.home() / (".claude" if harness == "claude" else ".agents") / "skills" / "security-audit"
+    home = Path.home()
+    return (claude_home(env, home) if harness == "claude" else home / ".agents") / "skills" / "security-audit"
 
 
 def docker_up() -> bool:

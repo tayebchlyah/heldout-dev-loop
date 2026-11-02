@@ -203,13 +203,13 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         for root in (".claude", ".agents"):
             write(self.home / root / "skills" / "security-audit" / "SKILL.md", "name: security-audit\n")
 
-    def run_checker(self, harness: str) -> subprocess.CompletedProcess[str]:
+    def run_checker(self, harness: str, **env: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(CHECKER), "--harness", harness, "--home", str(self.home), "--repo", str(self.repo)],
             text=True,
             capture_output=True,
             check=False,
-            env=checker_env(Path(self._tmp.name) / "bin", **self.versions, **self.audit_tree()),
+            env=checker_env(Path(self._tmp.name) / "bin", **self.versions, **self.audit_tree(), **env),
         )
 
     def audit_tree(self) -> dict[str, str]:
@@ -298,6 +298,17 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         result = self.run_checker("codex")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("codex: PASS", result.stdout)
+
+    def test_codex_project_trust_is_read_from_codex_home(self) -> None:
+        self.init()
+        self.trust_codex()
+        codex_home = Path(self._tmp.name) / "codex-home"
+        codex_home.mkdir()
+        (self.home / ".codex" / "config.toml").rename(codex_home / "config.toml")
+        self.install_security_audit()
+        result = self.run_checker("codex", CODEX_HOME=str(codex_home))
+        self.assertNotIn("missing trusted Codex project", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_codex_project_reads_the_project_codex_folder(self) -> None:
         self.init()
