@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -19,7 +17,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import macos
-from common import stop
+from common import LineReader, METADATA, darwin_temp, require_started, start_marker, stop
 
 
 def merge(left, right):
@@ -34,31 +32,18 @@ def merge(left, right):
 def native_policy(codex, main):
     process = subprocess.Popen([codex, '-C', str(main), '-c', 'default_permissions="dev-workspace"', 'app-server', '--listen', 'stdio://'],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                               text=True, cwd=main, start_new_session=True)
-    messages = queue.Queue()
+                               cwd=main, start_new_session=True)
+    reader = LineReader(process.stdout)
 
-    def receive():
-        try:
-            for line in process.stdout:
-                messages.put(line)
-        finally:
-            messages.put(None)
-
-    reader = threading.Thread(target=receive, daemon=True)
-    reader.start()
+    def send(message):
+        process.stdin.write((json.dumps(message) + '\n').encode())
+        process.stdin.flush()
 
     def request(ident, method, params):
-        process.stdin.write(json.dumps({'id': ident, 'method': method, 'params': params}) + '\n')
-        process.stdin.flush()
+        send({'id': ident, 'method': method, 'params': params})
         deadline = time.monotonic() + 15
         while True:
-            try:
-                line = messages.get(timeout=max(0, deadline - time.monotonic()))
-            except queue.Empty as error:
-                raise ValueError('native policy response timed out') from error
-            if line is None:
-                raise ValueError('native policy resolver stopped')
-            message = json.loads(line)
+            message = json.loads(reader.line(deadline, 'native policy resolver'))
             if message.get('id') != ident:
                 continue
             if 'error' in message:
@@ -68,8 +53,7 @@ def native_policy(codex, main):
     try:
         request(0, 'initialize', {'clientInfo': {'name': 'devloop-gate', 'version': '1'},
                                   'capabilities': {'experimentalApi': True}})
-        process.stdin.write('{"method":"initialized"}\n')
-        process.stdin.flush()
+        send({'method': 'initialized'})
         config = request(1, 'config/read', {'includeLayers': False, 'cwd': str(main)})['config']
         requirements = request(2, 'configRequirements/read', {}).get('requirements') or {}
         if not isinstance(config.get('permissions'), dict) or not isinstance(requirements, dict):
@@ -81,7 +65,6 @@ def native_policy(codex, main):
         process.stdin.close()
         stop(process)
         process.stdout.close()
-        reader.join(timeout=1)
 
 
 def trusted_profile(codex, main):
@@ -110,11 +93,7 @@ def trusted_profile(codex, main):
 def filesystem(profile, main, feature):
     rules = {'/': 'read', str(Path('/tmp').resolve()): 'write'}
     if sys.platform == 'darwin':
-        darwin_temp = subprocess.run(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'],
-                                     capture_output=True, text=True, check=True).stdout.strip()
-        if not darwin_temp or not Path(darwin_temp).is_absolute():
-            raise ValueError('invalid Darwin temporary root')
-        rules[str(Path(darwin_temp).resolve())] = 'write'
+        rules[str(darwin_temp())] = 'write'
     rules.update({str(main): 'read', str(feature): 'write'})
     for root, value in (profile.get('filesystem') or {}).items():
         if root == 'glob_scan_max_depth':
@@ -148,7 +127,7 @@ def neutralised(own, computed, roots):
     demote = lambda value: 'read' if value == 'write' else value
     table = dict(computed)
     for root in roots:
-        for name in ('.git', '.codex', '.agents'):
+        for name in METADATA:
             table.setdefault(str(root / name), 'read')
     for key, value in (own.get('filesystem') or {}).items():
         if key in computed or key == 'glob_scan_max_depth':
@@ -209,11 +188,10 @@ def main():
                              network.get('allow_local_binding') is True)
         with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir='/tmp') as temp:
             started = Path(temp) / 'started'
-            wrapper = 'export TMPDIR="${2%/*}" TMP="${2%/*}" TEMP="${2%/*}"; cd "$1" || exit 125; printf started >"$2" || exit 125; if [ -n "$3" ]; then export GATE_SCOPE="$3"; else unset GATE_SCOPE; fi; shift 3; exec "$@"'
+            wrapper = 'export TMPDIR="${2%/*}" TMP="${2%/*}" TEMP="${2%/*}"; cd "$1" || exit 125; ' + start_marker('"$2"') + '; if [ -n "$3" ]; then export GATE_SCOPE="$3"; else unset GATE_SCOPE; fi; shift 3; exec "$@"'
             result = subprocess.run([*args, '--', '/bin/sh', '-c', wrapper, 'dev-loop-gate',
                                      str(feature), str(started), os.environ.get('GATE_SCOPE', ''), *sys.argv[4:]])
-            if not started.is_file():
-                raise ValueError('native launcher exited before command start (exit ' + str(result.returncode) + ')')
+            require_started(started, 'native launcher', result.returncode)
             return result.returncode
     except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError) as error:
         print('Sandbox startup failed: ' + str(error), file=sys.stderr)

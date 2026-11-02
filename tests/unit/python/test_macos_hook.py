@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from support import CODEX_ASSETS
+from support import CODEX_ASSETS, darwin_temp_dir
 
 
 @unittest.skipUnless(sys.platform == 'darwin', 'macOS Seatbelt proof')
@@ -62,7 +62,7 @@ class MacosHookTests(unittest.TestCase):
         alias.symlink_to(temporary_root, target_is_directory=True)
         target = temporary_root / ('devloop-readonly-' + str(os.getpid()))
         self.addCleanup(target.unlink, missing_ok=True)
-        darwin_temp = Path(subprocess.check_output(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'], text=True).strip()).resolve()
+        darwin_temp = darwin_temp_dir()
         for extra, allowed, blocked in [({str(temporary_root): 'write', str(alias): 'read'}, False, False),
                                ({str(alias): 'read', str(temporary_root): 'write'}, False, False),
                                ({str(temporary_root): 'write', str(alias): 'deny'}, False, True),
