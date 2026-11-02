@@ -20,7 +20,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
-from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout  # noqa: E402
+from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout, security_audit_dir  # noqa: E402
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
@@ -188,7 +188,7 @@ def check_release_sandbox(repo: Path) -> list[str]:
     if not docker("info"):
         return ["start a Docker engine for the release audit sandbox"]
     return [
-        f"pull or docker build the release audit sandbox image {image} (security_audit.images.{name}; reference/release.md)"
+        f"pull or docker build the release audit sandbox image {image} (security_audit.images.{name}; dev-loop reference/release.md)"
         for name, image in images.items()
         if not docker("image", "inspect", image)
     ]
@@ -534,10 +534,13 @@ def check_manifest(repo: Path) -> list[str]:
 
 
 def check_user_skill(home: Path, env: Mapping[str, str]) -> list[str]:
+    removed_by_uninstall = [home / ".agents" / "skills" / "dev-loop", claude_home({}, home) / "skills" / "dev-loop"]
+    found = [*removed_by_uninstall, claude_home(env, home) / "skills" / "dev-loop"]
     return [
-        f"user-level dev-loop skill found: {path}. Run npx github:tchlyah/dev-loop#<tag> uninstall-global"
-        for path in [home / ".agents" / "skills" / "dev-loop", claude_home(env, home) / "skills" / "dev-loop"]
-        if os.path.lexists(path)
+        f"user-level dev-loop skill found: {path}. "
+        + ("Run npx github:tchlyah/dev-loop#<tag> uninstall-global" if path in removed_by_uninstall else "Remove that folder")
+        for index, path in enumerate(found)
+        if path not in found[:index] and os.path.lexists(path)
     ]
 
 
@@ -568,7 +571,7 @@ def codex_hook_hash(event: str, group: dict, hook: dict) -> str:
 
 
 def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
-    """The project hook events with a hook entry whose trusted_hash in ~/.codex/config.toml is missing or differs from its entry: Codex skips it without a message. Hash: sha256 of the sorted compact JSON of the handler (openai/codex rust-v0.162.1 hooks/src/engine/discovery.rs hook_hash)."""
+    """The project hook events with a hook entry whose trusted_hash in the config.toml of the Codex config root is missing or differs from its entry: Codex skips it without a message. Hash: sha256 of the sorted compact JSON of the handler (openai/codex rust-v0.162.1 hooks/src/engine/discovery.rs hook_hash)."""
     hooks_file = f"{main}/.codex/hooks.json"
     states = config.get("hooks", {}).get("state", {})
     events = load_json(repo / ".codex" / "hooks.json", []).get("hooks", {})
@@ -586,7 +589,7 @@ def untrusted_hook_events(config: dict, repo: Path, main: str) -> list[str]:
 
 
 def project_trust_groups(home: Path, repo: Path, env: Mapping[str, str]) -> list[tuple[str, list[str]]]:
-    """D14: the trust Codex records in ~/.codex/config.toml once the user trusts the project."""
+    """D14: the trust Codex records in the config.toml of the Codex config root once the user trusts the project."""
     main = main_checkout(repo)
     config, _ = load_toml(codex_home(env, home) / "config.toml", [])
     trust_failures: list[str] = []
@@ -624,7 +627,7 @@ def tree_id(folder: Path) -> str | None:
 
 def security_audit_groups(home: Path, harness: str, env: Mapping[str, str]) -> list[tuple[str, list[str]]]:
     """D6: the Cloudflare security-audit skill at the pinned commit, in this harness's skills folder."""
-    folder = (claude_home(env, home) if harness == "claude" else home / ".agents") / "skills" / "security-audit"
+    folder = security_audit_dir(harness, env, home)
     if not (folder / "SKILL.md").is_file():
         item = f"missing {folder / 'SKILL.md'}"
     else:
@@ -636,15 +639,15 @@ def security_audit_groups(home: Path, harness: str, env: Mapping[str, str]) -> l
     return [(heading, [item])]
 
 
-def check_project(home: Path, repo: Path, harness: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
+def check_project(home: Path, repo: Path, harness: str, env: Mapping[str, str]) -> tuple[list[str], list[tuple[str, list[str]]]]:
     """D10: the kit against its manifest, the project merged files, and no user-level skill."""
-    failures = check_manifest(repo) + check_user_skill(home, os.environ) + check_gate_guard(repo)
+    failures = check_manifest(repo) + check_user_skill(home, env) + check_gate_guard(repo)
     if harness == "claude":
         check_claude_settings(repo / ".claude" / "settings.json", failures)
-        return failures + check_on_failure(repo) + check_claude_repo(repo), security_audit_groups(home, harness, os.environ)
+        return failures + check_on_failure(repo) + check_claude_repo(repo), security_audit_groups(home, harness, env)
     root = repo / ".codex"
     failures += check_codex_root(root, root / "rules" / "dev-loop.rules")
-    return failures, project_trust_groups(home, repo, os.environ) + codex_skill_groups(home) + security_audit_groups(home, harness, os.environ)
+    return failures, project_trust_groups(home, repo, env) + codex_skill_groups(home) + security_audit_groups(home, harness, env)
 
 
 def repo_files(repo: Path, name: str) -> list[Path]:
@@ -764,7 +767,7 @@ def main() -> int:
         print(f"{args.harness}: FAIL")
         print(f"- no dev-loop.json in {args.repo}. Run npx github:tchlyah/dev-loop#<tag> init")
         return 1
-    failures, action_groups = check_project(args.home, args.repo, args.harness)
+    failures, action_groups = check_project(args.home, args.repo, args.harness, os.environ)
     failures += check_version(args.harness)
     failures += check_notes(args.home, args.repo)
     failures += check_notes_layout(args.home, args.repo)

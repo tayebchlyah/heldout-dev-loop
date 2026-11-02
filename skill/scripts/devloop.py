@@ -101,6 +101,10 @@ def claude_home(env: Mapping[str, str], home: Path) -> Path:
     return Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude")
 
 
+def security_audit_dir(harness: str, env: Mapping[str, str], home: Path) -> Path:
+    return (claude_home(env, home) if harness == "claude" else home / ".agents") / "skills" / "security-audit"
+
+
 def codex_home(env: Mapping[str, str], home: Path) -> Path:
     return Path(env.get("CODEX_HOME") or home / ".codex")
 

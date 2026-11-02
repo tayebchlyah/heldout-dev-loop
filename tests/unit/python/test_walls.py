@@ -74,7 +74,7 @@ class GateGuardTests(unittest.TestCase):
             repo = Path(tmp)
             write(repo / "dev-loop.json", "{}")
             write(repo / "scripts" / "gate.sh", "git status\n")
-            failures, _ = check_setup.check_project(repo / "home", repo, "claude")
+            failures, _ = check_setup.check_project(repo / "home", repo, "claude", {})
             self.assertIn(self.MESSAGE, failures)
 
 
