@@ -1,6 +1,6 @@
 # Benchmark checklist
 
-Source: pstack 0.15.32 `pstack/skills/benchmark-checklist/SKILL.md` (https://github.com/cursor/plugins/tree/main/pstack, commit `b1a1298`), copied verbatim from its first section to its Report list. Changed: the PR body line names the route's `pr` skill; the pstack playbook section is dropped; macOS commands added; the Stage 1 answer line added. MIT License, Copyright (c) 2026 Lauren Tan: full notice in [building.md](building.md#pstack-license).
+Source: pstack 0.15.36 `pstack/skills/benchmark-checklist/SKILL.md` (https://github.com/cursor/plugins/tree/main/pstack, commit `c742dd6`), copied verbatim from its first section to its Report list. Changed: the PR body line names the route's `pr` skill; the pstack playbook section is dropped; macOS commands added; the Stage 1 answer line added. MIT License, Copyright (c) 2026 Lauren Tan: full notice in [building.md](building.md#pstack-license).
 
 Use this when you produce a performance number: a PR's before and after, a regression claim, a hillclimb harness, or a library or config choice. Answer each question with evidence from a run, not a guess about the code.
 

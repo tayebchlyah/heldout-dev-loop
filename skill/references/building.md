@@ -4,7 +4,7 @@ Read before writing code. Four parts: principles, code volume, scope for your ha
 
 ## Principles
 
-Source: pstack 0.15.32 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `b1a1298`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. The Stage 7 merge danger ladder in SKILL.md is copied from `pstack/skills/blast-radius/SKILL.md`, same commit.
+Source: pstack 0.15.36 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `c742dd6`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. The Stage 7 merge danger ladder in SKILL.md is copied from `pstack/skills/blast-radius/SKILL.md`, same commit.
 
 1. **Prove it works.** Apply before you call a task done. Check the real thing (run it, read the actual value, read the diff), not a proxy, a self-report or "it compiles". Script the check when you can.
 2. **Fix root causes.** Apply when debugging. Trace the symptom to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate.
@@ -13,7 +13,7 @@ Source: pstack 0.15.32 principle skills (https://github.com/cursor/plugins/tree/
 5. **Migrate callers, then delete the legacy API.** Apply when a new internal API replaces an old one. Move every caller and delete the old API in the same change, no compatibility shim.
 6. **Boundary discipline.** Apply when you wire validation, error handling or a framework adapter. Validate at the boundary (CLI, config, network, external API), trust internal types, keep business logic in pure functions.
 7. **Separate before serializing shared state.** Apply when concurrent actors can write the same file, branch, key or state object. Give each actor its own target first. Use a lock only when one shared writer is a real invariant.
-8. **Explain the number.** Apply before you trust, report or act on a number you measured. Name what limits it and rule out that it measured something else. For a performance number, run [benchmark.md](benchmark.md).
+8. **Explain the number.** Apply before you measure, and before you trust, report or act on a number you measured. Before the run, write down the result that would change a decision and the noise floor. Name what limits it and rule out that it measured something else. For a performance number, run [benchmark.md](benchmark.md).
 
 ## pstack license
 
@@ -41,7 +41,7 @@ SOFTWARE.
 
 ## Code volume
 
-Source: Ponytail v5.1.0 `AGENTS.md` (https://github.com/DietrichGebert/ponytail, commit `9b58c1f`), copied verbatim, first-person ponytail-repo line dropped, bug-fix line scoped to named folders.
+Source: Ponytail v5.3.3 `AGENTS.md` (https://github.com/DietrichGebert/ponytail, commit `7801d06`), copied verbatim, first-person ponytail-repo line dropped, bug-fix line scoped to named folders.
 
 ### Before you write
 

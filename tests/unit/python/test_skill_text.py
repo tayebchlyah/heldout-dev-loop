@@ -79,7 +79,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_building_md_holds_pstack_principles(self) -> None:
         text = (SKILL_ROOT / "references" / "building.md").read_text().lower()
-        for value in [*PSTACK_PRINCIPLES, "b1a1298", "lauren tan", "benchmark.md"]:
+        for value in [*PSTACK_PRINCIPLES, "c742dd6", "lauren tan", "benchmark.md"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
@@ -99,7 +99,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_benchmark_md_holds_the_checklist_and_its_notice(self) -> None:
         text = (SKILL_ROOT / "references" / "benchmark.md").read_text()
-        for value in ["Why not double?", "Did it even happen?", "inconclusive", "b1a1298", "Lauren Tan"]:
+        for value in ["Why not double?", "Did it even happen?", "inconclusive", "c742dd6", "Lauren Tan"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
