@@ -335,19 +335,28 @@ class ProjectConfigShapeTests(unittest.TestCase):
 
 
 class ConfigHomeTests(unittest.TestCase):
-    def test_the_env_value_else_the_home_folder(self) -> None:
+    def test_claude_home_is_the_env_value_else_the_home_folder(self) -> None:
         dl = load_devloop()
-        for env, claude, codex in (({}, "/h/.claude", "/h/.codex"),
-                                   ({"CLAUDE_CONFIG_DIR": "", "CODEX_HOME": ""}, "/h/.claude", "/h/.codex"),
-                                   ({"CLAUDE_CONFIG_DIR": "/c", "CODEX_HOME": "/x"}, "/c", "/x")):
+        for env, expected in (({}, "/h/.claude"),
+                              ({"CLAUDE_CONFIG_DIR": ""}, "/h/.claude"),
+                              ({"CLAUDE_CONFIG_DIR": "/c"}, "/c"),
+                              ({"CODEX_HOME": "/x"}, "/h/.claude")):
             with self.subTest(env=env):
-                self.assertEqual((dl.claude_home(env, Path("/h")), dl.codex_home(env, Path("/h"))),
-                                 (Path(claude), Path(codex)))
+                self.assertEqual(dl.claude_home(env, Path("/h")), Path(expected))
+
+    def test_codex_home_is_the_env_value_else_the_home_folder(self) -> None:
+        dl = load_devloop()
+        for env, expected in (({}, "/h/.codex"),
+                              ({"CODEX_HOME": ""}, "/h/.codex"),
+                              ({"CODEX_HOME": "/x"}, "/x"),
+                              ({"CLAUDE_CONFIG_DIR": "/c"}, "/h/.codex")):
+            with self.subTest(env=env):
+                self.assertEqual(dl.codex_home(env, Path("/h")), Path(expected))
 
     def test_only_devloop_reads_the_config_roots(self) -> None:
-        read = re.compile(r"""(?:get\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']""")
+        read = re.compile(r"""(?:get(?:env)?\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']""")
         for path in sorted((SKILL_ROOT / "scripts").rglob("*.py")):
-            if path.name != "devloop.py":
+            if path != SKILL_ROOT / "scripts" / "devloop.py":
                 with self.subTest(path=str(path.relative_to(SKILL_ROOT))):
                     self.assertEqual([line.strip() for line in path.read_text().splitlines() if read.search(line)], [])
 
