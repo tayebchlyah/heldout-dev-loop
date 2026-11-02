@@ -63,7 +63,7 @@ def parse_failures(text: str) -> list[str]:
     return found
 
 
-def slowest(report_dir: Path, n: int = 10) -> list[dict]:
+def slowest(report_dir: Path, top: Path | None = None, n: int = 10) -> list[dict]:
     cases = []
     for path in sorted(report_dir.glob("*.xml")):
         try:
@@ -75,9 +75,7 @@ def slowest(report_dir: Path, n: int = 10) -> list[dict]:
                 seconds = float(case.get("time") or 0)
             except ValueError:
                 continue
-            name = case.get("name", "")
-            classname = case.get("classname")
-            cases.append({"name": f"{classname}::{name}" if classname else name, "seconds": seconds})
+            cases.append({"name": case_id(case, top), "seconds": seconds})
     return sorted(cases, key=lambda c: c["seconds"], reverse=True)[:n]
 
 
@@ -88,16 +86,24 @@ def junit_cases(path: Path) -> list[ET.Element] | None:
         return None
 
 
-def case_id(case: ET.Element) -> str:
-    name, classname = case.get("name", ""), case.get("file") or case.get("classname")
-    return f"{classname}::{name}" if classname else name
+def case_id(case: ET.Element, top: Path | None = None, name: str | None = None) -> str:
+    name = case.get("name", "") if name is None else name
+    classname, file = case.get("classname"), case.get("file")
+    test = f"{classname}::{name}" if classname else name
+    if not file:
+        return test
+    try:
+        file = str(Path(file).relative_to(top)) if top else file
+    except ValueError:
+        pass
+    return f"{file}::{test}"
 
 
 def case_failed(case: ET.Element) -> bool:
     return case.find("failure") is not None or case.find("error") is not None
 
 
-def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | None, int | None]:
+def junit_failures(folder: Path, top: Path | None = None) -> tuple[int | None, list[str] | None, int | None, int | None]:
     files = sorted(folder.glob("*.xml"))
     if not files:
         return None, None, None, None
@@ -111,11 +117,9 @@ def junit_failures(folder: Path) -> tuple[int | None, list[str] | None, int | No
         for case in found:
             if case.find("skipped") is None:
                 cases += 1
-                name, classname = case.get("name", ""), case.get("classname")
-                test = name.split(" (", 1)[0]
-                executed.add(f"{classname}::{test}" if classname else test)
+                executed.add(case_id(case, top, case.get("name", "").split(" (", 1)[0]))
             if case_failed(case):
-                ids.add(case_id(case))
+                ids.add(case_id(case, top))
     return len(ids), sorted(ids), cases, len(executed)
 
 
@@ -140,6 +144,14 @@ def mapped_command(top: Path, key: str) -> str | None:
     return command if isinstance(command, str) and command else None
 
 
+def previous_reports(current: Path) -> set[str]:
+    for folder in sorted(current.parent.glob("gate-*-reports"), reverse=True):
+        names = {p.name for p in folder.glob("*.xml")}
+        if folder != current and names:
+            return names
+    return set()
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     top_out = git(Path.cwd(), "rev-parse", "--show-toplevel")
     log = log_path(Path.cwd(), "gate")
@@ -151,14 +163,18 @@ def cmd_gate(args: argparse.Namespace) -> int:
     reports = log.parent / f"{log.stem}-reports"
     reports.mkdir()
     payload = run_logged(cmd, log, top, {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
-    parsed = {p: junit_cases(p) for p in reports.glob("*.xml")}
-    ids = sorted({case_id(c) for found in parsed.values() for c in found or [] if case_failed(c)})
+    parsed = [(p, junit_cases(p)) for p in sorted(reports.glob("*.xml"))]
+    ids = sorted({case_id(c, top) for _, found in parsed for c in found or [] if case_failed(c)})
+    broken = [p.name for p, found in parsed if found is None]
+    missing = sorted(previous_reports(reports) - {p.name for p, _ in parsed})
     failures = [f"FAILED {i}" for i in ids]
-    if not ids or None in parsed.values():
+    failures += [f"FAILED {n}: report does not parse" for n in broken]
+    failures += [f"FAILED {n}: report missing" for n in missing]
+    if not ids or broken or missing:
         failures += [f for f in parse_failures(log.read_text(errors="replace")) if f not in failures]
     payload["failures"] = failures
-    payload["slowest"] = slowest(reports)
-    if not any(reports.glob("*.xml")):
+    payload["slowest"] = slowest(reports, top)
+    if not parsed:
         payload["hint"] = JUNIT_HINT
     import size
     from seal.check import check
