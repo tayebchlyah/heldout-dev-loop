@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -219,29 +220,65 @@ class GateTests(Sandbox):
                  "<testcase classname='m.T' name='test_bad'><failure/></testcase>"
                  "<testcase name='crash'><error/></testcase>"
                  "<testcase classname='m.T' name='test_skip'><skipped/></testcase></testsuite>")
-        def node(file: str) -> str:
-            return (f"<testsuites><testcase name='same' classname='test' file='/w/{file}'>"
+        def node(file: str, name: str = "same") -> str:
+            return (f"<testsuites><testcase name='{name}' classname='test' file='/w/{file}'>"
                     "<failure/></testcase></testsuites>")
 
+        bad = "<testsuite><testcase name='bad'><failure/></testcase></testsuite>"
+        cut = "<testsuite><testcase name='cut'"
         rows = [
-            ([mixed], ["FAIL: test_bad (m.T.test_bad)", "FAILED (failures=2)"],
+            ({"r0.xml": mixed}, [], ["FAIL: test_bad (m.T.test_bad)", "FAILED (failures=2)"],
              ["FAILED crash", "FAILED m.T::test_bad"]),
-            (["<testsuite><testcase name='cut'", "<testsuite><testcase name='bad'><failure/></testcase></testsuite>"],
-             ["FAILED lint.py - E501"], ["FAILED bad", "FAILED lint.py - E501"]),
-            ([node("a.test.mjs"), node("b.test.mjs")], [],
-             ["FAILED /w/a.test.mjs::same", "FAILED /w/b.test.mjs::same"]),
-            (["<testsuite><testcase name='ok'/></testsuite>"], ["FAILED lint.py - E501"], ["FAILED lint.py - E501"]),
+            ({"a.xml": cut, "b.xml": bad}, [], ["FAILED lint.py - E501"],
+             ["FAILED bad", "FAILED a.xml: report does not parse", "FAILED lint.py - E501"]),
+            ({"a.xml": cut}, [], [], ["FAILED a.xml: report does not parse"]),
+            ({"a.xml": node("a.test.mjs"), "b.xml": node("b.test.mjs")}, [], [],
+             ["FAILED /w/a.test.mjs::test::same", "FAILED /w/b.test.mjs::test::same"]),
+            ({"r0.xml": "<testsuite><testcase name='ok'/></testsuite>"}, [], ["FAILED lint.py - E501"],
+             ["FAILED lint.py - E501"]),
+            ({"skill.xml": bad}, ["node.xml", "skill.xml"], [],
+             ["FAILED bad", "FAILED node.xml: report missing"]),
+            ({"skill.xml": bad}, [], [], ["FAILED bad"]),
         ]
-        for reports, log_lines, expected in rows:
+        for reports, before, log_lines, expected in rows:
             with self.subTest(expected=expected):
-                copies = "".join(f'cp "{self.root / f"r{i}.xml"}" "$DEVLOOP_REPORT_DIR/r{i}.xml"\n'
-                                 for i in range(len(reports)))
-                for i, xml in enumerate(reports):
-                    put(self.root / f"r{i}.xml", xml)
+                logs = self.repo / ".git" / "dev-loop" / "logs"
+                shutil.rmtree(logs, ignore_errors=True)
+                for name in before:
+                    put(logs / "gate-20200101T000000-reports" / name, "<testsuite/>")
+                copies = ""
+                for name, xml in reports.items():
+                    put(self.root / name, xml)
+                    copies += f'cp "{self.root / name}" "$DEVLOOP_REPORT_DIR/{name}"\n'
                 echoes = "".join(f'echo "{line}"\n' for line in log_lines)
                 self.gate(f"#!/bin/sh\n{copies}{echoes}exit 1\n")
                 _, out = self.run_gate()
                 self.assertEqual(out["failures"], expected)
+
+    def test_junit_failures_ids_one_per_test(self) -> None:
+        gate = load_script("gate")
+        top = self.root / "top"
+
+        def case(name: str, classname: str | None = None, file: str | None = None, fail: bool = True) -> str:
+            attrs = f" classname='{classname}'" if classname else ""
+            attrs += f" file='{file}'" if file else ""
+            return f"<testcase name='{name}'{attrs}>{'<failure/>' if fail else ''}</testcase>"
+
+        rows = [
+            ([case("test_ok", "T.A", "t.py"), case("test_ok", "T.B", "t.py")],
+             (2, ["t.py::T.A::test_ok", "t.py::T.B::test_ok"], 2, 2)),
+            ([case("same", "test", f"{top}/a.test.mjs"), case("same", "test", f"{top}/b.test.mjs")],
+             (2, ["a.test.mjs::test::same", "b.test.mjs::test::same"], 2, 2)),
+            ([case("same", "test", "/w/a.test.mjs")], (1, ["/w/a.test.mjs::test::same"], 1, 1)),
+            ([case("test_x (i=1)", "m.T", None), case("test_x (i=2)", "m.T", None, False)],
+             (1, ["m.T::test_x (i=1)"], 2, 1)),
+        ]
+        for cases, expected in rows:
+            with self.subTest(expected=expected):
+                put(self.root / "j" / "r.xml", f"<testsuite>{''.join(cases)}</testsuite>")
+                self.assertEqual(gate.junit_failures(self.root / "j", top), expected)
+        names = [s["name"] for s in gate.slowest(self.root / "j", top)]
+        self.assertEqual(names, ["m.T::test_x (i=1)", "m.T::test_x (i=2)"])
 
     def test_slowest_from_junit_xml(self) -> None:
         put(self.root / "junit.xml", JUNIT)
