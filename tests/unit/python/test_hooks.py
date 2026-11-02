@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 
-from support import CLAUDE_HOOKS, CODEX_ASSETS, write
+from support import CLAUDE_HOOKS, CODEX_ASSETS, codex_gate_env, write
 
 
 class BoardRobustImportTests(unittest.TestCase):
@@ -113,7 +113,6 @@ class ClaudeGateTests(unittest.TestCase):
             repo = self.repo(root)
             marker = repo / "ran"
             write(repo / "json.py", f"open({str(marker)!r}, 'a').write('json')\nraise SystemExit\n")
-            from support import codex_gate_env
             codex_env = codex_gate_env(repo)
             for command, payload, env in (
                     (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
@@ -134,7 +133,6 @@ class ClaudeGateTests(unittest.TestCase):
             os.chmod(monitor, 0o755)
             subprocess.run(["git", "-C", str(repo), "config", "core.fsmonitor", str(monitor)], check=True)
             unpinned = {key: value for key, value in os.environ.items() if not key.startswith("GIT_CONFIG_")}
-            from support import codex_gate_env
             codex_env = codex_gate_env(repo)
             for command, payload, env in (
                     (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
@@ -202,7 +200,6 @@ class HookPlantedProgramTests(unittest.TestCase):
         shell = "bash" if harness == "claude" else "sh"
         env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.repo)}
         if harness == "codex":
-            from support import codex_gate_env
             env.update(codex_gate_env(self.repo))
         return subprocess.run([shell, str(HookGitPinTests.HOOKS[harness] / script)], input=json.dumps(payload),
                               text=True, capture_output=True, check=False, cwd=self.repo, env=env)
