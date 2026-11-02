@@ -1,6 +1,7 @@
 """macOS gate adapter proofs through the public run interface."""
 from __future__ import annotations
 
+import base64
 import errno
 import json
 import os
@@ -15,6 +16,13 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 from support import CODEX_ASSETS, darwin_temp_dir
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(CODEX_ASSETS / 'hooks'))
+import macos
+
+
+BROKER = 'DEVLOOP_MACOS_BROKER'
 
 
 @unittest.skipUnless(sys.platform == 'darwin', 'macOS Seatbelt proof')
@@ -32,16 +40,17 @@ class MacosHookTests(unittest.TestCase):
         self.fixture.write_text('import subprocess,sys\na=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
         self.rules = {'/': 'read', str(self.feature): 'write'}
 
-    def launch(self, code, rules=None, keeper=None, network=False, local=False, setup=""):
+    def launch(self, code, rules=None, keeper=None, network=False, local=False, setup="", top_level=False):
         source = ('import sys; sys.dont_write_bytecode=True; sys.path.insert(0,sys.argv[1]); import macos; '
                   + setup + '\n'
-                  'sys.exit(macos.run(__import__("json").loads(sys.argv[2]),'
+                  'sys.exit(macos.run(__import__("json").loads(sys.argv[2]),__import__("pathlib").Path(sys.argv[8]),'
                   '__import__("json").loads(sys.argv[3]),__import__("pathlib").Path(sys.argv[4]),'
                   '[sys.executable,"-I","-c",sys.argv[5]],sys.argv[6]=="1",sys.argv[7]=="1"))')
         return subprocess.run([sys.executable, '-I', '-c', source, str(CODEX_ASSETS / 'hooks'),
                                json.dumps(keeper or [sys.executable, '-I', str(self.fixture), '-C', str(self.main)]),
-                               json.dumps(rules or self.rules), str(self.feature), code, str(int(network)), str(int(local))],
-                              input='gate input', capture_output=True, text=True, timeout=15)
+                               json.dumps(rules or self.rules), str(self.feature), code, str(int(network)), str(int(local)), str(self.main)],
+                              input='gate input', capture_output=True, text=True, timeout=15,
+                              env={k: v for k, v in os.environ.items() if not (top_level and k == BROKER)})
 
     def test_run_filesystem_and_exit_proof(self):
         secret = self.root / '.env'
@@ -125,35 +134,48 @@ class MacosHookTests(unittest.TestCase):
     def test_run_rejects_keeper_failure_and_nonlocal_proxy_proof(self):
         for body in ['raise SystemExit(19)',
                      *[('import json,time; print(json.dumps({"version":1,"env":' + repr(env) + '}),flush=True); time.sleep(30)')
-                       for env in [{'HTTP_PROXY': 'http://example.com:80'}, {'bad=key': 'value'}, {'': 'value'}, {'x': 4},
-                                   {'x': 'bad\0value'}, {'HTTP_PROXY': 'http://127.0.0.1:80/path'},
+                       for env in [{'HTTP_PROXY': 'http://example.com:80'}, {'HTTP_PROXY': 'http://127.0.0.1:80/path'},
                                    {'HTTP_PROXY': 'http://127.0.0.1:80?query'}, {'x': 'x' * 70000}]]]:
             with self.subTest(body=body):
                 self.fixture.write_text(body)
-                if 'DEVLOOP_MACOS_BROKER' in os.environ:
-                    with patch.dict(os.environ, {'DEVLOOP_MACOS_BROKER': '{}'}):
-                        result = self.launch('from pathlib import Path; Path("escaped").touch()')
-                else:
-                    result = self.launch('from pathlib import Path; Path("escaped").touch()')
+                result = self.launch('from pathlib import Path; Path("escaped").touch()', network=True, top_level=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((self.feature / 'escaped').exists())
+
+    @unittest.skipIf(BROKER in os.environ, 'the gate needs a top-level Seatbelt launch')
+    def test_run_checks_the_proxy_only_when_the_network_is_enabled_proof(self):
+        self.fixture.write_text('import json,time; print(json.dumps({"version":1,"env":{"HTTP_PROXY":"http://example.com:80"}}),flush=True); time.sleep(30)')
+        for network, started in [(False, True), (True, False)]:
+            with self.subTest(network=network):
+                (self.feature / 'ran').unlink(missing_ok=True)
+                result = self.launch('from pathlib import Path; Path("ran").touch()', network=network)
+                self.assertEqual(result.returncode == 0, started, result.stderr)
+                self.assertEqual((self.feature / 'ran').exists(), started)
 
     def test_run_native_environment_snapshot_proof(self):
         self.fixture.write_text('import os,subprocess,sys\n'
                                 'os.environ.pop("DEVLOOP_DUMMY_EXCLUDED",None)\n'
                                 'os.environ["DEVLOOP_DUMMY_SET"]="native-value"\n'
                                 'a=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
-        code = ('import os; assert "DEVLOOP_DUMMY_EXCLUDED" not in os.environ; '
-                'assert os.environ["DEVLOOP_DUMMY_SET"]=="native-value"')
-        environment = {'DEVLOOP_DUMMY_EXCLUDED': 'host-value', 'DEVLOOP_DUMMY_SET': 'host-value'}
-        if 'DEVLOOP_MACOS_BROKER' in os.environ:
-            environment['DEVLOOP_DUMMY_SET'] = 'native-value'
-            environment['DEVLOOP_DUMMY_EXCLUDED'] = None
-        with patch.dict(os.environ, {k: v for k, v in environment.items() if v is not None}):
-            if environment['DEVLOOP_DUMMY_EXCLUDED'] is None:
-                os.environ.pop('DEVLOOP_DUMMY_EXCLUDED', None)
+        native = BROKER not in os.environ
+        code = ('import os; '
+                f'assert ("DEVLOOP_DUMMY_EXCLUDED" not in os.environ) is {native}; '
+                f'assert os.environ["DEVLOOP_DUMMY_SET"]=="{"native" if native else "host"}-value"')
+        with patch.dict(os.environ, {'DEVLOOP_DUMMY_EXCLUDED': 'host-value', 'DEVLOOP_DUMMY_SET': 'host-value'}):
             result = self.launch(code)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_run_passes_the_received_gate_scope_through_proof(self):
+        self.fixture.write_text('import os,subprocess,sys\n'
+                                'os.environ.pop("GATE_SCOPE",None)\n'
+                                'a=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
+        for scope in ('changed', 'full', None):
+            with self.subTest(scope=scope), patch.dict(os.environ):
+                os.environ.pop('GATE_SCOPE', None)
+                if scope:
+                    os.environ['GATE_SCOPE'] = scope
+                result = self.launch(f'import os; assert os.environ.get("GATE_SCOPE") == {scope!r}')
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_run_process_listing_hides_environment_proof(self):
         result = self.launch('import os,subprocess; marker="DEVLOOP_"+"ENV_SECRET"; '
@@ -192,11 +214,11 @@ class MacosHookTests(unittest.TestCase):
                   'print(sys.stdin.read()); print("nested stderr",file=sys.stderr); sys.exit(19)')
         descendant = ('import sys; sys.dont_write_bytecode=True; '
                       f'sys.path.insert(0,{str(CODEX_ASSETS / "hooks")!r}); import macos; '
-                      f'sys.exit(macos.run([], {{"/":"write"}}, __import__("pathlib").Path({str(self.feature)!r}), '
+                      f'sys.exit(macos.run([], __import__("pathlib").Path({str(self.main)!r}), {{"/":"write"}}, __import__("pathlib").Path({str(self.feature)!r}), '
                       f'[sys.executable,"-I","-c",{checks!r}],True,True))')
         request = ('import sys; sys.dont_write_bytecode=True; '
                    f'sys.path.insert(0,{str(CODEX_ASSETS / "hooks")!r}); import macos; '
-                   f'sys.exit(macos.run([], { {"/": "write", str(readonly): "read", str(denied): "deny"}!r}, '
+                   f'sys.exit(macos.run([], __import__("pathlib").Path({str(self.main)!r}), { {"/": "write", str(readonly): "read", str(denied): "deny"}!r}, '
                    f'__import__("pathlib").Path({str(self.feature)!r}), '
                    f'[sys.executable,"-I","-c",{descendant!r}],False,False))')
         result = self.launch(request, {**self.rules, str(secret): 'deny'})
@@ -213,7 +235,7 @@ class MacosHookTests(unittest.TestCase):
                 f'\nwhile not __import__("pathlib").Path({str(marker)!r}).exists(): time.sleep(.01)\n')
         nested = ('import sys; sys.dont_write_bytecode=True; '
                   f'sys.path.insert(0,{str(CODEX_ASSETS / "hooks")!r}); import macos; '
-                  f'sys.exit(macos.run([],{{"/":"write"}},__import__("pathlib").Path({str(self.feature)!r}),'
+                  f'sys.exit(macos.run([],__import__("pathlib").Path({str(self.main)!r}),{{"/":"write"}},__import__("pathlib").Path({str(self.feature)!r}),'
                   f'[sys.executable,"-I","-c",{code!r}],False,False))')
         for command, permission_failure in [(code, 0), (nested, 0), (code, 1), (code, 2)]:
             with self.subTest(nested=command == nested, permission_failure=permission_failure):
@@ -302,6 +324,34 @@ class MacosHookTests(unittest.TestCase):
                     'socket.create_connection(server.getsockname(),timeout=2).close()\n')
             result = self.launch(code, network=True, local=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+
+    def ask(self, server, token, command):
+        frame = {'token': token, 'rules': {'/': 'read'}, 'cwd': str(self.feature), 'command': command,
+                 'network': False, 'local': False, 'env': {'PATH': os.defpath}, 'input': ''}
+        with socket.create_connection(('127.0.0.1', server.port), timeout=10) as connection, \
+                connection.makefile('rwb') as stream:
+            stream.write(json.dumps(frame).encode() + b'\n')
+            stream.flush()
+            return [json.loads(line) for line in stream]
+
+    def serve(self):
+        self.root.joinpath('bin').mkdir(exist_ok=True)
+        return macos.Server({'/': 'read'}, {}, set(), False, False, self.root / 'bin')
+
+    def test_server_rejects_an_unknown_token_proof(self):
+        with self.serve() as server:
+            self.assertEqual(self.ask(server, '0' * 64, ['/usr/bin/true']), [{'error': 'confined launch failed'}])
+
+    @unittest.skipIf(BROKER in os.environ, 'the sibling needs a top-level Seatbelt launch')
+    def test_server_rejects_a_closed_token_proof(self):
+        with self.serve() as server:
+            granted = json.loads(server.context)['token']
+            first = self.ask(server, granted, ['/bin/sh', '-c', 'printf %s "$' + BROKER + '"'])
+            self.assertEqual(first[-1], {'exit': 0}, first)
+            child = json.loads(base64.b64decode(first[0]['data']))['token']
+            self.assertNotEqual(child, granted)
+            self.assertEqual(self.ask(server, child, ['/usr/bin/true']), [{'error': 'confined launch failed'}])
 
 
 if __name__ == '__main__':

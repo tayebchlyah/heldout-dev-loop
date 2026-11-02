@@ -148,19 +148,17 @@ def _policy(rules, ports, network_enabled, allow_local_binding, ceilings=(), bro
     return '\n'.join(parts)
 
 
-def _proxy_state(keeper):
+def _proxy_state(keeper, network_enabled):
     line = LineReader(keeper.stdout, 65536).line(time.monotonic() + 15, 'native proxy startup')
     try:
-        state = json.loads(line)
-    except (ValueError, UnicodeError) as error:
+        env = json.loads(line)['env']
+    except (ValueError, KeyError, TypeError) as error:
         raise ValueError('invalid native proxy startup state') from error
-    if not isinstance(state, dict) or state.get('version') != 1 or not isinstance(state.get('env'), dict) or keeper.poll() is not None:
-        raise ValueError('native proxy exited or returned invalid startup state')
-    env, ports = {}, set()
-    for key, value in state['env'].items():
-        if not isinstance(key, str) or not key or '=' in key or not isinstance(value, str) or '\0' in key + value:
-            raise ValueError('invalid native proxy environment')
-        if key in _PROXY and key.lower() != 'no_proxy':
+    if keeper.poll() is not None:
+        raise ValueError('native proxy exited after its startup state')
+    ports = set()
+    for key, value in env.items():
+        if network_enabled and key in _PROXY and key.lower() != 'no_proxy':
             try:
                 parsed = urlsplit(value)
                 host = parsed.hostname
@@ -170,7 +168,6 @@ def _proxy_state(keeper):
                 ports.add(parsed.port)
             except (TypeError, ValueError) as error:
                 raise ValueError('invalid native loopback proxy URL') from error
-        env[key] = value
     return env, ports
 
 
@@ -212,16 +209,13 @@ def request(rules, feature, command, network, local):
     """Forward only a confined command; an endpoint never grants host execution."""
     try:
         context = json.loads(os.environ[_KEY])
-        port, token = context['port'], context['token']
-        if type(port) is not int or not 0 < port < 65536 or not isinstance(token, str):
-            raise ValueError('invalid endpoint')
         data = sys.stdin.buffer.read(_LIMIT + 1)
         if len(data) > _LIMIT // 2:
             raise ValueError('macOS broker input exceeds its frame limit')
-        with socket.create_connection(('127.0.0.1', port), timeout=5) as connection:
+        with socket.create_connection(('127.0.0.1', context['port']), timeout=5) as connection:
             connection.settimeout(None)
             with connection.makefile('rwb') as stream:
-                _send(stream, {'token': token, 'rules': rules, 'cwd': str(feature), 'command': command,
+                _send(stream, {'token': context['token'], 'rules': rules, 'cwd': str(feature), 'command': command,
                                'network': network, 'local': local, 'env': dict(os.environ),
                                'input': base64.b64encode(data).decode()})
                 while True:
@@ -373,30 +367,26 @@ class Server:
         _send(stream, {'exit': result})
 
 
-def run(native_args: list[str], rules: dict[str, str], feature: Path,
+def run(native_args: list[str], trusted: Path, rules: dict[str, str], feature: Path,
         command: list[str], network_enabled: bool, allow_local_binding: bool) -> int:
     """Preserve gate streams and exit status under native managed policy."""
-    if '-C' in native_args:
-        trusted = Path(native_args[native_args.index('-C') + 1]).resolve(strict=True)
-        common = subprocess.run(['git', '-c', 'core.fsmonitor=false', '-C', str(trusted),
-                                 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                                env={k: v for k, v in os.environ.items() if not k.startswith('GIT_')},
-                                capture_output=True, text=True, check=True).stdout.strip()
-        common = Path(common).resolve(strict=True)
-        if not common.is_dir():
-            raise ValueError('invalid trusted Git metadata directory')
-        rules = _normalized(rules)
-        rules[str(common)] = 'deny' if rules.get(str(common)) == 'deny' else 'read'
+    common = subprocess.run(['git', '-c', 'core.fsmonitor=false', '-C', str(trusted),
+                             'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                            env={k: v for k, v in os.environ.items() if not k.startswith('GIT_')},
+                            capture_output=True, text=True, check=True).stdout.strip()
+    common = Path(common).resolve(strict=True)
+    if not common.is_dir():
+        raise ValueError('invalid trusted Git metadata directory')
+    rules = _normalized(rules)
+    rules[str(common)] = 'deny' if rules.get(str(common)) == 'deny' else 'read'
     if _KEY in os.environ:
         return request(rules, feature, command, network_enabled, allow_local_binding)
-    if '-C' not in native_args:
-        raise ValueError('trusted main directory is required')
     keeper = subprocess.Popen([*native_args, '--', sys.executable, '-I', __file__, '--proxy-state'],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, start_new_session=True)
     gate = None
     previous = {}
     try:
-        proxy, ports = _proxy_state(keeper)
+        proxy, ports = _proxy_state(keeper, network_enabled)
         if network_enabled and not ports:
             raise ValueError('native managed proxy is unavailable')
         ceiling = _normalized(rules)
@@ -406,7 +396,9 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
             temp = Path(temporary).resolve()
             rules = {**rules, str(temp): 'write'}
             env = dict(proxy)
-            env['GATE_SCOPE'] = 'changed'
+            env.pop('GATE_SCOPE', None)
+            if os.environ.get('GATE_SCOPE'):
+                env['GATE_SCOPE'] = os.environ['GATE_SCOPE']
             private = Path(staged)
             env = _prepare(private, env, temp)
             with Server(rules, {k: v for k, v in proxy.items() if k in _PROXY | _CA}, ports, network_enabled, allow_local_binding,
@@ -437,5 +429,5 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
 if __name__ == '__main__':
     if sys.argv[1:] != ['--proxy-state']:
         sys.exit(125)
-    print(json.dumps({'version': 1, 'env': dict(os.environ)}), flush=True)
+    print(json.dumps({'env': dict(os.environ)}), flush=True)
     sys.stdin.buffer.read()
