@@ -7,7 +7,6 @@ import ipaddress
 import json
 import os
 import secrets
-import selectors
 import shutil
 import signal
 import socket
@@ -23,12 +22,13 @@ from urllib.parse import urlsplit
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import stop
+from common import LineReader, METADATA, darwin_temp, require_started, start_marker, stop
 from macos_policy import (SEATBELT_BASE_POLICY_SBPL, SEATBELT_NETWORK_POLICY_SBPL,
                           SEATBELT_READ_ONLY_PLATFORM_DEFAULTS_SBPL)
 
 _PROXY = {'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
           'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'}
+_PROTECTED = (*METADATA, '.aws')
 _CA = {'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
        'NODE_EXTRA_CA_CERTS', 'GIT_SSL_CAINFO'}
 
@@ -74,11 +74,7 @@ def _normalized(rules):
 
 
 def _runtime_root(layers):
-    darwin_temp = subprocess.run(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'],
-                                 capture_output=True, text=True, check=True).stdout.strip()
-    if not darwin_temp or not Path(darwin_temp).is_absolute():
-        raise ValueError('invalid Darwin temporary root')
-    roots = [Path('/tmp').resolve(), Path(darwin_temp).resolve()]
+    roots = [Path('/tmp').resolve(), darwin_temp()]
     for root in roots:
         if all(max(((len(path), mode) for path, mode in layer.items() if path != '/' and
                     (str(root) == path or str(root).startswith(path.rstrip('/') + '/'))),
@@ -89,7 +85,7 @@ def _runtime_root(layers):
 
 def _write_mask(normalized, runtime=None):
     metadata = {str(Path(p) / name) for p, mode in normalized.items() if mode == 'write'
-                for name in ('.git', '.agents', '.codex', '.aws')}
+                for name in _PROTECTED}
     writers = []
     for path, permission in normalized.items():
         if permission != 'write':
@@ -108,7 +104,7 @@ def _write_mask(normalized, runtime=None):
         exclusions = [' (require-not ' + _filter(p) + ')' for p, mode in normalized.items()
                       if p != '/' and mode in ('read', 'deny')]
         exclusions += [' (require-not (subpath ' + _quote(str(Path(runtime) / name)) + '))'
-                       for name in ('.git', '.agents', '.codex', '.aws')]
+                       for name in _PROTECTED]
         writers.append('(require-all ' + _filter(str(runtime)) + ''.join(exclusions) + ')')
     return '(require-any ' + ' '.join(writers) + ')' if writers else '(literal "/devloop-no-write-root")'
 
@@ -153,18 +149,7 @@ def _policy(rules, ports, network_enabled, allow_local_binding, ceilings=(), bro
 
 
 def _proxy_state(keeper):
-    deadline = time.monotonic() + 15
-    line = bytearray()
-    with selectors.DefaultSelector() as selector:
-        selector.register(keeper.stdout, selectors.EVENT_READ)
-        while b'\n' not in line:
-            if not selector.select(max(0, deadline - time.monotonic())):
-                raise ValueError('native proxy startup timed out')
-            chunk = os.read(keeper.stdout.fileno(), 65537 - len(line))
-            if not chunk or len(line) + len(chunk) > 65536:
-                raise ValueError('native proxy exited or returned oversized startup state')
-            line.extend(chunk)
-    line = bytes(line).split(b'\n', 1)[0]
+    line = LineReader(keeper.stdout, 65536).line(time.monotonic() + 15, 'native proxy startup')
     try:
         state = json.loads(line)
     except (ValueError, UnicodeError) as error:
@@ -202,7 +187,7 @@ def _prepare(temp, env, work):
 
 
 def _command(policy, work, command):
-    wrapper = 'printf started >"$1" || exit 125; shift; exec "$@"'
+    wrapper = start_marker('"$1"') + '; shift; exec "$@"'
     return ['/usr/bin/sandbox-exec', '-p', policy, '/bin/sh', '-c', wrapper,
             'dev-loop-gate', str(work / 'started'), *command]
 
@@ -376,8 +361,7 @@ class Server:
                     thread.join(timeout=3)
                     if thread.is_alive():
                         raise ValueError('macOS sibling stream cleanup timed out')
-                if not (temp / 'started').is_file():
-                    raise ValueError('macOS sibling launcher failed before command start')
+                require_started(temp / 'started', 'macOS sibling launcher', result)
             finally:
                 if process is not None:
                     stop(process)
@@ -437,8 +421,7 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
                 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                     previous[signum] = signal.signal(signum, forward)
                 result = gate.wait()
-                if not (temp / 'started').is_file():
-                    raise ValueError('macOS launcher exited before command start (exit ' + str(result) + ')')
+                require_started(temp / 'started', 'macOS launcher', result)
                 return result
     finally:
         for signum, handler in previous.items():

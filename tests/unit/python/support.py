@@ -304,3 +304,7 @@ def codex_gate_env(repo):
     fake.chmod(0o755)
     write(repo / '.codex/config.toml', '[permissions.dev-workspace]\nextends=":workspace"\n')
     return {'PATH': str(fake.parent) + os.pathsep + os.environ['PATH'], 'CODEX_HOME': str(repo / 'home')}
+
+
+def darwin_temp_dir():
+    return Path(subprocess.check_output(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'], text=True).strip()).resolve()

@@ -12,7 +12,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from support import CODEX_ASSETS, CODEX_GATE_FIXTURE, write
+from support import CODEX_ASSETS, CODEX_GATE_FIXTURE, darwin_temp_dir, write
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(CODEX_ASSETS / 'hooks'))
@@ -99,7 +99,7 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         roots = [Path('/tmp').resolve(), Path(tempfile.gettempdir()).resolve()]
         if sys.platform == 'darwin':
-            roots.append(Path(subprocess.check_output(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'], text=True).strip()).resolve())
+            roots.append(darwin_temp_dir())
         self.assertTrue(any(Path(r.stdout).resolve().is_relative_to(root) for root in roots), r.stdout)
 
     def test_early_launch_failure_blocks_without_host_fallback(self):
