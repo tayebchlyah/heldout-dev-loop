@@ -18,9 +18,10 @@
 # are denied to implementer and spec_tester; any other subagent gets the name rule on the path fields,
 # filePath and uri included, a file:// value by its path. view_image is walled by path: spec_tester the
 # source folders, any other subagent tests/acceptance. The main session keeps every tool. Code mode: no
-# hook fires on exec, one fires on each inner tool call. Not walled: write_stdin into a shell that
-# exec_command started (no hook event, #140); for other subagents an MCP search tool, an MCP tool that
-# runs code or reads a remote copy, a resource listing; the audit reads their results.
+# hook fires on exec, one fires on each inner tool call. No hook fires on write_stdin: the kit config
+# sets features.unified_exec_tty = false, so no tty shell stays open to type into (#140). Not walled:
+# for other subagents an MCP search tool, an MCP tool that runs code or reads a remote copy, a resource
+# listing; the audit reads their results.
 . "${0%/*}/git-pin.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
