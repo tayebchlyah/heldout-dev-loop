@@ -629,7 +629,7 @@ class VerifyTextTests(unittest.TestCase):
         self.assertIn("Report six lines", stage6)
         refs = SCRIPTS.parent / "references"
         verify_md = (refs / "verify.md").read_text()
-        for needle in ("## Licenses", "9580c23", "Lauren Tan", "devloop.py verify-init", "drive --all",
+        for needle in ("## Licenses", "c742dd6", "Lauren Tan", "devloop.py verify-init", "drive --all",
                        "Sub-features", "How to get to it (user POV)", "Driving it with", "Gotchas"):
             self.assertIn(needle, verify_md)
         for route in ("claude.md", "codex.md"):
