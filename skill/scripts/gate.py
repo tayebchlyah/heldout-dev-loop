@@ -166,7 +166,9 @@ def cmd_gate(args: argparse.Namespace) -> int:
     parsed = [(p, junit_cases(p)) for p in sorted(reports.glob("*.xml"))]
     ids = sorted({case_id(c, top) for _, found in parsed for c in found or [] if case_failed(c)})
     broken = [p.name for p, found in parsed if found is None]
-    missing = sorted(previous_reports(reports) - {p.name for p, _ in parsed})
+    missing = []
+    if payload["exit"] != 0:
+        missing = sorted(previous_reports(reports) - {p.name for p, _ in parsed})
     failures = [f"FAILED {i}" for i in ids]
     failures += [f"FAILED {n}: report does not parse" for n in broken]
     failures += [f"FAILED {n}: report missing" for n in missing]

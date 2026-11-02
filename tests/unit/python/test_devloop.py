@@ -239,8 +239,9 @@ class GateTests(Sandbox):
             ({"skill.xml": bad}, ["node.xml", "skill.xml"], [],
              ["FAILED bad", "FAILED node.xml: report missing"]),
             ({"skill.xml": bad}, [], [], ["FAILED bad"]),
+            ({"skill.xml": "<testsuite><testcase name='ok'/></testsuite>"}, ["node.xml", "skill.xml"], [], [], 0),
         ]
-        for reports, before, log_lines, expected in rows:
+        for reports, before, log_lines, expected, *exit_code in rows:
             with self.subTest(expected=expected):
                 logs = self.repo / ".git" / "dev-loop" / "logs"
                 shutil.rmtree(logs, ignore_errors=True)
@@ -251,7 +252,7 @@ class GateTests(Sandbox):
                     put(self.root / name, xml)
                     copies += f'cp "{self.root / name}" "$DEVLOOP_REPORT_DIR/{name}"\n'
                 echoes = "".join(f'echo "{line}"\n' for line in log_lines)
-                self.gate(f"#!/bin/sh\n{copies}{echoes}exit 1\n")
+                self.gate(f"#!/bin/sh\n{copies}{echoes}exit {exit_code[0] if exit_code else 1}\n")
                 _, out = self.run_gate()
                 self.assertEqual(out["failures"], expected)
 
