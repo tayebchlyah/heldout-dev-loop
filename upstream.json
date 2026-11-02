@@ -78,6 +78,19 @@
       "local": ["skill/references/benchmark.md", "skill/references/building.md", "skill/references/verify.md"]
     },
     {
+      "name": "codex-sandbox",
+      "repo": "openai/codex",
+      "signal": "release",
+      "pin": "rust-v0.166.0",
+      "version": "rust-v0.166.0",
+      "paths": [
+        "codex-rs/sandboxing/src/seatbelt_base_policy.sbpl",
+        "codex-rs/sandboxing/src/seatbelt_network_policy.sbpl",
+        "codex-rs/sandboxing/src/seatbelt_read_only_platform_defaults.sbpl"
+      ],
+      "local": ["codex/hooks/macos_policy.py", "skill/references/licenses/Codex Sandbox.txt"]
+    },
+    {
       "name": "security-audit",
       "repo": "cloudflare/security-audit-skill",
       "signal": "tree",
