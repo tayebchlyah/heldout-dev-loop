@@ -219,11 +219,17 @@ class GateTests(Sandbox):
                  "<testcase classname='m.T' name='test_bad'><failure/></testcase>"
                  "<testcase name='crash'><error/></testcase>"
                  "<testcase classname='m.T' name='test_skip'><skipped/></testcase></testsuite>")
+        def node(file: str) -> str:
+            return (f"<testsuites><testcase name='same' classname='test' file='/w/{file}'>"
+                    "<failure/></testcase></testsuites>")
+
         rows = [
             ([mixed], ["FAIL: test_bad (m.T.test_bad)", "FAILED (failures=2)"],
              ["FAILED crash", "FAILED m.T::test_bad"]),
             (["<testsuite><testcase name='cut'", "<testsuite><testcase name='bad'><failure/></testcase></testsuite>"],
-             ["FAILED lint.py - E501"], ["FAILED bad"]),
+             ["FAILED lint.py - E501"], ["FAILED bad", "FAILED lint.py - E501"]),
+            ([node("a.test.mjs"), node("b.test.mjs")], [],
+             ["FAILED /w/a.test.mjs::same", "FAILED /w/b.test.mjs::same"]),
             (["<testsuite><testcase name='ok'/></testsuite>"], ["FAILED lint.py - E501"], ["FAILED lint.py - E501"]),
         ]
         for reports, log_lines, expected in rows:
