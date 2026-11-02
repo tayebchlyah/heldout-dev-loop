@@ -114,7 +114,27 @@ def slug_from_title(filename: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
 
 
+FRONTMATTER_CACHE: dict[str, dict[str, str]] | None = None
+SPECS_CACHE: dict[str, list[tuple[str, Path]]] | None = None
+
+
+def cache_notes() -> None:
+    """From now on in this process, `frontmatter` and `specs` return their first answer per path. For `status`, which
+    writes no note (#152)."""
+    global FRONTMATTER_CACHE, SPECS_CACHE
+    FRONTMATTER_CACHE, SPECS_CACHE = {}, {}
+
+
 def frontmatter(path: Path) -> dict[str, str]:
+    if FRONTMATTER_CACHE is not None and str(path) in FRONTMATTER_CACHE:
+        return dict(FRONTMATTER_CACHE[str(path)])
+    fields = read_frontmatter(path)
+    if FRONTMATTER_CACHE is not None:
+        FRONTMATTER_CACHE[str(path)] = dict(fields)
+    return fields
+
+
+def read_frontmatter(path: Path) -> dict[str, str]:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
@@ -148,6 +168,15 @@ def old_layout(notes: Path) -> list[str]:
 
 
 def specs(notes: Path) -> list[tuple[str, Path]]:
+    if SPECS_CACHE is not None and str(notes) in SPECS_CACHE:
+        return list(SPECS_CACHE[str(notes)])
+    found = read_specs(notes)
+    if SPECS_CACHE is not None:
+        SPECS_CACHE[str(notes)] = list(found)
+    return found
+
+
+def read_specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
     for path in sorted((notes / FEATURES).glob("*/Spec.md")):
         found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))

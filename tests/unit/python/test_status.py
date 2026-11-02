@@ -399,6 +399,20 @@ class StatusTests(Sandbox):
         self.assertEqual(sum(call.endswith("worktree list --porcelain") for call in calls), 1, calls)
         self.assertEqual([call for call in calls if any(path in call for path in detached)], [])
 
+    def test_main_scan_reads_each_spec_once(self) -> None:
+        names = [f"2025010{n} Draft {n}.md" for n in range(3)]
+        for n, name in enumerate(names):
+            self.spec(name=name, feature=f"draft{n}", review="draft")
+        log, site = self.root / "reads.log", self.root / "site"
+        put(site / "sitecustomize.py", "import pathlib\n_read = pathlib.Path.read_text\n"
+            "def read_text(self, *args, **kwargs):\n"
+            f"    with open({str(log)!r}, 'a') as out:\n        out.write(self.name + '\\n')\n"
+            "    return _read(self, *args, **kwargs)\npathlib.Path.read_text = read_text\n")
+        env = {**self.env, "PYTHONPATH": str(site)}
+        self.assertEqual([f["stage"] for f in self.status(env=env)["features"]], [2, 2, 2])
+        reads = log.read_text().splitlines()
+        self.assertEqual({name: reads.count(name) for name in names}, dict.fromkeys(names, 1), reads)
+
     def test_slug_comparison_ignores_case(self) -> None:
         self.spec(feature="F1", review="draft")
         self.assertEqual(self.status("--feature", "f1")["stage"], 2)
