@@ -668,7 +668,7 @@ class WeakeningReportTests(SealRepo):
 
 class SetupVersionTests(SealRepo):
     def test_f12_setup_checks_the_versions(self) -> None:
-        """O26 (Codex half as replaced by Codex Network Scope O19)."""
+        """O26 (Codex half as replaced by Codex Network Scope O19, then by Codex Hook Sandbox)."""
         notes = self.root / "install-notes"
         notes.mkdir()
         project = self.root / "fresh-project"
@@ -682,7 +682,7 @@ class SetupVersionTests(SealRepo):
             put(fake / name, f"#!/bin/sh\necho '{version}'\n")
             (fake / name).chmod(0o755)
         env = {**self.env, "PATH": f"{fake}{os.pathsep}{os.environ.get('PATH', '')}"}
-        for harness, minimum in (("claude", "2.1.295"), ("codex", "0.165.0")):
+        for harness, minimum in (("claude", "2.1.295"), ("codex", "0.166.0")):
             with self.subTest(harness=harness):
                 result = subprocess.run([sys.executable, str(CHECKER), "--harness", harness, "--home", str(self.home),
                                          "--repo", str(project)], env=env, capture_output=True, text=True,
