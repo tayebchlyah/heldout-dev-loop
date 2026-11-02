@@ -6,7 +6,7 @@
 # Subagents: the net below, for those that do not use the implementer definition.
 # spec-tester is exempt: it authors tests/acceptance. It gets the source wall instead: no path
 # names src/, app/, backend/ or frontend/ (the segment match of deny-path.sh, in this folder).
-# Its frontmatter hook holds the same rule, but did not fire in Claude Code 2.1.309 (canary).
+# Its frontmatter hook holds the same rule; this hook holds it where frontmatter hooks are skipped (#139).
 #
 # WHAT THIS IS. A workflow guard against a cooperative agent wandering into the
 # held-out suite, not a security boundary. A subagent that wants past it can
@@ -42,7 +42,8 @@
 # filePath and uri included, a file:// value by its path. Monitor is walled as Bash on its command:
 # the name rule, the search rule and the audit. Open for other subagents: an MCP search tool, an MCP
 # tool that runs code or reads a remote copy of the repo, a resource listing; the audit reads their
-# results. A project agent's frontmatter hooks are skipped in an untrusted folder (#139).
+# results. A project agent's frontmatter hooks are skipped in an untrusted folder or a -p or SDK
+# session; this hook holds every rule of the implementer and spec-tester walls (#139).
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
