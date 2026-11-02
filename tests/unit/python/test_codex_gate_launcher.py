@@ -192,6 +192,23 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertEqual(table[':workspace_roots'], {'.git': 'read', '**/.private': 'deny'})
         self.assertEqual(values['permissions.dev-workspace.network']['unix_sockets'], {'/var/run/docker.sock': 'deny'})
 
+    def test_launch_keeps_trusted_home_deny_rules(self):
+        decoy = self.root / 'home-like/x/secret'
+        write(decoy, 'decoy')
+        self.env['HOME'] = str(self.root / 'home-like')
+        self.config.write_text('[permissions.dev-workspace]\nextends=":workspace"\n'
+                               '[permissions.dev-workspace.filesystem]\n"~/x/secret"="deny"\n')
+        probe = ('from pathlib import Path; import sys; '
+                 '\ntry: Path(sys.argv[1]).read_text()\nexcept PermissionError: pass\nelse: raise AssertionError("home deny lost")'
+                 ) if sys.platform == 'darwin' else 'pass'
+        r = self.launch(sys.executable, '-I', '-c', probe, str(decoy))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        args = json.loads(self.log.read_text())
+        if os.environ.get('DEVLOOP_MACOS_BROKER'):
+            return
+        table = next(x for x in args if x.startswith('permissions.dev-workspace.filesystem='))
+        self.assertIn(json.dumps(str(decoy))+'="deny"', table)
+
     def test_invalid_policy_blocks_before_native_or_gate(self):
         for config in ['not toml [', '[permissions.dev-workspace]\nextends="missing"\n',
                        '[permissions.dev-workspace]\nextends="dev-workspace"\n']:
