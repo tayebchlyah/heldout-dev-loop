@@ -2,13 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
 import { KEY_MERGED_TABLES, mergeCodexConfig, splitToml } from '../../../lib/merge-toml.mjs'
-import { assertValidToml } from './helpers.mjs'
+import { assertValidToml, packageRoot } from './helpers.mjs'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const realFragment = readFileSync(`${repoRoot}/codex/config.permissions.toml`, 'utf8')
+const realFragment = readFileSync(`${packageRoot}/codex/config.permissions.toml`, 'utf8')
 
 const fragment = [
   'default_permissions = "dev-workspace"',

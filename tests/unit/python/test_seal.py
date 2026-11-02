@@ -13,9 +13,11 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from test_devloop import DEVLOOP, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 from seal import ACCEPTANCE_DIR  # noqa: E402
 from seal import audit as audit_module  # noqa: E402

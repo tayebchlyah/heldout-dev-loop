@@ -2,12 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { tempDir } from './helpers.mjs'
+import { dirname, join } from 'node:path'
+import { packageRoot, tempDir } from './helpers.mjs'
 
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const bin = join(packageRoot, 'bin', 'install.mjs')
 
 function run(home, args) {

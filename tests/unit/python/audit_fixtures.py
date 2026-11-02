@@ -11,10 +11,12 @@ import unittest
 from pathlib import Path
 from typing import Callable
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
+from support import ROOT
+
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from audit import common  # noqa: E402
 
-DEVLOOP = Path(__file__).resolve().parents[3] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 EVIDENCE = ("covered", "candidate", "blocked")
 FENCE = "```"

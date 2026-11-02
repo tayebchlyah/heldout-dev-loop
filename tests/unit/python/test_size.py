@@ -11,12 +11,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from support import ROOT, budget_report
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from test_devloop import git, put, run_cli  # noqa: E402
 import size  # noqa: E402
-from support import budget_report  # noqa: E402
 
 
 def blob(n: int, line: bytes = b"x" * 79 + b"\n") -> bytes:
@@ -207,7 +208,7 @@ class SizeCommandTests(SizeRepo):
         self.assertIn("file_size_exempt", out["error"])
 
     def test_usage(self) -> None:
-        result = subprocess.run([sys.executable, str(HERE.parents[2] / "skill" / "scripts" / "devloop.py"),
+        result = subprocess.run([sys.executable, str(ROOT / "skill" / "scripts" / "devloop.py"),
                                  "size-check", "--uncommitted", "--all"], cwd=self.repo, capture_output=True)
         self.assertEqual(result.returncode, 2)
         outside = Path(self._tmp.name) / "outside"
@@ -338,10 +339,9 @@ class SeamTests(unittest.TestCase):
 
 
 class SizeTextTests(unittest.TestCase):
-    ROOT = HERE.parents[2]
 
     def text(self, path: str) -> str:
-        return (self.ROOT / path).read_text()
+        return (ROOT / path).read_text()
 
     def section(self, heading: str) -> str:
         return self.text("skill/SKILL.md").split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
@@ -351,7 +351,7 @@ class SizeTextTests(unittest.TestCase):
 
     def test_skill(self) -> None:
         self.assertNotIn("`gate --summary` (`exit` 0)", self.text("skill/SKILL.md"))
-        report = budget_report(self.ROOT / "skill/SKILL.md", size.LIMIT)
+        report = budget_report(ROOT / "skill/SKILL.md", size.LIMIT)
         if report:
             self.fail(report)
         self.assertIn("size-check --all", self.section("4 Plan"))

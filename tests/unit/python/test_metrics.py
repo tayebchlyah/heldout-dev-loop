@@ -13,11 +13,13 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import metrics  # noqa: E402
 
-DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 
 
 def record(uid: str, ts: str | None, kind: str = "assistant", **message) -> dict:

@@ -13,8 +13,9 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "scripts"))
 from test_devloop import git, put  # noqa: E402

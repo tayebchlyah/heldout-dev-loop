@@ -12,11 +12,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
+from support import ROOT, check_setup
+
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 sys.path.insert(1, str(Path(__file__).resolve().parent))
 from board import server
 from board_fixtures import Board, ISO_Z, MACHINE, git, note_text, put, read_note, snapshot, status_note
-from support import check_setup
 
 
 class BoardLayoutTests(Board):

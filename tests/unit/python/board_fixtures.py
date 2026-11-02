@@ -25,11 +25,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TypeVar
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "scripts"
+from support import ROOT
+
+SCRIPTS = ROOT / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
-REPO_ROOT = SCRIPTS.parents[1]
-CLAUDE_HOOKS = REPO_ROOT / "claude" / "hooks"
-CODEX_HOOKS = REPO_ROOT / "codex" / "hooks"
+CLAUDE_HOOKS = ROOT / "claude" / "hooks"
+CODEX_HOOKS = ROOT / "codex" / "hooks"
 
 VERSION = "2.1.0"
 PROJECT = "acme-widgets"
