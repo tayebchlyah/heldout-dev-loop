@@ -14,6 +14,7 @@ from pathlib import Path
 
 from support import CODEX_ASSETS, CODEX_GATE_FIXTURE, write
 
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(CODEX_ASSETS / 'hooks'))
 import sandbox
 
