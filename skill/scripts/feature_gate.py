@@ -311,7 +311,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     reports.mkdir()
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
     payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
-    failing, ids, cases, tests = gate.junit_failures(reports)
+    failing, ids, cases, tests = gate.junit_failures(reports, top)
     stale = stale_check(top, env)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
