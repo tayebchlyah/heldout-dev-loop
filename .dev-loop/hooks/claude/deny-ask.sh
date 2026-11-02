@@ -2,6 +2,7 @@
 # PreToolUse(AskUserQuestion) wall: Delivery runs under the autonomy grant, so a feature worktree gets no question.
 # Feature worktree: a linked worktree, on a branch with a `/`, whose top level holds dev-loop.json. No devloop status
 # call: the hook has 5 s. Fails open (no jq, no cwd, no git): Shaping and other repos must keep their questions.
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 command -v git >/dev/null 2>&1 || exit 0

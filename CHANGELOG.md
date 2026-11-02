@@ -1,6 +1,6 @@
 # Changelog
 
-## [3.0.0-rc.2] - 2026-11-01
+## [3.0.0-rc.3] - 2026-11-02
 
 ### Highlights
 
@@ -11,6 +11,8 @@
 **Held-out tests stay held out.** Only `spec-tester` can change `tests/acceptance/`: every commit to it carries a seal, walls on Claude Code and Codex stop other agents, and a transcript audit records a read the walls miss. The walls also cover LSP, MCP tools, Monitor and Codex `view_image`: walled agents cannot use LSP or MCP, and a Monitor command is checked as a Bash command. The gate fails on an unsealed commit or a changed installed kit file, and reports each change that makes a test weaker. Codex warns at session start when it skips an untrusted dev-loop hook.
 
 **Release security audit.** `/release-audit` runs a full security audit of the changes since the last audit, in a Docker sandbox with no network, and writes the result into the project note. An agent's push of a `v*` tag, or `gh release create`, runs `release-check` first and shows you why a release is not ready. `/release` runs the whole release: audit, version, notes, release PR, tag and a check of the published release. Each release gets one audit and at most one fix wave: a confirmed `low` or `informational` finding goes to `## Gardener` and does not block, you rule each other item (`fix #n`, `accept`, `close`), and `release-record --fix-wave` records the fixes so they need no second audit.
+
+**Audit loop through the CLI.** `devloop.py audit-run` runs the parent side of `/release-audit`: it seeds a run from the plan and the prior ledger, writes each hunter, critic, verifier and recheck brief from the `security-audit` skill text, checks and folds each agent result, and writes the three report files. It reads agent files no-follow and bounded, and closes a run only when the final critic is clean and every record passed a fresh recheck. `release-plan --require-sandbox` stops before an audit with no image or no container engine, and `release-record` carries your `accept` ruling to a finding found again with unchanged trace files.
 
 **Written release notes.** A project can set `release_notes: written` in `dev-loop.json` to get short prose sections in `CHANGELOG.md` in place of the git-cliff commit list. `/release-notes` drafts or rewrites a section from the specs, PRs and commits. CI skips its jobs on a release PR or a kit upgrade PR (`ci-skip`), since they change no code.
 
@@ -71,6 +73,14 @@
 - `metrics` counts only the gate runs of the feature and keeps escaped pipes in a row.
 - The board keeps a feature you own until it ships, also when a run does not see it, and writes the kit version only from a valid MANIFEST.
 - `scripts/release-verify.sh` never waits on a git credential prompt.
+- Review tables and the Track S marker are written with `devloop.py review-save`, into the worktree git dir.
+- `git-guard` also checks `Monitor` commands, and every kit hook pins `core.fsmonitor`, `log.showSignature` and the filter drivers off before it runs git.
+- The gate and the held-out suite take one lock in the git common dir, so two worktrees never run a suite at once, and a killed gate leaves no holder.
+- `check_setup.py` names `noclobber` and `-i` aliases of `rm`, `cp`, `mv` and `ln` in the agent shell, with the fix in `reference/kit.md`.
+- The weakened-test report matches skip markers on word boundaries and runner names, so `sys.exit(` is no skip.
+- CI runs every job again when a PR changes its base.
+- `status` on `main` is faster: it caches git answers and reads each worktree git dir from its `.git` file.
+- The audit sandbox labels each container with its target and reports the command exit when the OOM killer also stops the container.
 - The audit sandbox copy-back drops `.git` parts and adds `.txt` to every other name, so no target repository or note reaches your machine. The runner waits up to 10 s for leftover processes and lists them.
 
 ### Upgrade notes
@@ -79,8 +89,8 @@
 
 1. Ship each in-flight feature first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
 2. Update the CLIs to the minimums `check_setup.py` checks: Claude Code 2.1.295 and codex-cli 0.165.0. Older CLIs cannot run the new hooks.
-3. Run `npx github:tchlyah/dev-loop#v3.0.0-rc.2 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
-4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). `upgrade` prints this line.
+3. Run `npx github:tchlyah/dev-loop#v3.0.0-rc.3 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
+4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1 or rc.2: trust every dev-loop hook `/hooks` lists as changed, since each one now sources `git-pin.sh`. `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line:
    - a UI project: `devloop.py verify-init --base-url <url>`, or `"verify": false` in `dev-loop.json`;
    - `old-notes-layout`: run `notes-migrate` (see the notes layout item below);
@@ -93,6 +103,7 @@
 6. After the merge, end each open session and start a new one. A feature in Delivery resumes with `/continue`. The 2.1.x kit has no `kit_drift` `main-newer`, so an old session never stops by itself. From 3.0.0 on, a later upgrade shows `kit_drift` `main-newer` at the next Stage 3, 6 or 7 start, after `git fetch origin`.
 
 - Notes layout: every machine that shares the notes folder upgrades the kit first. Then one machine runs `devloop.py notes-migrate` (a dry run), checks the moves, and runs `devloop.py notes-migrate --apply --plan <hash>`. Until then `check_setup.py` fails `old-notes-layout`, the kit reads both layouts and writes only the new one, and `release-plan`, `release-record` and `release-check` stop while `security-audit/` exists. Delivery never migrates. There is no automatic undo: the log note lists each move.
+- `upgrade` moves the Claude `git-guard.sh` entry from matcher `Bash` to `Bash|Monitor`. No user step.
 - The gate now also fails on `seal-check` (held-out test commits without their trailers, changed kit files, taint records) and on the file-size ratchet. It reports `weakened` tests.
 - An agent's push of a `v*` tag, or `gh release create`, runs `release-check`: it needs a current `/release-audit` record and no open security item in `## Deferred`. Claude asks with the verdict, Codex denies on a refusal. A tag you push from your own terminal is not checked.
 - Session A and Session B are now Shaping and Delivery. `upgrade` sets `effortLevel: high` and `autoCompactWindow` in the project Claude settings, `model_reasoning_effort` in the Codex config, and the new `worktree-wall.sh` entry, only where you set no value. The project `effortLevel` overrides your user setting: change it in `.claude/settings.local.json`.
@@ -102,7 +113,7 @@
 - To change `commands.acceptance`, merge that change to `main` first: `acceptance` refuses a branch whose command differs from the one on `main`.
 - `upgrade` removes the unused Codex profile tables `dev-implementer`, `dev-spec-tester` and `dev-read-only` from `.codex/config.toml` when unchanged. It refreshes dev-loop's own hook entries in place, so a field you added to a dev-loop hook is lost.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.1...v3.0.0-rc.2
+Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.1...v3.0.0-rc.3
 
 ## [2.1.1] - 2026-10-16
 

@@ -25,6 +25,7 @@
 # Open for other subagents (no hook here): an MCP search tool, an MCP tool that runs code or reads a
 # remote copy of the repo, a resource listing; the audit reads their results. A project agent's
 # frontmatter hooks are skipped in an untrusted folder (#139).
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }

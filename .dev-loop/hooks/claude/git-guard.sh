@@ -1,5 +1,6 @@
 #!/bin/bash
-# PreToolUse(Bash) wall: the git push and gh write rules, git reset --hard and rm -rf /.
+# PreToolUse(Bash|Monitor) wall: the git push and gh write rules, git reset --hard and rm -rf /.
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
