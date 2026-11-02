@@ -247,7 +247,7 @@ def is_linked(path: Path | str | None) -> bool:
     """True when the path is in a linked worktree: its git dir is not the common git dir (physical paths)."""
     if not path:
         return False
-    git_dir = git(Path(path), "rev-parse", "--absolute-git-dir")
+    git_dir = git_dir_of(Path(path))
     common = git(Path(path), "rev-parse", "--path-format=absolute", "--git-common-dir")
     return bool(git_dir and common) and os.path.realpath(git_dir) != os.path.realpath(common)
 
