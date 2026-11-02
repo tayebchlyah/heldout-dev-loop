@@ -9,10 +9,10 @@
 # matched by its path.
 # Through acceptance-wall.sh it also walls view_image (by path) and MCP tools (mcp__*, read_mcp_resource,
 # list_mcp_resources, list_mcp_resource_templates): denied outright to implementer and spec_tester, the
-# name rule for any other subagent. Gaps (D14): code mode has no hook on exec, one on each inner call;
-# write_stdin has no hook event, so the kit config turns tty sessions off (#140); for other subagents an
-# MCP search tool, an MCP tool that runs code or reads a remote copy, a resource listing (the audit reads
-# their results).
+# name rule for any other subagent. write_stdin has no hook event; the kit config turns tty sessions
+# off, so no shell stays open to type into (#140). Gaps (D14): code mode has no hook on exec, one on
+# each inner call; for other subagents an MCP search tool, an MCP tool that runs code or reads a remote
+# copy, a resource listing (the audit reads their results).
 #
 # Path fields only, never the whole tool input: a write whose body mentions a
 # path is not access to it, and blocking that teaches evasion. Path is joined

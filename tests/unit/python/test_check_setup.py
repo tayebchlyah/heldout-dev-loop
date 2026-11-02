@@ -574,11 +574,12 @@ class ProjectSetupCheckerTests(unittest.TestCase):
 
     def test_codex_tty_sessions_fail(self) -> None:
         self.init("codex")
-        for old, new in (("unified_exec_tty = false\n", "unified_exec_tty = true\n"), ("unified_exec_tty = true\n", "")):
-            with self.subTest(new=new):
-                self.edit_codex_config(old, new)
-                self.assert_codex_failure("Codex tty sessions are on: write_stdin passes the walls "
-                                          "(features.unified_exec_tty = false, #140)")
+        config = self.repo / ".codex" / "config.toml"
+        kit_text = config.read_text()
+        for name, new in (("on", "unified_exec_tty = true\n"), ("missing", "")):
+            with self.subTest(name=name):
+                write(config, kit_text.replace("unified_exec_tty = false\n", new))
+                self.assert_codex_failure("Codex tty sessions are on: write_stdin passes the walls (features.unified_exec_tty)")
 
     def test_codex_all_unix_sockets_fails(self) -> None:
         self.init("codex")
