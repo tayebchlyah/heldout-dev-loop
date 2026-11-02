@@ -115,7 +115,8 @@ def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex:
     shell = bins / "agent-shell"
     shell.write_text("#!/bin/sh\necho flags=hBi\n")
     shell.chmod(0o755)
-    return {**os.environ, "PATH": str(bins), "SHELL": str(shell), **extra}
+    ambient = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")}
+    return {**ambient, "PATH": str(bins), "SHELL": str(shell), **extra}
 
 
 PACKAGE_ROOT = SKILL_ROOT.parent
