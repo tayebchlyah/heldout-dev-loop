@@ -86,10 +86,13 @@ def filesystem(profile, main, feature):
     return rules
 
 
-def neutralised(own, computed):
-    """Overrides that Codex key-merges over the trusted table, so no trusted grant survives."""
+def neutralised(own, computed, roots):
+    """Native table: Codex key-merges it over the trusted one, so no trusted grant survives."""
     demote = lambda value: 'read' if value == 'write' else value
     table = dict(computed)
+    for root in roots:
+        for name in ('.git', '.codex', '.agents'):
+            table.setdefault(str(root / name), 'read')
     for key, value in (own.get('filesystem') or {}).items():
         if key in computed or key == 'glob_scan_max_depth':
             continue
@@ -136,7 +139,7 @@ def main():
         if (requirements.get('network') or {}).get('allowLocalBinding') is False:
             network['allow_local_binding'] = False
         rules = filesystem(profile, trusted, feature)
-        table, sockets = neutralised(own, rules)
+        table, sockets = neutralised(own, rules, (trusted, feature))
         network |= {'unix_sockets': sockets, 'dangerously_allow_all_unix_sockets': False}
         overrides = {'features.network_proxy': True,
                      'permissions.dev-workspace.extends': ':read-only',
