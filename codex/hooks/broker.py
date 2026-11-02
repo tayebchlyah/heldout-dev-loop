@@ -64,6 +64,27 @@ def request(rules, feature, command, network, local):
         raise ValueError('macOS broker startup or protocol failed') from error
 
 
+def stop(process):
+    """Terminate a launch group even when its leader has already exited."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # allow-comment: dependency: Darwin can return EPERM for an emptied process group after its leader is reaped.
+        if sys.platform != 'darwin' or process.poll() is None:
+            raise
+    process.wait(timeout=3)
+
+
 class _TCP(socketserver.ThreadingTCPServer):
     daemon_threads = True
     block_on_close = False
@@ -120,18 +141,7 @@ class Server:
         with self.lock:
             self.contexts.clear()
         for process in processes:
-            self._stop(process)
-
-    def _stop(self, process):
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+            stop(process)
 
     def _run(self, data, stream):
         import macos
@@ -177,7 +187,7 @@ class Server:
                             with output_lock:
                                 _send(stream, {'stream': name, 'data': base64.b64encode(chunk).decode()})
                     except OSError:
-                        self._stop(process)
+                        stop(process)
                     finally:
                         pipe.close()
 
@@ -191,14 +201,16 @@ class Server:
                 except BrokenPipeError:
                     pass
                 result = process.wait()
-                self._stop(process)
+                stop(process)
                 for thread in threads:
-                    thread.join()
+                    thread.join(timeout=3)
+                    if thread.is_alive():
+                        raise ValueError('macOS sibling stream cleanup timed out')
                 if not (temp / 'started').is_file():
                     raise ValueError('macOS sibling launcher failed before command start')
             finally:
                 if process is not None:
-                    self._stop(process)
+                    stop(process)
                     with self.lock:
                         self.processes.discard(process)
                 if child_context is not None:

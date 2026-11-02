@@ -52,13 +52,13 @@ def _normalized(rules):
     if not isinstance(rules, dict) or rules.get('/') not in ('read', 'write'):
         raise ValueError('macOS adapter requires the native root-read baseline')
     normalized = {}
-    rank = {'read': 0, 'write': 1, 'deny': 2}
+    rank = {'write': 0, 'read': 1, 'deny': 2}
     for raw, permission in rules.items():
         if not isinstance(raw, str) or not Path(raw).is_absolute() or permission not in rank:
             raise ValueError('invalid macOS filesystem rule')
         for path in {raw.rstrip('/') or '/', str(Path(raw).resolve())}:
             _filter(path)
-            normalized[path] = max(normalized.get(path, 'read'), permission, key=rank.get)
+            normalized[path] = max(normalized.get(path, permission), permission, key=rank.get)
     for path, mode in normalized.items():
         if mode == 'deny' and '*' not in path:
             if any(other != path and other.startswith(path.rstrip('/') + '/') and value != 'deny'
@@ -106,9 +106,10 @@ def _policy(rules, ports, network_enabled, allow_local_binding, ceilings=(), bro
         for path, permission in normalized.items():
             if permission == 'write':
                 parts.append('(deny file-write-unlink (literal ' + _quote(path) + '))')
-            if permission != 'deny':
+            if permission == 'write' or path == '/':
                 continue
-            parts.append('(deny file-read* file-write* file-map-executable ' + _filter(path) + ')')
+            if permission == 'deny':
+                parts.append('(deny file-read* file-write* file-map-executable ' + _filter(path) + ')')
             ancestor = Path(path.split('*', 1)[0]).parent
             while str(ancestor) != '/':
                 parts.append('(deny file-write-unlink (literal ' + _quote(ancestor) + '))')
@@ -152,14 +153,14 @@ def _proxy_state(keeper):
         raise ValueError('native proxy exited or returned invalid startup state')
     env, ports = {}, set()
     for key, value in state['env'].items():
-        if key not in _PROXY | _CA or not isinstance(value, str) or '\0' in value:
+        if not isinstance(key, str) or not key or '=' in key or not isinstance(value, str) or '\0' in key + value:
             raise ValueError('invalid native proxy environment')
         if key in _PROXY and key.lower() != 'no_proxy':
             try:
                 parsed = urlsplit(value)
                 host = parsed.hostname
                 local = host == 'localhost' or ipaddress.ip_address(host).is_loopback
-                if not local or parsed.scheme not in ('http', 'https', 'socks5', 'socks5h') or not parsed.port or parsed.username:
+                if not local or parsed.scheme not in ('http', 'https', 'socks5', 'socks5h') or not parsed.port or parsed.username is not None or parsed.password is not None or parsed.path or parsed.query or parsed.fragment:
                     raise ValueError('proxy must use loopback')
                 ports.add(parsed.port)
             except (TypeError, ValueError) as error:
@@ -190,8 +191,20 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
         command: list[str], network_enabled: bool, allow_local_binding: bool) -> int:
     """Preserve gate streams and exit status under native managed policy."""
     import broker
+    if '-C' in native_args:
+        trusted = Path(native_args[native_args.index('-C') + 1]).resolve(strict=True)
+        common = subprocess.run(['git', '-c', 'core.fsmonitor=false', '-C', str(trusted),
+                                 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                env={k: v for k, v in os.environ.items() if not k.startswith('GIT_')},
+                                capture_output=True, text=True, check=True).stdout.strip()
+        common = Path(common).resolve(strict=True)
+        if not common.is_dir():
+            raise ValueError('invalid trusted Git metadata directory')
+        rules = {**rules, str(common): 'read'}
     if 'DEVLOOP_MACOS_BROKER' in os.environ:
         return broker.request(rules, feature, command, network_enabled, allow_local_binding)
+    if '-C' not in native_args:
+        raise ValueError('trusted main directory is required')
     keeper = subprocess.Popen([*native_args, '--', sys.executable, '-I', __file__, '--proxy-state'],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, start_new_session=True)
     gate = None
@@ -201,15 +214,21 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
         if network_enabled and not ports:
             raise ValueError('native managed proxy is unavailable')
         ceiling = _normalized(rules)
-        with tempfile.TemporaryDirectory(prefix='devloop-macos-') as temporary:
+        root = next((p for p in [Path('/tmp').resolve(), Path(tempfile.gettempdir()).resolve()]
+                     if max(((len(k), v) for k, v in ceiling.items() if k != '/' and
+                             (str(p) == k or str(p).startswith(k.rstrip('/') + '/'))),
+                            default=(0, 'write'))[1] == 'write'), None)
+        if root is None:
+            raise ValueError('no writable macOS runtime temporary root')
+        with tempfile.TemporaryDirectory(prefix='devloop-macos-', dir=root) as temporary, \
+                tempfile.TemporaryDirectory(prefix='devloop-hook-', dir=common) as staged:
             temp = Path(temporary).resolve()
             rules = {**rules, str(temp): 'write'}
-            env = {k: v for k, v in os.environ.items() if k not in _PROXY | _CA}
-            env.update(proxy)
-            private = temp / '.codex'
-            private.mkdir()
+            env = dict(proxy)
+            env['GATE_SCOPE'] = 'changed'
+            private = Path(staged)
             env = _prepare(private, env, temp)
-            with broker.Server(temp, rules, proxy, ports, network_enabled, allow_local_binding,
+            with broker.Server(temp, rules, {k: v for k, v in proxy.items() if k in _PROXY | _CA}, ports, network_enabled, allow_local_binding,
                                private / 'bin', ceilings=[ceiling]) as server:
                 env['DEVLOOP_MACOS_BROKER'] = server.context
                 policy = _policy(rules, ports, network_enabled, allow_local_binding,
@@ -230,15 +249,7 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
         for process in (gate, keeper):
             if process is None:
                 continue
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+            broker.stop(process)
         keeper.stdin.close()
         keeper.stdout.close()
 
@@ -246,5 +257,5 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
 if __name__ == '__main__':
     if sys.argv[1:] != ['--proxy-state']:
         sys.exit(125)
-    print(json.dumps({'version': 1, 'env': {k: v for k, v in os.environ.items() if k in _PROXY | _CA}}), flush=True)
+    print(json.dumps({'version': 1, 'env': dict(os.environ)}), flush=True)
     sys.stdin.buffer.read()
