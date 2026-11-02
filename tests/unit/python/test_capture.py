@@ -12,7 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import ROOT
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main",

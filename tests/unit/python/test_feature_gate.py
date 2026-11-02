@@ -15,9 +15,10 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
-from support import ROOT
-
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from feature_gate import TableError, created_seconds, guard, merge, parse_table, stale_check  # noqa: E402
 
@@ -607,9 +608,6 @@ class StaleCheckTests(RepoCase):
                          int(datetime(2026, 10, 26, 8, tzinfo=timezone.utc).timestamp()))
         with self.assertRaises(ValueError):
             created_seconds("2026-10-26 08:00:00")
-
-
-
 
 
 class AcceptanceScriptTests(TempDir):

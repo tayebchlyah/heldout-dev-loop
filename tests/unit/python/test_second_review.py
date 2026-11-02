@@ -14,7 +14,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from support import ROOT
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
 
 SCRIPTS = ROOT / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
@@ -653,7 +655,6 @@ def section(text: str, heading: str) -> str:
 
 class SecondReviewTextTests(unittest.TestCase):
     """The kit text that wires the command into Shaping and the Stage 6 review wave, AGENTS.md, the canary."""
-
 
     def test_skill_runs_the_second_review_and_asks_only_in_shaping(self) -> None:
         skill = (SCRIPTS.parent / "SKILL.md").read_text()

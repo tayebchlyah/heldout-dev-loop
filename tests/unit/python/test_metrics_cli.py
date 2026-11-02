@@ -12,11 +12,11 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from support import ROOT
-
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
-sys.path.insert(1, str(HERE))
 import metrics  # noqa: E402
 from test_metrics import DEVLOOP, TempDir, record, result, tool_use, usage_msg, write_jsonl  # noqa: E402
 
@@ -317,18 +317,17 @@ class MetricsCommandTests(TempDir):
 
 class MetricsTextTests(unittest.TestCase):
     def test_kit_text(self) -> None:
-        root = ROOT
-        skill = (root / "skill" / "SKILL.md").read_text()
+        skill = (ROOT / "skill" / "SKILL.md").read_text()
         ship = skill[skill.index("## 7 Ship"):]
         self.assertIn("devloop.py metrics --write", ship)
         self.assertIn("metrics: <file>", ship)
         self.assertIn("metrics: failed: <error>", ship)
-        codex = (root / "skill" / "references" / "codex.md").read_text()
+        codex = (ROOT / "skill" / "references" / "codex.md").read_text()
         self.assertTrue(any("metrics" in line and "not counted" in line for line in codex.splitlines()))
-        agents = (root / "AGENTS.md").read_text().splitlines()
+        agents = (ROOT / "AGENTS.md").read_text().splitlines()
         self.assertTrue(any(line.startswith("- `metrics") and "reference/cli/metrics.md" in line for line in agents))
         self.assertIn("- `metrics [--repo <path>] [--feature <slug>] [--write]`: token cost of each stage",
-                      (root / "reference" / "cli" / "metrics.md").read_text())
+                      (ROOT / "reference" / "cli" / "metrics.md").read_text())
         self.assertTrue(any("5 features" in line and "cost" in line and "Feature Metrics.md" in line for line in agents))
 
 
