@@ -19,7 +19,8 @@ from test_seal import L1, L2, L3, PROTECTED, SUITE, claude_line, codex_line  # n
 
 SHELL = {"claude": "bash", "codex": "sh"}
 TRANSCRIPT_LINE = {"claude": claude_line, "codex": codex_line}
-from support import ROOT
+
+from support import ROOT  # noqa: E402
 
 
 class SealHookTests(unittest.TestCase):

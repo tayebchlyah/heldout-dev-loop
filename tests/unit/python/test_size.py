@@ -11,10 +11,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import ROOT, budget_report
-
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from support import ROOT, budget_report  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from test_devloop import git, put, run_cli  # noqa: E402
 import size  # noqa: E402
@@ -339,7 +339,6 @@ class SeamTests(unittest.TestCase):
 
 
 class SizeTextTests(unittest.TestCase):
-
     def text(self, path: str) -> str:
         return (ROOT / path).read_text()
 

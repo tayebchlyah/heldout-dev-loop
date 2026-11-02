@@ -7,7 +7,6 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { packageRoot } from './helpers.mjs'
 
-
 const REQUIRED = [
   'skill/SKILL.md',
   'skill/references/claude.md',

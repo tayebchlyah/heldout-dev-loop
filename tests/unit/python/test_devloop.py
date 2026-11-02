@@ -32,7 +32,10 @@ if not any(
 for _key, _value in (("GIT_AUTHOR_NAME", "dev-loop test"), ("GIT_AUTHOR_EMAIL", "test@example.invalid"),
                      ("GIT_COMMITTER_NAME", "dev-loop test"), ("GIT_COMMITTER_EMAIL", "test@example.invalid")):
     os.environ.setdefault(_key, _value)
-from support import ROOT
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT, SKILL_ROOT  # noqa: E402
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 
@@ -318,8 +321,7 @@ class LayoutLookupTests(Sandbox):
         self.assertEqual(dl.old_layout(self.root / "missing"), [])
 
 
-SKILL_ROOT = ROOT / "skill"
-REPO_ROOT = SKILL_ROOT.parent
+REPO_ROOT = ROOT
 
 
 class ProjectConfigShapeTests(unittest.TestCase):

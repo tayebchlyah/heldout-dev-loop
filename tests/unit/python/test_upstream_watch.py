@@ -12,7 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import ROOT
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
 
 SCRIPT = ROOT / "scripts" / "upstream_watch.py"
 

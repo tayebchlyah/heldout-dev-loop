@@ -10,10 +10,10 @@ import sys
 import unittest
 from pathlib import Path
 
-from support import ROOT
-
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from test_devloop import DEVLOOP, Sandbox, frontmatter, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 import autonomy  # noqa: E402

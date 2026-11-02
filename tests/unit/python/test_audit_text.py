@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import json
+import sys
 import unittest
+from pathlib import Path
 
-from support import ROOT
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
 
 STEPS = ["seed", "units --add", "brief", "check", "promote", "fold", "status", "findings", "report"]
 
