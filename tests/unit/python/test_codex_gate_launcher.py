@@ -207,6 +207,19 @@ class CodexHookSandboxTests(unittest.TestCase):
                 r = self.native_route('/bin/sh', '-c', 'printf "%s" "$GATE_SCOPE"', env={'GATE_SCOPE': scope})
                 self.assertEqual((r.returncode, r.stdout), (0, scope), r.stderr)
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'Seatbelt path quoting')
+    def test_unquotable_feature_paths_never_expose_env_files(self):
+        for index, name in enumerate(['tab\there', 'quote"here', 'caret^here', 'ctl\x01here']):
+            with self.subTest(name=name):
+                self.feature = self.root / name
+                self.git(self.main, 'worktree', 'add', '-qb', 'fix/q%d' % index, str(self.feature))
+                for secret in ('.env', '.env.local'):
+                    write(self.feature / secret, 'SECRET')
+                r = self.launch('/bin/sh', '-c', 'cat .env .env.local')
+                self.assertNotIn('SECRET', r.stdout)
+                self.assertEqual(r.returncode, 125, r.stderr)
+                self.assertIn('Sandbox startup failed', r.stderr)
+
     def test_launch_keeps_trusted_home_deny_rules(self):
         decoy = self.root / 'home-like/x/secret'
         write(decoy, 'decoy')
