@@ -21,10 +21,10 @@
 # the net with no tool_name. It denies LSP and the MCP tools (mcp__*, ListMcpResourcesTool,
 # ReadMcpResourceTool, ReadMcpResourceDirTool) outright, reads a Monitor command as Bash, and reads
 # filePath and uri, a file:// value by its path. disallowedTools in the agent file is the second layer
-# when a frontmatter hook is skipped (untrusted folder, -p or SDK session; the settings twin holds the walls, #139).
+# when a frontmatter hook is skipped in an untrusted folder (#139).
 # Open for other subagents (no hook here): an MCP search tool, an MCP tool that runs code or reads a
 # remote copy of the repo, a resource listing; the audit reads their results. A project agent's
-# frontmatter hooks are skipped in an untrusted folder or a -p or SDK session (#139).
+# frontmatter hooks are skipped in an untrusted folder (#139).
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.

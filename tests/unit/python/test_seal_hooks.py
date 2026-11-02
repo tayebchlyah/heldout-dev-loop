@@ -315,7 +315,7 @@ class GuardTests(unittest.TestCase):
 
 
 class SpecTesterSourceWallTests(unittest.TestCase):
-    """The settings hook walls src/ from spec-tester too: its frontmatter hook is skipped in an untrusted folder (#139)."""
+    """The Claude settings hook walls src/ from spec-tester too: its frontmatter hook did not fire (canary)."""
 
     def test_spec_tester_cannot_reach_a_source_folder_by_any_route(self) -> None:
         tmp = tempfile.TemporaryDirectory()
