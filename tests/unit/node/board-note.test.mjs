@@ -4,11 +4,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import vm from 'node:vm'
+import { packageRoot } from './helpers.mjs'
 
-const BOARD = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'skill', 'scripts', 'board')
+const BOARD = join(packageRoot, 'skill', 'scripts', 'board')
 const TEMPLATE = readFileSync(join(BOARD, 'board-note.md'), 'utf8')
 const NOTE = TEMPLATE.replace('/*VERSION*/', '9.9.9').replace('/*RENDER_JS*/', readFileSync(join(BOARD, 'render.js'), 'utf8'))
 const BLOCK = NOTE.match(/```dataviewjs\n([\s\S]*?)\n```/)[1]

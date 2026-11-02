@@ -17,7 +17,9 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "scripts"
+from support import ROOT
+
+SCRIPTS = ROOT / "skill" / "scripts"
 CHECK_SETUP = SCRIPTS / "check_setup.py"
 DEVLOOP = SCRIPTS / "devloop.py"
 
@@ -537,7 +539,7 @@ console.log(JSON.stringify({{ routes: [{{ entry: input.entry, path: '/a', ok: tr
     def test_routes_from_absent_entries(self) -> None:
         root = self.repo()
         (root / "node_modules").rename(root / "node_modules.fake")
-        (root / "node_modules").symlink_to(Path(__file__).resolve().parents[3] / "node_modules")
+        (root / "node_modules").symlink_to(ROOT / "node_modules")
         after = self.routes_file(root, [{"entry": "j", "path": "/j", "video": "/x/after.webm"},
                                         {"entry": "z", "path": "/"}])
         code, out = devloop(root, "drive", "--routes-from", after)

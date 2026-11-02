@@ -14,7 +14,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "scripts"
+from support import ROOT
+
+SCRIPTS = ROOT / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
 sys.path.insert(0, str(SCRIPTS))
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
@@ -652,7 +654,6 @@ def section(text: str, heading: str) -> str:
 class SecondReviewTextTests(unittest.TestCase):
     """The kit text that wires the command into Shaping and the Stage 6 review wave, AGENTS.md, the canary."""
 
-    ROOT = SCRIPTS.parents[1]
 
     def test_skill_runs_the_second_review_and_asks_only_in_shaping(self) -> None:
         skill = (SCRIPTS.parent / "SKILL.md").read_text()
@@ -679,25 +680,25 @@ class SecondReviewTextTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, repo, True)
         git(repo, "init", "-q", "-b", "main")
         (repo / "notes").mkdir()
-        subprocess.run(["node", str(self.ROOT / "bin" / "install.mjs"), "init", "--yes", "--harness=claude",
+        subprocess.run(["node", str(ROOT / "bin" / "install.mjs"), "init", "--yes", "--harness=claude",
                         f"--notes={repo / 'notes'}"], cwd=repo, check=True, capture_output=True)
         path = ".agents/skills/dev-loop/references/second-review.md"
         self.assertTrue((repo / path).is_file())
         self.assertIn(path, json.loads((repo / ".dev-loop" / "MANIFEST.json").read_text())["files"])
 
     def test_agents_md_and_the_canary_name_the_second_review(self) -> None:
-        agents = (self.ROOT / "AGENTS.md").read_text()
+        agents = (ROOT / "AGENTS.md").read_text()
         for value in ("`second-review --harness claude|codex [--timeout <minutes>]`", "skill/scripts/second_review.py",
                       "skill/references/second-review.md"):
             with self.subTest(value=value):
                 self.assertIn(value, agents)
-        self.assertIn("test_second_review.py", (self.ROOT / "tests" / "unit" / "python" / "README.md").read_text())
-        contract = (self.ROOT / "reference" / "cli" / "second-review.md").read_text()
+        self.assertIn("test_second_review.py", (ROOT / "tests" / "unit" / "python" / "README.md").read_text())
+        contract = (ROOT / "reference" / "cli" / "second-review.md").read_text()
         for value in ("`second-review --harness claude|codex [--timeout <minutes>]`", "`not-chosen`", "`tainted`",
                       "`second_review`"):
             with self.subTest(value=value):
                 self.assertIn(value, contract)
-        help_text = subprocess.run(["bash", str(self.ROOT / "scripts" / "canary.sh"), "--help"],
+        help_text = subprocess.run(["bash", str(ROOT / "scripts" / "canary.sh"), "--help"],
                                    capture_output=True, text=True).stdout
         self.assertIn("second-review", help_text)
 

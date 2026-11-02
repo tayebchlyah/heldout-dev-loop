@@ -12,7 +12,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+from support import ROOT
+
 SCRIPT = ROOT / "scripts" / "upstream_watch.py"
 
 FAKE_GH = """#!/usr/bin/env python3

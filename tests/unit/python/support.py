@@ -27,7 +27,8 @@ if not any(
         "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
     })
 
-SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
+ROOT = Path(__file__).resolve().parents[3]
+SKILL_ROOT = ROOT / "skill"
 # The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
 # never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))

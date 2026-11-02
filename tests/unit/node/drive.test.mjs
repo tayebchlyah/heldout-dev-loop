@@ -3,12 +3,10 @@ import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { tempDir } from './helpers.mjs'
+import { join } from 'node:path'
+import { packageRoot, tempDir } from './helpers.mjs'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const DRIVE = join(ROOT, 'skill', 'scripts', 'drive.mjs')
+const DRIVE = join(packageRoot, 'skill', 'scripts', 'drive.mjs')
 
 const PAGES = {
   '/ok': '<title>ok</title><h1>Clusters</h1>',
@@ -41,7 +39,7 @@ after(() => server.close())
 function repo({ link = true } = {}) {
   const dir = tempDir('drive-')
   execFileSync('git', ['init', '-q'], { cwd: dir })
-  if (link) symlinkSync(join(ROOT, 'node_modules'), join(dir, 'node_modules'))
+  if (link) symlinkSync(join(packageRoot, 'node_modules'), join(dir, 'node_modules'))
   mkdirSync(join(dir, 'evidence'))
   return dir
 }
@@ -66,7 +64,7 @@ function input(dir, routes, extra = {}) {
 }
 
 test('this repo has Playwright installed: run npm ci && npx playwright install chromium', () => {
-  assert.ok(existsSync(join(ROOT, 'node_modules', 'playwright')), 'run npm ci && npx playwright install chromium')
+  assert.ok(existsSync(join(packageRoot, 'node_modules', 'playwright')), 'run npm ci && npx playwright install chromium')
 })
 
 test('drive.mjs checks status, names and console errors, one JPEG per route', async () => {

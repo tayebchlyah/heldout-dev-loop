@@ -13,13 +13,13 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
 sys.path.insert(0, str(HERE))
 from test_devloop import git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 from test_seal import L1, L2, L3, PROTECTED, SUITE, claude_line, codex_line  # noqa: E402
 
 SHELL = {"claude": "bash", "codex": "sh"}
 TRANSCRIPT_LINE = {"claude": claude_line, "codex": codex_line}
+from support import ROOT
 
 
 class SealHookTests(unittest.TestCase):

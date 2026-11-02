@@ -1,12 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, cpSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs'
-import { tempDir } from './helpers.mjs'
+import { packageRoot, tempDir } from './helpers.mjs'
 
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
 const CODEX = '"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/'
 

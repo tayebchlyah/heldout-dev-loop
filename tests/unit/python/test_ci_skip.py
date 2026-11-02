@@ -12,8 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main"]
 
 CHANGELOG = "# Changelog\n\n## [2.1.1] - 2026-10-16\n\n- First.\n"

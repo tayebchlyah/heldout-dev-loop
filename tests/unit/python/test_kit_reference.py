@@ -16,8 +16,9 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import release  # noqa: E402
 
