@@ -89,7 +89,7 @@ def junit_cases(path: Path) -> list[ET.Element] | None:
 
 
 def case_id(case: ET.Element) -> str:
-    name, classname = case.get("name", ""), case.get("classname")
+    name, classname = case.get("name", ""), case.get("file") or case.get("classname")
     return f"{classname}::{name}" if classname else name
 
 
@@ -151,8 +151,12 @@ def cmd_gate(args: argparse.Namespace) -> int:
     reports = log.parent / f"{log.stem}-reports"
     reports.mkdir()
     payload = run_logged(cmd, log, top, {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
-    ids = sorted({case_id(c) for p in reports.glob("*.xml") for c in junit_cases(p) or [] if case_failed(c)})
-    payload["failures"] = [f"FAILED {i}" for i in ids] or parse_failures(log.read_text(errors="replace"))
+    parsed = {p: junit_cases(p) for p in reports.glob("*.xml")}
+    ids = sorted({case_id(c) for found in parsed.values() for c in found or [] if case_failed(c)})
+    failures = [f"FAILED {i}" for i in ids]
+    if not ids or None in parsed.values():
+        failures += [f for f in parse_failures(log.read_text(errors="replace")) if f not in failures]
+    payload["failures"] = failures
     payload["slowest"] = slowest(reports)
     if not any(reports.glob("*.xml")):
         payload["hint"] = JUNIT_HINT
