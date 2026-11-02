@@ -138,8 +138,8 @@ def _policy(rules, ports, network_enabled, allow_local_binding, ceilings=(), bro
             parts.append(f'(allow network-outbound (remote tcp "localhost:{port}"))')
         if allow_local_binding:
             parts += ['(allow network-bind (local ip "localhost:*"))',
-                      '(allow network-inbound network-outbound (local tcp "localhost:*"))',
-                      '(allow network-outbound (remote tcp "localhost:*"))']
+                      '(allow network-inbound (local ip "localhost:*"))',
+                      '(allow network-outbound (remote ip "localhost:*"))']
     if broker_port is not None:
         parts.append(f'(allow network-outbound (remote tcp "localhost:{broker_port}"))')
     parts.append('(deny network* (socket-domain AF_UNIX))')
