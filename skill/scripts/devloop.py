@@ -14,6 +14,7 @@
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
+  devloop.py size-check [--uncommitted | --all]       file-size ratchet: a new or grown file over 40,000 bytes fails
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
   devloop.py drive [--all | --since SHA | --routes-from FILE]
@@ -21,6 +22,7 @@
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
+                                                      the other family's CLI reviews the branch, correctness and security only
   devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
                                                       merge the reviewer tables by file and line
   devloop.py review-save --reviewer NAME | --done    save a reviewer table (stdin) or the Track S marker in the git dir
@@ -45,7 +47,7 @@
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG] [--repo PATH]
                                                       append one row to the decision log
   devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...] [--repo PATH]
-  devloop.py pause --clear                            write or delete the pause note of the worktree
+  devloop.py pause --clear [--repo PATH]              write or delete the pause note of the worktree
   devloop.py notes-migrate [--repo PATH] [--apply [--plan HASH]]
                                                       move the notes to the feature folder layout, rewrite the links
 
