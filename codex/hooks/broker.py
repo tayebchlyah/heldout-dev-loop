@@ -70,6 +70,14 @@ def stop(process):
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
+    except PermissionError as error:
+        if sys.platform != 'darwin':
+            raise
+        try:
+            # allow-comment: dependency: Darwin can return EPERM between process exit and reaping after native resolver EOF.
+            process.wait(timeout=0.1)
+        except subprocess.TimeoutExpired:
+            raise error
     try:
         process.wait(timeout=3)
     except subprocess.TimeoutExpired:
@@ -92,8 +100,8 @@ class _TCP(socketserver.ThreadingTCPServer):
 
 class Server:
     """Own fixed policy contexts and never run caller code before Seatbelt."""
-    def __init__(self, root, rules, proxy, ports, network, local, binary, ceilings=()):
-        self.root, self.proxy, self.ports, self.binary = root, proxy, ports, binary
+    def __init__(self, rules, proxy, ports, network, local, binary, ceilings=()):
+        self.proxy, self.ports, self.binary = proxy, ports, binary
         self.closing = False
         self.lock = threading.Lock()
         self.contexts = {}
@@ -162,7 +170,8 @@ class Server:
         network, local = network and data['network'], local and data['local']
         child_context = None
         process = None
-        with tempfile.TemporaryDirectory(prefix='child-', dir=self.root) as temporary:
+        root = macos._runtime_root([*layers, rules])
+        with tempfile.TemporaryDirectory(prefix='devloop-child-', dir=root) as temporary:
             temp = Path(temporary)
             env = {k: v for k, v in env.items() if k not in macos._PROXY | macos._CA | {_KEY}}
             env.update(self.proxy)
