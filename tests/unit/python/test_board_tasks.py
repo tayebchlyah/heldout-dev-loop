@@ -8,7 +8,9 @@ import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
+from support import ROOT
+
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 sys.path.insert(1, str(Path(__file__).resolve().parent))
 from board import state as board_state  # noqa: E402
 from board_fixtures import BoardHookFixture, RobustBoard, RobustnessHookFixture, epoch, put, set_time, slow  # noqa: E402

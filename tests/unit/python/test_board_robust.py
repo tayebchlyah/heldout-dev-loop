@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "scripts"))
+from support import ROOT
+
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 sys.path.insert(1, str(Path(__file__).resolve().parent))
 from board import server
 from board_fixtures import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, git, health, note_name, note_text, put,

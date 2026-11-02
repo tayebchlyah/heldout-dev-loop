@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import json
 import unittest
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+from support import ROOT
+
 STEPS = ["seed", "units --add", "brief", "check", "promote", "fold", "status", "findings", "report"]
 
 

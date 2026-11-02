@@ -12,9 +12,10 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
 sys.path.insert(0, str(HERE))
 from test_devloop import git, put  # noqa: E402
+
+from support import ROOT
 
 LOCK = str(ROOT / "scripts" / "suite_lock.sh")
 HOLD = '. "$0"; suite_lock || exit 9; echo held; read -r _'

@@ -12,7 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-DEVLOOP = Path(__file__).resolve().parents[3] / "skill" / "scripts" / "devloop.py"
+from support import ROOT
+
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false"]
 START = "<!-- dev-loop: captures -->"

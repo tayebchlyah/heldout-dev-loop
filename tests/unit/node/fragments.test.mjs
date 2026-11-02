@@ -4,11 +4,10 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
+import { packageRoot } from './helpers.mjs'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const readJson = (relative) => JSON.parse(readFileSync(join(repoRoot, relative), 'utf8'))
+const readJson = (relative) => JSON.parse(readFileSync(join(packageRoot, relative), 'utf8'))
 
 test('the Claude fragment covers the four hook events', () => {
   const fragment = readJson('claude/settings.fragment.json')
@@ -107,22 +106,22 @@ test('the Claude fragment sets the effort defaults', () => {
 })
 
 test('agent effort levels', () => {
-  const frontmatter = (name) => readFileSync(join(repoRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
+  const frontmatter = (name) => readFileSync(join(packageRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
   assert.match(frontmatter('spec-tester.md'), /^effort: high$/m)
   assert.match(frontmatter('implementer.md'), /^effort: medium$/m)
-  const codex = (name) => readFileSync(join(repoRoot, 'codex/agents', name), 'utf8')
+  const codex = (name) => readFileSync(join(packageRoot, 'codex/agents', name), 'utf8')
   for (const name of ['spec-tester.toml', 'task-reviewer.toml', 'planner.toml']) {
     assert.match(codex(name), /^model_reasoning_effort = "high"$/m, name)
   }
   assert.match(codex('implementer.toml'), /^model_reasoning_effort = "medium"$/m)
-  const lines = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8').split('\n')
+  const lines = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8').split('\n')
   const firstTable = lines.findIndex((line) => line.trimStart().startsWith('['))
   assert.ok(lines.slice(0, firstTable).includes('model_reasoning_effort = "high"'))
 })
 
 test('the deny-path hooks of both Claude agent frontmatters block when they fail', () => {
   for (const agent of ['implementer', 'spec-tester']) {
-    const text = readFileSync(join(repoRoot, 'claude', 'agents', `${agent}.md`), 'utf8')
+    const text = readFileSync(join(packageRoot, 'claude', 'agents', `${agent}.md`), 'utf8')
     const frontmatter = text.split('---\n')[1]
     assert.match(frontmatter, /command: "~\/\.claude\/hooks\/deny-path\.sh [^"\n]+"\n\s+onFailure: block\n/, agent)
   }
@@ -301,7 +300,7 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
 })
 
 test('the Codex TOML fragment puts its root keys before the first table', () => {
-  const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
+  const text = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8')
   const lines = text.split('\n')
   const firstTable = lines.findIndex((line) => line.trimStart().startsWith('['))
   assert.ok(firstTable > 0, 'the fragment needs at least one root key and one table')
@@ -312,14 +311,14 @@ test('the Codex TOML fragment puts its root keys before the first table', () => 
 })
 
 test('the Codex TOML fragment has none of the per-agent profiles Codex never applied', () => {
-  const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
+  const text = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8')
   for (const name of ['dev-implementer', 'dev-spec-tester', 'dev-read-only']) assert.ok(!text.includes(name), name)
 })
 
 const D3_HOSTS = ['github.com', '*.github.com', '*.githubusercontent.com', 'registry.npmjs.org', 'pypi.org', 'files.pythonhosted.org', 'proxy.golang.org', 'sum.golang.org', 'api.anthropic.com', 'cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'storage.googleapis.com']
 
 test('the Codex fragment scopes the dev-workspace network to the managed proxy and adds dev-docker', () => {
-  const text = readFileSync(join(repoRoot, 'codex/config.permissions.toml'), 'utf8')
+  const text = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8')
   const config = JSON.parse(execFileSync('python3', ['-c', 'import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: text, encoding: 'utf8' }))
   assert.equal(config.default_permissions, 'dev-workspace')
   assert.deepEqual(config.features, { hooks: true, network_proxy: true })
@@ -339,8 +338,8 @@ test('the Codex fragment scopes the dev-workspace network to the managed proxy a
 })
 
 test('no Codex agent file sets default_permissions', () => {
-  for (const name of readdirSync(join(repoRoot, 'codex/agents'))) {
-    assert.doesNotMatch(readFileSync(join(repoRoot, 'codex/agents', name), 'utf8'), /^\s*default_permissions\s*=/m, name)
+  for (const name of readdirSync(join(packageRoot, 'codex/agents'))) {
+    assert.doesNotMatch(readFileSync(join(packageRoot, 'codex/agents', name), 'utf8'), /^\s*default_permissions\s*=/m, name)
   }
 })
 
@@ -365,7 +364,7 @@ test('the Claude SessionStart command detects dev-loop.json only', () => {
 
 test('the Claude agents wall LSP, MCP and Monitor (#97)', () => {
   for (const name of ['implementer.md', 'spec-tester.md']) {
-    const head = readFileSync(join(repoRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
+    const head = readFileSync(join(packageRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
     assert.match(head, /^ {4}- matcher: "Read\|Edit\|Write\|Grep\|Glob\|Bash\|Monitor\|LSP\|mcp__\.\*\|ListMcpResourcesTool\|ReadMcpResourceTool\|ReadMcpResourceDirTool"$/m, name)
     assert.match(head, /^disallowedTools: LSP, mcp__\*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool$/m, name)
     assert.doesNotMatch(head, /^tools:/m, name)
@@ -376,5 +375,5 @@ test('the Claude agents wall LSP, MCP and Monitor (#97)', () => {
 test('the Codex route file names the acceptance-wall matcher of the fragment', () => {
   const group = readJson('codex/hooks.fragment.json').hooks.PreToolUse
     .find((entry) => entry.hooks.some((hook) => hook.command.endsWith('/acceptance-wall.sh')))
-  assert.ok(readFileSync(join(repoRoot, 'skill/references/codex.md'), 'utf8').includes(`(PreToolUse \`${group.matcher}\`)`))
+  assert.ok(readFileSync(join(packageRoot, 'skill/references/codex.md'), 'utf8').includes(`(PreToolUse \`${group.matcher}\`)`))
 })

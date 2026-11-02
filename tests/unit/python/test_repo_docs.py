@@ -11,9 +11,8 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
 sys.path.insert(0, str(HERE))
-from support import budget_report  # noqa: E402
+from support import ROOT, budget_report  # noqa: E402
 
 
 def help_commands() -> set[str]:
@@ -50,6 +49,14 @@ class RepoDocsTests(unittest.TestCase):
                 self.assertIn(f"`{test.name}`", index)
         self.assertIn("`tests/unit/python/README.md`", self.agents)
         self.assertNotIn("`test_dev_loop.py`: entry", self.agents)
+
+    def test_test_files_take_the_repo_root_from_the_suite_helper(self) -> None:
+        for folder, glob, helper, climb in (("node", "*.mjs", "helpers.mjs", r"import\.meta\.url"),
+                                            ("python", "*.py", "support.py", r"\.parents\[")):
+            for path in sorted((ROOT / "tests" / "unit" / folder).glob(glob)):
+                if path.name != helper:
+                    with self.subTest(path=f"{folder}/{path.name}"):
+                        self.assertEqual([line for line in path.read_text().splitlines() if re.search(climb, line)], [])
 
     def test_cli_files_index_and_help_agree(self) -> None:
         commands = help_commands()

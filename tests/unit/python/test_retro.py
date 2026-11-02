@@ -14,11 +14,13 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import retro  # noqa: E402
 
-DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 TODAY = date(2026, 10, 26)
 HEADER = "| Date | Item | Verdict | Check | Proof |\n| --- | --- | --- | --- | --- |\n"
 
@@ -250,7 +252,7 @@ class SessionsCommandTests(TempDir):
 
 class RetroTextTests(TempDir):
     def test_stage_1_and_routes(self) -> None:
-        root = HERE.parents[2] / "skill"
+        root = ROOT / "skill"
         stage = (root / "SKILL.md").read_text().split("\n## 1 Frame\n", 1)[1].split("\n## 2 ", 1)[0]
         texts = [(stage, ["`review_due`", "devloop.py sessions --since 7", "## Gardener", "/garden",
                           "this session only", "the route's retro skill", "retro (<session ids, first 8 characters>)"]),

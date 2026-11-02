@@ -4,11 +4,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import vm from 'node:vm'
+import { packageRoot } from './helpers.mjs'
 
-const RENDER = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'skill', 'scripts', 'board', 'render.js')
+const RENDER = join(packageRoot, 'skill', 'scripts', 'board', 'render.js')
 const ctx = {}
 vm.createContext(ctx)
 vm.runInContext(readFileSync(RENDER, 'utf8'), ctx)

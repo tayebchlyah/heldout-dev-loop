@@ -10,9 +10,11 @@ import sys
 import unittest
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from test_devloop import DEVLOOP, Sandbox, frontmatter, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 import autonomy  # noqa: E402
 
@@ -344,7 +346,7 @@ class PauseStatusTests(PauseSandbox):
         self.assertEqual((out["paused"], out["next"]), ({"error": "unreadable pause note"}, "resume from the pause note"))
 
 
-HOOKS = HERE.parents[2] / "claude" / "hooks"
+HOOKS = ROOT / "claude" / "hooks"
 DENY_REASON = ("Delivery autonomy grant: no questions. Decide, log it with devloop.py decide, and go on. "
                "A stop-list item: stop and report it as your final message.")
 
@@ -381,7 +383,7 @@ class AutonomyHookTests(PauseSandbox):
 
     def test_pause_hook(self) -> None:
         import shutil
-        shutil.copytree(HERE.parents[2] / "skill" / "scripts", self.wt / ".agents" / "skills" / "dev-loop" / "scripts")
+        shutil.copytree(ROOT / "skill" / "scripts", self.wt / ".agents" / "skills" / "dev-loop" / "scripts")
         outside = self.root / "outside"
         outside.mkdir()
         cases = [(self.wt, True), (outside, False)]
@@ -396,7 +398,7 @@ class AutonomyHookTests(PauseSandbox):
 
     def test_check_setup_names_missing_hook_entries(self) -> None:
         import check_setup
-        settings = json.loads((HERE.parents[2] / "claude" / "settings.fragment.json").read_text())
+        settings = json.loads((ROOT / "claude" / "settings.fragment.json").read_text())
         cases = [("PreToolUse", "AskUserQuestion", "missing Claude hook: PreToolUse AskUserQuestion deny-ask.sh"),
                  ("StopFailure", "rate_limit", "missing Claude hook: StopFailure rate_limit pause.sh"),
                  ("PreToolUse", "Edit|Write|NotebookEdit", "missing Claude hook: PreToolUse Edit|Write|NotebookEdit worktree-wall.sh"),
@@ -417,7 +419,7 @@ class AutonomyHookTests(PauseSandbox):
 
     def test_check_setup_flags_a_guard_still_on_bash(self) -> None:
         import check_setup
-        settings = json.loads((HERE.parents[2] / "claude" / "settings.fragment.json").read_text())
+        settings = json.loads((ROOT / "claude" / "settings.fragment.json").read_text())
         for group in settings["hooks"]["PreToolUse"]:
             if "git-guard.sh" in json.dumps(group):
                 group["matcher"] = "Bash"
@@ -430,7 +432,7 @@ class AutonomyHookTests(PauseSandbox):
 
 class KitSkillTests(unittest.TestCase):
     def test_pause_is_user_invoked_only(self) -> None:
-        skills = HERE.parents[2] / "skills"
+        skills = ROOT / "skills"
         cases = [("pause", True), ("continue", False)]
         for name, user_only in cases:
             with self.subTest(name=name):
@@ -442,7 +444,6 @@ class KitSkillTests(unittest.TestCase):
                 self.assertEqual(yaml.is_file() and "allow_implicit_invocation: false" in yaml.read_text(), user_only)
 
 
-ROOT = HERE.parents[2]
 IMPLEMENTERS = [ROOT / "claude" / "agents" / "implementer.md", ROOT / "codex" / "agents" / "implementer.toml"]
 
 

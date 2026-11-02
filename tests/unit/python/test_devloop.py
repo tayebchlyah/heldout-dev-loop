@@ -32,8 +32,9 @@ if not any(
 for _key, _value in (("GIT_AUTHOR_NAME", "dev-loop test"), ("GIT_AUTHOR_EMAIL", "test@example.invalid"),
                      ("GIT_COMMITTER_NAME", "dev-loop test"), ("GIT_COMMITTER_EMAIL", "test@example.invalid")):
     os.environ.setdefault(_key, _value)
+from support import ROOT
 
-DEVLOOP = Path(__file__).resolve().parents[3] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 
 
 def load_devloop():
@@ -317,7 +318,7 @@ class LayoutLookupTests(Sandbox):
         self.assertEqual(dl.old_layout(self.root / "missing"), [])
 
 
-SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
+SKILL_ROOT = ROOT / "skill"
 REPO_ROOT = SKILL_ROOT.parent
 
 

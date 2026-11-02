@@ -21,8 +21,10 @@ import unittest.mock
 import uuid
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-RUNNER = HERE.parents[2] / "skill" / "scripts" / "sandbox-run.py"
+RUNNER = ROOT / "skill" / "scripts" / "sandbox-run.py"
 IMAGE = "busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
 IMAGE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 

@@ -4,10 +4,9 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync, lstatSync, readlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
+import { packageRoot } from './helpers.mjs'
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 const REQUIRED = [
   'skill/SKILL.md',
@@ -44,19 +43,19 @@ const REQUIRED_CODEX_AGENTS = [
 
 test('every payload file is present', () => {
   for (const relative of REQUIRED) {
-    assert.ok(existsSync(join(repoRoot, relative)), `missing ${relative}`)
+    assert.ok(existsSync(join(packageRoot, relative)), `missing ${relative}`)
   }
 })
 
 test('every Codex agent is present', () => {
-  const found = readdirSync(join(repoRoot, 'codex/agents'))
+  const found = readdirSync(join(packageRoot, 'codex/agents'))
   for (const name of REQUIRED_CODEX_AGENTS) {
     assert.ok(found.includes(name), `missing codex/agents/${name}`)
   }
 })
 
 test('codex default.rules ships only dev-loop git/gh/rm safety rules', () => {
-  const rulesPath = join(repoRoot, 'codex/rules/default.rules')
+  const rulesPath = join(packageRoot, 'codex/rules/default.rules')
   const text = readFileSync(rulesPath, 'utf8')
 
   for (const token of ['wacli', 'whatsapp', '@g.us']) {
@@ -96,7 +95,7 @@ test('codex default.rules ships only dev-loop git/gh/rm safety rules', () => {
 })
 
 test('the gh prompt rules name their pattern and examples', () => {
-  const blocks = readFileSync(join(repoRoot, 'codex/rules/default.rules'), 'utf8').split(/\n(?=prefix_rule\()/)
+  const blocks = readFileSync(join(packageRoot, 'codex/rules/default.rules'), 'utf8').split(/\n(?=prefix_rule\()/)
   for (const [word, example] of [['api', 'gh api -X POST repos/o/r/releases'], ['release', 'gh release delete v1.0.0']]) {
     const block = blocks.find((b) => b.includes(`"${word}"]`))
     assert.ok(block, word)
@@ -108,11 +107,11 @@ test('the gh prompt rules name their pattern and examples', () => {
 })
 
 function trackedTexts(keep = () => true) {
-  const tracked = execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' })
+  const tracked = execFileSync('git', ['ls-files'], { cwd: packageRoot, encoding: 'utf8' })
     .split('\n')
     .filter((line) => line.length > 0 && keep(line))
   return tracked.map((relative) => {
-    const path = join(repoRoot, relative)
+    const path = join(packageRoot, relative)
     return [relative, lstatSync(path).isSymbolicLink() ? readlinkSync(path) : readFileSync(path, 'utf8')]
   })
 }
@@ -176,16 +175,16 @@ test('no tracked file names an internal client or project', () => {
 })
 
 test('dev-loop.json maps commands.acceptance to the script that runs both runners', () => {
-  const marker = JSON.parse(readFileSync(join(repoRoot, 'dev-loop.json'), 'utf8'))
+  const marker = JSON.parse(readFileSync(join(packageRoot, 'dev-loop.json'), 'utf8'))
   assert.equal(marker.commands.acceptance, 'scripts/acceptance.sh')
-  const script = readFileSync(join(repoRoot, 'scripts', 'acceptance.sh'), 'utf8')
+  const script = readFileSync(join(packageRoot, 'scripts', 'acceptance.sh'), 'utf8')
   assert.ok(script.includes('--discover'))
   assert.ok(script.includes('node --test'))
 })
 
 test('ci.yml has a job named acceptance that runs commands.acceptance', () => {
-  const ci = readFileSync(join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
-  const marker = JSON.parse(readFileSync(join(repoRoot, 'dev-loop.json'), 'utf8'))
+  const ci = readFileSync(join(packageRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
+  const marker = JSON.parse(readFileSync(join(packageRoot, 'dev-loop.json'), 'utf8'))
   assert.match(ci, /^ {2}acceptance:$/m)
   assert.ok(ci.includes(`run: ${marker.commands.acceptance}`))
 })

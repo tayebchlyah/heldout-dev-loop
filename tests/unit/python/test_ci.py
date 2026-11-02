@@ -13,11 +13,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import ci  # noqa: E402
 
-DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main"]
 
 STUB_GH = """#!{python}
@@ -365,7 +367,7 @@ class CiGithubTests(StubGh):
 
 class CiTextTests(unittest.TestCase):
     def test_stage_7_and_grant(self) -> None:
-        skill = (HERE.parents[2] / "skill" / "SKILL.md").read_text()
+        skill = (ROOT / "skill" / "SKILL.md").read_text()
         start = skill.index("\n## 7 ")
         stage = skill[start:skill.find("\n## ", start + 1)]
         grant = next(line for line in skill.splitlines() if line.startswith("- Stop and report only for:"))

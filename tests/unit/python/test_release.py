@@ -14,8 +14,10 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import release  # noqa: E402
 
 SHA = "a" * 40
@@ -129,7 +131,7 @@ class ReleaseParseTests(unittest.TestCase):
             self.assertEqual(release.project_note(notes), notes / "Project Note.md")
 
 
-DEVLOOP = HERE.parents[2] / "skill" / "scripts" / "devloop.py"
+DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 RECORD = "- 2026-10-25 Run 1 at {sha}: confirmed 0, needs validation 0, hardening 0, profile quick, scope whole"
 
 
@@ -610,7 +612,7 @@ class ReleasePlanExcludeTests(PlanRepo):
         script = ("import {buildKit} from './lib/kit.mjs';"
                   "const k = buildKit({packageRoot: process.cwd(), harnesses: ['claude', 'codex']});"
                   "console.log(JSON.stringify([...k.files, ...k.links].map((f) => f.path)))")
-        done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=HERE.parents[2],
+        done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT,
                               capture_output=True, text=True, check=True)
         paths = json.loads(done.stdout)
         for path in paths:

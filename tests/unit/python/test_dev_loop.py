@@ -40,7 +40,7 @@ if not any(
 # A hook test finds the kit CLI through CLAUDE_PROJECT_DIR too (#91): a session's own project must not leak in.
 os.environ.pop("CLAUDE_PROJECT_DIR", None)
 
-SKILL_ROOT = Path(__file__).resolve().parents[3] / "skill"
+from support import SKILL_ROOT  # noqa: E402
 # The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
 # never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))

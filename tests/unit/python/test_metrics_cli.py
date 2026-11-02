@@ -12,8 +12,10 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from support import ROOT
+
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2] / "skill" / "scripts"))
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 sys.path.insert(1, str(HERE))
 import metrics  # noqa: E402
 from test_metrics import DEVLOOP, TempDir, record, result, tool_use, usage_msg, write_jsonl  # noqa: E402
@@ -315,7 +317,7 @@ class MetricsCommandTests(TempDir):
 
 class MetricsTextTests(unittest.TestCase):
     def test_kit_text(self) -> None:
-        root = HERE.parents[2]
+        root = ROOT
         skill = (root / "skill" / "SKILL.md").read_text()
         ship = skill[skill.index("## 7 Ship"):]
         self.assertIn("devloop.py metrics --write", ship)

@@ -11,7 +11,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from support import GuardRepo, budget_report
+from support import GuardRepo, ROOT, budget_report
 
 import check_setup  # noqa: E402
 
@@ -251,7 +251,7 @@ class ReleaseSetupTests(unittest.TestCase):
 
 
 class ReleaseKitTests(unittest.TestCase):
-    SKILL = Path(__file__).resolve().parents[3] / "skills" / "release-audit"
+    SKILL = ROOT / "skills" / "release-audit"
 
     def test_no_engine_branch_names_the_codex_restart(self) -> None:
         text = (self.SKILL / "SKILL.md").read_text()
@@ -301,7 +301,7 @@ class ReleaseKitTests(unittest.TestCase):
 
 class ReleaseSkillTextTests(unittest.TestCase):
     """Oracle 35, 36 and 38: the /release and /release-notes skills and the Stage 7 line."""
-    ROOT = Path(__file__).resolve().parents[3]
+    ROOT = ROOT
 
     def skill(self, name: str) -> str:
         text = (self.ROOT / "skills" / name / "SKILL.md").read_text()
@@ -373,7 +373,7 @@ class ReleaseSkillTextTests(unittest.TestCase):
 
 class ReleaseTextTests(unittest.TestCase):
     """Oracle 58 and 59: the kit text and this repo's release steps."""
-    ROOT = Path(__file__).resolve().parents[3]
+    ROOT = ROOT
 
     def read(self, rel: str) -> str:
         return (self.ROOT / rel).read_text()
@@ -448,7 +448,7 @@ class ReleaseTextTests(unittest.TestCase):
 
 class ReleaseWorkflowTests(unittest.TestCase):
     """Oracle 31 to 34: the workflows as text, the release config and scripts."""
-    ROOT = Path(__file__).resolve().parents[3]
+    ROOT = ROOT
     RC = "contains(github.ref_name, '-rc.')"
 
     def workflow(self, name: str) -> str:
