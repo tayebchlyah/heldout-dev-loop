@@ -29,8 +29,9 @@ from support import ROOT
 
 SCRIPTS = ROOT / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
-CLAUDE_HOOKS = ROOT / "claude" / "hooks"
-CODEX_HOOKS = ROOT / "codex" / "hooks"
+REPO_ROOT = ROOT
+CLAUDE_HOOKS = REPO_ROOT / "claude" / "hooks"
+CODEX_HOOKS = REPO_ROOT / "codex" / "hooks"
 
 VERSION = "2.1.0"
 PROJECT = "acme-widgets"
