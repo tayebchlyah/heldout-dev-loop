@@ -13,17 +13,8 @@ from pathlib import Path
 
 import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
-from notes_path import NotesPathError, resolve
+from notes_path import NotesPathError, main_ref, resolve
 from status import rebasing
-
-
-def main_ref(repo: Path) -> str | None:
-    """The fully qualified ref to read the trusted config from. A short `origin/main` can be shadowed by a local
-    tag or branch of that name."""
-    for ref in ("refs/remotes/origin/main", "refs/heads/main"):
-        if git(repo, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"):
-            return ref
-    return None
 
 
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")

@@ -48,35 +48,37 @@ def notes_value(text: str | bytes, label: str, strict: bool = True) -> str | Non
     return value
 
 
-def read_notes(file: Path, strict: bool = True) -> str | None:
+def read_notes(file: Path) -> str | None:
     if not file.is_file():
         return None
     try:
         text = file.read_text()
     except OSError as exc:
         raise NotesPathError(f"invalid {file}: {exc}") from exc
-    return notes_value(text, str(file), strict)
+    return notes_value(text, str(file))
 
 
 def main_ref(repo: Path) -> str | None:
-    """The fully qualified ref of the trusted config, as `merge_check.main_ref`: a short name can be shadowed by
-    a local tag or branch. Not imported: `merge_check` imports this module."""
     for ref in ("refs/remotes/origin/main", "refs/heads/main"):
-        probe = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"],
-                               capture_output=True)
+        try:
+            probe = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"],
+                                   capture_output=True)
+        except OSError:
+            return None
         if probe.returncode == 0:
             return ref
     return None
 
 
-def read_main_ref_notes(main: Path) -> tuple[str, str] | None:
-    """`notes` in `dev-loop.json` at the main ref, with its source label. None when there is no main ref, no file
-    on it or no notes key."""
-    ref = main_ref(main)
+def read_main_ref_notes(repo: Path) -> tuple[str, str] | None:
+    ref = main_ref(repo)
     if not ref:
         return None
     label = f"{ref}:dev-loop.json"
-    shown = subprocess.run(["git", "-C", str(main), "show", label], capture_output=True)
+    try:
+        shown = subprocess.run(["git", "-C", str(repo), "show", label], capture_output=True)
+    except OSError:
+        return None
     value = notes_value(shown.stdout, label, strict=False) if shown.returncode == 0 else None
     return (value, label) if value else None
 
@@ -112,15 +114,18 @@ def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
         if value:
             found = (value, main, str(main / "dev-loop.local.json"))
     if not found:
-        shared = read_main_ref_notes(main)
+        shared = read_main_ref_notes(repo)
         if shared:
             found = (shared[0], main, shared[1])
     if not found:
         raise NotesPathError(f'no notes path for {repo}. Write {{"notes": "<path>"}} to {main / "dev-loop.local.json"}')
     path, source = expand(found[0], found[1], home), found[2]
     if not path.is_dir():
-        change = "DEV_LOOP_NOTES" if source == "DEV_LOOP_NOTES" else f"the path in {source}"
-        raise NotesPathError(f"notes folder does not exist: {path} (from {source}). Create it or change {change}")
+        if source.startswith("refs/"):
+            fix = f"Change notes in dev-loop.json on main, or write {main / 'dev-loop.local.json'}"
+        else:
+            fix = f"Create it or change {'DEV_LOOP_NOTES' if source == 'DEV_LOOP_NOTES' else f'the path in {source}'}"
+        raise NotesPathError(f"notes folder does not exist: {path} (from {source}). {fix}")
     return path
 
 
