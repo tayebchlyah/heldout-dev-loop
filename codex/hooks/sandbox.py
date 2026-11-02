@@ -150,9 +150,9 @@ def main():
                              network.get('allow_local_binding') is True)
         with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir='/tmp') as temp:
             started = Path(temp) / 'started'
-            wrapper = 'export TMPDIR="${2%/*}" TMP="${2%/*}" TEMP="${2%/*}"; cd "$1" || exit 125; printf started >"$2" || exit 125; shift 2; exec "$@"'
+            wrapper = 'export TMPDIR="${2%/*}" TMP="${2%/*}" TEMP="${2%/*}"; cd "$1" || exit 125; printf started >"$2" || exit 125; if [ -n "$3" ]; then export GATE_SCOPE="$3"; else unset GATE_SCOPE; fi; shift 3; exec "$@"'
             result = subprocess.run([*args, '--', '/bin/sh', '-c', wrapper, 'dev-loop-gate',
-                                     str(feature), str(started), *sys.argv[4:]])
+                                     str(feature), str(started), os.environ.get('GATE_SCOPE', ''), *sys.argv[4:]])
             if not started.is_file():
                 raise ValueError('native launcher exited before command start (exit ' + str(result.returncode) + ')')
             return result.returncode
