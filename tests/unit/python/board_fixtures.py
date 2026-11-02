@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TypeVar
 
-from support import ROOT
+from support import ROOT, codex_gate_env
 
 SCRIPTS = ROOT / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
@@ -361,6 +361,7 @@ class BoardHookFixture:
         self.log = self.root / "board-calls.jsonl"
         self.home = self.root / "home"
         self.home.mkdir()
+        self.codex_env = codex_gate_env(self.repo)
 
     def gate(self, passes: bool) -> None:
         gate = self.repo / "scripts" / "gate.sh"
@@ -372,7 +373,7 @@ class BoardHookFixture:
         payload = {"session_id": "session-1", "cwd": str(self.repo), "hook_event_name": event,
                    "stop_hook_active": False, "agent_id": "a1", "agent_type": "general-purpose"}
         env = {**os.environ, "CLAUDE_PROJECT_DIR": str(self.repo), "BOARD_TEST_LOG": str(self.log),
-               "HOME": str(self.home), "BOARD_TEST_EXIT": "1"}
+               "HOME": str(self.home), "BOARD_TEST_EXIT": "1", **(self.codex_env if harness == "codex" else {})}
         return subprocess.run(["bash" if harness == "claude" else "sh", str(path), *args], cwd=self.repo,
                               input=json.dumps(payload), text=True, capture_output=True, env=env, timeout=60)
 
