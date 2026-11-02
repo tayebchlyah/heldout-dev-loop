@@ -197,9 +197,9 @@ def sessions(repo: Path, since_days: int, env: Mapping[str, str], home: Path, no
 
     start = (now - timedelta(days=since_days)).timestamp()
     worktrees = writer.worktrees(devloop, repo)
-    claude_root = Path(env["CLAUDE_CONFIG_DIR"]) / "projects" if env.get("CLAUDE_CONFIG_DIR") else home / ".claude" / "projects"
-    codex_root = Path(env["CODEX_HOME"]) if env.get("CODEX_HOME") else home / ".codex"
-    found = claude_sessions(claude_root, worktrees, start) + codex_sessions(codex_root / "sessions", worktrees, start)
+    claude_root = devloop.claude_home(env, home) / "projects"
+    codex_root = devloop.codex_home(env, home) / "sessions"
+    found = claude_sessions(claude_root, worktrees, start) + codex_sessions(codex_root, worktrees, start)
     features = stage_times(repo)
     listed = []
     for s in found:
