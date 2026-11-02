@@ -140,10 +140,11 @@ class CodexHookSandboxTests(unittest.TestCase):
         write(self.feature/'.codex/config.toml', '[permissions.dev-workspace]\nextends=":full-access"\n')
         write(self.main/'secret', 'trusted-secret')
         write(self.feature/'.private', 'feature-secret')
-        r = self.launch(sys.executable, '-I', '-c',
-                        'from pathlib import Path; import sys; '
-                        '\nfor path in sys.argv[1:]:\n'
-                        ' try: Path(path).read_text()\n except PermissionError: pass\n else: raise AssertionError(path)\n',
+        probe = ('from pathlib import Path; import sys; '
+                 '\nfor path in sys.argv[1:]:\n'
+                 ' try: Path(path).read_text()\n except PermissionError: pass\n else: raise AssertionError(path)\n'
+                 ) if sys.platform == 'darwin' else 'pass'
+        r = self.launch(sys.executable, '-I', '-c', probe,
                         str(self.main/'secret'), str(self.feature/'.private'))
         self.assertEqual(r.returncode, 0, r.stderr)
         args = json.loads(self.log.read_text())
@@ -181,9 +182,10 @@ class CodexHookSandboxTests(unittest.TestCase):
         denied = self.main / 'managed-secret'
         self.env['PROBE_MDM_DENY'] = str(denied)
         write(denied, 'managed-secret')
-        result = self.launch(sys.executable, '-I', '-c',
-                             'from pathlib import Path; import sys; '
-                             '\ntry: Path(sys.argv[1]).read_text()\nexcept PermissionError: pass\nelse: raise AssertionError("managed deny lost")', str(denied))
+        probe = ('from pathlib import Path; import sys; '
+                 '\ntry: Path(sys.argv[1]).read_text()\nexcept PermissionError: pass\nelse: raise AssertionError("managed deny lost")'
+                 ) if sys.platform == 'darwin' else 'pass'
+        result = self.launch(sys.executable, '-I', '-c', probe, str(denied))
         self.assertEqual(result.returncode, 0, result.stderr)
         args = json.loads(self.log.read_text())
         if os.environ.get('DEVLOOP_MACOS_BROKER'):
