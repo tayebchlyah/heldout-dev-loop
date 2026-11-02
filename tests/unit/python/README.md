@@ -5,7 +5,7 @@ One file per subject. A new test file adds its line here.
 - `test_dev_loop.py`: entry: loads the files below in chunks.
 - `test_devloop.py`, `test_status.py`, `test_merge_check.py`, `test_merge_binding.py`, `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: `logged`, `gate`, the project config shape, the config roots (`claude_home`, `codex_home`), CLI test helpers; `status`, `merge-check`; kit text contracts.
 - `test_check_setup.py`, `test_setup_checks.py`, `test_notes_path.py`, `test_mutation.py`: `check_setup.py`; `notes_path.py`; `select_mutants.py`, mutation setup, contract.
-- `test_codex_hook_sandbox.py`, `test_codex_trusted_checks.py`, `test_macos_hook.py`: Codex gate policy, trusted main checkers, macOS confinement and nested broker.
+- `test_codex_gate_launcher.py`, `test_codex_trusted_checks.py`, `test_macos_hook.py`: Codex gate policy, trusted main checkers, macOS confinement and nested broker.
 - `test_hooks.py`, `test_seal.py`: board hook launch, Claude gate hook; `seal`, `audit`.
 - `test_seal_check.py`, `test_search_wall.py`, `test_search_hooks.py`: `seal-check`, `kit-changed`, `weakened`; `search-wall`: direct, via walls.
 - `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, `gate` and `seal` size; seal hooks, guard, spec-tester, Codex walls.

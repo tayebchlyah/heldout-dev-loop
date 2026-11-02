@@ -109,7 +109,7 @@ wire("test_git_guard")
 wire("test_gh_guard")
 wire("test_push_spellings")
 wire("test_hooks")
-wire("test_codex_hook_sandbox")
+wire("test_codex_gate_launcher")
 wire("test_macos_hook")
 wire("test_codex_trusted_checks")
 wire("test_kit_contracts")
@@ -129,6 +129,25 @@ wire("test_audit_text")
 
 
 class JUnitReportTests(unittest.TestCase):
+    def test_discover_keeps_flow_modules_separate_from_unit_helpers(self) -> None:
+        """A discovered module can load unit helpers without hiding a later flow module."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "test_bootstrap.py").write_text(
+                "import sys\n"
+                f"sys.path.insert(0, {str(Path(__file__).parent)!r})\n"
+                "import test_dev_loop\n")
+            (folder / "test_codex_hook_sandbox.py").write_text(
+                "import unittest\nclass Flow(unittest.TestCase):\n"
+                "    def test_flow(self): self.assertEqual(2 + 2, 4)\n")
+            report = folder / "flow.xml"
+            result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(report)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            cases = list(ET.parse(report).getroot().iter("testcase"))
+            self.assertEqual([(c.get("classname"), c.get("name")) for c in cases],
+                             [("test_codex_hook_sandbox.Flow", "test_flow")])
+
     def test_write_junit_names_each_case_with_its_time_and_failure(self) -> None:
         """The parallel run's JUnit report: one testcase per id, its time, a failure element with the last line."""
         with tempfile.TemporaryDirectory() as tmp:
