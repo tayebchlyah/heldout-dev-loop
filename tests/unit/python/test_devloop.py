@@ -397,14 +397,36 @@ class ConfigHomeTests(unittest.TestCase):
             with self.subTest(env=env):
                 self.assertEqual(dl.codex_home(env, Path("/h")), Path(expected))
 
+    CONFIG_ROOT_READS = (
+        re.compile(r"""(?:get(?:env)?\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']"""),
+        re.compile(r"""\b\w*home(?:\(\))?\s*/\s*\(?[^\n]*?["']\.(?:claude|codex)["'/]"""),
+        re.compile(r"""\b\w*home(?:\(\))?\.joinpath\([^\n]*["']\.(?:claude|codex)["'/]"""),
+        re.compile(r"""os\.path\.join\(\s*\w*home(?:\(\))?\s*,[^\n]*["']\.(?:claude|codex)["'/]"""),
+        re.compile(r"""\{\w*home(?:\(\))?\}/\.(?:claude|codex)(?![\w-])"""),
+    )
+
+    def test_config_root_read_pattern_flags_each_join_form(self) -> None:
+        flagged = ('x = Path.home() / ".claude"', "x = home / '.codex'", 'x = Path.home() / ".claude/skills"',
+                   'x = home / (".agents" if h else ".claude")', 'x = home.joinpath(".claude")',
+                   'x = Path.home().joinpath("a", ".codex")', 'x = os.path.join(home, ".codex", "config.toml")',
+                   'x = f"{home}/.claude"', 'x = args.home / ".codex" / "x"', 'x = os.environ["CODEX_HOME"]',
+                   'x = env.get("CLAUDE_CONFIG_DIR")')
+        allowed = ('x = repo / ".claude"', 'x = Path.home() / ".agents" / "skills"', 'x = home / "notes"',
+                   'x = root.joinpath(".claude")', 'x = os.path.join(repo, ".claude")', 'x = f"{repo}/.codex"',
+                   'x = home / ".claude-code"')
+        for line in flagged:
+            with self.subTest(flagged=line):
+                self.assertTrue(any(read.search(line) for read in self.CONFIG_ROOT_READS))
+        for line in allowed:
+            with self.subTest(allowed=line):
+                self.assertFalse(any(read.search(line) for read in self.CONFIG_ROOT_READS))
+
     def test_only_devloop_reads_the_config_roots(self) -> None:
-        reads = (re.compile(r"""(?:get(?:env)?\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']"""),
-                 re.compile(r"""\bhome(?:\(\))?\s*/\s*\(?\s*["']\.(?:claude|codex)["']"""))
         for path in sorted((SKILL_ROOT / "scripts").rglob("*.py")):
             if path != SKILL_ROOT / "scripts" / "devloop.py":
                 with self.subTest(path=str(path.relative_to(SKILL_ROOT))):
                     lines = [f"{number}: {line.strip()}" for number, line in enumerate(path.read_text().splitlines(), 1)
-                             if any(read.search(line) for read in reads)]
+                             if any(read.search(line) for read in self.CONFIG_ROOT_READS)]
                     self.assertEqual(lines, [])
 
 
