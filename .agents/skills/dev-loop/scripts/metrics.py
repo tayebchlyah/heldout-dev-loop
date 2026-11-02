@@ -524,7 +524,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     found = writer.worktrees(devloop, repo)  # a worktree in a rebase (detached) keeps its slug
     paths = list(found)
     features = {name: path for path, name in found.items() if name}
-    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    root = devloop.claude_home(os.environ, Path.home()) / "projects"
     items = attribute(load(project_folders(root, paths)), features)
     if not any(c.feature == slug and not c.copy for c in items):
         return emit({"error": f"no transcript records for {slug}"}, 1)
