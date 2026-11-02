@@ -10,7 +10,7 @@
 # Through acceptance-wall.sh it also walls view_image (by path) and MCP tools (mcp__*, read_mcp_resource,
 # list_mcp_resources, list_mcp_resource_templates): denied outright to implementer and spec_tester, the
 # name rule for any other subagent. Gaps (D14): code mode has no hook on exec, one on each inner call;
-# write_stdin into a shell that exec_command started has no hook event (#140); for other subagents an
+# write_stdin has no hook event, so the kit config turns tty sessions off (#140); for other subagents an
 # MCP search tool, an MCP tool that runs code or reads a remote copy, a resource listing (the audit reads
 # their results).
 #

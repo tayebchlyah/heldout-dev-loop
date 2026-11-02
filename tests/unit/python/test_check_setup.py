@@ -572,6 +572,14 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         self.edit_codex_config("network_proxy = true\n", "")
         self.assert_codex_failure("Codex network on without the managed proxy (features.network_proxy)")
 
+    def test_codex_tty_sessions_fail(self) -> None:
+        self.init("codex")
+        for old, new in (("unified_exec_tty = false\n", "unified_exec_tty = true\n"), ("unified_exec_tty = true\n", "")):
+            with self.subTest(new=new):
+                self.edit_codex_config(old, new)
+                self.assert_codex_failure("Codex tty sessions are on: write_stdin passes the walls "
+                                          "(features.unified_exec_tty = false, #140)")
+
     def test_codex_all_unix_sockets_fails(self) -> None:
         self.init("codex")
         self.edit_codex_config("allow_local_binding = true\n",

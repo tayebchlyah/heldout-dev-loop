@@ -321,7 +321,7 @@ test('the Codex fragment scopes the dev-workspace network to the managed proxy a
   const text = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8')
   const config = JSON.parse(execFileSync('python3', ['-c', 'import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: text, encoding: 'utf8' }))
   assert.equal(config.default_permissions, 'dev-workspace')
-  assert.deepEqual(config.features, { hooks: true, network_proxy: true })
+  assert.deepEqual(config.features, { hooks: true, network_proxy: true, unified_exec_tty: false })
   const network = config.permissions['dev-workspace'].network
   assert.equal(network.enabled, true)
   assert.equal(network.mode, 'full')
