@@ -194,7 +194,7 @@ def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     """Paths that make the audit stale: the code paths changed since the audited commit, all changed paths when it is
     not an ancestor (possibly none). None when the audit is current: only test or doc paths changed, or the
     code paths are all a release or kit upgrade that `ci-skip` allows, or kit copies equal to the kit the audited
-    commit's own installer builds, at any kit version (#185)."""
+    commit's own installer builds or dropped by it, at any kit version (#185)."""
     ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", record_sha, target)
     if diff.returncode != 0:  # the record commit is unknown here
@@ -210,8 +210,8 @@ def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     except ci_skip.ConfigError:
         return code
     kit = {p for p in blocked if p.startswith(KIT_ROOTS) or p == MANIFEST}
-    if kit and (ref := kit_reference(repo, record_sha)) is not None:
-        blocked -= kit_matches(repo, target, kit, ref)
+    if kit and kit.issuperset(p for p in blocked if not is_test_or_doc(p)) and (ref := kit_reference(repo, record_sha)) is not None:
+        blocked -= ci_skip.kit_allowed(repo, record_sha, target, kit, ref)
     return code if blocked.intersection(code) else None
 
 

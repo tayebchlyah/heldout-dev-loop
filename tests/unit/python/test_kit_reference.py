@@ -272,27 +272,33 @@ class KitSourceFlowTests(KitFixture):
         self.assertEqual(out["reasons"][0]["reason"], "stale-audit")
         self.assertIn(OTHER, out["reasons"][0]["paths"])
 
-    def refresh_at_same_version(self, edit: bool) -> dict:
-        """The record commit holds a copy older than its own source at the same kit version (#185); `upgrade` then
-        refreshes the copies, version unchanged."""
+    def refresh_at_same_version(self, edit: bool, drop: str | None = None) -> dict:
+        """The record commit holds a copy older than its own source at the same kit version (#185), and a copy its
+        source no longer builds when `drop` is set; `upgrade` then refreshes the copies, version unchanged."""
         self.install("upgrade", self.repo)
         rehash(self.repo, COPY, "stale\n")
+        if drop:
+            rehash(self.repo, drop, "old\n")
         record = self.commit()
         (self.notes / "Project Note.md").write_text(RECORD.format(sha=record))
         (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text(
             json.dumps({"source_ref": {"commit": record}, "run_status": "complete"}))
         self.install("upgrade", self.repo)
+        if drop:
+            (self.repo / drop).unlink(missing_ok=True)
         if edit:
             rehash(self.repo, OTHER, "evil\n")
         return self.devloop("release-check", "--sha", self.commit())
 
-    def test_release_check_kit_refresh_at_same_version_ok(self) -> None:
-        out = self.refresh_at_same_version(False)
-        self.assertEqual((out["ok"], out["reasons"]), (True, []))
-
-    def test_release_check_kit_refresh_at_same_version_with_edit_is_stale(self) -> None:
-        out = self.refresh_at_same_version(True)
-        self.assertEqual(out["reasons"], [{"reason": "stale-audit", "paths": [COPY, OTHER, release.MANIFEST]}])
+    def test_release_check_kit_refresh_at_same_version(self) -> None:
+        dropped = ".agents/skills/dev-loop/old.md"
+        stale = [{"reason": "stale-audit", "paths": [COPY, OTHER, release.MANIFEST]}]
+        rows = [("rewrite", False, None, []), ("hand edit", True, None, stale), ("deleted dropped copy", False, dropped, [])]
+        for index, (name, edit, drop, reasons) in enumerate(rows):
+            with self.subTest(row=name):
+                if index:
+                    self.setUp()
+                self.assertEqual(self.refresh_at_same_version(edit, drop)["reasons"], reasons)
 
     def plan_from_stale_record(self, edit: bool) -> list[str]:
         stale = self.stale_base()
