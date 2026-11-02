@@ -6,6 +6,7 @@
 # git commit, git worktree add (also with -C <path>), gh pr create, gh pr merge).
 # The CLI comes from the main worktree of CLAUDE_PROJECT_DIR (the hook input cwd when unset). The cwd is only data on
 # stdin and the process cwd. The background group holds none of the hook's pipes, so the hook returns at once.
+. "${0%/*}/git-pin.sh"
 input=$(cat)
 if [ "$1" = post-tool ]; then
   tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
@@ -27,5 +28,6 @@ main=$(git -C "$project" worktree list --porcelain 2>/dev/null | sed -n 's/^work
 [ -n "$main" ] || exit 0
 cli="$main/.agents/skills/dev-loop/scripts/devloop.py"
 [ -f "$cli" ] || exit 0
+git_pin_repo "$cwd"
 { printf '%s' "$input" | (cd "$cwd" && python3 "$cli" board --event "$1"); } </dev/null >/dev/null 2>&1 &
 exit 0

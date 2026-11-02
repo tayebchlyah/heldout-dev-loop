@@ -16,9 +16,22 @@ from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, TrackedLocalFile, resolve
 
 
+def git_dir_of(worktree: Path) -> str | None:
+    """The git dir of a worktree top level, read from its `.git` (a folder, or a `gitdir:` file in a linked worktree),
+    so a scan over many worktrees starts no process. Any other path asks git."""
+    dot = worktree / ".git"
+    if dot.is_dir():
+        return str(dot)
+    if dot.is_file():
+        text = dot.read_text().strip()
+        if text.startswith("gitdir: "):
+            return str(worktree / text[len("gitdir: "):])
+    return git(worktree, "rev-parse", "--absolute-git-dir")
+
+
 def rebasing(worktree: Path) -> str | None:
     """The branch a rebase in progress in the worktree rewrites ("" when unknown), or None with no rebase."""
-    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    git_dir = git_dir_of(worktree)
     if git_dir is None:
         return None
     for name in ("rebase-merge", "rebase-apply"):
@@ -38,8 +51,8 @@ def feature_checkout(repo: Path, slug: str) -> tuple[Path | None, str | None]:
             worktree = Path(line[len("worktree "):])
         elif line.startswith("branch refs/heads/") and line.lower().endswith(f"/{slug}"):
             return worktree, line[len("branch refs/heads/"):]
-        elif line == "detached" and worktree and (rebasing(worktree) or "").lower().endswith(f"/{slug}"):
-            return worktree, rebasing(worktree)
+        elif line == "detached" and worktree and (head := rebasing(worktree) or "").lower().endswith(f"/{slug}"):
+            return worktree, head
     for branch in (git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads") or "").splitlines():
         if branch.lower().endswith(f"/{slug}"):
             return None, branch
@@ -130,7 +143,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
             marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
             if marker is None or not marker.is_file():
                 return result(6, "Track S: no review-done marker in the git dir", "Stage 6 review wave, triage, fix wave, "
-                              "then write the review-done marker", slug, "S", worktree)
+                              "then write the review-done marker (review-save --done)", slug, "S", worktree)
             return result(7, f"Track S: {branch} has commits not on origin/main", "Stage 7 Ship", slug, "S", worktree)
         return result("shipped", f"git cherry origin/main {branch} lists no + commit", "none", slug, "S", worktree)
 
@@ -242,7 +255,7 @@ def is_linked(path: Path | str | None) -> bool:
 def pause_state(worktree: Path, env: Mapping[str, str], delete: bool) -> dict | None:
     """The pause note of a worktree. None when there is none, or when the current session wrote it on a limit or an
     error (not `manual`): that session wakes its own work, so nothing is lost; `delete` then removes it."""
-    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    git_dir = git_dir_of(worktree)
     note = autonomy.read_note(Path(git_dir)) if git_dir else None
     if note is None or git_dir is None:
         return None
@@ -255,6 +268,7 @@ def pause_state(worktree: Path, env: Mapping[str, str], delete: bool) -> dict | 
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    devloop.cache_git()  # `status` makes no git write; on main it asks the same questions once per spec.
     repo = Path(args.repo).resolve()
     try:
         notes = resolve(repo, os.environ, Path.home())

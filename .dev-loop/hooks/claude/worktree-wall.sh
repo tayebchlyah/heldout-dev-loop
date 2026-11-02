@@ -4,6 +4,7 @@
 # directory of the target, physical. Feature worktree: as deny-ask.sh, and the branch not under release/.
 # Forms of the target checked: as given and with . and .. folded as text, each also with its own symlinks followed.
 # Fails open (no jq, no git, bad input). A path goes only as a quoted argument, never through eval.
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 command -v git >/dev/null 2>&1 || exit 0

@@ -1,8 +1,9 @@
-"""devloop.py review-merge and acceptance: the mechanical steps of the Stage 6 feature gate.
+"""devloop.py review-merge, review-save and acceptance: the mechanical steps of the Stage 6 feature gate.
 
 `review-merge` reads the reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) and merges the
-findings with the same file and line. `acceptance` runs the project acceptance command, reads its JUnit XML,
-records the run and gives the progress guard verdict.
+findings with the same file and line. `review-save` writes one checked reviewer table, or the Track S marker, to
+the worktree git dir. `acceptance` runs the project acceptance command, reads its JUnit XML, records the run and
+gives the progress guard verdict.
 """
 
 from __future__ import annotations
@@ -144,6 +145,29 @@ def review_merge(pairs: list[str], top: str | None) -> tuple[dict, int]:
         except TableError as exc:
             return {"error": exc.message, "file": path, "row": exc.row}, 1
     return merge(tables), 0
+
+
+def review_save(reviewer: str | None, text: str, cwd: Path) -> tuple[dict, int]:
+    git_dir = git(cwd, "rev-parse", "--absolute-git-dir")
+    if git_dir is None:
+        return {"error": "not in a git worktree"}, 2
+    folder = Path(git_dir) / "dev-loop"
+    if reviewer is None:
+        sha = git(cwd, "rev-parse", "HEAD")
+        if sha is None:
+            return {"error": "no HEAD commit"}, 2
+        target, body, extra = folder / "review-done", sha + "\n", {"sha": sha}
+    else:
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:-]*", reviewer) or ".." in reviewer:
+            return {"error": f"not a plain file name: {reviewer}"}, 2
+        try:
+            findings = parse_table(text, git(cwd, "rev-parse", "--show-toplevel"))
+        except TableError as exc:
+            return {"error": exc.message, "row": exc.row}, 1
+        target, body, extra = folder / "review" / f"{reviewer}.md", text, {"findings": len(findings)}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body)
+    return {"file": str(target), **extra}, 0
 
 
 def known(run: dict) -> bool:
@@ -313,6 +337,10 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
 
 def cmd_review_merge(args: argparse.Namespace) -> int:
     return emit(*review_merge(args.pairs, git(Path.cwd(), "rev-parse", "--show-toplevel")))
+
+
+def cmd_review_save(args: argparse.Namespace) -> int:
+    return emit(*review_save(None if args.done else args.reviewer, "" if args.done else sys.stdin.read(), Path.cwd()))
 
 
 def cmd_acceptance(args: argparse.Namespace) -> int:

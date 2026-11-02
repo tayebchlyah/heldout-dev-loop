@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
 from seal import merge_base, run_git
 
 TEST_FILES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*")
-SKIP_MARKERS = ("pytest.mark.skip", "pytest.skip(", "pytest.mark.xfail", "pytest.xfail(", "unittest.skip", ".skip(",
-                ".only(", "xit(", "xdescribe(", ".todo(", "t.Skip(")
+SKIP_MARKERS = re.compile("|".join((
+    r"\bpytest\.mark\.(?:skip|skipif|xfail)\b", r"\bpytest\.(?:skip|xfail)\(", r"\bunittest\.skip(?:If|Unless)?\b",
+    r"\.(?:skip|only|todo|Skip)\(", r"(?<![\w.$])(?:xit|xdescribe)\(")))
 ASSERTIONS = ("assert", "expect(", "t.Error", "t.Fatal", "require.")
+
+
+def skip_marker(line: str) -> bool:
+    return SKIP_MARKERS.search(line) is not None
 
 
 def assertion_lines(text: str) -> int:
@@ -28,7 +34,7 @@ def weakened(repo: Path) -> list[dict]:
         diff = run_git(repo, "diff", "-U0", "--no-renames", "--no-color", base, "--", f":(top,literal){path}").stdout
         hunks = diff[diff.find("\n@@"):] if "\n@@" in diff else ""  # after the `+++ b/<path>` header
         added = [line[1:] for line in hunks.splitlines() if line.startswith("+")]
-        if any(marker in line for line in added for marker in SKIP_MARKERS):
+        if any(skip_marker(line) for line in added):
             found.append({"path": path, "reason": "skip-added"})
         file = repo / path
         now = file.read_text(encoding="utf-8", errors="replace") if file.is_file() else ""

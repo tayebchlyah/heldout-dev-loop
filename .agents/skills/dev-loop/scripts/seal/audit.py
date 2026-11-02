@@ -212,7 +212,7 @@ def suite_paths(repo: Path, outputs: list[str]) -> list[str]:
 def patch_ids(repo: Path, *diff: str) -> list[tuple[str, str]]:
     """`git patch-id --stable` of a `git <diff...>` output: (patch id, commit) pairs. Bytes: any file encoding."""
     git = ["git", "-C", str(repo), "-c", "core.quotepath=off"]
-    patch = subprocess.run([*git, *diff, "--no-color", "--no-ext-diff"], capture_output=True).stdout
+    patch = subprocess.run([*git, *diff, "--no-color", "--no-ext-diff", "--no-textconv"], capture_output=True).stdout
     out = subprocess.run([*git, "patch-id", "--stable"], input=patch, capture_output=True).stdout.decode()
     return [tuple(line.split()[:2]) for line in out.splitlines() if line.strip()]  # type: ignore[misc]
 

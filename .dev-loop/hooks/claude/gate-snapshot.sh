@@ -3,6 +3,7 @@
 # gate.sh reads it on SubagentStop and runs no gate when nothing changed.
 # Also writes <agent_id>.head, the HEAD `devloop.py audit` starts from, before the board call: a board failure
 # cannot skip it. Then tells the board the subagent runs: a Stop while it runs waits for nobody.
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 ID=$(echo "$IN" | jq -r '.agent_id // empty')
 [ -n "$ID" ] || exit 0
