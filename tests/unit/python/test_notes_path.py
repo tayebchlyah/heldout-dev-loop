@@ -51,18 +51,42 @@ class NotesPathTests(unittest.TestCase):
         git_in(self.repo, "worktree", "add", "-q", "-b", "side", str(path))
         return path
 
+    def commit_shared(self, repo: Path, target: Path | str) -> None:
+        write(repo / "dev-loop.json", json.dumps({"notes": str(target)}))
+        git_in(repo, "add", "dev-loop.json")
+        git_in(repo, "commit", "-q", "-m", "shared notes")
+
     def resolve(self, repo: Path | None = None) -> Path:
         return notes_path.resolve(repo or self.repo, self.env, self.home)
 
     def set_local(self, repo: Path, target: Path | str) -> None:
         write(repo / "dev-loop.local.json", json.dumps({"notes": str(target)}))
 
+    def test_checked_out_branch_dev_loop_json_is_not_read(self) -> None:
+        self.commit_shared(self.repo, self.folder("trusted"))
+        git_in(self.repo, "checkout", "-q", "-b", "side-work")
+        self.commit_shared(self.repo, self.folder("branch"))
+        self.assertEqual(self.resolve(), self.folder("trusted"))
+
+    def test_no_main_ref_or_no_file_on_it_is_no_notes_path(self) -> None:
+        git_in(self.repo, "branch", "-m", "other")
+        self.commit_shared(self.repo, self.folder("branch"))
+        with self.assertRaises(notes_path.NotesPathError) as ctx:
+            self.resolve()
+        self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
+        git_in(self.repo, "branch", "-m", "main")
+        git_in(self.repo, "rm", "-q", "dev-loop.json")
+        git_in(self.repo, "commit", "-q", "-m", "drop")
+        write(self.repo / "dev-loop.json", json.dumps({"notes": str(self.folder("branch"))}))
+        with self.assertRaises(notes_path.NotesPathError):
+            self.resolve()
+
     def test_sources_in_order(self) -> None:
         linked = self.linked()
         self.set_local(linked, self.folder("tree"))
         write(linked / "dev-loop.json", json.dumps({"notes": str(self.folder("branch"))}))
         steps = [
-            (lambda: write(self.repo / "dev-loop.json", json.dumps({"notes": str(self.folder("shared"))})), self.folder("shared")),
+            (lambda: self.commit_shared(self.repo, self.folder("shared")), self.folder("shared")),
             (lambda: self.set_local(self.repo, self.folder("main")), self.folder("main")),
             (lambda: self.env.update(DEV_LOOP_NOTES=str(self.folder("env"))), self.folder("env")),
         ]
@@ -83,7 +107,7 @@ class NotesPathTests(unittest.TestCase):
         self.assertIn(str(self.repo / "dev-loop.local.json"), result.stderr)
         (self.repo / "n").mkdir()
         (linked / "x").mkdir()
-        write(self.repo / "dev-loop.json", json.dumps({"notes": "n"}))
+        self.commit_shared(self.repo, "n")
         write(linked / "dev-loop.json", json.dumps({"notes": "x"}))
         self.assertEqual(self.resolve(linked), self.repo / "n")
 
@@ -98,7 +122,7 @@ class NotesPathTests(unittest.TestCase):
         (linked / "n").mkdir()
         write(self.repo / "dev-loop.local.json", json.dumps({"notes": "n"}))
         self.assertEqual(self.resolve(linked), self.repo / "n")
-        write(self.repo / "dev-loop.json", json.dumps({"notes": "n"}))
+        self.commit_shared(self.repo, "n")
         (self.repo / "dev-loop.local.json").unlink()
         self.assertEqual(self.resolve(linked), self.repo / "n")
         self.env["DEV_LOOP_NOTES"] = "n"
@@ -141,7 +165,7 @@ class NotesPathTests(unittest.TestCase):
         self.env["DEV_LOOP_NOTES"] = str(self.folder("env"))
         self.assertEqual(self.resolve(plain), self.folder("env"))
         del self.env["DEV_LOOP_NOTES"]
-        write(plain / "dev-loop.json", json.dumps({"notes": "rel"}))
+        write(plain / "dev-loop.local.json", json.dumps({"notes": "rel"}))
         (plain / "rel").mkdir()
         self.assertEqual(self.resolve(plain), plain / "rel")
 
