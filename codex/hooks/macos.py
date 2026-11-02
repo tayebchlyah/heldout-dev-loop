@@ -67,6 +67,20 @@ def _normalized(rules):
     return normalized
 
 
+def _runtime_root(layers):
+    darwin_temp = subprocess.run(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+    if not darwin_temp or not Path(darwin_temp).is_absolute():
+        raise ValueError('invalid Darwin temporary root')
+    roots = [Path('/tmp').resolve(), Path(darwin_temp).resolve()]
+    for root in roots:
+        if all(max(((len(path), mode) for path, mode in layer.items() if path != '/' and
+                    (str(root) == path or str(root).startswith(path.rstrip('/') + '/'))),
+                   default=(0, 'write'))[1] == 'write' for layer in layers):
+            return root
+    raise ValueError('no writable macOS runtime temporary root')
+
+
 def _write_mask(normalized, runtime=None):
     metadata = {str(Path(p) / name) for p, mode in normalized.items() if mode == 'write'
                 for name in ('.git', '.agents', '.codex', '.aws')}
@@ -200,7 +214,8 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
         common = Path(common).resolve(strict=True)
         if not common.is_dir():
             raise ValueError('invalid trusted Git metadata directory')
-        rules = {**rules, str(common): 'read'}
+        rules = _normalized(rules)
+        rules[str(common)] = 'deny' if rules.get(str(common)) == 'deny' else 'read'
     if 'DEVLOOP_MACOS_BROKER' in os.environ:
         return broker.request(rules, feature, command, network_enabled, allow_local_binding)
     if '-C' not in native_args:
@@ -214,12 +229,7 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
         if network_enabled and not ports:
             raise ValueError('native managed proxy is unavailable')
         ceiling = _normalized(rules)
-        root = next((p for p in [Path('/tmp').resolve(), Path(tempfile.gettempdir()).resolve()]
-                     if max(((len(k), v) for k, v in ceiling.items() if k != '/' and
-                             (str(p) == k or str(p).startswith(k.rstrip('/') + '/'))),
-                            default=(0, 'write'))[1] == 'write'), None)
-        if root is None:
-            raise ValueError('no writable macOS runtime temporary root')
+        root = _runtime_root([ceiling])
         with tempfile.TemporaryDirectory(prefix='devloop-macos-', dir=root) as temporary, \
                 tempfile.TemporaryDirectory(prefix='devloop-hook-', dir=common) as staged:
             temp = Path(temporary).resolve()
@@ -228,7 +238,7 @@ def run(native_args: list[str], rules: dict[str, str], feature: Path,
             env['GATE_SCOPE'] = 'changed'
             private = Path(staged)
             env = _prepare(private, env, temp)
-            with broker.Server(temp, rules, {k: v for k, v in proxy.items() if k in _PROXY | _CA}, ports, network_enabled, allow_local_binding,
+            with broker.Server(rules, {k: v for k, v in proxy.items() if k in _PROXY | _CA}, ports, network_enabled, allow_local_binding,
                                private / 'bin', ceilings=[ceiling]) as server:
                 env['DEVLOOP_MACOS_BROKER'] = server.context
                 policy = _policy(rules, ports, network_enabled, allow_local_binding,

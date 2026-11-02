@@ -32,8 +32,9 @@ class MacosHookTests(unittest.TestCase):
         self.fixture.write_text('import subprocess,sys\na=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
         self.rules = {'/': 'read', str(self.feature): 'write'}
 
-    def launch(self, code, rules=None, keeper=None, network=False, local=False):
+    def launch(self, code, rules=None, keeper=None, network=False, local=False, setup=""):
         source = ('import sys; sys.dont_write_bytecode=True; sys.path.insert(0,sys.argv[1]); import macos; '
+                  + setup + '\n'
                   'sys.exit(macos.run(__import__("json").loads(sys.argv[2]),'
                   '__import__("json").loads(sys.argv[3]),__import__("pathlib").Path(sys.argv[4]),'
                   '[sys.executable,"-I","-c",sys.argv[5]],sys.argv[6]=="1",sys.argv[7]=="1"))')
@@ -61,18 +62,23 @@ class MacosHookTests(unittest.TestCase):
         alias.symlink_to(temporary_root, target_is_directory=True)
         target = temporary_root / ('devloop-readonly-' + str(os.getpid()))
         self.addCleanup(target.unlink, missing_ok=True)
-        for extra, allowed in [({str(temporary_root): 'write', str(alias): 'read'}, False),
-                               ({str(alias): 'read', str(temporary_root): 'write'}, False),
-                               ({str(temporary_root): 'write', str(alias): 'deny'}, False),
-                               ({str(temporary_root): 'read'}, False),
-                               ({str(temporary_root.parent): 'read', str(temporary_root): 'write'}, True)]:
+        darwin_temp = Path(subprocess.check_output(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'], text=True).strip()).resolve()
+        for extra, allowed, blocked in [({str(temporary_root): 'write', str(alias): 'read'}, False, False),
+                               ({str(alias): 'read', str(temporary_root): 'write'}, False, False),
+                               ({str(temporary_root): 'write', str(alias): 'deny'}, False, True),
+                               ({str(temporary_root): 'read'}, False, False),
+                               ({str(temporary_root.parent): 'read', str(temporary_root): 'write'}, True, False),
+                               ({str(Path('/tmp').resolve()): 'read', str(darwin_temp): 'read'}, False, True)]:
             with self.subTest(rules=extra, allowed=allowed):
+                target.unlink(missing_ok=True)
                 code = ('from pathlib import Path; Path("nested-allowed").write_text("yes")\n'
                         f'try: Path({str(target)!r}).write_text("probe")\n'
                         f'except PermissionError: assert not {allowed!r}\n'
                         f'else: assert {allowed!r}, "readonly alias writable"')
                 result = self.launch(code, {**self.rules, **extra})
-                if 'deny' not in extra.values():
+                if blocked:
+                    self.assertNotEqual(result.returncode, 0, result.stderr)
+                else:
                     self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(target.exists(), allowed)
 
@@ -106,6 +112,15 @@ class MacosHookTests(unittest.TestCase):
         result = self.launch(code, rules)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(protected.read_text(), 'trusted')
+        for denied_path in (self.common, metadata_alias):
+            with self.subTest(denied_metadata=str(denied_path)):
+                (self.feature / 'metadata-disclosed').unlink(missing_ok=True)
+                code = ('from pathlib import Path\n'
+                        f'try: Path({str(protected)!r}).read_text()\n'
+                        'except PermissionError: pass\n'
+                        'else: Path("metadata-disclosed").touch()')
+                result = self.launch(code, {**self.rules, str(denied_path): 'deny'})
+                self.assertFalse((self.feature / 'metadata-disclosed').exists(), result.stderr)
 
     def test_run_rejects_keeper_failure_and_nonlocal_proxy_proof(self):
         for body in ['raise SystemExit(19)',
@@ -200,12 +215,25 @@ class MacosHookTests(unittest.TestCase):
                   f'sys.path.insert(0,{str(CODEX_ASSETS / "hooks")!r}); import macos; '
                   f'sys.exit(macos.run([],{{"/":"write"}},__import__("pathlib").Path({str(self.feature)!r}),'
                   f'[sys.executable,"-I","-c",{code!r}],False,False))')
-        for command in [code, nested]:
-            with self.subTest(nested=command == nested):
+        for command, permission_failure in [(code, 0), (nested, 0), (code, 1), (code, 2)]:
+            with self.subTest(nested=command == nested, permission_failure=permission_failure):
                 marker.unlink(missing_ok=True)
+                setup = ('\nimport os,signal\nfrom unittest.mock import patch\n'
+                         'original=os.killpg\ncalls=0\n'
+                         'def group_signal(pid,signum):\n'
+                         ' global calls\n'
+                         ' if signum==signal.SIGTERM:\n'
+                         '  calls+=1\n'
+                         f'  if calls=={permission_failure}: raise PermissionError(1,"Darwin group permission")\n'
+                         ' return original(pid,signum)\n'
+                         'patch("os.killpg",group_signal).start()\n') if permission_failure else ''
                 try:
-                    result = self.launch(command)
-                    self.assertEqual(result.returncode, 0, result.stderr)
+                    result = self.launch(command, setup=setup)
+                    if permission_failure == 2 and 'DEVLOOP_MACOS_BROKER' not in os.environ:
+                        self.assertNotEqual(result.returncode, 0, result.stderr)
+                        self.assertIn('PermissionError', result.stderr)
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stderr)
                 finally:
                     if marker.exists():
                         try:
