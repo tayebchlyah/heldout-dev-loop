@@ -296,13 +296,26 @@ class NativeCodexPolicyTests(unittest.TestCase):
 
     def confined(self, profile, trusted_toml, *command):
         (self.root / 'home/config.toml').write_text('[permissions.dev-workspace]\nextends=":workspace"\n' + trusted_toml)
-        table, sockets = sandbox.neutralised(profile, sandbox.filesystem(profile, self.main, self.feature))
+        table, sockets = sandbox.neutralised(profile, sandbox.filesystem(profile, self.main, self.feature),
+                                            (self.main, self.feature))
         args = sandbox.native_args(native_codex(), self.main, {
             'permissions.dev-workspace.extends': ':read-only',
             'permissions.dev-workspace.filesystem': table,
             'permissions.dev-workspace.network': {'unix_sockets': sockets}})
         return subprocess.run([*args, '--', *command], capture_output=True, text=True, timeout=60,
                               env={**os.environ, 'CODEX_HOME': str(self.root / 'home')})
+
+    def test_feature_metadata_is_not_writable_under_a_write_root(self):
+        for name in ('.git', '.codex', '.agents'):
+            (self.feature / name).mkdir()
+            (self.feature / name / 'config').write_text('base')
+        for target, allowed in [(self.feature / '.git/config', False), (self.feature / '.codex/config', False),
+                                (self.feature / '.agents/config', False), (self.main / '.git/config', False),
+                                (self.feature / 'ok', True)]:
+            with self.subTest(target=str(target)):
+                result = self.confined({}, '', '/bin/sh', '-c', 'echo changed > "$1"', 'probe', str(target))
+                self.assertEqual(result.returncode, 0 if allowed else 1, result.stderr)
+                self.assertEqual(target.read_text().strip() == 'changed' if target.exists() else False, allowed)
 
     def test_trusted_write_grants_do_not_survive(self):
         profile = {'filesystem': {str(self.outside): 'write', ':workspace_roots': {'.git': 'write'}}}
