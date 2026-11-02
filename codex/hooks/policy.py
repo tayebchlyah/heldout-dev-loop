@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import queue
-import signal
 import subprocess
 import threading
 import time
+
+from broker import stop
 
 
 def load(codex, main):
@@ -59,14 +59,6 @@ def load(codex, main):
         raise ValueError('invalid native policy response') from error
     finally:
         process.stdin.close()
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+        stop(process)
         process.stdout.close()
         reader.join(timeout=1)

@@ -116,8 +116,6 @@ def main():
         if (requirements.get('network') or {}).get('allowLocalBinding') is False:
             network['allow_local_binding'] = False
         network |= {'unix_sockets': {}, 'dangerously_allow_all_unix_sockets': False}
-        if network.get('enabled') is True:
-            network['mode'] = 'full'
         overrides = {'features.network_proxy': True,
                      'permissions.dev-workspace.extends': ':read-only',
                      'permissions.dev-workspace.filesystem': filesystem(profile, trusted, feature),
