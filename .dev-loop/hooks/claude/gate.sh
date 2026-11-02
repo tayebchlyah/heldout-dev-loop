@@ -6,6 +6,7 @@
 # record; one that does not runs in full. A full gate is a direct call.
 # SubagentStop runs no gate for a read-only subagent (Explore, Plan) or for a
 # subagent whose tree is unchanged since its SubagentStart snapshot.
+. "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
 board() {
@@ -17,7 +18,8 @@ board() {
 cd "${CLAUDE_PROJECT_DIR:-.}" || { board; exit 0; }
 GATE=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$GATE" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
-[ -z "$(git status --porcelain 2>/dev/null)" ] && { board; exit 0; }
+git_pin_repo .
+DIRTY=$(git status --porcelain 2>/dev/null) && [ -z "$DIRTY" ] && { board; exit 0; }
 if [ "$(echo "$IN" | jq -r '.hook_event_name // empty')" = "SubagentStop" ]; then
   case "$(echo "$IN" | jq -r '.agent_type // empty')" in Explore|Plan) { board; exit 0; } ;; esac
   ID=$(echo "$IN" | jq -r '.agent_id // empty')

@@ -23,13 +23,16 @@
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
   devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
                                                       merge the reviewer tables by file and line
+  devloop.py review-save --reviewer NAME | --done    save a reviewer table (stdin) or the Track S marker in the git dir
   devloop.py acceptance [--failed]                    run the acceptance command, read its JUnit, record the run
-  devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N]
+  devloop.py release-plan [--repo PATH] [--harness claude|codex] [--profile quick|standard|deep] [--budget N] [--require-sandbox]
                                                       the release audit plan: run folder, scope, sandbox, skill
   devloop.py release-record --run PATH [--base SHA] [--harness claude|codex] [--repo PATH]
                                                       record a finished release audit run in the project note
   devloop.py release-record --fix-wave --issue N [--issue N ...] [--repo PATH]
                                                       record the end of the fix wave of the current audit
+  devloop.py audit-run <step> --run FOLDER [--repo PATH] ...
+                                                      the parent-side steps of a release audit run (reference/cli/audit-run.md)
   devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
   devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
@@ -283,6 +286,12 @@ def main() -> int:
     review.add_argument("pairs", nargs="+")
     review.set_defaults(run=("feature_gate", "cmd_review_merge"))
 
+    save = commands.add_parser("review-save")
+    which = save.add_mutually_exclusive_group(required=True)
+    which.add_argument("--reviewer")
+    which.add_argument("--done", action="store_true")
+    save.set_defaults(run=("feature_gate", "cmd_review_save"))
+
     accept = commands.add_parser("acceptance")
     accept.add_argument("--failed", action="store_true")
     accept.set_defaults(run=("feature_gate", "cmd_acceptance"))
@@ -312,6 +321,7 @@ def main() -> int:
     plan.add_argument("--harness", choices=["claude", "codex"], default="claude")
     plan.add_argument("--profile", choices=["quick", "standard", "deep"])
     plan.add_argument("--budget", type=positive_int)
+    plan.add_argument("--require-sandbox", action="store_true")
     plan.set_defaults(run=("release", "cmd_release_plan"))
 
     rec = commands.add_parser("release-record")
@@ -322,6 +332,33 @@ def main() -> int:
     rec.add_argument("--fix-wave", action="store_true")
     rec.add_argument("--issue", dest="issues", action="append", type=positive_int)
     rec.set_defaults(run=("release", "cmd_release_record"))
+
+    audit_steps = commands.add_parser("audit-run").add_subparsers(dest="audit_step", required=True)
+
+    def step(name: str, module: str) -> argparse.ArgumentParser:
+        sub = audit_steps.add_parser(name)
+        sub.add_argument("--run", dest="run_folder", required=True)
+        sub.add_argument("--repo", default=".")
+        sub.set_defaults(run=(f"audit.{module}", "cmd_" + name.replace("-", "_")))
+        return sub
+
+    step("seed", "seed")
+    units = step("units", "units").add_mutually_exclusive_group(required=True)
+    units.add_argument("--add")
+    units.add_argument("--update")
+    brief = step("brief", "brief")
+    brief.add_argument("--kind", choices=["hunter", "critic", "verifier", "recheck"], required=True)
+    brief.add_argument("--units", nargs="+")
+    brief.add_argument("--final", action="store_true")
+    brief.add_argument("--fingerprint")
+    step("check", "check").add_argument("--agent", required=True)
+    step("promote", "promote").add_argument("--agent", required=True)
+    fold = step("fold", "fold")
+    fold.add_argument("--agent", required=True)
+    fold.add_argument("--discard")
+    step("findings", "close").add_argument("--incomplete")
+    step("status", "close")
+    step("report", "report").add_argument("--summary", required=True)
 
     metrics = commands.add_parser("metrics")
     metrics.add_argument("--repo", default=".")
@@ -376,6 +413,13 @@ def main() -> int:
             parser.error("--issue needs --fix-wave")
         if not args.fix_wave and args.run_folder is None:
             parser.error("--run is required unless --fix-wave is given")
+    if args.command == "audit-run" and args.audit_step == "brief":
+        if args.kind == "hunter" and (not args.units or args.fingerprint or args.final):
+            parser.error("--kind hunter takes --units, no --fingerprint or --final")
+        if args.kind == "critic" and (args.units or args.fingerprint):
+            parser.error("--kind critic takes no --units or --fingerprint")
+        if args.kind in ("verifier", "recheck") and (not args.fingerprint or args.units or args.final):
+            parser.error(f"--kind {args.kind} takes --fingerprint, no --units or --final")
     module, name = args.run
     return getattr(importlib.import_module(module), name)(args)
 

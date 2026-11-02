@@ -22,6 +22,7 @@
 # those folders are candidates. Candidates are
 # normalized so a trailing slash, a doubled slash, a dot segment or a capital
 # letter does not walk past the wall.
+. "${0%/*}/git-pin.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }

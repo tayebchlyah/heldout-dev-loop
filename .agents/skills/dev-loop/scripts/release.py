@@ -23,13 +23,14 @@ from datetime import date
 from pathlib import Path
 
 import ci_skip
+import release_carry
 from autonomy import write_atomic
 from devloop import AUDITS, emit, old_layout
 from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
-RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling \d{4}-\d{2}-\d{2}: (\w+) +\S")
+RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling (\d{4}-\d{2}-\d{2}): (\w+) +\S")
 RECORD_RE = re.compile(
     r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
     r"profile \S+, scope (whole|[0-9a-f]{40}\.\.[0-9a-f]{40})$"
@@ -65,25 +66,19 @@ def section(text: str, heading: str) -> list[str]:
     return out
 
 
-def security_items(text: str) -> tuple[list[dict], list[str]]:
-    """(open items, unparsed lines) of `## Deferred`.
+def deferred_items(text: str) -> tuple[list[dict], list[str]]:
+    """(every item in file order, unparsed lines) of `## Deferred`.
 
-    An item is `{line, verdict, source, fingerprint}`. An item with a ruling `accept` or `close` is closed and left
-    out. A top-level bullet that names security and does not match the item format is unparsed.
+    An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: a ruling `accept` or `close` under
+    it. `ruling`: `{date, word, carried}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling), else None. A top-level bullet that names security and does
+    not match the item format is unparsed.
     """
     items: list[dict] = []
     unparsed: list[str] = []
     current: dict | None = None
-    closed = False
-
-    def finish() -> None:
-        if current is not None and not closed:
-            items.append(current)
-
     for line in section(text, "Deferred"):
         if line.startswith("- "):
-            finish()
-            current, closed = None, False
+            current = None
             body = CHECKBOX_RE.sub("", line[2:])
             match = ITEM_RE.match(body)
             if match:
@@ -93,18 +88,27 @@ def security_items(text: str) -> tuple[list[dict], list[str]]:
                     "verdict": match.group(2),
                     "source": match.group(3),
                     "fingerprint": fingerprint.group(1) if fingerprint else None,
+                    "closed": False,
+                    "ruling": None,
                 }
+                items.append(current)
             elif SECURITY_RE.search(line):
                 unparsed.append(line.rstrip())
         elif line.strip() and not line[0].isspace():
-            finish()
-            current, closed = None, False
+            current = None
         elif current is not None:
             ruling = RULING_RE.match(line)
-            if ruling and ruling.group(1) in CLOSING_WORDS:
-                closed = True
-    finish()
+            if ruling:
+                carried = line[ruling.start(2):].startswith("accept carried from the ")
+                current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2), "carried": carried}
+                current["closed"] = current["closed"] or ruling.group(2) in CLOSING_WORDS
     return items, unparsed
+
+
+def security_items(text: str) -> tuple[list[dict], list[str]]:
+    """(open items, unparsed lines) of `## Deferred`: the items of `deferred_items` that are not closed."""
+    items, unparsed = deferred_items(text)
+    return [i for i in items if not i["closed"]], unparsed
 
 
 def current_record(text: str) -> dict | None:
@@ -433,8 +437,11 @@ def excluded(repo: Path, record_sha: str, base: str, head: str) -> list[str]:
     return sorted(p for p in kit_matches(repo, head, changed, ref) & changed if only_upgrades(p))
 
 
-def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None) -> tuple[dict, int]:
-    """The release-audit plan: run folder (created), scope, sandbox and skill. Exit 0, else 1 with `error`, nothing created."""
+def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = None, budget: int | None = None,
+         require_sandbox: bool = False) -> tuple[dict, int]:
+    """The release-audit plan: run folder (created, the plan in its `plan.json`), scope, sandbox and skill. Exit 0, else 1
+    with `error`, nothing created.
+    `require_sandbox`: `no-sandbox` (`no-images`, else `no-engine`) after every other check."""
     if notes is None:
         return {"error": "notes path unresolved"}, 1
     note = project_note(notes)
@@ -471,10 +478,6 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
     ) if audits.is_dir() else []
     n = runs[-1][0] + 1 if runs else 1
     out = audits / f"Run {n}"
-    try:
-        out.mkdir(parents=True)
-    except FileExistsError:
-        return {"error": "run-folder-exists", "output": str(out)}, 1
     top = run_git(repo, "rev-parse", "--show-toplevel").stdout.strip() or str(repo)
     try:
         config = json.loads((Path(top) / "dev-loop.json").read_text())
@@ -482,7 +485,16 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         config = {}
     audit = config.get("security_audit") if isinstance(config, dict) else None
     images = audit.get("images") if isinstance(audit, dict) else None
-    return {
+    if require_sandbox and not (isinstance(images, dict) and images):
+        return {"error": "no-sandbox", "reason": "no-images"}, 1
+    engine = docker_up()
+    if require_sandbox and not engine:
+        return {"error": "no-sandbox", "reason": "no-engine"}, 1
+    try:
+        out.mkdir(parents=True)
+    except FileExistsError:
+        return {"error": "run-folder-exists", "output": str(out)}, 1
+    result = {
         "run": f"Run {n}",
         "output": str(out),
         "head": head_sha,
@@ -494,24 +506,26 @@ def plan(repo: Path, notes: Path | None, harness: str, profile: str | None = Non
         "exclude": exclude,
         "prior_runs": [str(p) for _, p in runs],
         "sandbox": {
-            "engine": docker_up(),
+            "engine": engine,
             "images": images if isinstance(images, dict) else {},
             "runner": str(Path(__file__).resolve().parent / "sandbox-run.py"),
         },
         "skill": str(skill_dir(harness, os.environ)),
-    }, 0
+    }
+    (out / "plan.json").write_text(json.dumps(result))
+    return result, 0
 
 
 def one_line(value: object) -> str:
-    """A text value on one line: breaks and tabs become a space, backticks an apostrophe (a title cannot forge a
-    `Fingerprint` marker or a ruling sub-bullet)."""
-    return re.sub(r"[\r\n\t]+", " ", str(value)).replace("`", "'").strip()
+    """A text value on one line: every line break `str.splitlines()` knows and tabs become a space, backticks an
+    apostrophe (a title cannot forge a `Fingerprint` marker or a ruling sub-bullet)."""
+    return re.sub(r"[\r\n\t\x0b\x0c\x1c-\x1e\x85  ]+", " ", str(value)).replace("`", "'").strip()
 
 
 def hardening_count(report: Path) -> int:
     """Top-level `- ` bullets under the first heading (any level) of `report` whose text starts with `Hardening`."""
     try:
-        lines = report.read_text().splitlines()
+        lines = report.read_text().split("\n")
     except (OSError, ValueError):
         return 0
     count = 0
@@ -640,6 +654,9 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
         open_prints = {i["fingerprint"] for i in security_items(text)[0] if i["fingerprint"]}
         garden_prints = {m.group(1) for line in section(text, "Gardener") if (m := FINGERPRINT_RE.search(line))}
         deferred: list[str] = []
+        block: list[str] = []
+        carried: list[dict] = []
+        reopened: list[dict] = []
         low: list[str] = []
         skipped: list[str] = []
         for item in findings:
@@ -666,6 +683,11 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
                 low.append(f"- {today} (security, low, {name}): {' '.join(parts)}")
             else:
                 deferred.append(f"- {today} (security, {verdict}, {name}): {' '.join(parts)}")
+                block.append(deferred[-1])
+                found = release_carry.carry(repo, text, fingerprint, item.get("trace"), sha, today) if verdict == "needs-validation" and fingerprint else None
+                if found is not None:
+                    (carried if found[0] == "carried" else reopened).append(found[1])
+                    block.extend([found[2]] if found[2] else [])
         counts = {v: sum(1 for r in findings if r.get("verdict") == v) for v in verdicts}
         hardening = hardening_count(run / "REPORT.md")
         gardener = f"- {today} (security, hardening, {name}): {hardening} hardening notes, see {AUDITS}/{name}/REPORT.md" if hardening else None
@@ -673,13 +695,14 @@ def record(repo: Path, notes: Path, run: Path, base: str | None, harness: str, e
                 f"hardening {hardening}, profile {profile}, scope {scope}")
         lines = text.split("\n")
         if deferred:
-            add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *deferred], blank_before=True)
+            add_lines(lines, "Deferred", [f"### Release audit {name}, {today}", "", *block], blank_before=True)
         if low or gardener:
             add_lines(lines, "Gardener", [*low, *([gardener] if gardener else [])])
         add_lines(lines, "Release audits", [line])
         out = "\n".join(lines)
         write_atomic(note, out if out.endswith("\n") else out + "\n")
-    return {"record": line, "deferred": deferred, "low": low, "skipped": skipped, "gardener": gardener}, 0
+    return {"record": line, "deferred": deferred, "carried": carried, "reopened": reopened, "low": low, "skipped": skipped,
+            "gardener": gardener}, 0
 
 
 def section_body(text: str, version: str) -> list[str] | None:
@@ -740,7 +763,7 @@ def cmd_release_plan(args: argparse.Namespace) -> int:
         return emit({"error": str(exc)}, 1)
     if "security-audit" in old_layout(notes):
         return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
-    return emit(*plan(repo, notes, args.harness, args.profile, args.budget))
+    return emit(*plan(repo, notes, args.harness, args.profile, args.budget, args.require_sandbox))
 
 
 def cmd_release_record(args: argparse.Namespace) -> int:

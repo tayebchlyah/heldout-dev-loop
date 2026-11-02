@@ -2,6 +2,7 @@
 # Tell Codex when the active repository runs the dev loop.
 # Codex skips an untrusted project hook without a message: name the untrusted events. This line shows
 # only when this hook itself is trusted; check_setup.py stays the full check.
+. "${0%/*}/git-pin.sh"
 input=$(cat)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] || exit 0

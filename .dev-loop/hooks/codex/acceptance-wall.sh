@@ -21,6 +21,7 @@
 # hook fires on exec, one fires on each inner tool call. Not walled: write_stdin into a shell that
 # exec_command started (no hook event, #140); for other subagents an MCP search tool, an MCP tool that
 # runs code or reads a remote copy, a resource listing; the audit reads their results.
+. "${0%/*}/git-pin.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }

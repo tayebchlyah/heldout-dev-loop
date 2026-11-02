@@ -5,6 +5,7 @@
 # stop_hook_active true: no block. Input that is not JSON, no dev-loop.json, or no CLI: exit 0, silent.
 # The CLI is the one of the worktree that holds the hook cwd (CLAUDE_PROJECT_DIR when the input has none).
 # Never starts the board.
+. "${0%/*}/git-pin.sh"
 mode=$1
 input=$(cat)
 printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || exit 0
@@ -15,6 +16,7 @@ top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
 cli="$top/.agents/skills/dev-loop/scripts/devloop.py"
 [ -f "$top/dev-loop.json" ] && [ -f "$cli" ] || exit 0
 cd "$top" || exit 0
+git_pin_repo .
 case "$mode" in
   stop) printf '%s' "$input" | python3 "$cli" audit >/dev/null 2>&1 ;;
   turn) ;;
