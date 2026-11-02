@@ -142,10 +142,10 @@ def read_note(git_dir: Path) -> dict | None:
 
 def find_transcript(session: str, harness: str, env: Mapping[str, str], home: Path) -> str | None:
     if harness == "claude":
-        root = Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude") / "projects"
+        root = devloop.claude_home(env, home) / "projects"
         found = sorted(root.glob(f"*/{session}.jsonl"))
     else:
-        root = Path(env.get("CODEX_HOME") or home / ".codex") / "sessions"
+        root = devloop.codex_home(env, home) / "sessions"
         found = sorted(root.glob(f"**/rollout-*-{session}.jsonl"))
     return str(found[0]) if found else None
 
