@@ -284,6 +284,25 @@ class MacosHookTests(unittest.TestCase):
                     result = self.launch(code, network=enabled, local=local)
                     self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_run_local_binding_denies_remote_connect_proof(self):
+        with socket.socket() as proxy:
+            proxy.bind(('127.0.0.1', 0))
+            proxy.listen()
+            port = proxy.getsockname()[1]
+            if 'DEVLOOP_MACOS_BROKER' in os.environ:
+                port = urlsplit(os.environ['HTTP_PROXY']).port
+            self.fixture.write_text('import os,subprocess,sys\n'
+                                    f'os.environ["HTTP_PROXY"]="http://127.0.0.1:{port}"\n'
+                                    'a=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
+            code = ('import errno,socket\n'
+                    'try: socket.create_connection(("192.0.2.1",9),timeout=2)\n'
+                    'except OSError as error: assert error.errno==errno.EPERM,error\n'
+                    'else: raise AssertionError("remote connect")\n'
+                    'server=socket.socket(); server.bind(("127.0.0.1",0)); server.listen()\n'
+                    'socket.create_connection(server.getsockname(),timeout=2).close()\n')
+            result = self.launch(code, network=True, local=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
