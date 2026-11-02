@@ -272,6 +272,28 @@ class KitSourceFlowTests(KitFixture):
         self.assertEqual(out["reasons"][0]["reason"], "stale-audit")
         self.assertIn(OTHER, out["reasons"][0]["paths"])
 
+    def refresh_at_same_version(self, edit: bool) -> dict:
+        """The record commit holds a copy older than its own source at the same kit version (#185); `upgrade` then
+        refreshes the copies, version unchanged."""
+        self.install("upgrade", self.repo)
+        rehash(self.repo, COPY, "stale\n")
+        record = self.commit()
+        (self.notes / "Project Note.md").write_text(RECORD.format(sha=record))
+        (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text(
+            json.dumps({"source_ref": {"commit": record}, "run_status": "complete"}))
+        self.install("upgrade", self.repo)
+        if edit:
+            rehash(self.repo, OTHER, "evil\n")
+        return self.devloop("release-check", "--sha", self.commit())
+
+    def test_release_check_kit_refresh_at_same_version_ok(self) -> None:
+        out = self.refresh_at_same_version(False)
+        self.assertEqual((out["ok"], out["reasons"]), (True, []))
+
+    def test_release_check_kit_refresh_at_same_version_with_edit_is_stale(self) -> None:
+        out = self.refresh_at_same_version(True)
+        self.assertEqual(out["reasons"], [{"reason": "stale-audit", "paths": [COPY, OTHER, release.MANIFEST]}])
+
     def plan_from_stale_record(self, edit: bool) -> list[str]:
         stale = self.stale_base()
         (self.notes / "Project Note.md").write_text(RECORD.format(sha=stale))
