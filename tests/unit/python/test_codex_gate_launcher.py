@@ -102,6 +102,15 @@ class CodexHookSandboxTests(unittest.TestCase):
             roots.append(darwin_temp_dir())
         self.assertTrue(any(Path(r.stdout).resolve().is_relative_to(root) for root in roots), r.stdout)
 
+    def test_short_argument_lists_block_without_a_traceback(self):
+        for argv in [[], [str(self.main)], [str(self.main), str(self.feature)], [str(self.main), str(self.feature), '--']]:
+            with self.subTest(argv=argv):
+                r = subprocess.run([sys.executable, '-I', str(CODEX_ASSETS / 'hooks/sandbox.py'), *argv],
+                                   input='', text=True, capture_output=True, env=self.env)
+                self.assertEqual(r.returncode, 125, r.stderr)
+                self.assertIn('Sandbox startup failed', r.stderr)
+                self.assertNotIn('Traceback', r.stderr)
+
     def test_early_launch_failure_blocks_without_host_fallback(self):
         self.env['PROBE_EARLY'] = '1'
         marker = self.feature / 'host-marker'

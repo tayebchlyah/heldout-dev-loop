@@ -158,9 +158,9 @@ def native_args(codex, main, overrides):
 
 def main():
     try:
-        trusted, feature = (Path(x).resolve(strict=True) for x in sys.argv[1:3])
-        if sys.argv[3] != '--' or len(sys.argv) < 5:
+        if len(sys.argv) < 5 or sys.argv[3] != '--':
             raise ValueError('expected main, feature, --, command arguments')
+        trusted, feature = (Path(x).resolve(strict=True) for x in sys.argv[1:3])
         codex = shutil.which('codex')
         if not codex:
             raise ValueError('codex-cli is unavailable; require 0.166.0 or later')
@@ -183,7 +183,7 @@ def main():
                      'permissions.dev-workspace.network': network}
         args = native_args(codex, trusted, overrides)
         if sys.platform == 'darwin':
-            return macos.run(args, rules, feature,
+            return macos.run(args, trusted, rules, feature,
                              sys.argv[4:], network.get('enabled') is True,
                              network.get('allow_local_binding') is True)
         with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir='/tmp') as temp:
