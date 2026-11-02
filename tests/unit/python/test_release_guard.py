@@ -230,7 +230,7 @@ class ReleaseSetupTests(unittest.TestCase):
                 self.assertEqual(check_setup.check_project_config(self.repo(tmp, audit)), [])
 
     def test_docker_engine_and_image_actions(self) -> None:
-        pull = "pull the release audit sandbox image img:2 (security_audit.images.b)"
+        pull = "pull or docker build the release audit sandbox image img:2 (security_audit.images.b; reference/release.md)"
         rows = [(None, 1, (), []), ({"images": {}}, 1, (), []), ({"images": {"a": "img:1"}}, 1, (), [self.ENGINE]),
                 ({"images": {"a": "img:1", "b": "img:2"}}, 0, ("img:1",), [pull]),
                 ({"images": {"a": "img:1"}}, 0, ("img:1",), [])]
