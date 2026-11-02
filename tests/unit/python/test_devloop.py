@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -331,6 +332,24 @@ class ProjectConfigShapeTests(unittest.TestCase):
             with self.subTest(raw=raw), tempfile.TemporaryDirectory() as tmp:
                 put(Path(tmp) / "dev-loop.json", raw)
                 self.assertEqual(check_setup.check_project_config(Path(tmp)), ["dev-loop.json must hold a JSON object"])
+
+
+class ConfigHomeTests(unittest.TestCase):
+    def test_the_env_value_else_the_home_folder(self) -> None:
+        dl = load_devloop()
+        for env, claude, codex in (({}, "/h/.claude", "/h/.codex"),
+                                   ({"CLAUDE_CONFIG_DIR": "", "CODEX_HOME": ""}, "/h/.claude", "/h/.codex"),
+                                   ({"CLAUDE_CONFIG_DIR": "/c", "CODEX_HOME": "/x"}, "/c", "/x")):
+            with self.subTest(env=env):
+                self.assertEqual((dl.claude_home(env, Path("/h")), dl.codex_home(env, Path("/h"))),
+                                 (Path(claude), Path(codex)))
+
+    def test_only_devloop_reads_the_config_roots(self) -> None:
+        read = re.compile(r"""(?:get\(|\[)\s*["'](?:CLAUDE_CONFIG_DIR|CODEX_HOME)["']""")
+        for path in sorted((SKILL_ROOT / "scripts").rglob("*.py")):
+            if path.name != "devloop.py":
+                with self.subTest(path=str(path.relative_to(SKILL_ROOT))):
+                    self.assertEqual([line.strip() for line in path.read_text().splitlines() if read.search(line)], [])
 
 
 def load_check_setup():
