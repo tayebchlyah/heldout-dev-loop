@@ -133,8 +133,6 @@ print(json.dumps({**result,'stop':stopped['state']}))
                                  {'start':'started', 'health':'board', 'roots':[str(injection)],
                                   'loaded':loaded, 'stop':'stopped'})
 
-    test_board_start_preserves_parent_python_isolation.proof = True
-
     def test_release_check_uses_main_code_with_isolated_python(self):
         r=self.hook('git-guard.sh',tool_input={'command':'git push origin HEAD:refs/tags/v1.0.0'})
         self.assertIn('release-check: ok',json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])

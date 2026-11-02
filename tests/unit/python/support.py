@@ -270,6 +270,7 @@ if 'app-server' in args:
   if 'PROBE_ARGV' in os.environ:Path(os.environ['PROBE_ARGV']).write_text(json.dumps(args))
   if os.environ.get('PROBE_EARLY'):sys.exit(19)
  main=Path(args[args.index('-C')+1])
+ config_file=Path(os.environ['PROBE_CONFIG']) if 'PROBE_CONFIG' in os.environ else main/'.codex/config.toml'
  for line in sys.stdin:
   request=json.loads(line);ident=request.get('id');method=request['method']
   if ident is None:continue
@@ -277,7 +278,7 @@ if 'app-server' in args:
    if os.environ.get('PROBE_POLICY_BAD'): raise ValueError('invalid')
    result={}
    if method=='config/read':
-    config=tomllib.loads((main/'.codex/config.toml').read_text())
+    config=tomllib.loads(config_file.read_text())
     if os.environ.get('PROBE_NATIVE_NULLS'):
      for profile in config['permissions'].values():
       profile.setdefault('filesystem',None);profile.setdefault('network',None)
@@ -299,12 +300,14 @@ sys.exit(subprocess.run(args[args.index('--')+1:]).returncode)
 
 
 def codex_gate_env(repo):
-    fake = repo / 'bin/codex'
+    """A fake codex and its config in a folder beside the repo, so the repo under test stays as it is."""
+    folder = repo.parent / (repo.name + '-codex')
+    fake = folder / 'bin/codex'
     write(fake, '#!' + sys.executable + '\n' + CODEX_GATE_FIXTURE)
     fake.chmod(0o755)
-    write(repo / '.codex/config.toml', '[permissions.dev-workspace]\nextends=":workspace"\n')
-    return {'PATH': str(fake.parent) + os.pathsep + os.environ['PATH'], 'CODEX_HOME': str(repo / 'home')}
-
+    write(folder / 'config.toml', '[permissions.dev-workspace]\nextends=":workspace"\n')
+    return {'PATH': str(fake.parent) + os.pathsep + os.environ['PATH'], 'CODEX_HOME': str(folder / 'home'),
+            'PROBE_CONFIG': str(folder / 'config.toml')}
 
 def darwin_temp_dir():
     return Path(subprocess.check_output(['/usr/bin/getconf', 'DARWIN_USER_TEMP_DIR'], text=True).strip()).resolve()
