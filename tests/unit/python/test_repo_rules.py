@@ -295,7 +295,8 @@ EXCEPTION = "# Exception: a bare --force-with-lease (with or without --force-if-
 ALLOWED = ["# shortcut: no lock, add one when two writers exist", "# see https://example.invalid/x", "# noqa: E501",
            "// eslint-disable-next-line no-console", "# allow-comment: dependency, git 2.40 drops the flag",
            "# fixes #123", "# RFC 3339 time", "# SPDX-License-Identifier: MIT", "# Copyright 2026",
-           "# shellcheck disable=SC2086", "// @ts-expect-error", "# type: ignore", "# pragma: no cover"]
+           "# shellcheck disable=SC2086", "// @ts-expect-error", "# type: ignore", "# pragma: no cover",
+           "# NOQA", "# nosec", "# isort: skip"]
 
 
 class CommentRuleTests(unittest.TestCase):
@@ -399,27 +400,22 @@ class CommentCommandTests(RulesRepo):
 
     def test_trailing_comments(self) -> None:
         head = '"""Mod."""\n\n\ndef f():\n'
-        for body, expected in [
-            ("    return 1  # plain words\n", [("m.py", 5, "# plain words")]),
-            ("    return 1  # noqa: E402\n    y = 2  # see https://example.invalid/x\n", []),
-            ("    return 1  # shortcut: a, b\n    y = 2  # next\n", [("m.py", 6, "# next")]),
-            ("    return 'https://example.invalid/x'  # plain words\n", [("m.py", 5, "# plain words")]),
-            ("    return 1  # fixes #123\n    y = 2  # plain\n", [("m.py", 6, "# plain")]),
+        old = '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 3  # {}\n'
+        for path, text, expected in [
+            ("m.py", head + "    return 1  # plain words\n", [("m.py", 5, "# plain words")]),
+            ("m.py", head + "    return 1  # noqa: E402\n    y = 2  # see https://example.invalid/x\n", []),
+            ("m.py", head + "    return 1  # shortcut: a, b\n    y = 2  # next\n", [("m.py", 6, "# next")]),
+            ("m.py", head + "    return 'https://example.invalid/x'  # plain words\n", [("m.py", 5, "# plain words")]),
+            ("m.py", head + "    return 1  # fixes #123\n    y = 2  # plain\n", [("m.py", 6, "# plain")]),
+            ("m.py", head + "    return 1  # NOQA\n    y = 2  # nosec\n    import a  # isort: skip\n", []),
+            ("old.py", old.format("kept words"), []),
+            ("old.py", old.format("new words"), [("old.py", 6, "# new words")]),
+            ("h.py", "x = 1  # first\n# second\n", [("h.py", 1, "# first"), ("h.py", 2, "# second")]),
         ]:
-            with self.subTest(body=body):
-                put(self.repo / "m.py", head + body)
+            with self.subTest(path=path, text=text):
+                put(self.repo / path, text)
                 self.assert_violations(expected)
-
-    def test_trailing_comment_kept_on_an_edited_line_passes(self) -> None:
-        edit = '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 3  # {}\n'
-        put(self.repo / "old.py", edit.format("kept words"))
-        self.assert_violations([])
-        put(self.repo / "old.py", edit.format("new words"))
-        self.assert_violations([("old.py", 6, "# new words")])
-
-    def test_trailing_comment_at_the_top_does_not_extend_the_header(self) -> None:
-        put(self.repo / "h.py", "x = 1  # first\n# second\n")
-        self.assert_violations([("h.py", 1, "# first"), ("h.py", 2, "# second")])
+                (self.repo / path).unlink()
 
 
 class RepoCommentsTests(unittest.TestCase):
