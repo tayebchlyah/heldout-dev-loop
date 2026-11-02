@@ -37,7 +37,6 @@ Autonomy grant (Delivery, Track S after Stage 1):
 - Push the feature branch, open the PR. Merge only under Stage 7 merge rule. Tag and release PR: Stage 7 release rule.
 - Report once, at the end, the full report. First sentence: what waits on the user. Then each waiting item, riskiest first: each `risk` row, the stop item when the session stopped, each Attention item (Stage 7 log audit), each new `## Deferred` item. Per item: link, what it changes for users, evidence, risk, pick. Never cut or shrink an item for length. Then the PR link and the gate lines. The PR body carries the same list in its `Decisions` section.
 
-
 Monitor rule: a command longer than two minutes runs in the background as `scripts/devloop.py logged -- <cmd>`, full log in a file, with a Monitor on it. Never end a turn while a run has nobody watching.
 
 Verification budget, tiers T0 to T4: [references/tests.md](references/tests.md) section Verification budget.

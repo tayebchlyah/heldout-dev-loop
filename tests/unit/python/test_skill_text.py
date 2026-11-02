@@ -495,3 +495,14 @@ class TracksContractTests(unittest.TestCase):
         for name in REPLACED_SKILLS:
             with self.subTest(name=name):
                 self.assertIn(f"`{name}`", line)
+
+
+class UsageTextTests(unittest.TestCase):
+    def test_usage_docstring_names_the_repo_flag_of_each_command_that_takes_it(self) -> None:
+        doc = (SKILL_ROOT / "scripts" / "devloop.py").read_text().split('"""')[1]
+        for command in ("decide", "pause"):
+            line = next(line for line in doc.splitlines() if line.strip().startswith(f"devloop.py {command} "))
+            self.assertIn("--repo", line, command)
+
+    def test_skill_md_has_no_double_blank_line(self) -> None:
+        self.assertNotIn("\n\n\n", (SKILL_ROOT / "SKILL.md").read_text())
