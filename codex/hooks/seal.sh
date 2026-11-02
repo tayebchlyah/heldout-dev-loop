@@ -4,6 +4,7 @@
 # stop (SubagentStop): run `devloop.py audit`, then `seal-check`; block on a seal violation only.
 # turn (Stop): run `seal-check`; block on a seal violation or an open taint record.
 # stop_hook_active true: no block. Input that is not JSON, no dev-loop.json, or no CLI: exit 0, silent.
+# The CLI comes from the main worktree of the hook cwd. Never starts the board.
 . "${0%/*}/git-pin.sh"
 mode=$1
 input=$(cat)
