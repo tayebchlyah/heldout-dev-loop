@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -94,6 +95,45 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         r=self.hook('board.sh','prompt')
         self.assertEqual((r.returncode,r.stdout),(0,''))
         self.assertEqual(self.calls()[0]['argv'],['board','--event','prompt'])
+
+    def test_board_start_preserves_parent_python_isolation(self):
+        harness = '''import json,os,socket,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from board import server
+with socket.socket() as sock:
+ sock.bind(('127.0.0.1',0))
+ port=sock.getsockname()[1]
+os.environ['PYTHONPATH']=sys.argv[2]
+pid=None
+try:
+ started=server.start(port,'1.0.0',[Path(sys.argv[2])],'machine','owner','started')
+ kind,health=server.probe(port)
+ pid=health.get('pid')
+ result={'start':started['state'],'health':kind,'roots':health.get('roots'),
+         'loaded':Path(sys.argv[3]).exists()}
+finally:
+ stopped=server.stop(port)
+ if pid is not None: os.waitpid(pid,0)
+print(json.dumps({**result,'stop':stopped['state']}))
+'''
+        injection = self.feature/'startup'
+        write(injection/'sitecustomize.py',
+              'from pathlib import Path\nPath('+repr(str(self.marker))+').write_text("child startup")\n')
+        env = {**self.env, 'HOME':str(self.root/'home'), 'TMPDIR':str(self.root)}
+        env.pop('PYTHONPATH', None)
+        for isolated, loaded in ((True, False), (False, True)):
+            with self.subTest(isolated=isolated):
+                self.marker.unlink(missing_ok=True)
+                result = subprocess.run([sys.executable, *(['-I'] if isolated else []), '-c', harness,
+                                         str(SKILL_ROOT/'scripts'), str(injection), str(self.marker)],
+                                        cwd=self.root, env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                self.assertEqual(json.loads(result.stdout),
+                                 {'start':'started', 'health':'board', 'roots':[str(injection)],
+                                  'loaded':loaded, 'stop':'stopped'})
+
+    test_board_start_preserves_parent_python_isolation.proof = True
 
     def test_release_check_uses_main_code_with_isolated_python(self):
         r=self.hook('git-guard.sh',tool_input={'command':'git push origin HEAD:refs/tags/v1.0.0'})
