@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import time
@@ -234,3 +235,21 @@ class SnapshotBoardHookTests(BoardHookFixture, unittest.TestCase):
         result = self.hook("claude", "gate-snapshot.sh", "SubagentStart")
         self.assertEqual((result.returncode, result.stdout), (0, ""))
         self.assert_board_event(self.calls(wait=6), "subagent-start")
+
+
+class CodexGateBoardHookTests(BoardHookFixture, unittest.TestCase):
+    """The Codex gate.sh hook runs a passing fixture gate in its sandbox, then logs the board stop event."""
+
+    @slow
+    def test_codex_gate_runs_then_logs_board_event(self) -> None:
+        for script, event in (("Stop", "stop"), ("SubagentStop", "subagent-stop")):
+            with self.subTest(event=script):
+                self.log.unlink(missing_ok=True)
+                self.gate(False)
+                blocked = self.hook("codex", "gate.sh", script)
+                self.assertEqual(json.loads(blocked.stdout)["decision"], "block")
+                self.assertEqual([c for c in self.calls(wait=1) if "board" in c["argv"]], [])
+                self.gate(True)
+                result = self.hook("codex", "gate.sh", script)
+                self.assertEqual((result.returncode, result.stdout), (0, ""))
+                self.assert_board_event(self.calls(wait=6), event)
