@@ -91,7 +91,7 @@ Feature folders (`Features/<YYYYMMDD> <Title>/` with `Framing.md`, `Spec.md`, `P
 
 1. `DEV_LOOP_NOTES` environment variable.
 2. `notes` in `dev-loop.local.json` in the current worktree, then in the main worktree. This file is gitignored: each person and each machine sets its own path. A new worktree has no copy, so it uses the main worktree's file.
-3. `notes` in the committed `dev-loop.json`, for a team that keeps its notes in the repository (for example `docs/dev-loop`).
+3. `notes` in the committed `dev-loop.json`, read from `main` (`origin/main`, else `main`): a key committed only on a branch is ignored. For a team that keeps its notes in the repository (for example `docs/dev-loop`).
 
 A path is absolute, starts with `~`, or is relative to the repository root. The folder must exist. `init --notes=<path>` writes the local file.
 
