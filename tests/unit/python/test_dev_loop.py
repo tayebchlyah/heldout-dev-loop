@@ -158,25 +158,82 @@ class JUnitReportTests(unittest.TestCase):
         self.assertEqual((case.get("classname"), case.get("name")), ("test_dev_loop.Foo", "setUpClass"))
 
     def test_run_chunk_keeps_the_first_failure_kind_and_appends_later_texts(self) -> None:
-        """A tearDown error after an assertion failure keeps kind `failure` and adds its text."""
-        module = "chunk_probe_" + uuid.uuid4().hex
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, f"{module}.py").write_text(
-                "import unittest\n"
-                "class T(unittest.TestCase):\n"
-                "    def tearDown(self): raise RuntimeError('from tearDown')\n"
-                "    def test_x(self): self.fail('from test')\n")
-            sys.path.insert(0, tmp)
-            try:
-                with contextlib.redirect_stderr(io.StringIO()):
-                    run_chunk(str(Path(tmp, "r.json")), [f"{module}.T.test_x"])
-            finally:
-                sys.path.remove(tmp)
-                sys.modules.pop(module, None)
-            case = json.loads(Path(tmp, "r.json").read_text())[f"{module}.T.test_x"]
-        self.assertEqual(case["outcome"], "failure")
-        self.assertIn("from test", case["text"])
-        self.assertIn("from tearDown", case["text"])
+        """Chunk reports keep selected skips, fixture errors, and the first of multiple failure kinds."""
+        for fixture, action, expected, exit_code in [
+            ("class", "skip", {"T.test_a": "skipped", "T.test_b": "skipped", "U.test_c": "pass"}, 0),
+            ("module", "skip", {"T.test_a": "skipped", "T.test_b": "skipped", "U.test_c": "skipped"}, 0),
+            ("class", "error", {"fixture": "error", "U.test_c": "pass"}, 1),
+            ("module", "error", {"fixture": "error"}, 1),
+            ("class", "teardown-error", {"T.test_a": "pass", "T.test_b": "pass", "fixture": "error", "U.test_c": "pass"}, 1),
+            ("method", "skip", {"T.test_a": "skipped", "T.test_b": "pass", "U.test_c": "pass"}, 0),
+            ("method", "failure", {"T.test_a": "failure", "T.test_b": "error", "U.test_c": "pass"}, 1),
+            ("method", "subtest", {"T.test_a": "pass", "T.test_a (n=1)": "failure", "T.test_b": "pass", "U.test_c": "pass"}, 1),
+        ]:
+            with self.subTest(fixture=fixture, action=action), tempfile.TemporaryDirectory() as tmp:
+                module = "chunk_probe_" + uuid.uuid4().hex
+                raised = "unittest.SkipTest('no Docker engine')" if action == "skip" else "AssertionError('required Docker unavailable')"
+                body = "import unittest\n"
+                if fixture == "module":
+                    body += f"def setUpModule(): raise {raised}\n"
+                body += "class T(unittest.TestCase):\n"
+                if fixture == "class":
+                    setup = "tearDownClass" if action == "teardown-error" else "setUpClass"
+                    body += f"    @classmethod\n    def {setup}(cls): raise {raised}\n"
+                if action == "failure":
+                    body += "    def tearDown(self): raise RuntimeError('from tearDown')\n"
+                method = "raise " + raised if fixture == "method" and action == "skip" else "self.fail('from test')" if action == "failure" else "pass"
+                if action == "subtest":
+                    method = "\n        with self.subTest(n=1): self.fail('from subtest')"
+                body += (f"    def test_a(self): {method}\n    def test_b(self): pass\n"
+                         "class U(unittest.TestCase):\n    def test_c(self): pass\n")
+                Path(tmp, f"{module}.py").write_text(body)
+                ids = [f"{module}.{name}" for name in ("T.test_a", "T.test_b", "U.test_c")]
+                sys.path.insert(0, tmp)
+                try:
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        result = run_chunk(str(Path(tmp, "r.json")), ids)
+                finally:
+                    sys.path.remove(tmp)
+                    sys.modules.pop(module, None)
+                cases = json.loads(Path(tmp, "r.json").read_text())
+                actual = {key.removeprefix(module + ".") if not key.startswith(("setUp", "tearDown")) else "fixture": case["outcome"]
+                          for key, case in cases.items()}
+                self.assertEqual(result, exit_code)
+                self.assertEqual(actual, expected)
+                if action == "failure":
+                    self.assertIn("from test", cases[ids[0]]["text"])
+                    self.assertIn("from tearDown", cases[ids[0]]["text"])
+
+    def test_run_parallel_counts_skips_and_rejects_incomplete_child_reports(self) -> None:
+        """Every selected id needs an outcome, including when a successful child loses report data."""
+        for damage, expected in [("none", 0), ("partial", 1), ("missing", 1)]:
+            with self.subTest(damage=damage), tempfile.TemporaryDirectory() as tmp:
+                module = "parallel_probe_" + uuid.uuid4().hex
+                Path(tmp, f"{module}.py").write_text(
+                    "import unittest\nclass T(unittest.TestCase):\n"
+                    " @classmethod\n def setUpClass(cls): raise unittest.SkipTest('fixture unavailable')\n"
+                    " def test_a(self): pass\n def test_b(self): pass\n"
+                    "class U(unittest.TestCase):\n def test_c(self): pass\n")
+                code = ("import json,sys,unittest; from pathlib import Path; import test_dev_loop as runner\n"
+                        f"import {module} as fixture\n"
+                        "for name,value in list(vars(runner).items()):\n"
+                        " if isinstance(value,type) and issubclass(value,unittest.TestCase): delattr(runner,name)\n"
+                        "runner.T=fixture.T;runner.U=fixture.U\n"
+                        "original=runner.subprocess.run\n"
+                        "def child(*args,**kwargs):\n"
+                        " result=original(*args,**kwargs)\n"
+                        " report=Path(args[0][args[0].index('--chunk')+1])\n"
+                        f" if {damage!r}=='missing': report.unlink()\n"
+                        f" if {damage!r}=='partial':\n"
+                        "  cases=json.loads(report.read_text());cases.pop(next(iter(cases)));report.write_text(json.dumps(cases))\n"
+                        " return result\n"
+                        "runner.subprocess.run=child\nraise SystemExit(runner.run_parallel(1))\n")
+                env = {**os.environ, "PYTHONPATH": os.pathsep.join((tmp, str(Path(__file__).parent)))}
+                result = subprocess.run([sys.executable, "-B", "-c", code], cwd=tmp, env=env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                if damage == "none":
+                    self.assertIn("Ran 3 of 3 tests", result.stdout)
 
     def test_record_dead_chunks_makes_an_error_of_each_id_without_a_report(self) -> None:
         """A chunk process that died before writing its JSON: each of its ids becomes an error with its stderr tail."""
@@ -247,22 +304,38 @@ def run_parallel(jobs: int) -> int:
     with ThreadPoolExecutor(jobs) as pool:
         results = list(pool.map(run, chunks))
     record_dead_chunks(outcomes, chunks, [r.stderr for r in results])
+    cases = {}
+    for report in outcomes.glob("*.json"):
+        cases.update(json.loads(report.read_text()))
     if os.environ.get("DEVLOOP_REPORT_DIR"):
         write_junit(Path(os.environ["DEVLOOP_REPORT_DIR"]) / "skill.xml", outcomes)
     shutil.rmtree(outcomes, ignore_errors=True)
-    ran = sum(int(m.group(1)) for r in results if (m := re.search(r"^Ran (\d+) tests?", r.stderr, re.MULTILINE)))
+    ran = sum(test_id in cases for test_id in ids)
     failed = [r for r in results if r.returncode != 0]
     for result in failed:
         print(without_summary(result.stderr), file=sys.stderr)
-    ok = not failed and ran == len(ids)
+    ok = not failed and ran == len(ids) and not any(case["outcome"] in ("failure", "error") for case in cases.values())
     print(f"Ran {ran} of {len(ids)} tests in {time.monotonic() - start:.1f}s, {jobs} jobs: {'OK' if ok else 'FAILED'}")
     return 0 if ok else 1
 
 
 def run_chunk(report: str, ids: list[str]) -> int:
     """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
-    result = unittest.TextTestRunner(resultclass=TimedResult).run(unittest.TestLoader().loadTestsFromNames(ids))
-    Path(report).write_text(json.dumps(case_outcomes(result)))
+    suite = unittest.TestLoader().loadTestsFromNames(ids)
+    tests = list(flat(suite))
+    result = unittest.TextTestRunner(resultclass=TimedResult).run(suite)
+    cases = case_outcomes(result)
+    fixtures = set()
+    for test in tests:
+        cls = type(test)
+        for setup, scope in (("setUpClass", cls.__module__ + "." + cls.__qualname__), ("setUpModule", cls.__module__)):
+            fixture = f"{setup} ({scope})"
+            if fixture in cases and cases[fixture]["outcome"] == "skipped":
+                cases.setdefault(test.id(), dict(cases[fixture]))
+                fixtures.add(fixture)
+    for fixture in fixtures:
+        del cases[fixture]
+    Path(report).write_text(json.dumps(cases))
     return 0 if result.wasSuccessful() else 1
 
 
