@@ -327,7 +327,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         (folder / dl.BOARD_FEATURES).mkdir(exist_ok=True)
         events = [*drain(queue),
                   *([(event, hook_cwd.resolve(), hook_session, hook_agent, hook_transcript)] if event and hook_cwd else [])]
-        claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+        claude = dl.claude_home(os.environ, home)
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
                       state.load(state_dir), claude)
         while True:

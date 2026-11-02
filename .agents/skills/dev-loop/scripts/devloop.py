@@ -62,6 +62,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 # Write no __pycache__ into the skill folder: in a project it is a vendored kit folder.
@@ -92,6 +93,14 @@ def git(repo: Path, *args: str) -> str | None:
     if GIT_CACHE is not None:
         GIT_CACHE[key] = out
     return out
+
+
+def claude_home(env: Mapping[str, str], home: Path) -> Path:
+    return Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+
+
+def codex_home(env: Mapping[str, str], home: Path) -> Path:
+    return Path(env.get("CODEX_HOME") or home / ".codex")
 
 
 def slug_from_title(filename: str) -> str:
