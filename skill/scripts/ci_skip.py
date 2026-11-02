@@ -74,6 +74,17 @@ def released(repo: Path, head: str) -> str | None:
     return match.group(1).decode("utf-8", "replace") if match else None
 
 
+def kit_allowed(repo: Path, mb: str, head: str, paths: set[str], ref: dict) -> set[str]:
+    """The kit paths of `paths` allowed against the kit `ref` the base builds: copies equal to it at `head`, and copies
+    `head` drops that the MANIFEST `files` of `mb` listed and `ref` no longer has."""
+    allowed = release.kit_matches(repo, head, paths, ref)
+    tree = release.run_git(repo, "ls-tree", "-r", "-z", "--name-only", "--full-tree", head)
+    present = set(tree.stdout.split("\0"))
+    old_files = (release.manifest_at(repo, mb) or {}).get("files")
+    dropped = old_files if isinstance(old_files, dict) else {}
+    return allowed | {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in dropped and p not in ref}
+
+
 def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
     """The sorted paths of `paths` that no rule allows: `CHANGELOG.md`, a version-only change of a `version_files`
     path, a `dev-loop.json` change of `version` only, a kit copy of a kit upgrade that equals the kit the merge
@@ -103,12 +114,7 @@ def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
     was, now = release.version_at(repo, mb), release.version_at(repo, head)
     ref = release.kit_reference(repo, mb) if was and now and was != now else None
     if ref is not None:
-        allowed |= release.kit_matches(repo, head, set(paths), ref)
-        tree = release.run_git(repo, "ls-tree", "-r", "-z", "--name-only", "--full-tree", head)
-        present = set(tree.stdout.split("\0"))
-        old_files = (release.manifest_at(repo, mb) or {}).get("files")
-        dropped = old_files if isinstance(old_files, dict) else {}
-        allowed |= {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in dropped and p not in ref}
+        allowed |= kit_allowed(repo, mb, head, set(paths), ref)
     return sorted(p for p in paths if p not in allowed or p in MERGED)
 
 
