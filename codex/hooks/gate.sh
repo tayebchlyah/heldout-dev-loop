@@ -21,8 +21,8 @@ dirty=$(git status --porcelain 2>/dev/null) && [ -z "$dirty" ] && { board; exit 
 
 if [ -n "$gate" ]; then set -- sh -c "$gate"; else set -- scripts/gate.sh; fi
 output=$(mktemp)
-main=$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -n 1)
-printf '%s' "$input" | GATE_SCOPE=changed python3 -I "$(dirname "$0")/sandbox.py" "$main" "$cwd" -- "$@" >"$output" 2>&1
+main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+GATE_SCOPE=changed python3 -I "$(dirname "$0")/sandbox.py" "$main" "$cwd" -- "$@" </dev/null >"$output" 2>&1
 status=$?
 if [ "$status" -eq 0 ]; then
   board

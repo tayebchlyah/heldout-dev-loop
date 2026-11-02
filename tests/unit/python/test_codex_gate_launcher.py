@@ -74,6 +74,10 @@ class CodexHookSandboxTests(unittest.TestCase):
                     else:
                         self.assertIn('--include-managed-config', args)
 
+    def test_gate_command_reads_end_of_input(self):
+        r = self.gate('echo "stdin-bytes=$(cat | wc -c | tr -d " ")"; exit 7')
+        self.assertIn('stdin-bytes=0', json.loads(r.stdout)['reason'])
+
     def test_gate_success_and_existing_skips_are_silent(self):
         for command, active in [('exit 0', False), ('exit 9', True)]:
             with self.subTest(command=command):
