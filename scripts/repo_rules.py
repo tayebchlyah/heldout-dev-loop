@@ -88,15 +88,31 @@ def kind_ok(text: str) -> bool:
     return KINDS.search(text) is not None
 
 
+def python_tokens(text: str) -> list[tokenize.TokenInfo] | None:
+    try:
+        return list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return None
+
+
+def code_rows(tokens: list[tokenize.TokenInfo]) -> set[int]:
+    return {row for tok in tokens if tok.type not in CODE_TOKENS for row in range(tok.start[0], tok.end[0] + 1)}
+
+
+def trailing_comments(path: str, text: str) -> dict[int, str]:
+    tokens = python_tokens(text) if path.endswith(".py") else None
+    if tokens is None:
+        return {}
+    code = code_rows(tokens)
+    return {tok.start[0]: tok.string.strip() for tok in tokens if tok.type == tokenize.COMMENT and tok.start[0] in code}
+
+
 def comment_lines(path: str, text: str) -> dict[int, str]:
     lines = text.splitlines()
     if path.endswith(".py"):
-        try:
-            tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
-        except (tokenize.TokenError, SyntaxError):
-            tokens = None
+        tokens = python_tokens(text)
         if tokens is not None:
-            code = {row for tok in tokens if tok.type not in CODE_TOKENS for row in range(tok.start[0], tok.end[0] + 1)}
+            code = code_rows(tokens)
             return {tok.start[0]: lines[tok.start[0] - 1].strip() for tok in tokens
                     if tok.type == tokenize.COMMENT and tok.start[0] not in code}
     marker = "//" if path.endswith((".mjs", ".js", ".ts")) else "#"
@@ -143,7 +159,9 @@ def base_comments(repo: Path, base: str) -> set[str]:
         size = int(header[2])
         blob, pos = out[pos:pos + size], pos + size + 1
         try:
-            texts.update(comment_lines(path, blob.decode()).values())
+            source = blob.decode()
+            texts.update(comment_lines(path, source).values())
+            texts.update(trailing_comments(path, source).values())
         except UnicodeDecodeError:
             continue
     return texts
@@ -184,6 +202,9 @@ def comments(repo: Path, base: str) -> tuple[dict, int]:
         allowed = allowed_lines(path, text)
         for n, line in comment_lines(path, text).items():
             if (rows is None or n in rows) and n not in allowed and line not in old:
+                violations.append({"path": path, "line": n, "text": line})
+        for n, line in trailing_comments(path, text).items():
+            if (rows is None or n in rows) and not kind_ok(line) and line not in old:
                 violations.append({"path": path, "line": n, "text": line})
     violations.sort(key=lambda v: (v["path"], v["line"]))
     return {"ok": not violations, "base": base, "violations": violations}, int(bool(violations))
