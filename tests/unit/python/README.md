@@ -10,6 +10,7 @@ One file per subject. A new test file adds its line here.
 - `test_seal_check.py`, `test_search_wall.py`, `test_search_hooks.py`: `seal-check`, `kit-changed`, `weakened`; `search-wall`: direct, via walls.
 - `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, `gate` and `seal` size; seal hooks, guard, spec-tester, Codex walls.
 - `test_kit_walls.py`, `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: path, kit, `cd` walls, canary script, Codex trust warning; deny walls, Codex hooks, git and gh guard.
+- `test_frontmatter_walls.py`: the settings twin of each agent frontmatter wall.
 - `test_board_robust.py`, `test_notes_migrate.py`, `test_notes_migrate_apply.py`: board robustness; `notes-migrate`.
 - `test_board_layout.py`, `test_board_tasks.py`, `test_verify.py`, `test_capture.py`: board folders, names; task state, subagents, hook filter; `verify-init`, `drive`, verify checks; `capture`.
 - `test_second_review.py`, `test_release.py`, `test_release_record.py`, `test_release_carry.py`: `second-review`; `release-check`, `release-plan`, `release-notes`; `release-record`; the `accept` carry of `release-record`.
