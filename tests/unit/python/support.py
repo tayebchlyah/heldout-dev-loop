@@ -293,6 +293,7 @@ if 'PROBE_ARGV' in os.environ:Path(os.environ['PROBE_ARGV']).write_text(json.dum
 if os.environ.get('PROBE_EARLY'):sys.exit(19)
 for key in ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy']:
  os.environ.pop(key,None)
+if os.environ.get('PROBE_PROXY'):os.environ['HTTP_PROXY']=os.environ['PROBE_PROXY']
 sys.exit(subprocess.run(args[args.index('--')+1:]).returncode)
 '''
 

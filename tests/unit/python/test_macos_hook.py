@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import socket
+import signal
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,9 @@ class MacosHookTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.feature = self.root / 'feature'
         self.feature.mkdir()
+        self.main = self.root / 'trusted'
+        self.common = self.root / 'common-metadata'
+        subprocess.run(['git', 'init', '-q', '--separate-git-dir', str(self.common), str(self.main)], check=True)
         self.fixture = self.root / 'native.py'
         self.fixture.write_text('import subprocess,sys\na=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
         self.rules = {'/': 'read', str(self.feature): 'write'}
@@ -34,9 +38,9 @@ class MacosHookTests(unittest.TestCase):
                   '__import__("json").loads(sys.argv[3]),__import__("pathlib").Path(sys.argv[4]),'
                   '[sys.executable,"-I","-c",sys.argv[5]],sys.argv[6]=="1",sys.argv[7]=="1"))')
         return subprocess.run([sys.executable, '-I', '-c', source, str(CODEX_ASSETS / 'hooks'),
-                               json.dumps(keeper or [sys.executable, '-I', str(self.fixture)]),
+                               json.dumps(keeper or [sys.executable, '-I', str(self.fixture), '-C', str(self.main)]),
                                json.dumps(rules or self.rules), str(self.feature), code, str(int(network)), str(int(local))],
-                              input='gate input', capture_output=True, text=True)
+                              input='gate input', capture_output=True, text=True, timeout=15)
 
     def test_run_filesystem_and_exit_proof(self):
         secret = self.root / '.env'
@@ -55,17 +59,22 @@ class MacosHookTests(unittest.TestCase):
         temporary_root = Path(tempfile.gettempdir()).resolve()
         alias = self.root / 'temporary-alias'
         alias.symlink_to(temporary_root, target_is_directory=True)
-        marker = self.feature / 'must-not-start'
-        for extra, allowed in [({str(temporary_root): 'read'}, False),
-                               ({str(alias): 'read'}, False),
-                               ({str(temporary_root): 'deny'}, False),
+        target = temporary_root / ('devloop-readonly-' + str(os.getpid()))
+        self.addCleanup(target.unlink, missing_ok=True)
+        for extra, allowed in [({str(temporary_root): 'write', str(alias): 'read'}, False),
+                               ({str(alias): 'read', str(temporary_root): 'write'}, False),
+                               ({str(temporary_root): 'write', str(alias): 'deny'}, False),
+                               ({str(temporary_root): 'read'}, False),
                                ({str(temporary_root.parent): 'read', str(temporary_root): 'write'}, True)]:
             with self.subTest(rules=extra, allowed=allowed):
-                marker.unlink(missing_ok=True)
-                result = self.launch('from pathlib import Path; Path("must-not-start").touch()',
-                                     {**self.rules, **extra})
-                self.assertEqual(result.returncode == 0, allowed, result.stderr)
-                self.assertEqual(marker.exists(), allowed, 'project command did not respect the temporary-root limit')
+                code = ('from pathlib import Path; Path("nested-allowed").write_text("yes")\n'
+                        f'try: Path({str(target)!r}).write_text("probe")\n'
+                        f'except PermissionError: assert not {allowed!r}\n'
+                        f'else: assert {allowed!r}, "readonly alias writable"')
+                result = self.launch(code, {**self.rules, **extra})
+                if 'deny' not in extra.values():
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(target.exists(), allowed)
 
     def test_run_globs_metadata_and_nested_read_proof(self):
         main = self.root / 'main'
@@ -77,6 +86,10 @@ class MacosHookTests(unittest.TestCase):
             (nested / name / 'config').write_text('base')
         (nested / '.env.private').write_text('secret')
         (nested / '.private').write_text('secret')
+        protected = self.common / 'concurrent-helper'
+        protected.write_text('trusted')
+        metadata_alias = self.feature / 'metadata-alias'
+        metadata_alias.symlink_to(self.common, target_is_directory=True)
         child = nested / 'child'
         child.mkdir()
         (child / '.env.secret').write_text('secret')
@@ -88,14 +101,18 @@ class MacosHookTests(unittest.TestCase):
                  str(main / '**/.private'): 'deny', str(main / '**/.env.*'): 'deny'}
         code = ('from pathlib import Path; '
                 f'n=Path({str(nested)!r}); (n/"allowed").write_text("yes")\n'
-                f'for name in {[str(main / "base"), *[str(nested / name / "config") for name in (".git", ".agents", ".codex", ".aws")], str(alias), str(nested / ".private"), str(child / ".env.secret")]!r}:\n'
+                f'for name in {[str(main / "base"), *[str(nested / name / "config") for name in (".git", ".agents", ".codex", ".aws")], str(alias), str(nested / ".private"), str(child / ".env.secret"), str(protected), str(metadata_alias / "concurrent-helper")]!r}:\n'
                 ' try:\n  Path(name).write_text("escape")\n except PermissionError: pass\n else: raise AssertionError(name)\n')
         result = self.launch(code, rules)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(protected.read_text(), 'trusted')
 
     def test_run_rejects_keeper_failure_and_nonlocal_proxy_proof(self):
         for body in ['raise SystemExit(19)',
-                     'import json,time; print(json.dumps({"version":1,"env":{"HTTP_PROXY":"http://example.com:80"}}),flush=True); time.sleep(30)']:
+                     *[('import json,time; print(json.dumps({"version":1,"env":' + repr(env) + '}),flush=True); time.sleep(30)')
+                       for env in [{'HTTP_PROXY': 'http://example.com:80'}, {'bad=key': 'value'}, {'': 'value'}, {'x': 4},
+                                   {'x': 'bad\0value'}, {'HTTP_PROXY': 'http://127.0.0.1:80/path'},
+                                   {'HTTP_PROXY': 'http://127.0.0.1:80?query'}, {'x': 'x' * 70000}]]]:
             with self.subTest(body=body):
                 self.fixture.write_text(body)
                 if 'DEVLOOP_MACOS_BROKER' in os.environ:
@@ -105,6 +122,23 @@ class MacosHookTests(unittest.TestCase):
                     result = self.launch('from pathlib import Path; Path("escaped").touch()')
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((self.feature / 'escaped').exists())
+
+    def test_run_native_environment_snapshot_proof(self):
+        self.fixture.write_text('import os,subprocess,sys\n'
+                                'os.environ.pop("DEVLOOP_DUMMY_EXCLUDED",None)\n'
+                                'os.environ["DEVLOOP_DUMMY_SET"]="native-value"\n'
+                                'a=sys.argv[1:]; sys.exit(subprocess.call(a[a.index("--")+1:]))\n')
+        code = ('import os; assert "DEVLOOP_DUMMY_EXCLUDED" not in os.environ; '
+                'assert os.environ["DEVLOOP_DUMMY_SET"]=="native-value"')
+        environment = {'DEVLOOP_DUMMY_EXCLUDED': 'host-value', 'DEVLOOP_DUMMY_SET': 'host-value'}
+        if 'DEVLOOP_MACOS_BROKER' in os.environ:
+            environment['DEVLOOP_DUMMY_SET'] = 'native-value'
+            environment['DEVLOOP_DUMMY_EXCLUDED'] = None
+        with patch.dict(os.environ, {k: v for k, v in environment.items() if v is not None}):
+            if environment['DEVLOOP_DUMMY_EXCLUDED'] is None:
+                os.environ.pop('DEVLOOP_DUMMY_EXCLUDED', None)
+            result = self.launch(code)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_run_process_listing_hides_environment_proof(self):
         result = self.launch('import os,subprocess; marker="DEVLOOP_"+"ENV_SECRET"; '
@@ -154,6 +188,30 @@ class MacosHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 19, result.stderr)
         self.assertEqual(result.stdout, 'gate input\n')
         self.assertEqual(result.stderr, 'nested stderr\n')
+
+    def test_run_cleans_descendants_after_leader_exit_proof(self):
+        marker = self.feature / 'descendant-group'
+        child = ('import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); '
+                 f'open({str(marker)!r},"w").write(str(os.getpgrp())); time.sleep(60)')
+        code = ('import subprocess,sys,time; '
+                f'subprocess.Popen([sys.executable,"-I","-c",{child!r}]); '
+                f'\nwhile not __import__("pathlib").Path({str(marker)!r}).exists(): time.sleep(.01)\n')
+        nested = ('import sys; sys.dont_write_bytecode=True; '
+                  f'sys.path.insert(0,{str(CODEX_ASSETS / "hooks")!r}); import macos; '
+                  f'sys.exit(macos.run([],{{"/":"write"}},__import__("pathlib").Path({str(self.feature)!r}),'
+                  f'[sys.executable,"-I","-c",{code!r}],False,False))')
+        for command in [code, nested]:
+            with self.subTest(nested=command == nested):
+                marker.unlink(missing_ok=True)
+                try:
+                    result = self.launch(command)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                finally:
+                    if marker.exists():
+                        try:
+                            os.killpg(int(marker.read_text()), signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
 
     def test_run_network_proxy_local_binding_and_unix_proof(self):
         with socket.socket() as proxy, socket.socket() as other, socket.socket(socket.AF_UNIX) as unix:

@@ -117,11 +117,13 @@ class CodexHookSandboxTests(unittest.TestCase):
 
     def test_policy_keeps_trusted_denies_but_removes_write_grants(self):
         self.env['PROBE_NATIVE_NULLS'] = '1'
+        self.env['PROBE_PROXY'] = 'http://127.0.0.1:9'
         self.config.write_text('[permissions.parent]\nextends=":workspace"\n'
                                '[permissions.parent.filesystem]\n'+json.dumps(str(self.root/'outside'))+'="write"\n'
                                +json.dumps(str(self.main/'secret'))+'="deny"\n'
                                '[permissions.parent.filesystem.":workspace_roots"]\n"**/.private"="deny"\n'
-                               '[permissions.dev-workspace]\nextends="parent"\n')
+                               '[permissions.dev-workspace]\nextends="parent"\n'
+                               '[permissions.dev-workspace.network]\nenabled=true\nmode="limited"\nallowed_domains=["example.invalid"]\n')
         write(self.feature/'.codex/config.toml', '[permissions.dev-workspace]\nextends=":full-access"\n')
         write(self.main/'secret', 'trusted-secret')
         write(self.feature/'.private', 'feature-secret')
@@ -146,6 +148,8 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertIn(json.dumps(str(self.feature))+'="write"', table)
         self.assertIn(json.dumps(str(self.main))+'="read"', table)
         network = next(x for x in args if x.startswith('permissions.dev-workspace.network='))
+        self.assertIn('\"mode\"=\"limited\"', network)
+        self.assertIn('\"allowed_domains\"=[\"example.invalid\"]', network)
         self.assertIn('\"unix_sockets\"={}', network)
         self.assertIn('\"dangerously_allow_all_unix_sockets\"=false', network)
 
