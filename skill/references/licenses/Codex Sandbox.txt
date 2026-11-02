@@ -2,6 +2,15 @@ Codex Seatbelt policies from OpenAI Codex rust-v0.166.0
 https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/sandboxing/src
 Copyright OpenAI. Apache License 2.0.
 
+NOTICE of rust-v0.166.0, verbatim:
+
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
