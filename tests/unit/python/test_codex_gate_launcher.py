@@ -3,13 +3,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
 from support import CODEX_ASSETS, CODEX_GATE_FIXTURE, write
+
+sys.path.insert(0, str(CODEX_ASSETS / 'hooks'))
+import sandbox
 
 
 class CodexHookSandboxTests(unittest.TestCase):
@@ -167,6 +173,25 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertIn('\"unix_sockets\"={}', network)
         self.assertIn('\"dangerously_allow_all_unix_sockets\"=false', network)
 
+    def test_launch_neutralises_trusted_write_grants_and_socket_allows(self):
+        outside = str(self.root / 'outside')
+        self.config.write_text('[permissions.dev-workspace]\nextends=":workspace"\n'
+                               '[permissions.dev-workspace.filesystem]\n'+json.dumps(outside)+'="write"\n'
+                               '[permissions.dev-workspace.filesystem.":workspace_roots"]\n".git"="write"\n"**/.private"="deny"\n'
+                               '[permissions.dev-workspace.network.unix_sockets]\n"/var/run/docker.sock"="allow"\n')
+        r = self.launch(sys.executable, '-I', '-c', 'pass')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        args = json.loads(self.log.read_text())
+        if os.environ.get('DEVLOOP_MACOS_BROKER'):
+            self.assertIn('app-server', args)
+            return
+        values = {x.split('=', 1)[0]: tomllib.loads('v=' + x.split('=', 1)[1])['v']
+                  for x in args if x.startswith('permissions.dev-workspace.')}
+        table = values['permissions.dev-workspace.filesystem']
+        self.assertEqual(table[outside], 'read')
+        self.assertEqual(table[':workspace_roots'], {'.git': 'read', '**/.private': 'deny'})
+        self.assertEqual(values['permissions.dev-workspace.network']['unix_sockets'], {'/var/run/docker.sock': 'deny'})
+
     def test_invalid_policy_blocks_before_native_or_gate(self):
         for config in ['not toml [', '[permissions.dev-workspace]\nextends="missing"\n',
                        '[permissions.dev-workspace]\nextends="dev-workspace"\n']:
@@ -214,3 +239,46 @@ class CodexHookSandboxTests(unittest.TestCase):
                     self.assertFalse(Path(result.stdout).exists())
                 else:
                     self.assertEqual(result.stdout, '')
+
+
+def native_codex():
+    found = shutil.which('codex')
+    if found:
+        version = subprocess.run([found, '--version'], capture_output=True, text=True).stdout
+        match = re.search(r'codex-cli (\d+)\.(\d+)\.(\d+)', version)
+        if match and tuple(map(int, match.groups())) >= (0, 166, 0):
+            return found
+
+
+@unittest.skipUnless(native_codex(), 'native codex-cli 0.166.0 or later required')
+class NativeCodexPolicyTests(unittest.TestCase):
+    """The table that sandbox.py hands to the real `codex sandbox` is the whole effective policy."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix='devloop-native-', dir='/tmp')).resolve()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.main, self.feature, self.outside = (self.root / n for n in ('main', 'feature', 'outside'))
+        for path in (self.main, self.feature, self.outside, self.root / 'home'):
+            path.mkdir()
+        subprocess.run(['git', '-C', str(self.main), 'init', '-q'], check=True)
+
+    def confined(self, profile, trusted_toml, *command):
+        (self.root / 'home/config.toml').write_text('[permissions.dev-workspace]\nextends=":workspace"\n' + trusted_toml)
+        table, sockets = sandbox.neutralised(profile, sandbox.filesystem(profile, self.main, self.feature))
+        args = sandbox.native_args(native_codex(), self.main, {
+            'permissions.dev-workspace.extends': ':read-only',
+            'permissions.dev-workspace.filesystem': table,
+            'permissions.dev-workspace.network': {'unix_sockets': sockets}})
+        return subprocess.run([*args, '--', *command], capture_output=True, text=True, timeout=60,
+                              env={**os.environ, 'CODEX_HOME': str(self.root / 'home')})
+
+    def test_trusted_write_grants_do_not_survive(self):
+        profile = {'filesystem': {str(self.outside): 'write', ':workspace_roots': {'.git': 'write'}}}
+        trusted = ('[permissions.dev-workspace.filesystem]\n' + json.dumps(str(self.outside)) + '="write"\n'
+                   '[permissions.dev-workspace.filesystem.":workspace_roots"]\n".git"="write"\n')
+        for target, allowed in [(self.outside / 'probe', False), (self.main / '.git/probe', False),
+                                (self.feature / 'ok', True)]:
+            with self.subTest(target=str(target)):
+                result = self.confined(profile, trusted, 'touch', str(target))
+                self.assertEqual(result.returncode, 0 if allowed else 1, result.stderr)
+                self.assertEqual(target.exists(), allowed)

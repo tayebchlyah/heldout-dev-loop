@@ -47,7 +47,7 @@ def trusted_profile(codex, main):
         own = without_nulls(own)
         return merge(inherit(own.get('extends') or ':read-only', stack | {name}), own)
 
-    return inherit('dev-workspace', set()), requirements
+    return inherit('dev-workspace', set()), without_nulls(profiles['dev-workspace']), requirements
 
 
 def filesystem(profile, main, feature):
@@ -85,6 +85,18 @@ def filesystem(profile, main, feature):
     return rules
 
 
+def neutralised(own, computed):
+    """Overrides that Codex key-merges over the trusted table, so no trusted grant survives."""
+    demote = lambda value: 'read' if value == 'write' else value
+    table = dict(computed)
+    for key, value in (own.get('filesystem') or {}).items():
+        if key in computed or key == 'glob_scan_max_depth':
+            continue
+        table[key] = {k: demote(v) for k, v in value.items()} if isinstance(value, dict) else demote(value)
+    sockets = {key: 'deny' for key in ((own.get('network') or {}).get('unix_sockets') or {})}
+    return table, sockets
+
+
 def without_nulls(value):
     if isinstance(value, dict):
         return {key: without_nulls(item) for key, item in value.items() if item is not None}
@@ -95,6 +107,13 @@ def toml(value):
     if isinstance(value, dict):
         return '{' + ','.join(json.dumps(k) + '=' + toml(v) for k, v in value.items()) + '}'
     return json.dumps(value)
+
+
+def native_args(codex, main, overrides):
+    args = [codex, 'sandbox', '-C', str(main), '-P', 'dev-workspace', '--include-managed-config']
+    for key, value in overrides.items():
+        args += ['-c', key + '=' + toml(value)]
+    return args
 
 
 def main():
@@ -109,23 +128,23 @@ def main():
         found = re.search(r'codex-cli (\d+)\.(\d+)\.(\d+)', version.stdout)
         if not found or tuple(map(int, found.groups())) < (0, 166, 0):
             raise ValueError('require codex-cli 0.166.0 or later')
-        profile, requirements = trusted_profile(codex, trusted)
+        profile, own, requirements = trusted_profile(codex, trusted)
         network = without_nulls(profile.get('network') or {})
         if not isinstance(network, dict):
             raise ValueError('invalid network policy')
         if (requirements.get('network') or {}).get('allowLocalBinding') is False:
             network['allow_local_binding'] = False
-        network |= {'unix_sockets': {}, 'dangerously_allow_all_unix_sockets': False}
+        rules = filesystem(profile, trusted, feature)
+        table, sockets = neutralised(own, rules)
+        network |= {'unix_sockets': sockets, 'dangerously_allow_all_unix_sockets': False}
         overrides = {'features.network_proxy': True,
                      'permissions.dev-workspace.extends': ':read-only',
-                     'permissions.dev-workspace.filesystem': filesystem(profile, trusted, feature),
+                     'permissions.dev-workspace.filesystem': table,
                      'permissions.dev-workspace.network': network}
-        args = [codex, 'sandbox', '-C', str(trusted), '-P', 'dev-workspace', '--include-managed-config']
-        for key, value in overrides.items():
-            args += ['-c', key + '=' + toml(value)]
+        args = native_args(codex, trusted, overrides)
         if sys.platform == 'darwin':
             import macos
-            return macos.run(args, overrides['permissions.dev-workspace.filesystem'], feature,
+            return macos.run(args, rules, feature,
                              sys.argv[4:], network.get('enabled') is True,
                              network.get('allow_local_binding') is True)
         with tempfile.TemporaryDirectory(prefix='.devloop-hook-', dir='/tmp') as temp:
