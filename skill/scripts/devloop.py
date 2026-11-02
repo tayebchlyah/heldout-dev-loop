@@ -120,7 +120,7 @@ SPECS_CACHE: dict[str, list[tuple[str, Path]]] | None = None
 
 def cache_notes() -> None:
     """From now on in this process, `frontmatter` and `specs` return their first answer per path. For `status`, which
-    writes no note (#152)."""
+    writes no spec or plan (#152)."""
     global FRONTMATTER_CACHE, SPECS_CACHE
     FRONTMATTER_CACHE, SPECS_CACHE = {}, {}
 
@@ -130,7 +130,7 @@ def frontmatter(path: Path) -> dict[str, str]:
         return dict(FRONTMATTER_CACHE[str(path)])
     fields = read_frontmatter(path)
     if FRONTMATTER_CACHE is not None:
-        FRONTMATTER_CACHE[str(path)] = dict(fields)
+        FRONTMATTER_CACHE[str(path)] = fields
     return fields
 
 
@@ -172,7 +172,7 @@ def specs(notes: Path) -> list[tuple[str, Path]]:
         return list(SPECS_CACHE[str(notes)])
     found = read_specs(notes)
     if SPECS_CACHE is not None:
-        SPECS_CACHE[str(notes)] = list(found)
+        SPECS_CACHE[str(notes)] = found
     return found
 
 
