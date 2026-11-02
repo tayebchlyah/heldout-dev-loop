@@ -336,9 +336,8 @@ class CodexHookBehaviorTests(unittest.TestCase):
         self, name: str, payload: dict, *args: str, env: dict | None = None
     ) -> subprocess.CompletedProcess[str]:
         if name == "gate.sh":
-            repo = Path(payload["cwd"])
             from support import codex_gate_env
-            env = {**os.environ, **(env or {}), **codex_gate_env(repo)}
+            env = {**os.environ, **(env or {}), **codex_gate_env()}
         return subprocess.run(
             ["sh", str(CODEX_ASSETS / "hooks" / name), *args],
             input=json.dumps(payload),

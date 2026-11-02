@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import atexit
 import importlib.util
 import json
 import os
@@ -299,9 +300,10 @@ sys.exit(subprocess.run(args[args.index('--')+1:]).returncode)
 '''
 
 
-def codex_gate_env(repo):
-    """A fake codex and its config in a folder beside the repo, so the repo under test stays as it is."""
-    folder = repo.parent / (repo.name + '-codex')
+def codex_gate_env():
+    """A fake codex and its config in a folder of their own, so the repo under test stays as it is."""
+    folder = Path(tempfile.mkdtemp(prefix='devloop-codex-env-'))
+    atexit.register(shutil.rmtree, folder, ignore_errors=True)
     fake = folder / 'bin/codex'
     write(fake, '#!' + sys.executable + '\n' + CODEX_GATE_FIXTURE)
     fake.chmod(0o755)

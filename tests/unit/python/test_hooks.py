@@ -113,7 +113,7 @@ class ClaudeGateTests(unittest.TestCase):
             repo = self.repo(root)
             marker = repo / "ran"
             write(repo / "json.py", f"open({str(marker)!r}, 'a').write('json')\nraise SystemExit\n")
-            codex_env = codex_gate_env(repo)
+            codex_env = codex_gate_env()
             for command, payload, env in (
                     (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
                     (["sh", str(CODEX_ASSETS / "hooks" / "gate.sh")], {"hook_event_name": "Stop", "cwd": str(repo)}, codex_env)):
@@ -133,7 +133,7 @@ class ClaudeGateTests(unittest.TestCase):
             os.chmod(monitor, 0o755)
             subprocess.run(["git", "-C", str(repo), "config", "core.fsmonitor", str(monitor)], check=True)
             unpinned = {key: value for key, value in os.environ.items() if not key.startswith("GIT_CONFIG_")}
-            codex_env = codex_gate_env(repo)
+            codex_env = codex_gate_env()
             for command, payload, env in (
                     (["bash", str(CLAUDE_HOOKS / "gate.sh")], {"hook_event_name": "Stop"}, {"CLAUDE_PROJECT_DIR": str(repo)}),
                     (["sh", str(CODEX_ASSETS / "hooks" / "gate.sh")], {"hook_event_name": "Stop", "cwd": str(repo)}, codex_env)):
@@ -200,7 +200,7 @@ class HookPlantedProgramTests(unittest.TestCase):
         shell = "bash" if harness == "claude" else "sh"
         env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.repo)}
         if harness == "codex":
-            env.update(codex_gate_env(self.repo))
+            env.update(codex_gate_env())
         return subprocess.run([shell, str(HookGitPinTests.HOOKS[harness] / script)], input=json.dumps(payload),
                               text=True, capture_output=True, check=False, cwd=self.repo, env=env)
 
