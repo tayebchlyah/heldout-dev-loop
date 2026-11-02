@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from support import NOTES_PATH, check_setup, git_in, make_git_repo, notes_path, write
 
@@ -177,9 +178,41 @@ class NotesPathTests(unittest.TestCase):
 
     def test_shared_file_without_notes_falls_through(self) -> None:
         write(self.repo / "dev-loop.json", json.dumps({"other": 1}))
+        git_in(self.repo, "add", "dev-loop.json")
+        git_in(self.repo, "commit", "-q", "-m", "shared")
         with self.assertRaises(notes_path.NotesPathError) as ctx:
             self.resolve()
         self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
+
+    def test_no_git_on_path_is_no_main_ref(self) -> None:
+        with mock.patch.object(notes_path.subprocess, "run", side_effect=FileNotFoundError("git")):
+            with self.assertRaises(notes_path.NotesPathError) as ctx:
+                self.resolve()
+        self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
+
+    def test_missing_folder_of_main_ref_source_names_what_the_user_can_edit(self) -> None:
+        self.commit_shared(self.repo, self.root / "gone")
+        with self.assertRaises(notes_path.NotesPathError) as ctx:
+            self.resolve()
+        self.assertEqual(
+            str(ctx.exception),
+            f"notes folder does not exist: {self.root / 'gone'} (from refs/heads/main:dev-loop.json)."
+            f" Change notes in dev-loop.json on main, or write {self.repo / 'dev-loop.local.json'}",
+        )
+
+    def test_origin_main_wins_over_local_main(self) -> None:
+        self.commit_shared(self.repo, self.folder("origin"))
+        git_in(self.repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        self.commit_shared(self.repo, self.folder("local"))
+        self.assertEqual(self.resolve(), self.folder("origin"))
+
+    def test_invalid_json_at_main_ref_raises(self) -> None:
+        write(self.repo / "dev-loop.json", "{not json")
+        git_in(self.repo, "add", "dev-loop.json")
+        git_in(self.repo, "commit", "-q", "-m", "bad")
+        with self.assertRaises(notes_path.NotesPathError) as ctx:
+            self.resolve()
+        self.assertTrue(str(ctx.exception).startswith("invalid refs/heads/main:dev-loop.json: "))
 
     def test_notes_path_has_no_vault_fallback(self) -> None:
         write(self.home / ".agents" / "dev-loop.config.json", json.dumps({"vault": str(self.folder("vault"))}))
