@@ -107,6 +107,21 @@ test('upgrade of a project with the 1.5.0 simplifier agent deletes it', () => {
   assert.ok(existsSync(join(repo, '.codex/agents/final-reviewer.toml')))
 })
 
+test('upgrade of a project with the Codex hook files policy.py and broker.py deletes them and keeps the merged ones', () => {
+  const { home, repo } = setup()
+  const older = fakePackage('98.0.0', (root) => {
+    for (const name of ['policy.py', 'broker.py']) writeFileSync(join(root, 'codex/hooks', name), `# ${name}\n`)
+    const plan = join(root, 'lib/kit.mjs')
+    writeFileSync(plan, readFileSync(plan, 'utf8').replace("'common.py',", "'common.py', 'policy.py', 'broker.py',"))
+  })
+  run(older, 'init', repo, home, ['--yes', '--harness=codex'])
+  assert.ok(existsSync(join(repo, '.dev-loop/hooks/codex/policy.py')) && existsSync(join(repo, '.dev-loop/hooks/codex/broker.py')))
+
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  for (const name of ['policy.py', 'broker.py']) assert.equal(existsSync(join(repo, '.dev-loop/hooks/codex', name)), false)
+  for (const name of ['sandbox.py', 'common.py', 'macos.py']) assert.ok(existsSync(join(repo, '.dev-loop/hooks/codex', name)))
+})
+
 // The SessionStart command a 1.5.0 project holds in its .claude/settings.json.
 const SESSION_START_1_5 = 'd="${CLAUDE_PROJECT_DIR:-.}"; { [ -f "$d/dev-loop.json" ] || grep -qs \'^vault_notes:\' "$d/AGENTS.md"; } && echo \'This repo runs the dev-loop skill. Invoke it before any other action.\'; exit 0'
 
