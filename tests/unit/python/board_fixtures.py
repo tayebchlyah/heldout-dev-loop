@@ -361,7 +361,7 @@ class BoardHookFixture:
         self.log = self.root / "board-calls.jsonl"
         self.home = self.root / "home"
         self.home.mkdir()
-        self.codex_env = codex_gate_env(self.repo)
+        self.codex_env = codex_gate_env()
 
     def gate(self, passes: bool) -> None:
         gate = self.repo / "scripts" / "gate.sh"
