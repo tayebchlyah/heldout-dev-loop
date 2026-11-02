@@ -464,6 +464,22 @@ class ProjectSetupCheckerTests(unittest.TestCase):
                         result.stdout,
                     )
 
+    def test_a_user_level_skill_under_the_claude_config_root_is_removed_by_hand(self) -> None:
+        self.init("claude")
+        account = Path(self._tmp.name) / "acct"
+        leftover = account / "skills" / "dev-loop"
+        leftover.mkdir(parents=True)
+        result = self.run_checker("claude", CLAUDE_CONFIG_DIR=str(account))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"- user-level dev-loop skill found: {leftover}. Remove that folder\n", result.stdout)
+        self.assertNotIn(f"{leftover}. Run npx", result.stdout)
+
+    def test_the_security_audit_skill_is_read_from_the_claude_config_root(self) -> None:
+        self.init("claude")
+        account = Path(self._tmp.name) / "acct"
+        result = self.run_checker("claude", CLAUDE_CONFIG_DIR=str(account))
+        self.assertIn(f"missing {account / 'skills' / 'security-audit' / 'SKILL.md'}", result.stdout)
+
     def edit_codex_config(self, old: str, new: str) -> None:
         config = self.repo / ".codex" / "config.toml"
         text = config.read_text()

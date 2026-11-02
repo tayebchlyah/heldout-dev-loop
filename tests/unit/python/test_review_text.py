@@ -116,12 +116,17 @@ class ReviewYieldContractTests(unittest.TestCase):
         claude = section(REFERENCES / "claude.md", "## Feature gate")
         codex = section(REFERENCES / "codex.md", "## Feature gate")
         for value in ["`general-purpose`, `model: opus`, `effort: high`",
-                      "~/.claude/skills/security-audit/VALIDATION-AND-REPORTING.md"]:
+                      "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/security-audit/VALIDATION-AND-REPORTING.md"]:
             with self.subTest(route="claude", value=value):
                 self.assertIn(value, claude)
         for value in ["fresh `security_reviewer`", "~/.agents/skills/security-audit/VALIDATION-AND-REPORTING.md"]:
             with self.subTest(route="codex", value=value):
                 self.assertIn(value, codex)
+
+    def test_kit_text_names_the_claude_security_audit_folder_in_the_config_root_form(self) -> None:
+        for path in [*sorted(REFERENCES.glob("*.md")), REPO_ROOT / "reference" / "kit.md"]:
+            with self.subTest(path=path.name):
+                self.assertNotIn("~/.claude/skills/security-audit", path.read_text())
 
     def test_open_needs_validation_item_blocks_a_release(self) -> None:
         self.assertIn("NEEDS VALIDATION", stage_text(7))
