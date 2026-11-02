@@ -71,7 +71,8 @@ def filesystem(profile, main, feature):
         elif root.startswith(':'):
             raise ValueError('unsupported filesystem scope: ' + root)
         else:
-            bases = [Path(root) if Path(root).is_absolute() else main / root]
+            expanded = Path(os.path.expanduser(root)) if root == '~' or root.startswith('~/') else Path(root)
+            bases = [expanded if expanded.is_absolute() else main / root]
         entries = list(value.items()) if isinstance(value, dict) else [('', value)]
         for pattern, permission in entries:
             if permission not in ('read', 'write', 'deny'):
