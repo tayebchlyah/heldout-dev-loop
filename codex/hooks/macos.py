@@ -32,7 +32,7 @@ def _quote(value):
 
 
 def _filter(path):
-    if any(c in path for c in '?[]{}\\\n\r'):
+    if any(c in '"^?[]{}\\' or not c.isprintable() for c in path):
         raise ValueError('unsupported macOS filesystem pattern: ' + path)
     if '*' not in path:
         return '(subpath ' + _quote(path) + ')'
