@@ -42,9 +42,9 @@
   devloop.py metrics [--repo PATH] [--feature SLUG] [--write]
                                                       the token cost of each stage of a feature, its row in Feature Metrics.md
   devloop.py sessions --since DAYS [--repo PATH]       the Claude Code and Codex sessions of the repo, for retro
-  devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
+  devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG] [--repo PATH]
                                                       append one row to the decision log
-  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
+  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...] [--repo PATH]
   devloop.py pause --clear                            write or delete the pause note of the worktree
   devloop.py notes-migrate [--repo PATH] [--apply [--plan HASH]]
                                                       move the notes to the feature folder layout, rewrite the links
