@@ -102,6 +102,19 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertIn('Sandbox startup failed', json.loads(r.stdout)['reason'])
         self.assertFalse(marker.exists())
 
+    def test_launch_loads_project_only_profile_from_trusted_main_proof(self):
+        bootstrap = ('import os,sys\nfrom pathlib import Path\n'
+                     'if "app-server" in sys.argv and Path.cwd()!=Path(os.environ["PROBE_TRUSTED_CWD"]):\n'
+                     ' print("untrusted startup directory",file=sys.stderr);sys.exit(86)\n')
+        write(self.bin / 'codex', '#!' + sys.executable + '\n' + bootstrap + CODEX_GATE_FIXTURE)
+        self.env['PROBE_TRUSTED_CWD'] = str(self.main)
+        result = subprocess.run([sys.executable, '-I', str(CODEX_ASSETS / 'hooks/sandbox.py'),
+                                 str(self.main), str(self.feature), '--', sys.executable, '-I', '-c',
+                                 'import json,os,sys; print(json.dumps([os.getcwd(),sys.stdin.read()])); sys.exit(19)'],
+                                cwd=self.feature, input='feature stdin', env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 19, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [str(self.feature), 'feature stdin'])
+
     def test_missing_or_old_launcher_blocks(self):
         for version in ['0.165.0', 'missing']:
             with self.subTest(version=version):
