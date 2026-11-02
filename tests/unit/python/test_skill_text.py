@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from test_devloop import REPO_ROOT, SKILL_ROOT, load_check_setup
+from test_devloop import REPO_ROOT, SKILL_ROOT, load_check_setup, load_devloop
 
 
 TEN_RULES = [
@@ -499,10 +501,23 @@ class TracksContractTests(unittest.TestCase):
 
 class UsageTextTests(unittest.TestCase):
     def test_usage_docstring_names_the_repo_flag_of_each_command_that_takes_it(self) -> None:
-        doc = (SKILL_ROOT / "scripts" / "devloop.py").read_text().split('"""')[1]
-        for command in ("decide", "pause"):
-            line = next(line for line in doc.splitlines() if line.strip().startswith(f"devloop.py {command} "))
-            self.assertIn("--repo", line, command)
+        devloop = load_devloop()
+        parsers = []
+
+        def capture(parser, *args, **kwargs):
+            parsers.append(parser)
+            raise SystemExit(0)
+
+        with mock.patch.object(devloop.Parser, "parse_args", capture), self.assertRaises(SystemExit):
+            devloop.main()
+        commands = next(a for a in parsers[0]._actions if isinstance(a, argparse._SubParsersAction)).choices
+        for command, parser in commands.items():
+            if not any("--repo" in action.option_strings for action in parser._actions):
+                continue
+            lines = [line for line in devloop.__doc__.splitlines() if line.strip().startswith(f"devloop.py {command} ")]
+            self.assertTrue(lines, f"{command}: no usage line")
+            for line in lines:
+                self.assertIn("--repo", line, command)
 
     def test_skill_md_has_no_double_blank_line(self) -> None:
         self.assertNotIn("\n\n\n", (SKILL_ROOT / "SKILL.md").read_text())
