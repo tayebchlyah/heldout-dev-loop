@@ -108,6 +108,16 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assertIn('Sandbox startup failed', json.loads(r.stdout)['reason'])
         self.assertFalse(marker.exists())
 
+    def test_startup_failure_reason_differs_from_failed_gate(self):
+        self.env['PROBE_EARLY'] = '1'
+        startup = json.loads(self.gate('exit 0').stdout)['reason']
+        self.assertIn('sandbox could not start', startup)
+        self.assertIn('Sandbox startup failed', startup)
+        self.assertNotIn('Gate failed', startup)
+        del self.env['PROBE_EARLY']
+        failed = json.loads(self.gate('exit 7').stdout)['reason']
+        self.assertTrue(failed.startswith('Gate failed. Fix it. Do not weaken or skip tests.'))
+
     def test_launch_loads_project_only_profile_from_trusted_main_proof(self):
         bootstrap = ('import os,sys\nfrom pathlib import Path\n'
                      'if "app-server" in sys.argv and Path.cwd()!=Path(os.environ["PROBE_TRUSTED_CWD"]):\n'

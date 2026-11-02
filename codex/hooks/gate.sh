@@ -22,12 +22,17 @@ dirty=$(git status --porcelain 2>/dev/null) && [ -z "$dirty" ] && { board; exit 
 if [ -n "$gate" ]; then set -- sh -c "$gate"; else set -- scripts/gate.sh; fi
 output=$(mktemp)
 main=$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -n 1)
-if printf '%s' "$input" | GATE_SCOPE=changed python3 -I "$(dirname "$0")/sandbox.py" "$main" "$cwd" -- "$@" >"$output" 2>&1; then
+printf '%s' "$input" | GATE_SCOPE=changed python3 -I "$(dirname "$0")/sandbox.py" "$main" "$cwd" -- "$@" >"$output" 2>&1
+status=$?
+if [ "$status" -eq 0 ]; then
   board
 else
   reason=$(tail -c 3000 "$output")
-  jq -n --arg reason "$reason" \
-    '{decision:"block",reason:("Gate failed. Fix it. Do not weaken or skip tests.\n\n" + $reason)}'
+  lead="Gate failed. Fix it. Do not weaken or skip tests."
+  if [ "$status" -eq 125 ] && grep -q 'Sandbox startup failed' "$output"; then
+    lead="The sandbox could not start. This is an environment problem, not a test failure."
+  fi
+  jq -n --arg lead "$lead" --arg reason "$reason" '{decision:"block",reason:($lead + "\n\n" + $reason)}'
 fi
 rm -f "$output"
 exit 0
