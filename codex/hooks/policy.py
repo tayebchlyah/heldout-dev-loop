@@ -14,7 +14,7 @@ from broker import stop
 def load(codex, main):
     process = subprocess.Popen([codex, '-C', str(main), '-c', 'default_permissions="dev-workspace"', 'app-server', '--listen', 'stdio://'],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                               text=True, start_new_session=True)
+                               text=True, cwd=main, start_new_session=True)
     messages = queue.Queue()
 
     def receive():
