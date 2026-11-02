@@ -4,6 +4,7 @@ model_reasoning_effort = "high"
 [features]
 hooks = true
 network_proxy = true
+unified_exec_tty = false
 
 [permissions.dev-workspace]
 description = "Workspace editing with environment files unreadable."

@@ -185,6 +185,7 @@ test('upgrade from the earlier Codex kit config adds the network keys, then sett
   const config = parseToml(path)
   const network = config.permissions['dev-workspace'].network
   assert.equal(config.features.network_proxy, true)
+  assert.equal(config.features.unified_exec_tty, false)
   assert.equal(network.mode, 'full')
   assert.equal(network.allow_local_binding, true)
   assert.equal(Object.keys(network.domains).length, 12)
