@@ -208,7 +208,7 @@ if sys.argv[2] == "parent":
         native = Path.home() / ".nvm/versions/node/v24.12.0/bin/codex"
         launcher = str(native) if native.is_file() else shutil.which("codex", path=os.environ.get("PATH", ""))
         if not launcher:
-            self.skipTest("native Codex launcher unavailable")
+            self.fail("native Codex launcher unavailable")
         version = subprocess.run([launcher, "--version"], capture_output=True, text=True, timeout=10)
         self.assertEqual(version.returncode, 0, version.stderr)
         match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
@@ -217,12 +217,12 @@ if sys.argv[2] == "parent":
         node = shutil.which("node", path=os.environ.get("PATH", ""))
         playwright = ROOT / "node_modules/playwright"
         if not node or not playwright.is_dir():
-            self.skipTest("Node and installed Playwright are browser prerequisites")
+            self.fail("Node and installed Playwright are browser prerequisites")
         browser = subprocess.run([node, "-e", "console.log(require(process.argv[1]).chromium.executablePath())",
                                   str(playwright)], capture_output=True, text=True, timeout=10)
         self.assertEqual(browser.returncode, 0, browser.stderr)
         if not Path(browser.stdout.strip()).is_file():
-            self.skipTest("Playwright Chromium is not installed")
+            self.fail("Playwright Chromium is not installed")
         (self.bin / "codex").unlink()
         (self.bin / "codex").symlink_to(launcher)
         system_ps = Path("/bin/ps")
