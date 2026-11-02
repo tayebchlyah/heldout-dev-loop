@@ -68,6 +68,33 @@ class SuiteLockTests(unittest.TestCase):
         out, _ = taker.communicate(timeout=20)
         self.assertEqual((out, taker.returncode), ("got\n", 0))
 
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_read_only_common_dir_still_takes_the_lock(self) -> None:
+        subprocess.run(["bash", "-c", TAKE, LOCK], cwd=self.other, capture_output=True, text=True, env=env(),
+                       timeout=20, check=True)
+        folder = Path(git(self.main, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "dev-loop"
+        lock = folder / "suite.lock"
+        lock.chmod(0o444)
+        folder.chmod(0o555)
+        self.addCleanup(lambda: (folder.chmod(0o755), lock.chmod(0o644)))
+        holder = self.hold(self.main)
+        taker = subprocess.Popen(["bash", "-c", TAKE, LOCK], cwd=self.other, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, env=env())
+        self.addCleanup(lambda: (taker.kill(), taker.communicate()))
+        self.assertIn("suite lock: waiting", wait_line(taker.stderr, "waiting"))
+        holder.communicate("\n", timeout=20)
+        out, _ = taker.communicate(timeout=20)
+        self.assertEqual((out, taker.returncode), ("got\n", 0))
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_missing_lock_in_a_read_only_common_dir_takes_no_lock(self) -> None:
+        common = Path(git(self.main, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+        common.chmod(0o555)
+        self.addCleanup(lambda: common.chmod(0o755))
+        run = subprocess.run(["bash", "-c", TAKE, LOCK], cwd=self.other, capture_output=True, text=True,
+                             env=env(), timeout=20)
+        self.assertEqual((run.stdout, run.stderr, run.returncode), ("got\n", "", 0))
+
     def test_a_free_lock_is_taken_without_a_line(self) -> None:
         run = subprocess.run(["bash", "-c", TAKE, LOCK], cwd=self.other, capture_output=True, text=True,
                              env=env(), timeout=20)
