@@ -5,7 +5,6 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { packageRoot, tempDir } from './helpers.mjs'
 
-
 function fails(args, check) {
   const home = tempDir('dev-loop-home-')
   assert.throws(

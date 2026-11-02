@@ -12,10 +12,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from support import ROOT, check_setup
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT, check_setup  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
-sys.path.insert(1, str(Path(__file__).resolve().parent))
 from board import server
 from board_fixtures import Board, ISO_Z, MACHINE, git, note_text, put, read_note, snapshot, status_note
 

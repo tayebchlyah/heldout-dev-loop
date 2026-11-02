@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
 import unittest.mock
 from pathlib import Path
 
-from support import GuardRepo, ROOT, budget_report
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import GuardRepo, ROOT, budget_report  # noqa: E402
 
 import check_setup  # noqa: E402
 
@@ -301,14 +304,13 @@ class ReleaseKitTests(unittest.TestCase):
 
 class ReleaseSkillTextTests(unittest.TestCase):
     """Oracle 35, 36 and 38: the /release and /release-notes skills and the Stage 7 line."""
-    ROOT = ROOT
 
     def skill(self, name: str) -> str:
-        text = (self.ROOT / "skills" / name / "SKILL.md").read_text()
+        text = (ROOT / "skills" / name / "SKILL.md").read_text()
         head = text.split("---")[1]
         self.assertIn(f"name: {name}\n", head)
         self.assertIn("disable-model-invocation: true", head)
-        self.assertEqual((self.ROOT / "skills" / name / "agents" / "openai.yaml").read_text(),
+        self.assertEqual((ROOT / "skills" / name / "agents" / "openai.yaml").read_text(),
                          "policy:\n  allow_implicit_invocation: false\n")
         return text
 
@@ -366,17 +368,16 @@ class ReleaseSkillTextTests(unittest.TestCase):
         self.assertIn("`--all`: run steps 1 to 5", text)
 
     def test_skill_md_names_release(self) -> None:
-        text = (self.ROOT / "skill" / "SKILL.md").read_text()
+        text = (ROOT / "skill" / "SKILL.md").read_text()
         self.assertRegex(text, r"/release\b(?!-)")
         self.assertRegex(text, r"\$release\b(?!-)")
 
 
 class ReleaseTextTests(unittest.TestCase):
     """Oracle 58 and 59: the kit text and this repo's release steps."""
-    ROOT = ROOT
 
     def read(self, rel: str) -> str:
-        return (self.ROOT / rel).read_text()
+        return (ROOT / rel).read_text()
 
     def test_skill_stages_name_the_audit(self) -> None:
         text = self.read("skill/SKILL.md")
@@ -409,12 +410,12 @@ class ReleaseTextTests(unittest.TestCase):
             self.assertIn(name, section, name)
 
     def test_skill_release_rule(self) -> None:
-        raw = (self.ROOT / "skill" / "SKILL.md").read_bytes()
+        raw = (ROOT / "skill" / "SKILL.md").read_bytes()
         rule = next(line for line in raw.decode().splitlines() if line.startswith("Release rule."))
         self.assertIn("release-record --fix-wave", rule)
         self.assertIn("until a ruling under it says", rule)
         self.assertNotIn("until its line is removed", rule)
-        report = budget_report(self.ROOT / "skill" / "SKILL.md", 40000)
+        report = budget_report(ROOT / "skill" / "SKILL.md", 40000)
         if report:
             self.fail(report)
 
@@ -442,17 +443,16 @@ class ReleaseTextTests(unittest.TestCase):
         for rel in ["skill/SKILL.md", "skill/references/claude.md", "skill/references/codex.md", "AGENTS.md",
                     "README.md", "scripts/canary.sh", "skills/release-audit/SKILL.md", "skills/release/SKILL.md",
                     "skills/release-notes/SKILL.md", "reference/kit.md",
-                    "reference/release.md", "reference/upstream.md", *sorted(f"reference/cli/{p.name}" for p in (self.ROOT / "reference" / "cli").glob("*.md"))]:
+                    "reference/release.md", "reference/upstream.md", *sorted(f"reference/cli/{p.name}" for p in (ROOT / "reference" / "cli").glob("*.md"))]:
             self.assertNotIn("\u2014", self.read(rel), rel)
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
     """Oracle 31 to 34: the workflows as text, the release config and scripts."""
-    ROOT = ROOT
     RC = "contains(github.ref_name, '-rc.')"
 
     def workflow(self, name: str) -> str:
-        return (self.ROOT / ".github" / "workflows" / name).read_text()
+        return (ROOT / ".github" / "workflows" / name).read_text()
 
     def step(self, text: str, name: str) -> str:
         start = text.index(f"      - name: {name}\n")
@@ -502,11 +502,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("github.event.action", ci)
         for path in ("reference/kit.md", "skills/release/SKILL.md"):
             with self.subTest(path=path):
-                self.assertIn("List `edited` in the `pull_request` types", (self.ROOT / path).read_text())
+                self.assertIn("List `edited` in the `pull_request` types", (ROOT / path).read_text())
 
     def test_changes_job_skips_only_on_a_default_branch_base(self) -> None:
-        sources = {"ci.yml": self.workflow("ci.yml"), "reference/kit.md": (self.ROOT / "reference/kit.md").read_text(),
-                   "skills/release/SKILL.md": (self.ROOT / "skills/release/SKILL.md").read_text()}
+        sources = {"ci.yml": self.workflow("ci.yml"), "reference/kit.md": (ROOT / "reference/kit.md").read_text(),
+                   "skills/release/SKILL.md": (ROOT / "skills/release/SKILL.md").read_text()}
         for source, text in sources.items():
             step = text.split("      - id: skip\n", 1)[1].split("\n```", 1)[0].split("\n\n", 1)[0]
             env_block, run = step.split("        run: |\n", 1)
@@ -529,7 +529,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
                     self.assertEqual(Path(tmp, "out").read_text(), f"skip={skip}\n")
 
     def test_dev_loop_json(self) -> None:
-        config = json.loads((self.ROOT / "dev-loop.json").read_text())
+        config = json.loads((ROOT / "dev-loop.json").read_text())
         self.assertEqual(config["release_notes"], "written")
         self.assertEqual(config["version_files"], ["package.json", "package-lock.json"])
         for key, value in (("release_prepare", "node bin/install.mjs upgrade"),
@@ -539,14 +539,14 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertEqual(config["commands"][key], value)
 
     def test_release_check_script(self) -> None:
-        text = (self.ROOT / "scripts" / "release-check.sh").read_text()
+        text = (ROOT / "scripts" / "release-check.sh").read_text()
         self.assertIn("set -euo pipefail", text)
         self.assertIn("scripts/canary.sh", text)
         final = text.split("-rc.", 1)[1]
         self.assertIn('scripts/repo_rules.py promoted --tag "$RELEASE_TAG" --sha HEAD', final)
 
     def test_release_verify_cleans_up(self) -> None:
-        script = self.ROOT / "scripts" / "release-verify.sh"
+        script = ROOT / "scripts" / "release-verify.sh"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo, stubs = root / "repo", root / "bin"
@@ -568,7 +568,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
                     self.assertEqual(list(scratch.iterdir()), [])
 
     def test_release_verify_never_waits_on_a_prompt(self) -> None:
-        script = self.ROOT / "scripts" / "release-verify.sh"
+        script = ROOT / "scripts" / "release-verify.sh"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo, stubs, seen = root / "repo", root / "bin", root / "seen.txt"

@@ -13,10 +13,10 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from support import ROOT
-
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "scripts"))
 from test_devloop import git, put  # noqa: E402
 import repo_rules  # noqa: E402

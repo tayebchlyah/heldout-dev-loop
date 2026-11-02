@@ -8,11 +8,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import ROOT
-
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from support import ROOT  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
-sys.path.insert(1, str(HERE))
 from audit import skilltext  # noqa: E402
 from audit_fixtures import stub_skill  # noqa: E402
 

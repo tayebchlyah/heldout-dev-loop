@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from test_devloop import git, put  # noqa: E402
 
-from support import ROOT
+from support import ROOT  # noqa: E402
 
 LOCK = str(ROOT / "scripts" / "suite_lock.sh")
 HOLD = '. "$0"; suite_lock || exit 9; echo held; read -r _'
