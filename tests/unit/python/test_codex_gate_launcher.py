@@ -320,6 +320,7 @@ def native_codex():
 
 
 @unittest.skipUnless(native_codex(), 'native codex-cli 0.166.0 or later required')
+@unittest.skipIf(os.environ.get('DEVLOOP_MACOS_BROKER'), 'macOS refuses a nested sandbox_apply inside the hook sandbox')
 class NativeCodexPolicyTests(unittest.TestCase):
     """The table that sandbox.py hands to the real `codex sandbox` is the whole effective policy."""
 
