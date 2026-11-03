@@ -6,13 +6,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/session-start.sh\"",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/session-start.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\"",
             "timeout": 5,
             "statusMessage": "Checking repository workflow"
           },
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" session-start",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/board.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\" session-start",
             "timeout": 5,
             "statusMessage": "Updating dev-loop board"
           }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/git-guard.sh\"",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/git-guard.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\"",
             "timeout": 30,
             "statusMessage": "Checking command safety"
           }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/acceptance-wall.sh\"",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/acceptance-wall.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\"",
             "timeout": 30,
             "statusMessage": "Checking held-out suite access"
           }
@@ -48,13 +48,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh\"",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/gate.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\"",
             "timeout": 600,
             "statusMessage": "Running repository gate"
           },
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/seal.sh\" turn",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/seal.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\" turn",
             "timeout": 120,
             "statusMessage": "Checking held-out seal"
           }
@@ -66,13 +66,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh\"",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/gate.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\"",
             "timeout": 600,
             "statusMessage": "Running repository gate"
           },
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/seal.sh\" stop",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/seal.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\" stop",
             "timeout": 120,
             "statusMessage": "Checking held-out seal"
           }
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" prompt",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/board.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\" prompt",
             "timeout": 5,
             "statusMessage": "Updating dev-loop board"
           }
@@ -97,7 +97,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/board.sh\" post-tool",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/board.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\" post-tool",
             "timeout": 5,
             "statusMessage": "Updating dev-loop board"
           }
@@ -109,7 +109,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/seal.sh\" start",
+            "command": "f=\"$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=\"\"} /^$/{exit} END{print w}')/.dev-loop/hooks/codex/seal.sh\"; [ -x \"$f\" ] || { echo \"Blocked: dev-loop hook script missing: $f\" >&2; exit 2; }; exec \"$f\" start",
             "timeout": 5,
             "statusMessage": "Recording subagent start"
           }

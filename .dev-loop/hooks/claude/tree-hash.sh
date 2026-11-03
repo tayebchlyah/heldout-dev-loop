@@ -5,7 +5,7 @@
 . "${0%/*}/git-pin.sh"
 {
   git rev-parse --verify --quiet HEAD || true
-  git diff HEAD --binary --no-ext-diff --no-textconv 2>/dev/null || true
+  git diff HEAD --binary --no-ext-diff --no-textconv --ignore-submodules=dirty 2>/dev/null || true
   git ls-files --others --exclude-standard -z 2>/dev/null | while IFS= read -r -d '' path; do
     printf '%s %s\n' "$path" "$(git hash-object --no-filters -- "$path" 2>/dev/null || echo unreadable)"
   done

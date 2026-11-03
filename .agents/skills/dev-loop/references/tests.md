@@ -17,7 +17,7 @@ Plus: tests only at the seams the spec names.
 
 ## Seams
 
-Source: Pocock skills v1.3.1 `codebase-design` (`skills/engineering/codebase-design/SKILL.md` and `DEEPENING.md`, commit `24fe0ef`).
+Source: Pocock skills v1.3.2 `codebase-design` (`skills/engineering/codebase-design/SKILL.md` and `DEEPENING.md`, commit `d1478fc`).
 
 11. The interface is the test surface. Callers and tests cross the same seam. A test that must reach past the interface means the module has the wrong shape.
 12. Replace old tests, do not layer new ones. Once tests exist at the deepened interface, delete the old tests on the shallow modules.

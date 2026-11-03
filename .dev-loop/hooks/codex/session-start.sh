@@ -8,9 +8,10 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] || exit 0
 if [ -f "$cwd/dev-loop.json" ]; then
   printf '%s\n' 'This repo runs the dev-loop skill. Invoke it before any other action.'
-  checker="$cwd/.agents/skills/dev-loop/scripts/check_setup.py"
+  main=$(git -C "$cwd" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+  checker="$main/.agents/skills/dev-loop/scripts/check_setup.py"
   [ -f "$checker" ] || exit 0
-  untrusted=$(python3 "$checker" --harness codex --repo "$cwd" --hooks-trust 2>/dev/null)
+  untrusted=$(python3 -I "$checker" --harness codex --repo "$cwd" --hooks-trust 2>/dev/null)
   [ -z "$untrusted" ] || printf 'Warning: Codex skips these untrusted dev-loop hooks: %s. Tell the user to run /hooks in Codex and trust them.\n' "$untrusted"
 fi
 exit 0
