@@ -144,7 +144,7 @@ class ReviewYieldContractTests(unittest.TestCase):
         self.assertIn("merge-check [--repo <path>] [--feature <slug>]", agents)
         for value in [
             "merge-check [--repo <path>] [--feature <slug>]", "merge_human_paths", "`config-unreadable`",
-            "`merge-human`", "`track-l`", "`human-path`", "`config-changed`", "`no-review`", "`unreviewed`",
+            "`merge-human`", "`track-l`", "`human-path`", "`harness-config`", "`config-changed`", "`no-review`", "`unreviewed`",
             "`unreviewed_minor`", "--verbatim",
             "`head`", "`branch`", "`.github`", "`.yml`", "`.conf`", "more than one branch",
         ]:

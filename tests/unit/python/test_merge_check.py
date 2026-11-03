@@ -127,6 +127,29 @@ class MergeCheckTests(MergeCheckCase):
                 if name == "no-review":
                     self.assertIsNone(out["reviewed"])
 
+    def test_harness_config_change_waits(self) -> None:
+        """A change to a harness config file waits for the user, whatever `merge_human_paths` says."""
+        rows = {
+            ".claude/settings.json": (["x/*"], [{"reason": "harness-config", "path": ".claude/settings.json"}]),
+            ".codex/config.toml": ([], [{"reason": "harness-config", "path": ".codex/config.toml"}]),
+            ".codex/hooks.json": ([".codex/*"], [{"reason": "human-path", "path": ".codex/hooks.json",
+                                                  "pattern": ".codex/*"},
+                                                 {"reason": "harness-config", "path": ".codex/hooks.json"}]),
+            ".Claude/Settings.JSON": ([], [{"reason": "harness-config", "path": ".Claude/Settings.JSON"}]),
+            ".claude/agents/x.md": (["x/*"], []),
+            ".codex/rules/x": ([], []),
+        }
+        for path, (patterns, expected) in rows.items():
+            with self.subTest(path=path):
+                self.tearDown()
+                self.setUp()
+                self.main_config({"merge_human_paths": patterns})
+                wt, _ = self.reviewed_feature()
+                self.commit(wt, path, "{}\n")
+                self.gate_green(wt, self.head(wt))
+                out = self.ok(wt)
+                self.assertEqual(out["reasons"], expected)
+
     def test_last_ledger_line_wins(self) -> None:
         wt, first = self.reviewed_feature()
         self.commit(wt, "src/more.py", "m\n")
