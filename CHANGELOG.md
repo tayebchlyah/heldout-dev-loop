@@ -2,132 +2,134 @@
 
 ## [3.0.0-rc.4] - 2026-11-03
 
-### Highlights
+### ⬆️ Upgrade
 
-**Codex gates run in a sandbox.** The automatic Codex Stop and SubagentStop gates no longer run the feature's test code on your machine with your rights. They run it inside the native Codex sandbox (`codex sandbox`, with the `dev-workspace` policy read from the main checkout), and on macOS inside Seatbelt: the code can write only to the feature worktree and temp folders, cannot read `.env` files, and reaches the network only through the managed proxy. The hooks also take their scripts from the main checkout, so a feature branch cannot change the code a hook runs.
-
-**One session per feature.** A feature now runs in one session: Shaping (Stages 1 and 2, high effort), then Delivery (Stages 3 to 7, medium effort). At spec approval the agent gives you three lines to copy: `/effort medium`, `/compact`, `Start Delivery of <slug>`. The work that needs high effort (spec-tester, the Stage 4 planner, the reviewers) runs in subagents that set their own level, and `status` tells you when your level differs from the one the stage wants.
-
-**Feature folders in the notes.** All notes of one feature live in one folder, `Features/<YYYYMMDD> <Title>/`, with `Framing.md`, `Spec.md` and `Plan.md`. Every folder the kit writes has a Title Case name (`Answers/`, `Maps/`, `Security Audit/`, `Dev Loop Board/`). The new `devloop.py notes-migrate` command moves an old layout and rewrites the links, after you check a dry run.
-
-**Held-out tests stay held out.** Only `spec-tester` can change `tests/acceptance/`: every commit to it carries a seal, walls on Claude Code and Codex stop other agents, and a transcript audit records a read the walls miss. The walls also cover LSP, MCP tools, Monitor and Codex `view_image`: walled agents cannot use LSP or MCP, and a Monitor command is checked as a Bash command. The gate fails on an unsealed commit or a changed installed kit file, and reports each change that makes a test weaker. Codex warns at session start when it skips an untrusted dev-loop hook.
-
-**Release security audit.** `/release-audit` runs a full security audit of the changes since the last audit, in a Docker sandbox with no network, and writes the result into the project note. An agent's push of a `v*` tag, or `gh release create`, runs `release-check` first and shows you why a release is not ready. `/release` runs the whole release: audit, version, notes, release PR, tag and a check of the published release. Each release gets one audit and at most one fix wave: a confirmed `low` or `informational` finding goes to `## Gardener` and does not block, you rule each other item (`fix #n`, `accept`, `close`), and `release-record --fix-wave` records the fixes so they need no second audit.
-
-**Audit loop through the CLI.** `devloop.py audit-run` runs the parent side of `/release-audit`: it seeds a run from the plan and the prior ledger, writes each hunter, critic, verifier and recheck brief from the `security-audit` skill text, checks and folds each agent result, and writes the three report files. It reads agent files no-follow and bounded, and closes a run only when the final critic is clean and every record passed a fresh recheck. `release-plan --require-sandbox` stops before an audit with no image or no container engine, and `release-record` carries your `accept` ruling to a finding found again with unchanged trace files.
-
-**Written release notes.** A project can set `release_notes: written` in `dev-loop.json` to get short prose sections in `CHANGELOG.md` in place of the git-cliff commit list. `/release-notes` drafts or rewrites a section from the specs, PRs and commits. CI skips its jobs on a release PR or a kit upgrade PR (`ci-skip`), since they change no code.
-
-**Release candidates.** dev-loop now has pre-release tags `vX.Y.Z-rc.N`, and `init` and `upgrade` accept them. When `main` has a newer kit than your worktree, `status` reports `kit_drift` `main-newer` and the agent asks for a new session, so an old kit never runs a stage.
-
-**Safer merges without you.** `devloop.py merge-check` decides at Stage 7 whether a PR may merge on its own (`auto`) or waits for you (`human`), with its reasons: Track L, paths you list in `merge_human_paths`, or code that changed after the review. Review triage drops noise with five named filters, a fresh verifier checks each security finding, and `Review Yield.md` records which reviewer found each fixed defect. The PR body now ends with a merge danger proof.
-
-**Verify a UI change in a real browser.** `devloop.py verify-init` gives a UI project its own verify skill and feature map. In Stage 6, `devloop.py drive` opens each route the branch changed in Chromium and saves screenshots; a model checks only the layout. At Stage 7 the PR body shows a before and an after screenshot of each route (and a video for a journey).
-
-**Delivery runs without you.** Delivery runs what can answer a question instead of asking, and writes each decision and surprise to one decision log (`devloop.py decide`). A usage limit, an account switch or a harness switch no longer loses the work: `/pause` saves where it stopped, and `/continue` resumes it. Delivery cannot use `AskUserQuestion` in a feature worktree, and it ends with one full report.
-
-**Second reviewer from the other model family.** When the project and you both opt in, `devloop.py second-review` adds a Codex reviewer to a Claude Code review wave, or a Claude reviewer to a Codex one. It looks only for correctness and security defects, never sees the held-out tests or the agent instruction files, and records what was sent to which vendor.
-
-**Simpler Stage 6 and Stage 7.** `devloop.py review-merge` merges the reviewer tables by file and line. `devloop.py acceptance` runs the held-out suite, reads its JUnit, flags a run on a stale container and gives the progress guard verdict. `devloop.py ci wait` gives one verdict for the PR of your local `HEAD`: conflicts, open threads, blocked, fail or pass.
-
-**Codex network through the managed proxy.** The Codex `dev-workspace` profile now sends its network through the Codex managed proxy, to a list of allowed domains, with no local unix socket: a Codex agent cannot reach Docker, so a container cannot read `.env` or write outside the workspace. Loopback and git still work. Docker work (`$release-audit`, a compose test stack) uses the new `dev-docker` profile, which you choose at session start with `codex -c default_permissions=dev-docker`.
-
-**Lease push after a rebase.** The git guards now let the main session push a rebased feature branch with `--force-with-lease --force-if-includes` to its own remote. Every other force push still asks (Claude) or is denied (Codex). `check_setup.py` tells you when the GitHub repo does not allow rebase merges.
-
-**File-size ratchet.** A new or grown file over 40,000 bytes fails the gate, and `seal` refuses such a test file. Each failure names a line where the file can be split, and `file_size_exempt` in `dev-loop.json` lists the files it skips. Big files cost tokens each time an agent reads them.
-
-**Stage cost per feature.** `devloop.py metrics` gives the token cost of each stage of a feature, with sessions, active hours, gate runs, tests added and effort per stage, from the local Claude transcripts. Stage 7 writes one row to `Feature Metrics.md`, so you can see where a feature spends its budget.
-
-**Weekly review.** When the last `/garden` run is 7 days old, `status` on `main` reports `review_due` and Stage 1 waits for the review: `/retro` on the week's sessions (`devloop.py sessions`), then `/garden`. The new `/garden` skill gives each `## Gardener` item a verdict and turns a repeated finding into an automatic check. Stage 0 now writes a `CODING_STANDARDS.md` with a comment rule template.
-
-**Shorter, clearer specs.** A spec now has `## Sources`, at least one `## Non-goals` line, and Catches and Misses lines per seam. Stage 1 can answer a question with no code change in an answer note, and plans work larger than one feature as a map. Coder agents get a short principles index and a benchmark checklist.
-
-**Board ledger.** The progress board folds by project, with your own features first. Each feature, in progress or shipped, is one row with its track and total time; open it to see the time per stage, a time bar per task and the decisions made without you. Each project keeps its 5 latest shipped features, and a time of a day or more shows days and hours.
-
-### Fixes
-
-- Codex tty sessions are off (`features.unified_exec_tty = false`): no hook fires on `write_stdin`, so a subagent could type past the walls into an open shell. `check_setup.py` fails until the key is `false`.
-- `release-check` keeps an audit current when a kit refresh only writes copies equal to the kit the audited commit builds, at the same kit version, or drops a copy that kit no longer has.
-- `status` reads each spec once per run.
-- The notes path in the committed `dev-loop.json` is read from `main` (`origin/main`, else `main`), so a branch checked out in the main worktree cannot change it.
-- `gate --summary` gives one id per failing test, keeps the node file in the id, and names a crashed suite or a missing report.
-- `check_setup.py` reads the Claude and Codex config folders from `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, and gives the right fix for a leftover kit skill.
-- Under subagent-driven development, the agent logs each ruling the plan executor made as a decision row (superpowers 7.0.1 moved them into the final review dev-loop skips).
-- The `decide` and `pause` usage text names `--repo`.
-- The board shows one doing task when the build writes every task brief up front.
-- The board no longer says "Needs you" while a background subagent runs.
-- Stage 3 ends on the acceptance commit with an `Acceptance: <slug>` line, also when spec-tester only extends earlier test files.
-- The board shows no Stage 5 time while a planned feature has no ledger.
-- The board server log moves to `dev-loop-board.log.1` when it is over 64 KB, so it no longer grows without a bound.
-- Board times use one duration rule and never show a negative span.
-- The gate and its test repos run git with `core.fsmonitor` off, so they no longer leave `git fsmonitor--daemon` processes behind.
-- The Codex walls (`git-guard.sh`, `acceptance-wall.sh`) get a 30 s timeout: Codex runs the command when a hook times out.
-- The Codex trust check reports a dev-loop hook whose entry changed since you trusted it, checks each hook entry (not each event), and skips a hook that is not a command hook.
-- `init` and `upgrade` print the `/hooks` step when they add or change a Codex hook.
-- `upgrade` keeps your own hook groups, and refuses to overwrite a file of yours at a new kit path unless `--force`.
-- The project kit no longer holds the skill test files.
-- `git-guard` asks for every `gh` write (`gh api` writes, `gh release` writes, `gh pr merge --admin`, `gh` aliases) and for every spelling of a push that reaches `main`, a tag or a mirror: abbreviated options, refspecs, `push.followTags`, the push remote git picks. Codex prompts for `gh api` and `gh release`.
-- `git-guard.sh` and the Stop gate hooks run Python with `-I`, so a module file in the session folder cannot run in the hook. The guard hides a heredoc body only when the shell surely does not run it.
-- Every kit skill is walled, and a subagent search (`grep`, `rg`, `git grep`, `find`, Grep, Glob) that reaches `tests/acceptance/` with no effective exclusion is denied. The transcript audit also records a search output line that names a held-out file.
-- `merge-check` binds to its own worktree and to one branch for the slug, counts each reviewed patch per occurrence, and counts CI files, configuration outside test folders and `commands` changes as code.
-- `acceptance` runs only the command that `main` holds, needs an executed test for green, and reports `short` when a run has fewer distinct tests than an earlier full run of the same suite.
-- `ci-skip`, `release-check` and `release-plan` compare kit copies with the kit that the trusted commit's own installer builds. A PR's own MANIFEST is no longer trusted.
-- `notes-migrate` refuses a move onto a name that differs only by case or Unicode form, in the plan and again at apply.
-- `git-guard` keeps a redirect (`2>&1`, `>/dev/null`, `&>`, `>&`, `>|`) out of the git arguments, so a push with a redirect runs, and a redirect never hides a later push argument.
-- A Claude feature worktree is created under `.claude/worktrees/`, where `EnterWorktree` does not ask, and `init` and `upgrade` add that folder to `.gitignore`.
-- `upgrade` merges the Codex config by TOML meaning (quote styles, quoted headers, inline tables, multi-line values, dotted keys) and keeps each of your values in the `[features]` and network tables.
-- `upgrade` backs up a link of yours at a kit link path outside the skills folder, and refuses it unless `--force`.
-- CI skips its jobs only for a PR or a push to the default branch.
-- `gate --summary` lists the failed JUnit cases, and the gate ignores the Python `tempfile` probe file a killed test leaves.
-- The held-out suite runs in an empty `TMPDIR`, and `scripts/acceptance.sh` fails on a temp leak or a run with no held-out test.
-- `metrics` counts only the gate runs of the feature and keeps escaped pipes in a row.
-- The board keeps a feature you own until it ships, also when a run does not see it, and writes the kit version only from a valid MANIFEST.
-- `scripts/release-verify.sh` never waits on a git credential prompt.
-- Review tables and the Track S marker are written with `devloop.py review-save`, into the worktree git dir.
-- `git-guard` also checks `Monitor` commands, and every kit hook pins `core.fsmonitor`, `log.showSignature` and the filter drivers off before it runs git.
-- The gate and the held-out suite take one lock in the git common dir, so two worktrees never run a suite at once, and a killed gate leaves no holder.
-- `check_setup.py` names `noclobber` and `-i` aliases of `rm`, `cp`, `mv` and `ln` in the agent shell, with the fix in `reference/kit.md`.
-- The weakened-test report matches skip markers on word boundaries and runner names, so `sys.exit(` is no skip.
-- CI runs every job again when a PR changes its base.
-- `status` on `main` is faster: it caches git answers and reads each worktree git dir from its `.git` file.
-- The audit sandbox labels each container with its target and reports the command exit when the OOM killer also stops the container.
-- The audit sandbox copy-back drops `.git` parts and adds `.txt` to every other name, so no target repository or note reaches your machine. The runner waits up to 10 s for leftover processes and lists them.
-- The gate hooks no longer run a nested repository's git filters on your machine (`git status --ignore-submodules=dirty`), and the Codex gate output never goes through a temp path the confined gate can reach. `.dev-loop` in the main checkout is read-only to the confined gate.
-- A Codex hook command whose script is missing in the main checkout, or whose first worktree is a bare repository, now blocks (exit 2) instead of running no wall. `check_setup.py` reports a missing hook script.
-- `release-check` builds the kit reference in a private folder under the git common dir, the git guards run it with `--no-build` (no kit code runs from a hook), and its diffs run no external diff or textconv program.
-- `merge-check` always waits for you (`harness-config`) when a PR changes `.claude/settings.json`, `.claude/settings.local.json`, `.codex/config.toml`, `.codex/hooks.json` or `.mcp.json`.
-
-### Upgrade notes
-
-3.0.0 is a breaking upgrade. From 2.1.x, follow these steps in this order:
+From 2.1.x, follow these steps in this order:
 
 1. Ship each in-flight feature first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
 2. Update the CLIs to the minimums `check_setup.py` checks: Claude Code 2.1.295 and codex-cli 0.166.0 (the native hook sandbox). Older CLIs cannot run the new hooks.
 3. Run `npx github:tchlyah/dev-loop#v3.0.0-rc.4 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
-4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1, rc.2 or rc.3: trust every dev-loop hook `/hooks` lists as changed: each one now sources `git-pin.sh`, and from rc.4 each Codex hook command starts from the main checkout and checks that its script exists. `upgrade` prints this line.
+4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1, rc.2 or rc.3: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line:
    - a UI project: `devloop.py verify-init --base-url <url>`, or `"verify": false` in `dev-loop.json`;
-   - `old-notes-layout`: run `notes-migrate` (see the notes layout item below);
+   - `old-notes-layout`: step 6;
    - Codex: install the Pocock skills `wayfinder` and `retro`;
    - GitHub: turn on "allow rebase merging" (`ci wait`);
    - `security_audit` set: pull its images and keep Docker running;
    - the vault `.gitignore` lines for `Dev Loop Board/` (skipped with `"board_vault_git": "shared"` in `dev-loop.local.json`) and `Security Audit/`, and the Cloudflare `security-audit` skill;
    - Codex network without the managed proxy: `upgrade` adds `features.network_proxy`, the domain list and `dev-docker`; a profile you changed by hand may need the same keys;
    - `scripts/gate.sh` lacks the `core.fsmonitor` guard: export `core.fsmonitor=false` through `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` before its first git call.
-6. After the merge, end each open session and start a new one. Codex reads `unified_exec_tty = false` only at session start. A feature in Delivery resumes with `/continue`. The 2.1.x kit has no `kit_drift` `main-newer`, so an old session never stops by itself. From 3.0.0 on, a later upgrade shows `kit_drift` `main-newer` at the next Stage 3, 6 or 7 start, after `git fetch origin`.
+6. Move the notes to the new layout. Every machine that shares the notes folder upgrades the kit first. Then one machine runs `devloop.py notes-migrate` (a dry run), checks the moves, and runs `devloop.py notes-migrate --apply --plan <hash>`. Until then `check_setup.py` fails `old-notes-layout`, the kit reads both layouts and writes only the new one, and `release-plan`, `release-record` and `release-check` stop while `security-audit/` exists. Delivery never migrates. There is no automatic undo: the log note lists each move.
+7. End each open session and start a new one. Codex reads `unified_exec_tty = false` only at session start. A feature in Delivery resumes with `/continue`. The 2.1.x kit has no `kit_drift` `main-newer`, so an old session never stops by itself.
 
-- Notes layout: every machine that shares the notes folder upgrades the kit first. Then one machine runs `devloop.py notes-migrate` (a dry run), checks the moves, and runs `devloop.py notes-migrate --apply --plan <hash>`. Until then `check_setup.py` fails `old-notes-layout`, the kit reads both layouts and writes only the new one, and `release-plan`, `release-record` and `release-check` stop while `security-audit/` exists. Delivery never migrates. There is no automatic undo: the log note lists each move.
-- `upgrade` moves the Claude `git-guard.sh` entry from matcher `Bash` to `Bash|Monitor`. No user step.
-- The gate now also fails on `seal-check` (held-out test commits without their trailers, changed kit files, taint records) and on the file-size ratchet. It reports `weakened` tests.
+### ✨ New Features
+
+**Held-out tests stay held out.** Only `spec-tester` can change `tests/acceptance/`: every commit to it carries a seal, walls on Claude Code and Codex stop other agents, and a transcript audit records a read the walls miss. The walls also cover LSP, MCP tools, Monitor and Codex `view_image`: walled agents cannot use LSP or MCP, and a Monitor command is checked as a Bash command. The gate reports each change that makes a test weaker.
+
+**Delivery runs without you.** Delivery runs what can answer a question instead of asking, and writes each decision and surprise to one decision log (`devloop.py decide`). A usage limit, an account switch or a harness switch no longer loses the work: `/pause` saves where it stopped, and `/continue` resumes it. Delivery cannot use `AskUserQuestion` in a feature worktree, and it ends with one full report.
+
+**One session per feature.** A feature now runs in one session: Shaping (Stages 1 and 2, high effort), then Delivery (Stages 3 to 7, medium effort). At spec approval the agent gives you three lines to copy: `/effort medium`, `/compact`, `Start Delivery of <slug>`. The work that needs high effort (spec-tester, the Stage 4 planner, the reviewers) runs in subagents that set their own level, and `status` tells you when your level differs from the one the stage wants.
+
+**Release security audit.** `/release-audit` runs a full security audit of the changes since the last audit, in a Docker sandbox with no network, and writes the result into the project note. `/release` runs the whole release: audit, version, notes, release PR, tag and a check of the published release. Each release gets one audit and at most one fix wave: a confirmed `low` or `informational` finding goes to `## Gardener` and does not block, you rule each other item (`fix #n`, `accept`, `close`), and `release-record --fix-wave` records the fixes so they need no second audit.
+
+**Audit loop through the CLI.** `devloop.py audit-run` runs the parent side of `/release-audit`: it seeds a run from the plan and the prior ledger, writes each hunter, critic, verifier and recheck brief from the `security-audit` skill text, checks and folds each agent result, and writes the three report files. It reads agent files no-follow and bounded, and closes a run only when the final critic is clean and every record passed a fresh recheck. `release-plan --require-sandbox` stops before an audit with no image or no container engine, and `release-record` carries your `accept` ruling to a finding found again with unchanged trace files.
+
+**Safer merges without you.** `devloop.py merge-check` decides at Stage 7 whether a PR may merge on its own (`auto`) or waits for you (`human`), with its reasons: Track L, paths you list in `merge_human_paths`, or code that changed after the review. Review triage drops noise with five named filters, a fresh verifier checks each security finding, and `Review Yield.md` records which reviewer found each fixed defect. The PR body now ends with a merge danger proof.
+
+**Second reviewer from the other model family.** When the project and you both opt in, `devloop.py second-review` adds a Codex reviewer to a Claude Code review wave, or a Claude reviewer to a Codex one. It looks only for correctness and security defects, never sees the held-out tests or the agent instruction files, and records what was sent to which vendor.
+
+**Verify a UI change in a real browser.** `devloop.py verify-init` gives a UI project its own verify skill and feature map. In Stage 6, `devloop.py drive` opens each route the branch changed in Chromium and saves screenshots; a model checks only the layout. At Stage 7 the PR body shows a before and an after screenshot of each route (and a video for a journey).
+
+**Simpler Stage 6 and Stage 7.** `devloop.py review-merge` merges the reviewer tables by file and line. `devloop.py acceptance` runs the held-out suite, reads its JUnit, flags a run on a stale container and gives the progress guard verdict. `devloop.py ci wait` gives one verdict for the PR of your local `HEAD`: conflicts, open threads, blocked, fail or pass.
+
+**Feature folders in the notes.** All notes of one feature live in one folder, `Features/<YYYYMMDD> <Title>/`, with `Framing.md`, `Spec.md` and `Plan.md`. Every folder the kit writes has a Title Case name (`Answers/`, `Maps/`, `Security Audit/`, `Dev Loop Board/`). The new `devloop.py notes-migrate` command moves an old layout and rewrites the links.
+
+**Weekly review.** When the last `/garden` run is 7 days old, `status` on `main` reports `review_due` and Stage 1 waits for the review: `/retro` on the week's sessions (`devloop.py sessions`), then `/garden`. The new `/garden` skill gives each `## Gardener` item a verdict and turns a repeated finding into an automatic check. Stage 0 now writes a `CODING_STANDARDS.md` with a comment rule template.
+
+**Shorter, clearer specs.** A spec now has `## Sources`, at least one `## Non-goals` line, and Catches and Misses lines per seam. Stage 1 can answer a question with no code change in an answer note, and plans work larger than one feature as a map. Coder agents get a short principles index and a benchmark checklist.
+
+**File-size ratchet.** A new or grown file over 40,000 bytes fails the gate, and `seal` refuses such a test file. Each failure names a line where the file can be split, and `file_size_exempt` in `dev-loop.json` lists the files it skips. Big files cost tokens each time an agent reads them.
+
+**Lease push after a rebase.** The git guards now let the main session push a rebased feature branch with `--force-with-lease --force-if-includes` to its own remote. Every other force push still asks (Claude) or is denied (Codex).
+
+**Release candidates.** dev-loop now has pre-release tags `vX.Y.Z-rc.N`, and `init` and `upgrade` accept them. When `main` has a newer kit than your worktree, `status` reports `kit_drift` `main-newer` and the agent asks for a new session, so an old kit never runs a stage.
+
+**Written release notes.** A project can set `release_notes: written` in `dev-loop.json` to get short prose sections in `CHANGELOG.md` in place of the git-cliff commit list. `/release-notes` drafts or rewrites a section from the specs, PRs and commits. CI skips its jobs on a release PR or a kit upgrade PR (`ci-skip`), since they change no code.
+
+**Stage cost per feature.** `devloop.py metrics` gives the token cost of each stage of a feature, with sessions, active hours, gate runs, tests added and effort per stage, from the local Claude transcripts. Stage 7 writes one row to `Feature Metrics.md`, so you can see where a feature spends its budget.
+
+**Board ledger.** The progress board folds by project, with your own features first. Each feature, in progress or shipped, is one row with its track and total time; open it to see the time per stage, a time bar per task and the decisions made without you. Each project keeps its 5 latest shipped features, and a time of a day or more shows days and hours.
+
+### 💥 Breaking Changes
+
+- The gate now also fails on `seal-check`: held-out test commits without their trailers, changed kit files, taint records.
 - An agent's push of a `v*` tag, or `gh release create`, runs `release-check`: it needs a current `/release-audit` record and no open security item in `## Deferred`. Claude asks with the verdict, Codex denies on a refusal. A tag you push from your own terminal is not checked.
-- Session A and Session B are now Shaping and Delivery. `upgrade` sets `effortLevel: high` and `autoCompactWindow` in the project Claude settings, `model_reasoning_effort` in the Codex config, and the new `worktree-wall.sh` entry, only where you set no value. The project `effortLevel` overrides your user setting: change it in `.claude/settings.local.json`.
-- A Claude Code edit into a feature worktree from another folder is now denied: run `EnterWorktree <path>` first.
-- Codex `dev-workspace` has no local unix socket and allows only the listed domains. An agent that hits `Network access to "<host>" was blocked` stops and names the host: add it to `[permissions.dev-workspace.network.domains]`. For Docker, start the session with `codex -c default_permissions=dev-docker`.
+- Session A and Session B are now Shaping and Delivery. `upgrade` sets `effortLevel: high` and `autoCompactWindow` in the project Claude settings and `model_reasoning_effort` in the Codex config, only where you set no value. The project `effortLevel` overrides your user setting: change it in `.claude/settings.local.json`.
+- A Claude Code edit into a feature worktree from another folder is now denied (`worktree-wall.sh`): run `EnterWorktree <path>` first.
+- When the sandbox cannot start, the Codex Stop and SubagentStop gates block with "The sandbox could not start. This is an environment problem, not a test failure."
+- A Codex agent that hits `Network access to "<host>" was blocked` stops and names the host: add it to `[permissions.dev-workspace.network.domains]`.
+- Codex sessions, the main session included, have no tty shell. A command that needs a terminal (an interactive prompt) fails with `stdin is closed for this session`: run it from your own terminal.
 - The notes path comes from `DEV_LOOP_NOTES`, else the main worktree's `dev-loop.local.json`, then `dev-loop.json`. A feature worktree's own `dev-loop.local.json` no longer counts, and a `dev-loop.local.json` that git tracks fails.
 - To change `commands.acceptance`, merge that change to `main` first: `acceptance` refuses a branch whose command differs from the one on `main`.
 - `upgrade` removes the unused Codex profile tables `dev-implementer`, `dev-spec-tester` and `dev-read-only` from `.codex/config.toml` when unchanged. It refreshes dev-loop's own hook entries in place, so a field you added to a dev-loop hook is lost.
-- Codex sessions have no tty shell (`features.unified_exec_tty = false`), the main session included. A command that needs a terminal (an interactive prompt) fails with `stdin is closed for this session`: run it from your own terminal.
-- The Codex Stop and SubagentStop gates now need `codex` 0.166.0 or later on `PATH`. When the sandbox cannot start, the hook blocks with "The sandbox could not start. This is an environment problem, not a test failure."
+
+### 🔒 Security
+
+- The automatic Codex Stop and SubagentStop gates no longer run the feature's test code on your machine with your rights. They run it inside the native Codex sandbox (`codex sandbox`, with the `dev-workspace` policy read from the main checkout), and on macOS inside Seatbelt: the code can write only to the feature worktree and temp folders, cannot read `.env` files, and reaches the network only through the managed proxy. The hooks take their scripts from the main checkout, so a feature branch cannot change the code a hook runs.
+- The Codex `dev-workspace` profile sends its network through the Codex managed proxy, to a list of allowed domains, with no local unix socket: a Codex agent cannot reach Docker, so a container cannot read `.env` or write outside the workspace. Loopback and git still work. Docker work (`$release-audit`, a compose test stack) uses the new `dev-docker` profile: start the session with `codex -c default_permissions=dev-docker`.
+- Codex tty sessions are off (`features.unified_exec_tty = false`): no hook fires on `write_stdin`, so a subagent could type past the walls into an open shell. `check_setup.py` fails until the key is `false`.
+- A Codex hook command whose script is missing in the main checkout, or whose first worktree is a bare repository, now blocks (exit 2) instead of running no wall. `check_setup.py` reports a missing hook script.
+- `git-guard.sh` and the Stop gate hooks run Python with `-I`, so a module file in the session folder cannot run in the hook. The guard hides a heredoc body only when the shell surely does not run it.
+- The gate hooks no longer run a nested repository's git filters on your machine (`git status --ignore-submodules=dirty`), and the Codex gate output never goes through a temp path the confined gate can reach. `.dev-loop` in the main checkout is read-only to the confined gate.
+- `ci-skip`, `release-check` and `release-plan` compare kit copies with the kit that the trusted commit's own installer builds. A PR's own MANIFEST is no longer trusted.
+- `release-check` builds the kit reference in a private folder under the git common dir, the git guards run it with `--no-build` (no kit code runs from a hook), and its diffs run no external diff or textconv program.
+- `git-guard` asks for every `gh` write (`gh api` writes, `gh release` writes, `gh pr merge --admin`, `gh` aliases) and for every spelling of a push that reaches `main`, a tag or a mirror: abbreviated options, refspecs, `push.followTags`, the push remote git picks. Codex prompts for `gh api` and `gh release`.
+- `git-guard` keeps a redirect (`2>&1`, `>/dev/null`, `&>`, `>&`, `>|`) out of the git arguments, so a push with a redirect runs, and a redirect never hides a later push argument.
+- Every kit hook pins `core.fsmonitor`, `log.showSignature` and the filter drivers off before it runs git.
+- The Codex walls (`git-guard.sh`, `acceptance-wall.sh`) get a 30 s timeout: Codex runs the command when a hook times out.
+- Codex warns at session start when it skips an untrusted dev-loop hook. The trust check reports a dev-loop hook whose entry changed since you trusted it, checks each hook entry (not each event), and skips a hook that is not a command hook.
+- Every kit skill is walled, and a subagent search (`grep`, `rg`, `git grep`, `find`, Grep, Glob) that reaches `tests/acceptance/` with no effective exclusion is denied. The transcript audit also records a search output line that names a held-out file.
+- `merge-check` always waits for you (`harness-config`) when a PR changes `.claude/settings.json`, `.claude/settings.local.json`, `.codex/config.toml`, `.codex/hooks.json` or `.mcp.json`.
+- `merge-check` binds to its own worktree and to one branch for the slug, counts each reviewed patch per occurrence, and counts CI files, configuration outside test folders and `commands` changes as code.
+- The notes path in the committed `dev-loop.json` is read from `main` (`origin/main`, else `main`), so a branch checked out in the main worktree cannot change it.
+- The audit sandbox copy-back drops `.git` parts and adds `.txt` to every other name, so no target repository or note reaches your machine. The runner waits up to 10 s for leftover processes and lists them.
+- `notes-migrate` refuses a move onto a name that differs only by case or Unicode form, in the plan and again at apply.
+
+### 🐛 Bug Fixes
+
+- The gate and the held-out suite take one lock in the git common dir, so two worktrees never run a suite at once, and a killed gate leaves no holder.
+- `upgrade` keeps your own hook groups, and refuses to overwrite a file of yours at a new kit path unless `--force`.
+- `upgrade` merges the Codex config by TOML meaning (quote styles, quoted headers, inline tables, multi-line values, dotted keys) and keeps each of your values in the `[features]` and network tables.
+- `upgrade` backs up a link of yours at a kit link path outside the skills folder, and refuses it unless `--force`.
+- `release-check` keeps an audit current when a kit refresh only writes copies equal to the kit the audited commit builds, at the same kit version, or drops a copy that kit no longer has.
+- `gate --summary` gives one id per failing test, keeps the node file in the id, and names a crashed suite or a missing report.
+- `gate --summary` lists the failed JUnit cases, and the gate ignores the Python `tempfile` probe file a killed test leaves.
+- The gate and its test repos run git with `core.fsmonitor` off, so they no longer leave `git fsmonitor--daemon` processes behind.
+- `acceptance` needs an executed test for green, and reports `short` when a run has fewer distinct tests than an earlier full run of the same suite.
+- The held-out suite runs in an empty `TMPDIR`, and `scripts/acceptance.sh` fails on a temp leak or a run with no held-out test.
+- The weakened-test report matches skip markers on word boundaries and runner names, so `sys.exit(` is no skip.
+- Stage 3 ends on the acceptance commit with an `Acceptance: <slug>` line, also when spec-tester only extends earlier test files.
+- Under subagent-driven development, the agent logs each ruling the plan executor made as a decision row (superpowers 7.0.1 moved them into the final review dev-loop skips).
+- A Claude feature worktree is created under `.claude/worktrees/`, where `EnterWorktree` does not ask, and `init` and `upgrade` add that folder to `.gitignore`.
+- `init` and `upgrade` print the `/hooks` step when they add or change a Codex hook.
+- `check_setup.py` reads the Claude and Codex config folders from `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, and gives the right fix for a leftover kit skill.
+- `check_setup.py` names `noclobber` and `-i` aliases of `rm`, `cp`, `mv` and `ln` in the agent shell, with the fix in `reference/kit.md`.
+- CI runs every job again when a PR changes its base.
+- CI skips its jobs only for a PR or a push to the default branch.
+- `scripts/release-verify.sh` never waits on a git credential prompt.
+- `status` on `main` is faster: it caches git answers and reads each worktree git dir from its `.git` file.
+- `status` reads each spec once per run.
+- Review tables and the Track S marker are written with `devloop.py review-save`, into the worktree git dir.
+- `metrics` counts only the gate runs of the feature and keeps escaped pipes in a row.
+- The board no longer says "Needs you" while a background subagent runs.
+- The board shows one doing task when the build writes every task brief up front.
+- The board keeps a feature you own until it ships, also when a run does not see it, and writes the kit version only from a valid MANIFEST.
+- The board shows no Stage 5 time while a planned feature has no ledger.
+- Board times use one duration rule and never show a negative span.
+- The board server log moves to `dev-loop-board.log.1` when it is over 64 KB, so it no longer grows without a bound.
+- The audit sandbox labels each container with its target and reports the command exit when the OOM killer also stops the container.
+- The project kit no longer holds the skill test files.
+- The `decide` and `pause` usage text names `--repo`.
 
 Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.1...v3.0.0-rc.4
 

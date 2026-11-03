@@ -361,10 +361,15 @@ class ReleaseSkillTextTests(unittest.TestCase):
 
     def test_release_notes_skill(self) -> None:
         text = self.skill("release-notes")
-        for name in ["--all", "### Highlights", "### Fixes", "### Upgrade notes", "Full changes:",
-                     "gh release edit", "confirm"]:
+        for name in ["--all", "Full changes:", "gh release edit", "confirm", "most important first",
+                     "Each fact once"]:
             self.assertIn(name, text, name)
         self.assertLess(text.index("confirm"), text.index("gh release edit"))
+        headings = ["### ⬆️ Upgrade", "### ✨ New Features", "### 💥 Breaking Changes", "### 🔒 Security",
+                    "### ⚡️ Performance", "### 📝 Documentation & Content", "### 🐛 Bug Fixes"]
+        self.assertEqual([text.index(h) for h in headings], sorted(text.index(h) for h in headings))
+        for old in ["### Highlights", "### Fixes", "### Upgrade notes"]:
+            self.assertNotIn(old, text)
         self.assertIn("`cliff`: say the mode is `cliff`, change nothing, stop.", text)
         self.assertIn("Do not commit.", text)
         self.assertIn("`--all`: run steps 1 to 5", text)
