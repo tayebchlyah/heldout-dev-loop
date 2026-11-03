@@ -14,9 +14,16 @@ User asked for release notes: `/release-notes <version>` or `/release-notes --al
 4. Write the section in `CHANGELOG.md` (working tree, at the place of its version, newest first). Form:
    - Heading `## [<version>] - <YYYY-MM-DD>`: the version without `v`, the release date (today for a new section).
    - Subsections in this order, each only when it has an item:
-     - `### Highlights`: one short paragraph per feature a user can see. A bold lead of a few words, then what it does and why a user cares. At most three sentences.
-     - `### Fixes`: one line per fix a user can see.
-     - `### Upgrade notes`: manual steps and breaking changes, one item each.
+     - `### ⬆️ Upgrade`: the manual steps, one numbered list, in the order the user runs them.
+     - `### ✨ New Features`: one short paragraph per feature a user can see. A bold lead of a few words, then what it does and why a user cares. At most three sentences.
+     - `### 💥 Breaking Changes`: one bullet per change that breaks what worked before.
+     - `### 🔒 Security`: one bullet per security feature or fix.
+     - `### ⚡️ Performance`: one bullet per speed or cost gain a user can see.
+     - `### 📝 Documentation & Content`: one bullet per doc change a user can see.
+     - `### 🐛 Bug Fixes`: one bullet per other fix a user can see.
+   - One format per subsection: `Upgrade` numbered steps, `New Features` paragraphs, every other subsection bullets. Never mix.
+   - Items in each subsection: most important first (most users hit, most harm avoided).
+   - Each fact once, in the subsection that fits it best. Never repeat it in another.
    - Last line: `Full changes: https://github.com/<owner>/<repo>/compare/<previous final tag>...<tag>`, `<owner>` and `<repo>` from `git remote get-url origin`. No previous final tag: no line.
    - No commit hash, no commit list. No refactor, test, CI or doc item unless a user sees its effect.
    - An rc section `## [X.Y.Z-rc.N]` holds everything after the last final release and replaces the section of the previous rc of the same `X.Y.Z`. The final `## [X.Y.Z]` replaces the rc section.
