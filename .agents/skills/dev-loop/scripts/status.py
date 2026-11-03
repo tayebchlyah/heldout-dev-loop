@@ -139,7 +139,7 @@ def detect_feature(repo: Path, slug: str, notes: Path) -> dict:
         if not lines:
             return result(5, f"Track S: {branch} has no commit ahead of origin/main", "Stage 5 Build", slug, "S", worktree)
         if any(line.startswith("+") for line in lines):
-            git_dir = git(worktree, "rev-parse", "--absolute-git-dir") if worktree else None
+            git_dir = git_dir_of(worktree) if worktree else None
             marker = Path(git_dir) / "dev-loop" / "review-done" if git_dir else None
             if marker is None or not marker.is_file():
                 return result(6, "Track S: no review-done marker in the git dir", "Stage 6 review wave, triage, fix wave, "
@@ -247,7 +247,7 @@ def is_linked(path: Path | str | None) -> bool:
     """True when the path is in a linked worktree: its git dir is not the common git dir (physical paths)."""
     if not path:
         return False
-    git_dir = git(Path(path), "rev-parse", "--absolute-git-dir")
+    git_dir = git_dir_of(Path(path))
     common = git(Path(path), "rev-parse", "--path-format=absolute", "--git-common-dir")
     return bool(git_dir and common) and os.path.realpath(git_dir) != os.path.realpath(common)
 
@@ -269,6 +269,7 @@ def pause_state(worktree: Path, env: Mapping[str, str], delete: bool) -> dict | 
 
 def cmd_status(args: argparse.Namespace) -> int:
     devloop.cache_git()  # `status` makes no git write; on main it asks the same questions once per spec.
+    devloop.cache_notes()
     repo = Path(args.repo).resolve()
     try:
         notes = resolve(repo, os.environ, Path.home())

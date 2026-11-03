@@ -19,7 +19,7 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || { board; exit 0; }
 GATE=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$GATE" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
 git_pin_repo .
-DIRTY=$(git status --porcelain 2>/dev/null) && [ -z "$DIRTY" ] && { board; exit 0; }
+DIRTY=$(git status --porcelain --ignore-submodules=dirty 2>/dev/null) && [ -z "$DIRTY" ] && { board; exit 0; }
 if [ "$(echo "$IN" | jq -r '.hook_event_name // empty')" = "SubagentStop" ]; then
   case "$(echo "$IN" | jq -r '.agent_type // empty')" in Explore|Plan) { board; exit 0; } ;; esac
   ID=$(echo "$IN" | jq -r '.agent_id // empty')

@@ -13,22 +13,15 @@ from pathlib import Path
 
 import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
-from notes_path import NotesPathError, resolve
+from notes_path import NotesPathError, main_ref, resolve
 from status import rebasing
-
-
-def main_ref(repo: Path) -> str | None:
-    """The fully qualified ref to read the trusted config from. A short `origin/main` can be shadowed by a local
-    tag or branch of that name."""
-    for ref in ("refs/remotes/origin/main", "refs/heads/main"):
-        if git(repo, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"):
-            return ref
-    return None
 
 
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
 CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
 DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
+HARNESS_CONFIG = (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml", ".codex/hooks.json",
+                  ".mcp.json", ".claude", ".codex")
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
@@ -183,9 +176,10 @@ def merge_check(args: argparse.Namespace) -> int:
         reasons.append({"reason": "merge-human"})
     if (track or "").upper() == "L":
         reasons.append({"reason": "track-l"})
+    landing_paths = changed_paths(repo, f"{ref}...{head}")
     if config is not None:
         patterns = config.get("merge_human_paths", [])
-        for path in changed_paths(repo, f"{ref}...{head}"):
+        for path in landing_paths:
             pattern = next((p for p in patterns if fnmatch.fnmatchcase(path, p)), None)
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
@@ -199,6 +193,7 @@ def merge_check(args: argparse.Namespace) -> int:
                        branch_config.get("file_size_exempt", []), branch_config.get("commands")) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
+    reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if p.lower() in HARNESS_CONFIG)
 
     reviewed = reviewed_head(worktree, notes, spec)
     # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.

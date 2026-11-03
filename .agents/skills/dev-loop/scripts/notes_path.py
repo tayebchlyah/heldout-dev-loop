@@ -36,18 +36,51 @@ def expand(value: str, base: Path, home: Path) -> Path:
     return path if path.is_absolute() else base / path
 
 
-def read_notes(file: Path, strict: bool = True) -> str | None:
-    if not file.is_file():
-        return None
+def notes_value(text: str | bytes, label: str, strict: bool = True) -> str | None:
     try:
-        value = json.loads(file.read_text()).get("notes")
-    except (OSError, ValueError, AttributeError) as exc:
-        raise NotesPathError(f"invalid {file}: {exc}") from exc
+        value = json.loads(text).get("notes")
+    except (ValueError, AttributeError) as exc:
+        raise NotesPathError(f"invalid {label}: {exc}") from exc
     if not isinstance(value, str) or not value:
         if not strict:
             return None
-        raise NotesPathError(f"invalid {file}: no notes key")
+        raise NotesPathError(f"invalid {label}: no notes key")
     return value
+
+
+def read_notes(file: Path) -> str | None:
+    if not file.is_file():
+        return None
+    try:
+        text = file.read_text()
+    except OSError as exc:
+        raise NotesPathError(f"invalid {file}: {exc}") from exc
+    return notes_value(text, str(file))
+
+
+def main_ref(repo: Path) -> str | None:
+    for ref in ("refs/remotes/origin/main", "refs/heads/main"):
+        try:
+            probe = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"],
+                                   capture_output=True)
+        except OSError:
+            return None
+        if probe.returncode == 0:
+            return ref
+    return None
+
+
+def read_main_ref_notes(repo: Path) -> tuple[str, str] | None:
+    ref = main_ref(repo)
+    if not ref:
+        return None
+    label = f"{ref}:dev-loop.json"
+    try:
+        shown = subprocess.run(["git", "-C", str(repo), "show", label], capture_output=True)
+    except OSError:
+        return None
+    value = notes_value(shown.stdout, label, strict=False) if shown.returncode == 0 else None
+    return (value, label) if value else None
 
 
 def worktrees(repo: Path) -> tuple[Path, Path]:
@@ -66,26 +99,33 @@ def tracked(main: Path) -> bool:
 
 
 def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
-    """`DEV_LOOP_NOTES` (relative to the repo worktree), else `dev-loop.local.json`, then `notes` in
-    `dev-loop.json`, both of the main worktree. A feature worktree's own files are never read."""
+    """`DEV_LOOP_NOTES` (relative to the repo worktree), else `dev-loop.local.json` read from disk in the main
+    worktree, then `notes` in `dev-loop.json` read from the main ref, never from disk: a branch checked out in
+    the main worktree cannot change it. No main ref or no file on it: no notes key. A feature worktree's own
+    files are never read."""
     worktree, main = worktrees(repo)
     found: tuple[str, Path, str] | None = None
     if env.get("DEV_LOOP_NOTES"):
         found = (env["DEV_LOOP_NOTES"], worktree, "DEV_LOOP_NOTES")
     elif tracked(main):
         raise TrackedLocalFile(f"{main / 'dev-loop.local.json'} is tracked by git: run git rm --cached dev-loop.local.json")
-    for name, strict in (("dev-loop.local.json", True), ("dev-loop.json", False)):
-        if found:
-            break
-        value = read_notes(main / name, strict)
+    if not found:
+        value = read_notes(main / "dev-loop.local.json")
         if value:
-            found = (value, main, str(main / name))
+            found = (value, main, str(main / "dev-loop.local.json"))
+    if not found:
+        shared = read_main_ref_notes(repo)
+        if shared:
+            found = (shared[0], main, shared[1])
     if not found:
         raise NotesPathError(f'no notes path for {repo}. Write {{"notes": "<path>"}} to {main / "dev-loop.local.json"}')
     path, source = expand(found[0], found[1], home), found[2]
     if not path.is_dir():
-        change = "DEV_LOOP_NOTES" if source == "DEV_LOOP_NOTES" else f"the path in {source}"
-        raise NotesPathError(f"notes folder does not exist: {path} (from {source}). Create it or change {change}")
+        if source.startswith("refs/"):
+            fix = f"Change notes in dev-loop.json on main, or write {main / 'dev-loop.local.json'}"
+        else:
+            fix = f"Create it or change {'DEV_LOOP_NOTES' if source == 'DEV_LOOP_NOTES' else f'the path in {source}'}"
+        raise NotesPathError(f"notes folder does not exist: {path} (from {source}). {fix}")
     return path
 
 

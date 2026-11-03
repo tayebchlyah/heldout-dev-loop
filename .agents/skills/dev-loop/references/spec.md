@@ -54,7 +54,7 @@ Every decision and surprise of Delivery, one row each, appended by `scripts/devl
 
 `feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
 
-Seam rule. Source: Matt Pocock skills v1.3.1, `skills/engineering/to-spec/SKILL.md` line 15 (https://github.com/mattpocock/skills), copied verbatim:
+Seam rule. Source: Matt Pocock skills v1.3.2, `skills/engineering/to-spec/SKILL.md` line 15 (https://github.com/mattpocock/skills, commit `d1478fc`), copied verbatim:
 
 > Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
@@ -62,7 +62,7 @@ Seam rule. Source: Matt Pocock skills v1.3.1, `skills/engineering/to-spec/SKILL.
 
 Spec written: dispatch one fresh subagent, no session context. Claude Code: `general-purpose`. Codex: a generic worker, read-only. Domain: "software engineer". Document: the spec path. Answer each question in the spec, or ask the user, before the approval. "nothing important left": done.
 
-Source: Superpowers 7.0.0, `skills/brainstorming/builder-check-prompt.md` (https://github.com/obra/superpowers), copied verbatim:
+Source: Superpowers 7.0.1, `skills/brainstorming/builder-check-prompt.md` (https://github.com/obra/superpowers, commit `2ce8aa1`), copied verbatim:
 
 ```
 You are a talented [DOMAIN, e.g. "software engineer", "event planner",
@@ -87,7 +87,7 @@ If nothing important is left, say "nothing important left".
 
 Add `## Threat model` to the spec: per trust boundary, the assets, one STRIDE row per threat that applies, the abuse cases. Each abuse case becomes an `## Acceptance oracle` line.
 
-Source: Addy Osmani agent-skills 0.6.12, `skills/security-and-hardening/SKILL.md`, section "Process: Threat Model First" (https://github.com/addyosmani/agent-skills, commit `1be8e34`), copied verbatim, punctuation adapted: four em-dashes replaced by two commas, a colon and a semicolon.
+Source: Addy Osmani agent-skills 0.6.15, `skills/security-and-hardening/SKILL.md`, section "Process: Threat Model First" (https://github.com/addyosmani/agent-skills, commit `8bfcc1f`), copied verbatim, punctuation adapted: four em-dashes replaced by two commas, a colon and a semicolon.
 
 Controls bolted on without a threat model are guesses. Before hardening, spend five minutes thinking like an attacker:
 
@@ -110,9 +110,9 @@ If you can't name the trust boundaries for a feature, you're not ready to secure
 
 ## One-way door: doubt review
 
-Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences. CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user. Delivery runs no doubt review: Stage 2 ran it for each door the spec marks, and a one-way door the approved spec does not cover is a stop item (SKILL.md autonomy grant).
+Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences, then each caller, guard or test that contradicts it (outside the cap). CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning; pass the evidence. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user. Delivery runs no doubt review: Stage 2 ran it for each door the spec marks, and a one-way door the approved spec does not cover is a stop item (SKILL.md autonomy grant).
 
-Source: Addy Osmani agent-skills 0.6.12, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `1be8e34`), core reviewer prompt and its rule, copied verbatim:
+Source: Addy Osmani agent-skills 0.6.15, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `8bfcc1f`), core reviewer prompt and its rule, copied verbatim:
 
 ```
 Adversarial review. Find what is wrong with this artifact.

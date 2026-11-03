@@ -14,6 +14,7 @@
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
+  devloop.py size-check [--uncommitted | --all]       file-size ratchet: a new or grown file over 40,000 bytes fails
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
   devloop.py drive [--all | --since SHA | --routes-from FILE]
@@ -21,6 +22,7 @@
   devloop.py capture --pr N [--before FILE] [--after FILE] | --write-after FILE
                                                       put the before and after screens in the PR body
   devloop.py second-review --harness claude|codex [--timeout MINUTES]
+                                                      the other family's CLI reviews the branch, correctness and security only
   devloop.py review-merge REVIEWER=FILE [REVIEWER=FILE ...]
                                                       merge the reviewer tables by file and line
   devloop.py review-save --reviewer NAME | --done    save a reviewer table (stdin) or the Track S marker in the git dir
@@ -33,7 +35,7 @@
                                                       record the end of the fix wave of the current audit
   devloop.py audit-run <step> --run FOLDER [--repo PATH] ...
                                                       the parent-side steps of a release audit run (reference/cli/audit-run.md)
-  devloop.py release-check [--repo PATH] (--tag NAME | --sha REV)
+  devloop.py release-check [--repo PATH] [--no-build] (--tag NAME | --sha REV)
                                                       the release gate: a current audit record, no open security item
   devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
                                                       may CI skip this diff: only a release or a kit upgrade
@@ -42,10 +44,10 @@
   devloop.py metrics [--repo PATH] [--feature SLUG] [--write]
                                                       the token cost of each stage of a feature, its row in Feature Metrics.md
   devloop.py sessions --since DAYS [--repo PATH]       the Claude Code and Codex sessions of the repo, for retro
-  devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG]
+  devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG] [--repo PATH]
                                                       append one row to the decision log
-  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...]
-  devloop.py pause --clear                            write or delete the pause note of the worktree
+  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...] [--repo PATH]
+  devloop.py pause --clear [--repo PATH]              write or delete the pause note of the worktree
   devloop.py notes-migrate [--repo PATH] [--apply [--plan HASH]]
                                                       move the notes to the feature folder layout, rewrite the links
 
@@ -99,6 +101,10 @@ def claude_home(env: Mapping[str, str], home: Path) -> Path:
     return Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude")
 
 
+def security_audit_dir(harness: str, env: Mapping[str, str], home: Path) -> Path:
+    return (claude_home(env, home) if harness == "claude" else home / ".agents") / "skills" / "security-audit"
+
+
 def codex_home(env: Mapping[str, str], home: Path) -> Path:
     return Path(env.get("CODEX_HOME") or home / ".codex")
 
@@ -108,7 +114,27 @@ def slug_from_title(filename: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
 
 
+FRONTMATTER_CACHE: dict[str, dict[str, str]] | None = None
+SPECS_CACHE: dict[str, list[tuple[str, Path]]] | None = None
+
+
+def cache_notes() -> None:
+    """From now on in this process, `frontmatter` and `specs` return their first answer per path. For `status`, which
+    writes no spec or plan (#152)."""
+    global FRONTMATTER_CACHE, SPECS_CACHE
+    FRONTMATTER_CACHE, SPECS_CACHE = {}, {}
+
+
 def frontmatter(path: Path) -> dict[str, str]:
+    if FRONTMATTER_CACHE is not None and str(path) in FRONTMATTER_CACHE:
+        return dict(FRONTMATTER_CACHE[str(path)])
+    fields = read_frontmatter(path)
+    if FRONTMATTER_CACHE is not None:
+        FRONTMATTER_CACHE[str(path)] = fields
+    return fields
+
+
+def read_frontmatter(path: Path) -> dict[str, str]:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
@@ -142,6 +168,15 @@ def old_layout(notes: Path) -> list[str]:
 
 
 def specs(notes: Path) -> list[tuple[str, Path]]:
+    if SPECS_CACHE is not None and str(notes) in SPECS_CACHE:
+        return list(SPECS_CACHE[str(notes)])
+    found = read_specs(notes)
+    if SPECS_CACHE is not None:
+        SPECS_CACHE[str(notes)] = found
+    return found
+
+
+def read_specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
     for path in sorted((notes / FEATURES).glob("*/Spec.md")):
         found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
@@ -310,6 +345,7 @@ def main() -> int:
     target = release.add_mutually_exclusive_group(required=True)
     target.add_argument("--tag")
     target.add_argument("--sha")
+    release.add_argument("--no-build", action="store_true")
     release.set_defaults(run=("release", "cmd_release_check"))
 
     skip = commands.add_parser("ci-skip")
