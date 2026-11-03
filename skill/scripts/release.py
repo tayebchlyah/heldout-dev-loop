@@ -6,6 +6,7 @@ Shared by `devloop.py` (`release-plan`, `release-record`, `release-check`).
 from __future__ import annotations
 
 import argparse
+import errno
 import fcntl
 import fnmatch
 import hashlib
@@ -140,7 +141,7 @@ def names_issue(subject: str, n: int) -> bool:
     return re.search(rf"#{n}(?!\d)", subject) is not None
 
 
-def code_commit(repo: Path, sha: str, build: bool = True) -> bool:
+def code_commit(repo: Path, sha: str, build: bool) -> bool:
     """True when the commit changes, against its first parent, a path that is neither a test or doc path nor allowed
     by the `ci-skip` rules (`build` as `ci_skip.blocking`). A root commit: any path. A bad `version_files`: every
     non-test, non-doc path."""
@@ -236,7 +237,7 @@ def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str, build: bo
     return None
 
 
-def check(repo: Path, notes: Path | None, target: str, tag: str | None, build: bool = True) -> tuple[dict, int]:
+def check(repo: Path, notes: Path | None, target: str, tag: str | None, build: bool) -> tuple[dict, int]:
     """The release gate: a current audit record and no open security item. Exit 0 when ok. `build` false: no commit's
     installer runs (the git guards, #199), so a kit copy makes the audit stale.
 
@@ -357,7 +358,8 @@ def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
     """The kit that `commit`'s own installer builds, as `{path: (MANIFEST entry, git mode)}`; None when the tree
     at `commit` is not the kit source, its `dev-loop.json` has no `harnesses`, or `git` or `node` fails. The source
     is extracted under `<git common dir>/dev-loop/`, which the Codex sandboxes keep read-only, so no confined process
-    swaps it before node imports it (#199); a caller that cannot write there, a confined one, uses the temp root."""
+    swaps it before node imports it (#199); a caller denied a write there, a confined one, uses the temp root, and
+    any other error there gives None."""
     config = read_config(repo, commit)
     harnesses = config.get("harnesses") if config else None
     if not (isinstance(harnesses, list) and harnesses and all(isinstance(h, str) for h in harnesses)):
@@ -373,7 +375,9 @@ def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
     try:
         private.mkdir(mode=0o700, exist_ok=True)
         tmp = tempfile.mkdtemp(prefix="kit-reference-", dir=private)
-    except OSError:
+    except OSError as exc:
+        if exc.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
+            return None
         tmp = tempfile.mkdtemp(prefix="kit-reference-")
     try:
         archive = subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", commit, "--", *KIT_SOURCE], capture_output=True)

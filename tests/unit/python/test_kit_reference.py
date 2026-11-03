@@ -124,7 +124,6 @@ class KitReferenceTests(KitFixture):
             os.environ["PATH"] = saved
 
     def reference_in(self, scratch: Path, run=subprocess.run) -> dict | None:
-        """`kit_reference` of the fixture commit with `scratch` as the shared temp root and `run` as subprocess.run."""
         scratch.mkdir(exist_ok=True)
         with unittest.mock.patch.dict(os.environ, {"TMPDIR": str(scratch)}), \
                 unittest.mock.patch.object(release.subprocess, "run", run):
@@ -136,15 +135,19 @@ class KitReferenceTests(KitFixture):
 
     def test_no_temp_left(self) -> None:
         private = self.repo / ".git" / "dev-loop"
-        for name, blocked in [("private folder", False), ("git dir not writable", True)]:
+        self.addCleanup(lambda: private.chmod(0o700) if private.is_dir() else None)
+        for name, mode in [("private folder", 0o700), ("git dir not writable", 0o500)]:
             with self.subTest(name):
-                if blocked:
-                    private.rmdir()
-                    private.write_text("")
+                private.mkdir(exist_ok=True)
+                private.chmod(mode)
                 scratch = self.tmp / name
                 self.assertIsNotNone(self.reference_in(scratch))
                 self.assertEqual(list(scratch.iterdir()), [])
-                self.assertEqual(list(private.iterdir()) if private.is_dir() else [], [])
+                self.assertEqual(list(private.iterdir()), [])
+        private.chmod(0o700)
+        private.rmdir()
+        private.write_text("")
+        self.assertIsNone(self.reference_in(self.tmp / "not a folder"))
 
     def test_a_temp_root_writer_cannot_swap_the_module(self) -> None:
         # #199: a confined writer of the shared temp root swaps lib/kit.mjs before host node imports it.
@@ -155,7 +158,9 @@ class KitReferenceTests(KitFixture):
                 for folder in scratch.glob("kit-reference-*"):
                     (folder / "lib" / "kit.mjs").write_text("export function buildKit() { return { files: [], links: [] } }\n")
             return real(cmd, *args, **kwargs)
-        self.assertEqual(self.reference_in(scratch, swap_then_run), self.reference_in(self.tmp / "clean"))
+        clean = self.reference_in(self.tmp / "clean")
+        self.assertTrue(clean)
+        self.assertEqual(self.reference_in(scratch, swap_then_run), clean)
 
 
 class KitMatchesTests(KitFixture):
