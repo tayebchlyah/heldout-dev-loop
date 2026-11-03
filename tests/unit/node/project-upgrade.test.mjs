@@ -190,7 +190,7 @@ test('upgrade from the earlier Codex kit config adds the network keys, then sett
   assert.equal(network.allow_local_binding, true)
   assert.equal(Object.keys(network.domains).length, 12)
   assert.ok(config.permissions['dev-docker'])
-  assert.deepEqual(config.permissions['dev-workspace'].filesystem, { ...before, ':workspace_roots': { ...before[':workspace_roots'], '.dev-loop': 'read' } })
+  assert.deepEqual(config.permissions['dev-workspace'].filesystem, { ...before, ':workspace_roots': { ...before[':workspace_roots'], '.dev-loop': 'read', '.agents': 'read', '.codex': 'read' } })
   const text = readFileSync(path, 'utf8')
   const output = upgrade(repo, home, [], fakePackage('99.0.0'))
   assert.equal(readFileSync(path, 'utf8'), text)
