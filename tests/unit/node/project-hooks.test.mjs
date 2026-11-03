@@ -340,12 +340,22 @@ test('Codex outer hook entries take an outer repo only when it is a listed workt
       renameSync(join(root, '.git-real'), join(root, '.git'))
     }
   }
+  const listRoot = () => {
+    const undo = redirect()
+    const listed = join(tempDir('dev-loop-listed-'), 'w')
+    git(elsewhere, 'commit', '-q', '--allow-empty', '-m', 'x')
+    git(elsewhere, 'worktree', 'add', '-q', '--detach', listed)
+    const admin = join(elsewhere, '.git/worktrees', readdirSync(join(elsewhere, '.git/worktrees'))[0])
+    writeFileSync(join(admin, 'gitdir'), `${join(root, '.git')}\n`)
+    return undo
+  }
   const rows = [
     ['only main trusted', () => trustEntry(repo), null, 'main-hook'],
     ['main and root trusted', () => trustEntry(repo) + trustEntry(root), null, 'outer-hook'],
     ['root trusted, key spelled through a symlink', () => trustEntry(repo) + trustEntry(link), null, 'outer-hook'],
     ['root trusted only in a comment', () => trustEntry(repo) + `# ${trustEntry(root).split('\n')[0]}\n`, null, 'main-hook'],
     ['gitfile at root redirects to a trusted repo', () => trustEntry(repo) + trustEntry(elsewhere), redirect, 'main-hook'],
+    ['gitfile at root names a gitdir that lists root as a worktree', () => trustEntry(repo) + trustEntry(elsewhere), listRoot, 'main-hook'],
   ]
   for (const [name, config, plant, expected] of rows) await t.test(name, () => {
     const env = trustCodexHooks(home)

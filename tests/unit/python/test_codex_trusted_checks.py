@@ -127,7 +127,9 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         (link/'root').symlink_to(self.root)
         config = self.root/'codex/config.toml'
         trust = lambda path: f'[hooks.state."{path}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n'
-        nested = self.feature/'packages/web'
+        feature = self.main/'.claude/worktrees/probe'
+        self.git(self.main, 'worktree', 'add', '-qb', 'fix/probe', str(feature))
+        nested = feature/'packages/web'
         other = self.root/'other'
         def redirect():
             self.plant(other)
@@ -136,8 +138,8 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         rows = [
             ('nested repo in the feature', lambda: self.plant(nested), nested),
             ('nested repo, trust key through a symlink', lambda: (self.plant(nested), config.write_text(trust(link/'root/main'))), nested),
-            ('untrusted outer repo', lambda: self.plant(self.root), self.feature),
-            ('gitfile redirect to a trusted repo', redirect, self.feature),
+            ('untrusted outer repo', lambda: self.plant(self.root), feature),
+            ('gitfile redirect to a trusted repo', redirect, feature),
         ]
         for name, arrange, cwd in rows:
             with self.subTest(name):
