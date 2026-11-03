@@ -194,3 +194,21 @@ print(json.dumps({**result,'stop':stopped['state']}))
         r=self.hook('git-guard.sh',tool_input={'command':'git push origin HEAD:refs/tags/v1.0.0'})
         self.assertIn('release-check: ok',json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])
         self.assertEqual(self.calls()[0]['argv'][:4],['release-check','--no-build','--repo',str(self.feature)])
+
+    def test_release_check_ignores_a_repo_planted_in_a_feature_subfolder(self):
+        """#224: the release-check CLI comes from the kit main, not from the first worktree of the hook cwd."""
+        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
+        feature = self.main/'.claude/worktrees/probe'
+        self.git(self.main, 'worktree', 'add', '-qb', 'fix/probe', str(feature))
+        planted = feature/'packages/web'
+        self.plant(planted)
+        self.git(planted, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'x')
+        for command, expected in ((f'git -C {feature} push origin HEAD:refs/tags/v1.0.0', 'release-check: ok'),
+                                  ('git push origin HEAD:refs/tags/v1.0.0', 'release-check failed: another repository')):
+            with self.subTest(command=command):
+                self.log.unlink(missing_ok=True)
+                r = subprocess.run(['bash', str(CODEX_ASSETS/'hooks/git-guard.sh')], cwd=planted, env=self.env, capture_output=True, text=True,
+                                   input=json.dumps({'cwd': str(planted), 'tool_input': {'command': command}}))
+                self.assertIn(expected, json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])
+                self.assertFalse(self.marker.exists())
+                self.assertEqual(self.log.exists(), expected == 'release-check: ok')

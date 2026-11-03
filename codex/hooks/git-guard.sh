@@ -4,6 +4,7 @@
 # parses permissionDecision "ask" but does not support it (the call would run), so every
 # ask becomes a deny that names the rule.
 . "${0%/*}/git-pin.sh"
+. "${0%/*}/kit-main.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
@@ -186,7 +187,7 @@ AGENT_ID=$(printf '%s' "$IN" | jq -r '.agent_id // empty')
 ask() { deny "Global rule: $1 needs explicit permission each time$2. Codex hooks cannot ask, so ask the user in chat and let them run it."; }
 # allow-comment: dependency, the shell joins g''h into gh, so quotes and backslashes go first.
 if printf '%s' "$CMD" | tr -d '\\\\"'"'"'' | grep -Eq -e '(^|[^[:alnum:]_.-])(git|gh)([^[:alnum:]_.-]|$)'; then
-  REASON=$(CMD="$CMD" CWD="$CWD" RAW="$RAW" AGENT_ID="$AGENT_ID" python3 -I "$(dirname "$0")/git-guard.py") || REASON="a command the guard failed to check"
+  REASON=$(CMD="$CMD" CWD="$CWD" KIT_MAIN="$(kit_main "$CWD")" RAW="$RAW" AGENT_ID="$AGENT_ID" python3 -I "$(dirname "$0")/git-guard.py") || REASON="a command the guard failed to check"
   NL='
 '
   WHAT=${REASON%%"$NL"*}
