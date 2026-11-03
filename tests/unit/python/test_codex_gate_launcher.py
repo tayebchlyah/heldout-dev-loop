@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,24 @@ class CodexHookSandboxTests(unittest.TestCase):
                         self.assertIn('default_permissions="dev-workspace"', args)
                     else:
                         self.assertIn('--include-managed-config', args)
+
+    def test_gate_output_reaches_the_reason_through_no_path_the_gate_can_swap(self):
+        secret = self.root / 'secret'
+        secret.write_text('DUMMY=canary')
+        write(self.feature / 'swap.py', 'import fcntl, os, sys\n'
+              'try: path = os.readlink("/proc/self/fd/1") if sys.platform == "linux" else fcntl.fcntl(1, 50, bytes(1024)).split(b"\\0")[0].decode()\n'
+              'except OSError: path = ""\n'
+              'if os.path.isfile(path) and not os.path.islink(path): os.unlink(path); os.symlink(sys.argv[1], path)\n'
+              'print("gate-out")\nsys.exit(1)\n')
+        reason = json.loads(self.gate(shlex.join([sys.executable, '-I', 'swap.py', str(secret)])).stdout)['reason']
+        self.assertNotIn('canary', reason)
+        self.assertIn('gate-out', reason)
+
+    def test_kit_metadata_stays_read_only_when_the_hook_cwd_is_the_main_checkout(self):
+        table, _ = sandbox.neutralised({}, sandbox.filesystem({}, self.main, self.main), (self.main, self.main))
+        for name in ('.git', '.codex', '.agents', '.dev-loop'):
+            with self.subTest(name=name):
+                self.assertEqual(table.get(str(self.main / name)), 'read')
 
     def test_gate_command_reads_end_of_input(self):
         r = self.gate('echo "stdin-bytes=$(cat | wc -c | tr -d " ")"; exit 7')
