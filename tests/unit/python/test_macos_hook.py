@@ -91,6 +91,19 @@ class MacosHookTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(target.exists(), allowed)
 
+    def test_run_denies_a_terminal_it_does_not_own_proof(self):
+        master, slave = os.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        code = (f'import os\ntry: os.write(os.open({os.ttyname(slave)!r}, os.O_WRONLY | os.O_NOCTTY), b"GATE-WAS-HERE")\n'
+                'except PermissionError: pass\nelse: raise AssertionError("foreign tty writable")\n'
+                'own, peer = os.openpty(); os.write(peer, b"own\\n"); assert os.read(own, 3) == b"own"')
+        result = self.launch(code)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        os.set_blocking(master, False)
+        with self.assertRaises(BlockingIOError):
+            os.read(master, 64)
+
     def test_run_globs_metadata_and_nested_read_proof(self):
         main = self.root / 'main'
         main.mkdir()
