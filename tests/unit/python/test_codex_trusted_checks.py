@@ -136,4 +136,4 @@ print(json.dumps({**result,'stop':stopped['state']}))
     def test_release_check_uses_main_code_with_isolated_python(self):
         r=self.hook('git-guard.sh',tool_input={'command':'git push origin HEAD:refs/tags/v1.0.0'})
         self.assertIn('release-check: ok',json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])
-        self.assertEqual(self.calls()[0]['argv'][:3],['release-check','--repo',str(self.feature)])
+        self.assertEqual(self.calls()[0]['argv'][:4],['release-check','--no-build','--repo',str(self.feature)])

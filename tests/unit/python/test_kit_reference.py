@@ -123,21 +123,39 @@ class KitReferenceTests(KitFixture):
         finally:
             os.environ["PATH"] = saved
 
-    def test_no_temp_left(self) -> None:
-        scratch = self.tmp / "scratch"
-        scratch.mkdir()
-        saved = os.environ.get("TMPDIR")
-        os.environ["TMPDIR"] = str(scratch)
-        tempfile.tempdir = None
-        try:
-            self.assertIsNotNone(release.kit_reference(self.repo, self.sha))
-        finally:
+    def reference_in(self, scratch: Path, run=subprocess.run) -> dict | None:
+        """`kit_reference` of the fixture commit with `scratch` as the shared temp root and `run` as subprocess.run."""
+        scratch.mkdir(exist_ok=True)
+        with unittest.mock.patch.dict(os.environ, {"TMPDIR": str(scratch)}), \
+                unittest.mock.patch.object(release.subprocess, "run", run):
             tempfile.tempdir = None
-            if saved is None:
-                del os.environ["TMPDIR"]
-            else:
-                os.environ["TMPDIR"] = saved
-        self.assertEqual(list(scratch.iterdir()), [])
+            try:
+                return release.kit_reference(self.repo, self.sha)
+            finally:
+                tempfile.tempdir = None
+
+    def test_no_temp_left(self) -> None:
+        private = self.repo / ".git" / "dev-loop"
+        for name, blocked in [("private folder", False), ("git dir not writable", True)]:
+            with self.subTest(name):
+                if blocked:
+                    private.rmdir()
+                    private.write_text("")
+                scratch = self.tmp / name
+                self.assertIsNotNone(self.reference_in(scratch))
+                self.assertEqual(list(scratch.iterdir()), [])
+                self.assertEqual(list(private.iterdir()) if private.is_dir() else [], [])
+
+    def test_a_temp_root_writer_cannot_swap_the_module(self) -> None:
+        # #199: a confined writer of the shared temp root swaps lib/kit.mjs before host node imports it.
+        scratch, real = self.tmp / "scratch", subprocess.run
+
+        def swap_then_run(cmd, *args, **kwargs):
+            if cmd[0] == "node":
+                for folder in scratch.glob("kit-reference-*"):
+                    (folder / "lib" / "kit.mjs").write_text("export function buildKit() { return { files: [], links: [] } }\n")
+            return real(cmd, *args, **kwargs)
+        self.assertEqual(self.reference_in(scratch, swap_then_run), self.reference_in(self.tmp / "clean"))
 
 
 class KitMatchesTests(KitFixture):
@@ -266,6 +284,23 @@ class KitSourceFlowTests(KitFixture):
     def test_release_check_dogfood_release_ok(self) -> None:
         out = self.devloop("release-check", "--sha", self.release())
         self.assertEqual((out["ok"], out["reasons"]), (True, []))
+
+    def test_release_check_no_build_runs_no_kit_code(self) -> None:
+        # #199: the git guards pass --no-build, so no commit's lib/kit.mjs runs on the host from a hook.
+        marker = self.tmp / "marker"
+        kit = self.repo / "lib" / "kit.mjs"
+        kit.write_text(f"import {{ writeFileSync }} from 'node:fs'\nwriteFileSync({json.dumps(str(marker))}, 'ran')\n" + kit.read_text())
+        record = self.commit()
+        (self.notes / "Project Note.md").write_text(RECORD.format(sha=record))
+        (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text(
+            json.dumps({"source_ref": {"commit": record}, "run_status": "complete"}))
+        target = self.release()
+        stale = [{"reason": "stale-audit", "paths": [release.MANIFEST, "dev-loop.json", "package.json"]}]
+        for args, reasons, ran in [((), [], True), (("--no-build",), stale, False)]:
+            with self.subTest(args=args):
+                marker.unlink(missing_ok=True)
+                out = self.devloop("release-check", *args, "--sha", target)
+                self.assertEqual((out["reasons"], marker.exists()), (reasons, ran))
 
     def test_release_check_rewritten_hash_is_stale(self) -> None:
         out = self.devloop("release-check", "--sha", self.release(edit=True))
