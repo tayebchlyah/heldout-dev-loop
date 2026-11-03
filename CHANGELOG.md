@@ -4,7 +4,7 @@
 
 ### ⬆️ Upgrade
 
-1. From 2.1.x, ship each in-flight feature on 2.1.x first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
+1. From 2.1.x, ship each in-flight feature first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
 2. Update the CLIs to the minimums `check_setup.py` checks: Claude Code 2.1.295 and codex-cli 0.166.0 (the native hook sandbox). Older CLIs cannot run the new hooks.
 3. Run `npx github:tchlyah/dev-loop#v3.0.0-rc.4 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
 4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1, rc.2 or rc.3: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
