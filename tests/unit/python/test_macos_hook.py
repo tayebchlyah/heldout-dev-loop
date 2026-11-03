@@ -96,7 +96,7 @@ class MacosHookTests(unittest.TestCase):
         main.mkdir()
         nested = main / 'nested'
         nested.mkdir()
-        for name in ('.git', '.agents', '.codex', '.aws'):
+        for name in ('.git', '.agents', '.codex', '.dev-loop', '.aws'):
             (nested / name).mkdir()
             (nested / name / 'config').write_text('base')
         (nested / '.env.private').write_text('secret')
@@ -116,7 +116,7 @@ class MacosHookTests(unittest.TestCase):
                  str(main / '**/.private'): 'deny', str(main / '**/.env.*'): 'deny'}
         code = ('from pathlib import Path; '
                 f'n=Path({str(nested)!r}); (n/"allowed").write_text("yes")\n'
-                f'for name in {[str(main / "base"), *[str(nested / name / "config") for name in (".git", ".agents", ".codex", ".aws")], str(alias), str(nested / ".private"), str(child / ".env.secret"), str(protected), str(metadata_alias / "concurrent-helper")]!r}:\n'
+                f'for name in {[str(main / "base"), *[str(nested / name / "config") for name in (".git", ".agents", ".codex", ".dev-loop", ".aws")], str(alias), str(nested / ".private"), str(child / ".env.secret"), str(protected), str(metadata_alias / "concurrent-helper")]!r}:\n'
                 ' try:\n  Path(name).write_text("escape")\n except PermissionError: pass\n else: raise AssertionError(name)\n')
         result = self.launch(code, rules)
         self.assertEqual(result.returncode, 0, result.stderr)

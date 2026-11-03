@@ -1,5 +1,5 @@
 import test from 'node:test'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -43,8 +43,8 @@ test('upgrade removes the hook entries of kit scripts the package renamed, and a
   assert.equal(claude.some((command) => command.endsWith('.dev-loop/hooks/claude/gate.sh"')), false)
   assert.ok(claude.some((command) => command.endsWith('.dev-loop/hooks/claude/stop-gate.sh"')))
   const codex = hookCommands(join(repo, '.codex/hooks.json'))
-  assert.equal(codex.some((command) => command.endsWith('.dev-loop/hooks/codex/session-start.sh"')), false)
-  assert.ok(codex.some((command) => command.endsWith('.dev-loop/hooks/codex/repo-start.sh"')))
+  assert.equal(codex.some((command) => command.includes('.dev-loop/hooks/codex/session-start.sh"')), false)
+  assert.ok(codex.some((command) => command.includes('.dev-loop/hooks/codex/repo-start.sh"')))
   assertNoDanglingHook(repo, '.claude/settings.json')
   assertNoDanglingHook(repo, '.codex/hooks.json')
   const diff = git(repo, 'diff', '--', '.claude/settings.json', '.codex/hooks.json')
@@ -261,31 +261,64 @@ test('Codex outer hook entries execute main scripts from a feature worktree', ()
   }
 })
 
-test('Codex upgrade migrates legacy commands once and preserves user hooks and Claude bytes', () => {
-  const { home, repo } = setup()
-  init(repo, home, ['--yes', '--harness=both'])
-  const claude = readFileSync(join(repo, '.claude/settings.json'))
-  const path = join(repo, '.codex/hooks.json')
-  const hooks = readJson(path)
-  for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const hook of group.hooks) {
-    hook.command = '\"$(git rev-parse --show-toplevel)/.dev-loop' + hook.command.split('/.dev-loop')[1]
+test('a Codex hook command skips a bare first worktree and blocks with exit 2 when main has no kit script', () => {
+  const { home, repo: root } = setup()
+  const source = join(root, 'source')
+  mkdirSync(source)
+  git(source, 'init', '-q')
+  init(source, home, ['--yes', '--harness=both'])
+  for (const name of readdirSync(join(source, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
+    writeFileSync(join(source, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
   }
-  const oldGate = structuredClone(hooks.hooks.Stop[0])
-  oldGate.matcher = 'old-matcher'
-  hooks.hooks.Stop.push(oldGate, structuredClone(oldGate), { hooks: [{ type: 'command', command: 'echo mine' }] })
-  writeFileSync(path, JSON.stringify(hooks))
-  const pkg = fakePackage('99.0.0')
-  const output = upgrade(repo, home, [], pkg)
-  assert.match(output, /updated.*gate\.sh/)
-  assert.match(output, /\/hooks/)
-  const after = readFileSync(path)
-  const commands = hookCommands(path)
-  assert.equal(commands.filter((command) => command.endsWith('/codex/gate.sh\"')).length, 2)
-  assert.equal(commands.some((command) => command.startsWith('\"$(git rev-parse --show-toplevel)')), false)
-  assert.ok(commands.includes('echo mine'))
-  assert.ok(readFileSync(join(repo, '.claude/settings.json')).equals(claude))
-  upgrade(repo, home, [], pkg)
-  assert.ok(readFileSync(path).equals(after))
+  git(source, 'add', '-A')
+  git(source, 'commit', '-qm', 'kit')
+  const bare = join(root, 'bare.git')
+  git(root, 'clone', '-q', '--bare', source, bare)
+  const linked = join(root, 'linked')
+  git(bare, 'worktree', 'add', '-q', linked)
+  const main = join(root, 'main')
+  mkdirSync(main)
+  git(main, 'init', '-q')
+  git(main, 'commit', '-q', '--allow-empty', '-m', 'no kit')
+  const feature = join(root, 'feature')
+  git(main, 'worktree', 'add', '-qb', 'fix/probe', feature)
+  const run = (command, cwd) => spawnSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' })
+  for (const command of hookCommands(join(source, '.codex/hooks.json'))) {
+    assert.equal(run(command, linked).stdout.trim(), 'main-hook', command)
+    const missing = run(command, feature)
+    assert.equal(missing.status, 2, command)
+    assert.match(missing.stderr, /^Blocked: dev-loop hook script missing: .*\/main\/\.dev-loop\/hooks\/codex\/[\w.-]+$/m)
+  }
+})
+
+test('Codex upgrade migrates each earlier command form once and preserves user hooks and Claude bytes', () => {
+  for (const prefix of ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"]) {
+    const { home, repo } = setup()
+    init(repo, home, ['--yes', '--harness=both'])
+    const claude = readFileSync(join(repo, '.claude/settings.json'))
+    const path = join(repo, '.codex/hooks.json')
+    const hooks = readJson(path)
+    for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const hook of group.hooks) {
+      const [, script, args] = /\/hooks\/codex\/([\w.-]+)".*exec "\$f"(.*)$/s.exec(hook.command)
+      hook.command = `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`
+    }
+    const oldGate = structuredClone(hooks.hooks.Stop[0])
+    oldGate.matcher = 'old-matcher'
+    hooks.hooks.Stop.push(oldGate, structuredClone(oldGate), { hooks: [{ type: 'command', command: 'echo mine' }] })
+    writeFileSync(path, JSON.stringify(hooks))
+    const pkg = fakePackage('99.0.0')
+    const output = upgrade(repo, home, [], pkg)
+    assert.match(output, /updated.*gate\.sh/, prefix)
+    assert.match(output, /\/hooks/)
+    const after = readFileSync(path)
+    const commands = hookCommands(path)
+    assert.equal(commands.filter((command) => command.includes('/codex/gate.sh"; ')).length, 2, prefix)
+    assert.equal(commands.some((command) => command.startsWith(`"${prefix}`)), false, prefix)
+    assert.ok(commands.includes('echo mine'))
+    assert.ok(readFileSync(join(repo, '.claude/settings.json')).equals(claude))
+    upgrade(repo, home, [], pkg)
+    assert.ok(readFileSync(path).equals(after), prefix)
+  }
 })
 
 test('Codex init migrates an existing exact legacy hook without replacing a user command', () => {
@@ -298,7 +331,7 @@ test('Codex init migrates an existing exact legacy hook without replacing a user
   init(repo, home, ['--yes', '--harness=both'])
   const commands = hookCommands(join(repo, '.codex/hooks.json'))
   assert.equal(commands.includes(command), false)
-  assert.equal(commands.filter((cmd) => cmd.endsWith('/codex/gate.sh\"')).length, 2)
+  assert.equal(commands.filter((cmd) => cmd.includes('/codex/gate.sh"; ')).length, 2)
   assert.ok(commands.includes('echo custom'))
 })
 

@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-METADATA = ('.git', '.codex', '.agents')
+METADATA = ('.git', '.codex', '.agents', '.dev-loop')
 
 
 def darwin_temp():
