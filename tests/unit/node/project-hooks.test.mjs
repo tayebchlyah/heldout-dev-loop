@@ -358,6 +358,15 @@ test('Codex hook entries select the main checkout from the trusted projects and 
     writeFileSync(join(admin, 'gitdir'), `${join(root, '.git')}\n`)
     return undo
   }
+  const forgeRoot = () => {
+    renameSync(join(root, '.git'), join(root, '.git-real'))
+    git(elsewhere, 'commit', '-q', '--allow-empty', '-m', 'x')
+    const listed = join(tempDir('dev-loop-listed-'), 'w')
+    git(elsewhere, 'worktree', 'add', '-q', '--detach', listed)
+    const admin = join(elsewhere, '.git/worktrees', readdirSync(join(elsewhere, '.git/worktrees'))[0])
+    writeFileSync(join(admin, 'gitdir'), `${join(root, '.git')}\n`)
+    return () => renameSync(join(root, '.git-real'), join(root, '.git'))
+  }
   const mainHook = `main-hook ${real}`
   const cwds = [repo, feature, sibling, planted, join(planted, 'src')]
   const rows = [
@@ -367,6 +376,7 @@ test('Codex hook entries select the main checkout from the trusted projects and 
     ['an outer trusted project wins', () => trustEntry(repo) + trustEntry(root), null, cwds, `outer-hook ${outer}`],
     ['trust key spelled through a symlink', () => trustEntry(repo) + trustEntry(link), null, cwds, `outer-hook ${outer}`],
     ['gitfile planted at an ancestor naming an untrusted repo', () => trustEntry(repo), redirect, cwds, mainHook],
+    ['trusted repo whose back-pointer lists a folder with no .git of its own', () => trustEntry(elsewhere) + trustEntry(repo), forgeRoot, cwds, mainHook],
     ['untrusted repo built to list the ancestor as a worktree', () => trustEntry(repo), listRoot, cwds, mainHook],
   ]
   for (const [name, config, plant, folders, expected] of rows) await t.test(name, () => {
@@ -380,7 +390,7 @@ test('Codex hook entries select the main checkout from the trusted projects and 
           const result = spawnSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
           if (expected === null) {
             assert.equal(result.status, 2, `${name}, ${cwd}`)
-            assert.match(result.stderr, /^Blocked: dev-loop hook script missing: \/\.dev-loop\/hooks\/codex\//m)
+            assert.match(result.stderr, /^Blocked: no trusted dev-loop main checkout found, run \/hooks$/m)
           } else {
             assert.equal(result.stdout.trim(), expected, `${name}, ${cwd}: ${command}`)
           }
@@ -429,9 +439,14 @@ test('a Codex hook command blocks with exit 2 for a bare first worktree or a mai
       const result = run(command, cwd)
       assert.equal(result.status, 2, `${cwd}: ${command}`)
       assert.equal(result.stdout, '')
-      assert.match(result.stderr, /^Blocked: dev-loop hook script missing: \/\.dev-loop\/hooks\/codex\/[\w.-]+$/m)
+      assert.match(result.stderr, /^Blocked: no trusted dev-loop main checkout found, run \/hooks$/m)
     }
   }
+  mkdirSync(join(main, '.dev-loop'))
+  const env = trustCodexHooks(home, main)
+  const result = spawnSync('/bin/sh', ['-c', hookCommands(join(source, '.codex/hooks.json'))[0]], { cwd: feature, input: '{}', encoding: 'utf8', env })
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, new RegExp(`^Blocked: dev-loop hook script missing: ${realpathSync(main)}/\\.dev-loop/hooks/codex/[\\w.-]+$`, 'm'))
 })
 
 // Each earlier Codex command form (#158, #200, #212, #222, #224), from the parts of a current command: the old
@@ -440,13 +455,14 @@ const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree lis
   `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`,
   `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || [ -d "$w/.dev-loop" ]; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
   `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || { [ -d "$w/.dev-loop" ] && grep -qsF "[hooks.state.\\"$w/.codex/hooks.json:" "\${CODEX_HOME:-$HOME/.codex}/config.toml"; }; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
-  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
-  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && [ "$(cd "$w" 2>/dev/null && pwd -P)" = "$d" ] && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
   .flatMap((prefix) => [
     [prefix, ({ script, args }) => `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`],
     [prefix, ({ script, command }) => `"${prefix}/.dev-loop/hooks/codex/${command.slice(command.indexOf(`${script}"`))}`],
     [prefix, ({ command }) => `f="${prefix}${command.slice(command.indexOf('/.dev-loop/'))}`],
+    [prefix, ({ script, args }) => `f="${prefix}/.dev-loop/hooks/codex/${script}${OLD_GUARD}exec "$f"${args}`],
   ])
+const OLD_GUARD = '"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; '
 const codexParts = (command) => {
   const match = /\/hooks\/codex\/([\w.-]+)".*exec "\$f"(.*)$/s.exec(command)
   return match && { script: match[1], args: match[2], command }
