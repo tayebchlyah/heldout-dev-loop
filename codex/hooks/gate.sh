@@ -3,6 +3,7 @@
 # dev-loop.json (sh -c) when mapped, else its executable scripts/gate.sh.
 # The hook asks for the selective gate (GATE_SCOPE=changed). A full gate is a direct call.
 . "${0%/*}/git-pin.sh"
+. "${0%/*}/kit-main.sh"
 input=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
 board() {
@@ -20,7 +21,7 @@ git_pin_repo .
 dirty=$(git status --porcelain --ignore-submodules=dirty 2>/dev/null) && [ -z "$dirty" ] && { board; exit 0; }
 
 if [ -n "$gate" ]; then set -- sh -c "$gate"; else set -- scripts/gate.sh; fi
-main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+main=$(kit_main .)
 # The gate writes to an unnamed temp file this hook holds open (#200): no path for the confined gate to swap, and a
 # child it leaves running neither holds the hook nor adds to the status, the launcher's own exit.
 reason=$(GATE_SCOPE=changed python3 -I -c 'import subprocess, sys, tempfile
