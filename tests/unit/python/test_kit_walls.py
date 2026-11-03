@@ -11,7 +11,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from support import check_setup
+from support import check_setup, main_of
 from test_devloop import git, put
 from test_seal_hooks import ROOT, SHELL, patch
 
@@ -64,7 +64,8 @@ class AbsolutePathWallTests(unittest.TestCase):
                 payload = {"agent_id": "b", "agent_type": agent, "cwd": str(repo), "tool_name": tool,
                            "tool_input": tool_input}
                 result = subprocess.run([SHELL[script.parent.parent.name], str(script)], input=json.dumps(payload),
-                                        capture_output=True, text=True, timeout=60)
+                                        capture_output=True, text=True, timeout=60,
+                                        env={**os.environ, "KIT_MAIN": main_of(payload["cwd"])})
                 self.assertEqual(result.returncode, code, result.stderr)
 
 
@@ -375,7 +376,7 @@ class KitWallTests(unittest.TestCase):
     def run_hook(self, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
         harness = "codex" if script == "acceptance-wall.sh" else "claude"
         return subprocess.run([SHELL[harness], str(ROOT / harness / "hooks" / script)], input=json.dumps(payload),
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, env={**os.environ, "KIT_MAIN": main_of(payload.get("cwd"))})
 
     def test_file_tools_cannot_change_a_kit_file(self) -> None:
         kit = [".agents/skills/dev-loop/scripts/seal/check.py", ".agents/skills/dev-loop/SKILL.md",
@@ -515,7 +516,7 @@ class CodexTrustWarningTests(unittest.TestCase):
         put(self.home / ".codex" / "config.toml", "\n".join(lines) + "\n")
         return subprocess.run(["sh", str(ROOT / "codex/hooks/session-start.sh")],
                               input=json.dumps({"cwd": str(self.repo)}), capture_output=True, text=True, timeout=60,
-                              env={**os.environ, "HOME": str(self.home)})
+                              env={**os.environ, "HOME": str(self.home), "KIT_MAIN": str(self.repo)})
 
     def test_untrusted_hooks_are_named_and_trusted_hooks_add_nothing(self) -> None:
         result = self.start("session_start")

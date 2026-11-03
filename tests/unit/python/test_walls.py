@@ -11,7 +11,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, git_in, write
+from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, git_in, main_of, write
 from test_search_wall import search_repo
 
 
@@ -221,7 +221,7 @@ class DenyWallScopeTests(unittest.TestCase):
         top = str(search_repo(Path(tmp.name) / "repo"))
         codex_wall = lambda p: subprocess.run(  # noqa: E731
             ["sh", str(CODEX_ASSETS / "hooks" / "acceptance-wall.sh")], input=json.dumps(p), text=True,
-            capture_output=True, check=False).returncode == 2
+            capture_output=True, check=False, env={**os.environ, "KIT_MAIN": main_of(p.get("cwd"))}).returncode == 2
         walls = (lambda p: self.run_claude("deny-acceptance-to-subagents.sh", p).returncode == 2,
                  lambda p: self.run_claude("deny-path.sh", p, held).returncode == 2)
         allowed = (f"cat > brief.md <<'EOF'\nNever read {held}.\nEOF", f"git diff -- . ':!{held}'",

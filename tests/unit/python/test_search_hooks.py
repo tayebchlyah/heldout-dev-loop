@@ -11,6 +11,7 @@ from pathlib import Path
 
 from test_devloop import git
 from test_search_wall import D8, HELD, search_repo
+from support import main_of
 from test_seal_hooks import ROOT
 
 IMPLEMENTER = {"agent_id": "a", "agent_type": "implementer"}
@@ -22,6 +23,8 @@ GUARD = "Blocked: guard error: search check failed\n"
 def run_wall(wall: tuple[str, ...], payload: dict, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     shell, script, *args = wall
     base = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    if script.startswith("codex"):
+        base["KIT_MAIN"] = main_of(payload.get("cwd"))
     return subprocess.run([shell, str(ROOT / script), *args], input=json.dumps(payload), env={**base, **env},
                           capture_output=True, text=True, timeout=60)
 

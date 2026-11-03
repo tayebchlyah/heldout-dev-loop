@@ -20,7 +20,7 @@ from test_seal import L1, L2, L3, PROTECTED, SUITE, claude_line, codex_line  # n
 SHELL = {"claude": "bash", "codex": "sh"}
 TRANSCRIPT_LINE = {"claude": claude_line, "codex": codex_line}
 
-from support import ROOT  # noqa: E402
+from support import ROOT, main_of  # noqa: E402
 
 
 class SealHookTests(unittest.TestCase):
@@ -52,6 +52,8 @@ class SealHookTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "DEV_LOOP_NOTES")}
         if harness == "claude":
             env["CLAUDE_PROJECT_DIR"] = str(project or self.repo)
+        else:
+            env["KIT_MAIN"] = str(project or self.repo)
         text = payload if isinstance(payload, str) else json.dumps({"cwd": str(self.repo), **payload})
         return subprocess.run([SHELL[harness], str(self.repo / ".dev-loop/hooks" / harness / script), *args],
                               input=text, capture_output=True, text=True, env=env, cwd=self.tmp, timeout=60)
@@ -352,7 +354,7 @@ class CodexWallTests(unittest.TestCase):
 
     def wall(self, payload: dict) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["sh", str(ROOT / "codex/hooks/acceptance-wall.sh")], input=json.dumps(payload),
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, env={**os.environ, "KIT_MAIN": main_of(payload.get("cwd"))})
 
     def test_o3_o4_walls_by_agent_type(self) -> None:
         def patch(*headers: str, body: str = "+x") -> str:

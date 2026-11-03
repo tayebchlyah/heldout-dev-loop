@@ -43,7 +43,7 @@ class CodexHookSandboxTests(unittest.TestCase):
         write(self.bin / 'codex', '#!' + sys.executable + '\n' + CODEX_GATE_FIXTURE)
         (self.bin / 'codex').chmod(0o755)
         self.env = {**os.environ, 'PATH': str(self.bin)+os.pathsep+os.environ['PATH'],
-                    'CODEX_HOME': str(self.root / 'home/.codex'), 'PROBE_ARGV': str(self.log)}
+                    'CODEX_HOME': str(self.root / 'home/.codex'), 'PROBE_ARGV': str(self.log), 'KIT_MAIN': str(self.main)}
 
     def git(self, cwd, *args):
         return subprocess.run(['git', '-C', str(cwd), *args], check=True, capture_output=True, text=True)

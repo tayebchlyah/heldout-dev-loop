@@ -123,6 +123,12 @@ def checker_env(bins: Path, claude: str | None = "2.1.309 (Claude Code)", codex:
 PACKAGE_ROOT = SKILL_ROOT.parent
 
 
+def main_of(path: str | Path | None) -> str:
+    """The KIT_MAIN a Codex hook command gives its script: the first worktree of the repo at path, empty if none."""
+    listed = subprocess.run(["git", "-C", str(path), "worktree", "list", "--porcelain"], capture_output=True, text=True)
+    return listed.stdout.splitlines()[0].removeprefix("worktree ") if listed.returncode == 0 and listed.stdout else ""
+
+
 def git_in(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main", *args],
@@ -196,6 +202,8 @@ class GuardRepo:
         """(decision, reason, seconds). Claude exit 2 is a deny with the stderr text."""
         payload = json.dumps({"cwd": str(self.repo), "tool_name": "Bash", "tool_input": {"command": command}, **extra})
         start = time.monotonic()
+        if harness == "codex":
+            env = {**(os.environ if env is None else env), "KIT_MAIN": str(self.repo)}
         done = subprocess.run([shutil.which({"claude": "bash", "codex": "sh"}[harness]), str(PACKAGE_ROOT / harness / "hooks" / "git-guard.sh")],
                               input=payload, capture_output=True, text=True, timeout=60, env=env)
         seconds = time.monotonic() - start

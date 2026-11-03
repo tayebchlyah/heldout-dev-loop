@@ -199,7 +199,7 @@ class HookPlantedProgramTests(unittest.TestCase):
 
     def run_hook(self, harness: str, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
         shell = "bash" if harness == "claude" else "sh"
-        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.repo)}
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.repo), "KIT_MAIN": str(self.repo)}
         if harness == "codex":
             env.update(codex_gate_env())
         return subprocess.run([shell, str(HookGitPinTests.HOOKS[harness] / script)], input=json.dumps(payload),
@@ -316,7 +316,7 @@ class BoardHookLaunchTests(unittest.TestCase):
     def start(self, repo: Path, harness: str, script: str, args: list[str], cwd: Path, sleep: str,
               log: Path | None = None):
         payload = {"cwd": str(cwd), "hook_event_name": "Stop", "stop_hook_active": False}
-        env = {**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "BOARD_TEST_LOG": str(log or self.log), "BOARD_SLEEP": sleep}
+        env = {**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "KIT_MAIN": str(repo), "BOARD_TEST_LOG": str(log or self.log), "BOARD_SLEEP": sleep}
         shell = "bash" if harness == "claude" else "sh"
         return subprocess.Popen([shell, str(repo / ".dev-loop" / "hooks" / harness / script), *args], cwd=repo,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True), payload

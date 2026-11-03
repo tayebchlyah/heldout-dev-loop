@@ -373,7 +373,7 @@ class BoardHookFixture:
         payload = {"session_id": "session-1", "cwd": str(self.repo), "hook_event_name": event,
                    "stop_hook_active": False, "agent_id": "a1", "agent_type": "general-purpose"}
         env = {**os.environ, "CLAUDE_PROJECT_DIR": str(self.repo), "BOARD_TEST_LOG": str(self.log),
-               "HOME": str(self.home), "BOARD_TEST_EXIT": "1", **(self.codex_env if harness == "codex" else {})}
+               "HOME": str(self.home), "BOARD_TEST_EXIT": "1", **({**self.codex_env, "KIT_MAIN": str(self.repo)} if harness == "codex" else {})}
         return subprocess.run(["bash" if harness == "claude" else "sh", str(path), *args], cwd=self.repo,
                               input=json.dumps(payload), text=True, capture_output=True, env=env, timeout=60)
 
@@ -570,6 +570,8 @@ class RobustnessHookFixture:
         env.update(BOARD_TEST_LOG=str(self.log), HOME=str(self.home))
         if harness == "claude":
             env["CLAUDE_PROJECT_DIR"] = str(self.repo)
+        else:
+            env["KIT_MAIN"] = str(checkout or self.repo)
         script = (checkout or self.repo) / ".dev-loop" / "hooks" / harness / "board.sh"
         return subprocess.run(["bash" if harness == "claude" else "sh", str(script), arg], cwd=cwd,
                               input=json.dumps(payload), text=True, capture_output=True, env=env, timeout=60)
