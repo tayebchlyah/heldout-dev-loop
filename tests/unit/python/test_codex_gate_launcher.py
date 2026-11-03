@@ -338,6 +338,81 @@ class CodexHookSandboxTests(unittest.TestCase):
                 else:
                     self.assertEqual(result.stdout, '')
 
+    def managed(self, requirements, *command, mdm=None):
+        source = ('import sys; sys.dont_write_bytecode=True; from pathlib import Path; sys.path.insert(0,sys.argv[1]); '
+                  'import sandbox; sandbox.REQUIREMENTS=Path(sys.argv[2]); '
+                  'sandbox.MANAGED_PREFERENCES=(Path(sys.argv[3]),); sys.argv=["sandbox.py"]+sys.argv[4:]; sys.exit(sandbox.main())')
+        file = self.root / 'requirements.toml'
+        if requirements is not None:
+            write(file, requirements)
+        plist = self.root / 'com.openai.codex.plist'
+        if mdm is not None:
+            plist.write_bytes(mdm)
+        return subprocess.run([sys.executable, '-I', '-c', source, str(CODEX_ASSETS / 'hooks'), str(file), str(plist),
+                               str(self.main), str(self.feature), '--', *command],
+                              input='', text=True, capture_output=True, env=self.env)
+
+    def assert_denied(self, result, denied):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = json.loads(self.log.read_text())
+        if os.environ.get('DEVLOOP_MACOS_BROKER') or sys.platform == 'darwin':
+            return
+        table = next(x for x in args if x.startswith('permissions.dev-workspace.filesystem='))
+        for path in denied:
+            self.assertIn(json.dumps(str(path))+'="deny"', table)
+
+    def read_probe(self, *paths):
+        probe = ('from pathlib import Path; import sys; '
+                 '\nfor path in sys.argv[1:]:\n'
+                 ' try: Path(path).read_text()\n except PermissionError: pass\n else: raise AssertionError("requirement deny lost: " + path)\n'
+                 ) if sys.platform == 'darwin' else 'pass'
+        return (sys.executable, '-I', '-c', probe, *map(str, paths))
+
+    def test_requirements_deny_read_paths_become_deny_rules(self):
+        first, second = self.root / 'admin-secret', self.root / 'admin dir/other'
+        write(first, 'DUMMY')
+        write(second, 'DUMMY')
+        result = self.managed('[permissions.filesystem]\ndeny_read = ' + json.dumps([str(first), str(second)]) + '\n',
+                              *self.read_probe(first, second))
+        self.assert_denied(result, [first, second])
+
+    def test_mdm_requirements_deny_read_paths_become_deny_rules(self):
+        import base64, plistlib
+        secret = self.root / 'mdm-secret'
+        write(secret, 'DUMMY')
+        toml = '[permissions.filesystem]\ndeny_read = [' + json.dumps(str(secret)) + ']\n'
+        mdm = plistlib.dumps({'requirements_toml_base64': base64.b64encode(toml.encode()).decode()})
+        self.assert_denied(self.managed(None, *self.read_probe(secret), mdm=mdm), [secret])
+
+    def test_absent_requirement_sources_add_no_rule(self):
+        result = self.managed(None, sys.executable, '-I', '-c', 'pass')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unreadable_or_invalid_requirements_block_before_native_or_gate(self):
+        import base64, plistlib
+        cases = {'bad toml': ('deny_read = [', None), 'not a list': ('[permissions.filesystem]\ndeny_read = "/x"\n', None),
+                 'not a table': ('permissions = 1\n', None), 'relative path': ('[permissions.filesystem]\ndeny_read = ["x"]\n', None),
+                 'unreadable': ('[permissions.filesystem]\ndeny_read = []\n', None),
+                 'bad plist': (None, b'not a plist'),
+                 'bad base64': (None, plistlib.dumps({'requirements_toml_base64': '!!'})),
+                 'bad mdm toml': (None, plistlib.dumps({'requirements_toml_base64': base64.b64encode(b'x = [').decode()}))}
+        for name, (requirements, mdm) in cases.items():
+            with self.subTest(name=name):
+                (self.root / 'requirements.toml').unlink(missing_ok=True)
+                (self.root / 'com.openai.codex.plist').unlink(missing_ok=True)
+                self.log.unlink(missing_ok=True)
+                if name == 'unreadable':
+                    write(self.root / 'requirements.toml', requirements)
+                    (self.root / 'requirements.toml').chmod(0)
+                    requirements = None
+                result = self.managed(requirements, 'touch', str(self.feature / 'host-marker'), mdm=mdm)
+                if name == 'unreadable':
+                    (self.root / 'requirements.toml').chmod(0o600)
+                self.assertEqual(result.returncode, 125, result.stderr)
+                self.assertIn('Sandbox startup failed', result.stderr)
+                self.assertFalse(self.log.exists())
+                self.assertFalse((self.feature / 'host-marker').exists())
+
 
 def native_codex():
     found = shutil.which('codex')
