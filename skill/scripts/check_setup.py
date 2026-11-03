@@ -423,13 +423,9 @@ def check_claude_repo(repo: Path) -> list[str]:
 
 
 def codex_hook_main(repo: Path) -> str:
-    """The folder each Codex hook command takes its script from: the first `git worktree list` entry that is not bare."""
     listed = subprocess.run(["git", "-C", str(repo), "worktree", "list", "--porcelain"], capture_output=True, text=True)
-    for record in listed.stdout.split("\n\n"):
-        lines = record.splitlines()
-        if lines and lines[0].startswith("worktree ") and "bare" not in lines:
-            return lines[0].removeprefix("worktree ")
-    return ""
+    first = listed.stdout.split("\n\n", 1)[0].splitlines()
+    return "" if not first or "bare" in first else first[0].removeprefix("worktree ")
 
 
 def check_codex_root(root: Path, rules_path: Path) -> list[str]:
@@ -462,10 +458,15 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
     for event in ["SessionStart", "PreToolUse", "Stop", "SubagentStart", "SubagentStop"]:
         if event not in hooks:
             failures.append(f"missing Codex hook event: {event}")
-    commands = [hook.get("command", "") for groups in hooks.values() if isinstance(groups, list) for group in groups
-                if isinstance(group, dict) for hook in group.get("hooks", []) if isinstance(hook, dict)]
+    scripts = set()
+    for groups in hooks.values():
+        for group in groups if isinstance(groups, list) else []:
+            for hook in group.get("hooks", []) if isinstance(group, dict) else []:
+                found = re.search(r'/\.dev-loop/hooks/codex/([\w.-]+)"', str(hook.get("command", "")) if isinstance(hook, dict) else "")
+                if found:
+                    scripts.add(found[1])
     main = codex_hook_main(root.parent)
-    for script in sorted({m[1] for c in commands if isinstance(c, str) and (m := re.search(r'/\.dev-loop/hooks/codex/([\w.-]+)"', c))}):
+    for script in sorted(scripts):
         if not os.access(f"{main}/.dev-loop/hooks/codex/{script}", os.X_OK):
             failures.append(f"missing Codex hook script: {main}/.dev-loop/hooks/codex/{script}")
 

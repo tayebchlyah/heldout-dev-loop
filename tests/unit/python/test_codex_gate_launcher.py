@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 from pathlib import Path
@@ -86,6 +87,15 @@ class CodexHookSandboxTests(unittest.TestCase):
         reason = json.loads(self.gate(shlex.join([sys.executable, '-I', 'swap.py', str(secret)])).stdout)['reason']
         self.assertNotIn('canary', reason)
         self.assertIn('gate-out', reason)
+
+    def test_a_gate_child_left_running_neither_holds_the_hook_nor_sets_its_status(self):
+        write(self.feature / 'linger.py', 'import os, sys, time\n'
+              'if os.fork() == 0:\n os.setsid(); time.sleep(4); print("exit 0", flush=True); os._exit(0)\n'
+              'print("gate-out")\nsys.exit(1)\n')
+        start = time.monotonic()
+        r = self.gate(shlex.join([sys.executable, '-I', 'linger.py']))
+        self.assertLess(time.monotonic() - start, 4)
+        self.assertIn('gate-out', json.loads(r.stdout)['reason'])
 
     def test_kit_metadata_stays_read_only_when_the_hook_cwd_is_the_main_checkout(self):
         table, _ = sandbox.neutralised({}, sandbox.filesystem({}, self.main, self.main), (self.main, self.main))
