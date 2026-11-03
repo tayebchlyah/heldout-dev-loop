@@ -70,16 +70,18 @@ def section(text: str, heading: str) -> list[str]:
 def deferred_items(text: str) -> tuple[list[dict], list[str]]:
     """(every item in file order, unparsed lines) of `## Deferred`.
 
-    An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: its last ruling line in file order
-    says `accept` or `close`, so a later `fix` opens it again (#216). `ruling`: `{date, word, carried}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling), else None. A top-level bullet that names security and does
+    An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: its last ruling line in file order and its newest ruling by date (a date tie: the later line)
+    both say `accept` or `close`, so any other word opens it again (#216). `ruling`: `{date, word, carried}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling), else None. A top-level bullet that names security and does
     not match the item format is unparsed.
     """
     items: list[dict] = []
     unparsed: list[str] = []
     current: dict | None = None
+    newest = ""
     for line in section(text, "Deferred"):
         if line.startswith("- "):
             current = None
+            newest = ""
             body = CHECKBOX_RE.sub("", line[2:])
             match = ITEM_RE.match(body)
             if match:
@@ -102,7 +104,10 @@ def deferred_items(text: str) -> tuple[list[dict], list[str]]:
             if ruling:
                 carried = line[ruling.start(2):].startswith("accept carried from the ")
                 current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2), "carried": carried}
-                current["closed"] = ruling.group(2) in CLOSING_WORDS
+                if ruling.group(1) >= newest:
+                    newest = ruling.group(1)
+                    newest_closes = ruling.group(2) in CLOSING_WORDS
+                current["closed"] = ruling.group(2) in CLOSING_WORDS and newest_closes
     return items, unparsed
 
 
