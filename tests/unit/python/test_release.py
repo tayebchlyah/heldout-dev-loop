@@ -65,6 +65,7 @@ class ReleaseParseTests(unittest.TestCase):
             (["  - Ruling 2026-10-30: accept"], True),
             (["  - Ruling 2026-10-30: accept "], True),
             (["  - Ruling 2026-10-30: close   "], True),
+            (["  - Ruling 2026-10-30: accept for rc.4 only", "  - Ruling 2026-11-03: fix #7 after the live check"], True),
         ]
         for rulings, is_open in cases:
             with self.subTest(rulings=rulings):
@@ -78,7 +79,12 @@ class ReleaseParseTests(unittest.TestCase):
             ([], False, None),
             ([accept], True, {"date": "2026-10-30", "word": "accept", "carried": False}),
             ([accept, "  - Ruling 2026-10-31: close fixed by #1"], True, {"date": "2026-10-31", "word": "close", "carried": False}),
-            ([accept, "  - Ruling 2026-10-31: fix in a slice"], True, {"date": "2026-10-31", "word": "fix", "carried": False}),
+            ([accept, "  - Ruling 2026-10-31: fix in a slice"], False, {"date": "2026-10-31", "word": "fix", "carried": False}),
+            ([accept, "  - Ruling 2026-10-31: fix #9 in a slice", "  - Ruling 2026-11-01: close fixed by #9"], True,
+             {"date": "2026-11-01", "word": "close", "carried": False}),
+            (["  - Ruling 2026-10-31: fix #9 in a slice", accept], True, {"date": "2026-10-30", "word": "accept", "carried": False}),
+            ([accept, "  - Ruling 2026-10-31: fix in a slice", "  - Ruling 2026-11-01: close "], False,
+             {"date": "2026-10-31", "word": "fix", "carried": False}),
             (["  - Ruling 2026-11-01: accept carried from the 2026-10-30 ruling (Run 3): x."], True, {"date": "2026-11-01", "word": "accept", "carried": True}),
             (["  - Ruling 2026-10-30: accept "], False, None),
         ]
