@@ -594,10 +594,8 @@ class GitGuardParityTests(unittest.TestCase):
         codex = (CODEX_ASSETS / "hooks" / "git-guard.py").read_text()
         codex = codex.replace('["python3", "-I", cli, "release-check"', '["python3", cli, "release-check"')
         for kit, claude in (
-            ('# The main checkout kit_main gives for START; empty when it names none.\nMAIN = os.environ["KIT_MAIN"]\n', ""),
-            (", the repository of the kit main.", "."),
+            ('MAIN = os.environ["KIT_MAIN"]\n', ""),
             ('not MAIN or git(repo, *common) != git(MAIN, *common)', "git(repo, *common) != git(START, *common)"),
-            ("CLI in the kit main of", "CLI in the main worktree of"),
             ('    if not MAIN:\n        return "; release-check failed: no CLI"\n', ""),
             ('    cli = os.path.join(MAIN, ', '    main = git(START, "worktree", "list", "--porcelain")[1].partition("\\n")[0].removeprefix("worktree ")\n    cli = os.path.join(main, '),
             ("    if not os.path.isfile(cli):", "    if not main or not os.path.isfile(cli):"),

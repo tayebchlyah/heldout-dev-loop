@@ -45,7 +45,6 @@ RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
 START = os.environ["CWD"]
-# The main checkout kit_main gives for START; empty when it names none.
 MAIN = os.environ["KIT_MAIN"]
 # Git refuses an alias that shadows a builtin. Empty when git cannot list them, so
 # every command from an unknown folder asks.
@@ -157,13 +156,13 @@ def unreliable(cmd, segs):
 
 
 def other_repo(repo):
-    # The command targets a repository other than the hook's own project, the repository of the kit main.
+    # The command targets a repository other than the hook's own project.
     common = ("rev-parse", "--path-format=absolute", "--git-common-dir")
     return not MAIN or git(repo, *common) != git(MAIN, *common)
 
 
 def release_suffix(repo, args):
-    # The release-check verdict of the CLI in the kit main of the hook's own
+    # The release-check verdict of the CLI in the main worktree of the hook's own
     # project, 3 s of the hook's 5. Another repository's CLI never runs: it may be planted.
     if os.environ["AGENT_ID"]:
         return ""
