@@ -156,7 +156,8 @@ class HookGitPinTests(unittest.TestCase):
 
         cli = re.compile(r"\bpython3\b|devloop\.py")
         source = '. "${0%/*}/git-pin.sh"'
-        scripts = sorted(script for hooks in self.HOOKS.values() for script in hooks.glob("*.sh") if script.name != "git-pin.sh")
+        scripts = sorted(script for hooks in self.HOOKS.values() for script in hooks.glob("*.sh")
+                         if script.name not in ("git-pin.sh", "kit-main.sh"))
         self.assertGreater(len(scripts), 15)
         for script in scripts:
             with self.subTest(script=f"{script.parent.parent.name}/{script.name}"):

@@ -261,6 +261,46 @@ test('Codex outer hook entries execute main scripts from a feature worktree', ()
   }
 })
 
+test('Codex outer hook entries execute main scripts from a nested repo in a feature subfolder (#212)', () => {
+  const { home, repo: root } = setup()
+  const repo = join(root, 'main')
+  mkdirSync(repo)
+  git(repo, 'init', '-q')
+  init(repo, home, ['--yes', '--harness=both'])
+  for (const name of readdirSync(join(repo, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
+    writeFileSync(join(repo, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
+  }
+  git(repo, 'add', '-A')
+  git(repo, 'commit', '-qm', 'fixture')
+  const feature = join(repo, '.claude/worktrees/probe')
+  git(repo, 'worktree', 'add', '-qb', 'fix/probe', feature)
+  const marker = join(root, 'nested-ran')
+  const plant = (dir) => {
+    mkdirSync(join(dir, '.dev-loop/hooks/codex'), { recursive: true })
+    for (const name of readdirSync(join(repo, '.dev-loop/hooks/codex'))) {
+      writeFileSync(join(dir, '.dev-loop/hooks/codex', name), `#!/bin/sh\nprintf ran >'${marker}'\n`, { mode: 0o755 })
+    }
+    git(dir, 'init', '-q')
+  }
+  const web = join(feature, 'packages/web')
+  plant(web)
+  // A nested repo whose config names another work tree: the walk follows folders, not what git reports (#212).
+  const elsewhere = join(root, 'elsewhere')
+  plant(elsewhere)
+  const other = join(feature, 'packages/api')
+  mkdirSync(other, { recursive: true })
+  git(other, 'init', '-q')
+  git(other, 'config', 'core.worktree', elsewhere)
+  for (const cwd of [web, join(web, 'src'), other]) {
+    mkdirSync(cwd, { recursive: true })
+    for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
+      const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' })
+      assert.equal(output.trim(), 'main-hook', `${cwd}: ${command}`)
+      assert.equal(existsSync(marker), false)
+    }
+  }
+})
+
 test('a Codex hook command blocks with exit 2 for a bare first worktree or a main checkout with no kit script', () => {
   const { home, repo: root } = setup()
   const source = join(root, 'source')
@@ -295,9 +335,10 @@ test('a Codex hook command blocks with exit 2 for a bare first worktree or a mai
   }
 })
 
-// Each earlier Codex command form (#158, #200), from the parts of a current command: the old
+// Each earlier Codex command form (#158, #200, #212), from the parts of a current command: the old
 // prefix with the old tail, the old prefix in front of the current tail, and the current tail behind an old prefix.
-const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"]
+const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
+  `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`]
   .flatMap((prefix) => [
     [prefix, ({ script, args }) => `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`],
     [prefix, ({ script, command }) => `"${prefix}/.dev-loop/hooks/codex/${command.slice(command.indexOf(`${script}"`))}`],
