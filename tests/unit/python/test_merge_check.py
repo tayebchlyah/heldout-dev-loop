@@ -148,6 +148,8 @@ class MergeCheckTests(MergeCheckCase):
             (".dev-loop/hooks/codex/seal.sh", {}, None, [harness(".dev-loop/hooks/codex/seal.sh")]),
             (".dev-loop", {}, "cfg", [harness(".dev-loop")]),
             (".Dev-Loop/Hooks/x.sh", {}, None, [harness(".Dev-Loop/Hooks/x.sh")]),
+            (".agents/skills/dev-loop/scripts/devloop.py", {}, None, [harness(".agents/skills/dev-loop/scripts/devloop.py")]),
+            (".Agents/Skills/Dev-Loop/SKILL.md", {}, None, [harness(".Agents/Skills/Dev-Loop/SKILL.md")]),
             (".claude-notes/x.md", {}, None, []),
         ]
         for path, config, link, expected in rows:

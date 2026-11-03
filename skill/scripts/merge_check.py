@@ -21,11 +21,12 @@ TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.
 CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
 DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 HARNESS_ROOTS = (".claude", ".codex", ".dev-loop")
+KIT_SKILL = ".agents/skills/dev-loop"
 
 
 def harness_config(path: str) -> bool:
     low = path.lower()
-    return low == ".mcp.json" or low in HARNESS_ROOTS or low.startswith(tuple(f"{root}/" for root in HARNESS_ROOTS))
+    return low == ".mcp.json" or low in HARNESS_ROOTS or low.startswith(tuple(f"{root}/" for root in HARNESS_ROOTS)) or low == KIT_SKILL or low.startswith(KIT_SKILL + "/")
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
