@@ -261,7 +261,7 @@ test('Codex outer hook entries execute main scripts from a feature worktree', ()
   }
 })
 
-test('a Codex hook command skips a bare first worktree and blocks with exit 2 when main has no kit script', () => {
+test('a Codex hook command blocks with exit 2 for a bare first worktree or a main checkout with no kit script', () => {
   const { home, repo: root } = setup()
   const source = join(root, 'source')
   mkdirSync(source)
@@ -276,6 +276,8 @@ test('a Codex hook command skips a bare first worktree and blocks with exit 2 wh
   git(root, 'clone', '-q', '--bare', source, bare)
   const linked = join(root, 'linked')
   git(bare, 'worktree', 'add', '-q', linked)
+  const planted = join(root, 'a-feature')
+  git(bare, 'worktree', 'add', '-q', '-b', 'fix/planted', planted)
   const main = join(root, 'main')
   mkdirSync(main)
   git(main, 'init', '-q')
@@ -284,10 +286,12 @@ test('a Codex hook command skips a bare first worktree and blocks with exit 2 wh
   git(main, 'worktree', 'add', '-qb', 'fix/probe', feature)
   const run = (command, cwd) => spawnSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' })
   for (const command of hookCommands(join(source, '.codex/hooks.json'))) {
-    assert.equal(run(command, linked).stdout.trim(), 'main-hook', command)
-    const missing = run(command, feature)
-    assert.equal(missing.status, 2, command)
-    assert.match(missing.stderr, /^Blocked: dev-loop hook script missing: .*\/main\/\.dev-loop\/hooks\/codex\/[\w.-]+$/m)
+    for (const [cwd, folder] of [[linked, ''], [planted, ''], [feature, '.*/main']]) {
+      const result = run(command, cwd)
+      assert.equal(result.status, 2, `${cwd}: ${command}`)
+      assert.equal(result.stdout, '')
+      assert.match(result.stderr, new RegExp(`^Blocked: dev-loop hook script missing: ${folder}/\\.dev-loop/hooks/codex/[\\w.-]+$`, 'm'))
+    }
   }
 })
 

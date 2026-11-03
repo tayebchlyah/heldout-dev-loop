@@ -201,7 +201,7 @@ test('init writes Codex files that parse and hook commands that point into the p
 
   const codexHooks = readJson(join(repo, '.codex/hooks.json'))
   for (const command of commands(codexHooks.hooks)) {
-    assert.ok(command.startsWith(`f="$(git worktree list --porcelain | awk '/^worktree /`), command)
+    assert.ok(command.startsWith(`f="$(git worktree list --porcelain | awk 'NR==1`), command)
     assert.ok(command.includes(`')/.dev-loop/hooks/codex/`), command)
   }
   assertValidToml(readFileSync(join(repo, '.codex/config.toml'), 'utf8'))

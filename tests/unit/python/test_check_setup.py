@@ -526,7 +526,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         path.unlink()
         self.assert_codex_failure(f"missing {path}")
 
-    def test_codex_hook_scripts_resolve_in_the_first_worktree_that_is_not_bare(self) -> None:
+    def test_codex_hook_scripts_resolve_in_a_main_checkout_that_is_not_bare(self) -> None:
         root = Path(os.path.realpath(self._tmp.name))
         git = ["git", "-c", "user.name=T", "-c", "user.email=t@example.com"]
         subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "no kit"], cwd=self.repo, check=True)
@@ -537,13 +537,11 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         subprocess.run([*git, "commit", "-qm", "kit"], cwd=self.repo, check=True)
         subprocess.run(["git", "clone", "-q", "--bare", "-b", "fix/probe", str(self.repo), str(root / "bare.git")], check=True)
         subprocess.run(["git", "worktree", "add", "-q", str(root / "linked")], cwd=root / "bare.git", check=True)
-        for repo, missing in [(root / "feature", True), (root / "linked", False)]:
+        for repo, main in [(root / "feature", root / "repo"), (root / "linked", "")]:
             with self.subTest(repo=repo.name):
                 self.repo = repo
                 result = self.run_checker("codex")
-                line = f"- missing Codex hook script: {root / 'repo'}/.dev-loop/hooks/codex/gate.sh\n"
-                self.assertEqual(line in result.stdout, missing, result.stdout)
-                self.assertEqual("missing Codex hook script" in result.stdout, missing, result.stdout)
+                self.assertIn(f"- missing Codex hook script: {main}/.dev-loop/hooks/codex/gate.sh\n", result.stdout)
 
     def test_codex_missing_stop_hook_event_fails(self) -> None:
         self.init("codex")
