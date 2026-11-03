@@ -6,6 +6,7 @@ Shared by `devloop.py` (`release-plan`, `release-record`, `release-check`).
 from __future__ import annotations
 
 import argparse
+import errno
 import fcntl
 import fnmatch
 import hashlib
@@ -25,7 +26,7 @@ from pathlib import Path
 import ci_skip
 import release_carry
 from autonomy import write_atomic
-from devloop import AUDITS, emit, old_layout
+from devloop import AUDITS, emit, old_layout, security_audit_dir
 from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
 
@@ -140,9 +141,10 @@ def names_issue(subject: str, n: int) -> bool:
     return re.search(rf"#{n}(?!\d)", subject) is not None
 
 
-def code_commit(repo: Path, sha: str) -> bool:
+def code_commit(repo: Path, sha: str, build: bool) -> bool:
     """True when the commit changes, against its first parent, a path that is neither a test or doc path nor allowed
-    by the `ci-skip` rules. A root commit: any path. A bad `version_files`: every non-test, non-doc path."""
+    by the `ci-skip` rules (`build` as `ci_skip.blocking`). A root commit: any path. A bad `version_files`: every
+    non-test, non-doc path."""
     parent = run_git(repo, "rev-parse", "--verify", "--quiet", f"{sha}^1")
     if parent.returncode != 0:
         listed = run_git(repo, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", sha)
@@ -154,18 +156,18 @@ def code_commit(repo: Path, sha: str) -> bool:
     if not code:
         return False
     try:
-        return bool(set(ci_skip.blocking(repo, base, sha, paths)).intersection(code))
+        return bool(set(ci_skip.blocking(repo, base, sha, paths, build)).intersection(code))
     except ci_skip.ConfigError:
         return True
 
 
-def wave_check(repo: Path, record_sha: str, head: str, issues: list[int]) -> dict | None:
+def wave_check(repo: Path, record_sha: str, head: str, issues: list[int], build: bool = True) -> dict | None:
     """Why `record_sha..head` is not a fix wave of `issues`: `foreign-commit` (a code commit that names none of them)
     or `unfixed` (an issue no subject names), else None. Subjects first: paths only for a commit that names none."""
     log = run_git(repo, "log", "--format=%H%x00%s", f"{record_sha}..{head}")
     commits = [line.split("\0", 1) for line in log.stdout.splitlines() if "\0" in line]
     foreign = [{"sha": sha, "subject": subject} for sha, subject in commits
-               if not any(names_issue(subject, n) for n in issues) and code_commit(repo, sha)]
+               if not any(names_issue(subject, n) for n in issues) and code_commit(repo, sha, build)]
     if foreign:
         return {"error": "foreign-commit", "commits": foreign}
     unfixed = sorted({n for n in issues if not any(names_issue(subject, n) for _, subject in commits)})
@@ -190,10 +192,12 @@ def mismatch(notes: Path, record: dict) -> str | None:
     return None
 
 
-def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
+def stale_paths(repo: Path, record_sha: str, target: str, build: bool) -> list[str] | None:
     """Paths that make the audit stale: the code paths changed since the audited commit, all changed paths when it is
     not an ancestor (possibly none). None when the audit is current: only test or doc paths changed, or the
-    code paths are all a release or kit upgrade that `ci-skip` allows."""
+    code paths are all a release or kit upgrade that `ci-skip` allows, or kit copies equal to the kit the audited
+    commit's own installer builds or dropped by it, at any kit version (#185). `build` false: no kit build, kit copies
+    stay code paths."""
     ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", record_sha, target)
     if diff.returncode != 0:  # the record commit is unknown here
@@ -205,9 +209,12 @@ def stale_paths(repo: Path, record_sha: str, target: str) -> list[str] | None:
     if not code:
         return None
     try:
-        blocked = set(ci_skip.blocking(repo, record_sha, target, paths))
+        blocked = set(ci_skip.blocking(repo, record_sha, target, paths, build))
     except ci_skip.ConfigError:
         return code
+    kit = {p for p in blocked if p.startswith(KIT_ROOTS) or p == MANIFEST}
+    if build and kit and kit.issuperset(p for p in blocked if not is_test_or_doc(p)) and (ref := kit_reference(repo, record_sha)) is not None:
+        blocked -= ci_skip.kit_allowed(repo, record_sha, target, kit, ref)
     return code if blocked.intersection(code) else None
 
 
@@ -215,14 +222,14 @@ def is_release_tag(name: str) -> bool:
     return fnmatch.fnmatchcase(name, "v*")
 
 
-def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str) -> str | None:
+def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str, build: bool) -> str | None:
     """Why `release-check` does not measure from the fix wave: `not-ancestor`, `foreign-commit`, `unfixed` or
     `released: <tag>` (a `v*` tag that holds the wave and points elsewhere than the target), else None."""
     sha = wave["sha"]
     if (sha == record_sha or run_git(repo, "merge-base", "--is-ancestor", record_sha, sha).returncode != 0
             or run_git(repo, "merge-base", "--is-ancestor", sha, target).returncode != 0):
         return "not-ancestor"
-    if (refused := wave_check(repo, record_sha, sha, wave["issues"])) is not None:
+    if (refused := wave_check(repo, record_sha, sha, wave["issues"], build)) is not None:
         return refused["error"]
     for tag in run_git(repo, "tag", "--list", "--sort=refname", "v*", "--contains", sha).stdout.split():
         if run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}").stdout.strip() != target:
@@ -230,8 +237,9 @@ def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str) -> str | 
     return None
 
 
-def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple[dict, int]:
-    """The release gate: a current audit record and no open security item. Exit 0 when ok.
+def check(repo: Path, notes: Path | None, target: str, tag: str | None, build: bool) -> tuple[dict, int]:
+    """The release gate: a current audit record and no open security item. Exit 0 when ok. `build` false: no commit's
+    installer runs (the git guards, #199), so a kit copy makes the audit stale.
 
     `notes` may be None only for a non-release tag, which is skipped before any note read."""
     resolved = run_git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{target}^{{commit}}")
@@ -260,10 +268,10 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None) -> tuple
     else:
         base = record["sha"]
         if (found := current_wave(text, record["run"])) is not None:
-            ignored = wave_ignored(repo, base, found, sha)
+            ignored = wave_ignored(repo, base, found, sha, build)
             if ignored is None:
                 wave, base = found["line"], found["sha"]
-        if base != sha and (paths := stale_paths(repo, base, sha)) is not None:
+        if base != sha and (paths := stale_paths(repo, base, sha, build)) is not None:
             reasons.append({"reason": "stale-audit", "paths": paths})
     items, unparsed = security_items(text)
     if items:
@@ -279,7 +287,8 @@ def skill_dir(harness: str, env: Mapping[str, str]) -> Path:
     """The `security-audit` skill folder of the harness; `DEVLOOP_TEST_SECURITY_AUDIT_DIR` overrides it (tests)."""
     if env.get("DEVLOOP_TEST_SECURITY_AUDIT_DIR"):
         return Path(env["DEVLOOP_TEST_SECURITY_AUDIT_DIR"])
-    return Path.home() / (".claude" if harness == "claude" else ".agents") / "skills" / "security-audit"
+    home = Path.home()
+    return security_audit_dir(harness, env, home)
 
 
 def docker_up() -> bool:
@@ -347,7 +356,10 @@ def check_archive(tar: tarfile.TarFile) -> None:
 
 def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
     """The kit that `commit`'s own installer builds, as `{path: (MANIFEST entry, git mode)}`; None when the tree
-    at `commit` is not the kit source, its `dev-loop.json` has no `harnesses`, or `git` or `node` fails."""
+    at `commit` is not the kit source, its `dev-loop.json` has no `harnesses`, or `git` or `node` fails. The source
+    is extracted under `<git common dir>/dev-loop/`, which the Codex sandboxes keep read-only, so no confined process
+    swaps it before node imports it (#199); a caller denied a write there, a confined one, uses the temp root, and
+    any other error there gives None."""
     config = read_config(repo, commit)
     harnesses = config.get("harnesses") if config else None
     if not (isinstance(harnesses, list) and harnesses and all(isinstance(h, str) for h in harnesses)):
@@ -359,7 +371,14 @@ def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
         return None
     if not named or any(run_git(repo, "cat-file", "-e", f"{commit}:lib/{f}").returncode != 0 for f in ("kit.mjs", "manifest.mjs")):
         return None
-    tmp = tempfile.mkdtemp(prefix="kit-reference-")
+    private = Path(run_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()) / "dev-loop"
+    try:
+        private.mkdir(mode=0o700, exist_ok=True)
+        tmp = tempfile.mkdtemp(prefix="kit-reference-", dir=private)
+    except OSError as exc:
+        if exc.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
+            return None
+        tmp = tempfile.mkdtemp(prefix="kit-reference-")
     try:
         archive = subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", commit, "--", *KIT_SOURCE], capture_output=True)
         if archive.returncode != 0:
@@ -752,7 +771,7 @@ def cmd_release_check(args: argparse.Namespace) -> int:
             return emit({"error": str(exc)}, 1)
     if notes is not None and "security-audit" in old_layout(notes):
         return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
-    return emit(*check(repo, notes, args.tag or args.sha, args.tag))
+    return emit(*check(repo, notes, args.tag or args.sha, args.tag, not args.no_build))
 
 
 def cmd_release_plan(args: argparse.Namespace) -> int:

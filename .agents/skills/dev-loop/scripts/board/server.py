@@ -27,7 +27,9 @@ from pathlib import Path
 
 if __package__:
     from . import store
-else:  # Run as a script by `start`: the board folder is sys.path[0].
+else:
+    if sys.flags.isolated:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
     import store
 
 HERE = Path(__file__).resolve().parent
@@ -194,7 +196,8 @@ def failure(kind: str, url: str, port: int) -> dict:
 
 def start(port: int, version: str, roots: list[Path], here: str, me: str, state: str) -> dict:
     url = f"http://127.0.0.1:{port}/"
-    cmd = [sys.executable, str(HERE / "server.py"), "--port", str(port), "--version", version, "--here", here,
+    cmd = [sys.executable, *(["-I"] if sys.flags.isolated else []), str(HERE / "server.py"),
+           "--port", str(port), "--version", version, "--here", here,
            "--me", me]
     for root in roots:
         cmd += ["--root", str(root)]

@@ -9,7 +9,7 @@ Root: `<notes>/Maps/<Effort Title>/`, `<notes>` the output of `scripts/notes_pat
 
 ## Wayfinding operations
 
-Source: Pocock skills v1.3.1 `skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md`, section "Wayfinding operations" (https://github.com/mattpocock/skills, commit `24fe0ef`). Changed: the root is the notes folder, not `.scratch/`; the opening line "Used by `/wayfinder`. ..." is dropped. MIT License, Copyright (c) 2026 Matt Pocock: full notice in [spec.md](spec.md#licenses).
+Source: Pocock skills v1.3.2 `skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md`, section "Wayfinding operations" (https://github.com/mattpocock/skills, commit `d1478fc`). Changed: the root is the notes folder, not `.scratch/`; the opening line "Used by `/wayfinder`. ..." is dropped. MIT License, Copyright (c) 2026 Matt Pocock: full notice in [spec.md](spec.md#licenses).
 
 - **Map**: `<notes>/Maps/<Effort Title>/map.md` (the Notes / Decisions-so-far / Fog body).
 - **Child ticket**: `<notes>/Maps/<Effort Title>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.
