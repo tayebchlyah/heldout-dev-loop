@@ -142,8 +142,13 @@ class MergeCheckTests(MergeCheckCase):
             (".Claude/Settings.JSON", {}, None, [harness(".Claude/Settings.JSON")]),
             (".codex", {}, "cfg", [harness(".codex")]),
             (".codex/hooks.json", None, None, [{"reason": "config-unreadable"}, harness(".codex/hooks.json")]),
-            (".claude/agents/x.md", {"merge_human_paths": ["x/*"]}, None, []),
-            (".codex/rules/x", {}, None, []),
+            (".claude/agents/x.md", {"merge_human_paths": ["x/*"]}, None, [harness(".claude/agents/x.md")]),
+            (".codex/rules/x", {}, None, [harness(".codex/rules/x")]),
+            (".codex/agents/x.toml", {}, None, [harness(".codex/agents/x.toml")]),
+            (".dev-loop/hooks/codex/seal.sh", {}, None, [harness(".dev-loop/hooks/codex/seal.sh")]),
+            (".dev-loop", {}, "cfg", [harness(".dev-loop")]),
+            (".Dev-Loop/Hooks/x.sh", {}, None, [harness(".Dev-Loop/Hooks/x.sh")]),
+            (".claude-notes/x.md", {}, None, []),
         ]
         for path, config, link, expected in rows:
             with self.subTest(path=path, config=config):
