@@ -291,12 +291,45 @@ test('Codex outer hook entries execute main scripts from a nested repo in a feat
   mkdirSync(other, { recursive: true })
   git(other, 'init', '-q')
   git(other, 'config', 'core.worktree', elsewhere)
+  const env = trustCodexHooks(home, repo)
   for (const cwd of [web, join(web, 'src'), other]) {
     mkdirSync(cwd, { recursive: true })
     for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
-      const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' })
+      const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
       assert.equal(output.trim(), 'main-hook', `${cwd}: ${command}`)
       assert.equal(existsSync(marker), false)
+    }
+  }
+})
+
+const trustCodexHooks = (home, ...mains) => {
+  mkdirSync(join(home, '.codex'), { recursive: true })
+  writeFileSync(join(home, '.codex/config.toml'), mains.map((main) =>
+    `[hooks.state."${main}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n`).join('\n'))
+  return { ...process.env, CODEX_HOME: join(home, '.codex') }
+}
+
+test('Codex outer hook entries take an outer repo only when its hooks are trusted (#222)', () => {
+  const { home, repo: root } = setup()
+  const repo = join(root, 'main')
+  mkdirSync(repo)
+  git(repo, 'init', '-q')
+  init(repo, home, ['--yes', '--harness=both'])
+  const scripts = readdirSync(join(repo, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))
+  for (const name of scripts) writeFileSync(join(repo, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
+  git(repo, 'add', '-A')
+  git(repo, 'commit', '-qm', 'fixture')
+  const feature = join(repo, '.claude/worktrees/probe')
+  git(repo, 'worktree', 'add', '-qb', 'fix/probe', feature)
+  mkdirSync(join(root, '.dev-loop/hooks/codex'), { recursive: true })
+  for (const name of scripts) writeFileSync(join(root, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho outer-hook\n', { mode: 0o755 })
+  for (const [mains, expected] of [[[repo], 'main-hook'], [[repo, root], 'outer-hook']]) {
+    const env = trustCodexHooks(home, ...mains)
+    for (const cwd of [repo, feature]) {
+      for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
+        const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
+        assert.equal(output.trim(), expected, `${mains.length} trusted, ${cwd}: ${command}`)
+      }
     }
   }
 })
@@ -335,10 +368,11 @@ test('a Codex hook command blocks with exit 2 for a bare first worktree or a mai
   }
 })
 
-// Each earlier Codex command form (#158, #200, #212), from the parts of a current command: the old
+// Each earlier Codex command form (#158, #200, #212, #222), from the parts of a current command: the old
 // prefix with the old tail, the old prefix in front of the current tail, and the current tail behind an old prefix.
 const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
-  `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`]
+  `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`,
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || [ -d "$w/.dev-loop" ]; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
   .flatMap((prefix) => [
     [prefix, ({ script, args }) => `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`],
     [prefix, ({ script, command }) => `"${prefix}/.dev-loop/hooks/codex/${command.slice(command.indexOf(`${script}"`))}`],

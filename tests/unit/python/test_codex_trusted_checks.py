@@ -42,7 +42,8 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         for name in ['devloop.py','check_setup.py','json.py']:
             write(self.feature/'.agents/skills/dev-loop/scripts'/name, planted)
         write(self.feature/'json.py', planted)
-        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature)}
+        write(self.root/'codex/config.toml', f'[hooks.state."{self.main}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n')
+        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature), 'CODEX_HOME':str(self.root/'codex')}
         self.env.pop('DEV_LOOP_NOTES', None)
 
     def git(self, cwd, *args):
@@ -96,21 +97,20 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         self.assertEqual((r.returncode,r.stdout),(0,''))
         self.assertEqual(self.calls()[0]['argv'],['board','--event','prompt'])
 
-    def test_hooks_from_a_nested_repo_use_main_code(self):
-        """#212: a repo the agent creates in a feature subfolder, with its own kit, never selects the checker code."""
-        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
-        nested = self.feature/'packages/web'
+    def plant(self, repo):
         planted = (self.feature/'.agents/skills/dev-loop/scripts/devloop.py').read_text()
         for name in ['devloop.py','check_setup.py']:
-            write(nested/'.agents/skills/dev-loop/scripts'/name, planted)
-        (nested/'.dev-loop/hooks/codex').mkdir(parents=True)
-        write(nested/'dev-loop.json', '{"version":"0.0.0"}')
-        self.git(nested.parent, 'init', '-q', str(nested))
+            write(repo/'.agents/skills/dev-loop/scripts'/name, planted)
+        (repo/'.dev-loop/hooks/codex').mkdir(parents=True)
+        write(repo/'dev-loop.json', '{"version":"0.0.0"}')
+        self.git(repo.parent, 'init', '-q', str(repo))
+
+    def assert_hooks_use_main_code(self, cwd):
         runs = [('seal.sh',('turn',),{}), ('session-start.sh',(),{}), ('board.sh',('prompt',),{}),
                 ('acceptance-wall.sh',(),{'agent_id':'probe','agent_type':'implementer','tool_name':'Bash',
                                           'tool_input':{'command':'rg needle .'}})]
         for script, args, extra in runs:
-            subprocess.run(['sh',str(CODEX_ASSETS/'hooks'/script),*args],cwd=nested,input=json.dumps({'cwd':str(nested),**extra}),
+            subprocess.run(['sh',str(CODEX_ASSETS/'hooks'/script),*args],cwd=cwd,input=json.dumps({'cwd':str(cwd),**extra}),
                            capture_output=True,text=True,env=self.env)
         end=time.monotonic()+5
         while time.monotonic()<end and len(self.log.read_text().splitlines() if self.log.exists() else [])<4:
@@ -118,6 +118,19 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         self.assertFalse(self.marker.exists())
         argv=[json.loads(x)['argv'][0] for x in self.log.read_text().splitlines()]
         self.assertEqual(sorted(argv),['--harness','board','seal-check','search-wall'])
+
+    def test_hooks_from_a_nested_repo_use_main_code(self):
+        """#212: a repo the agent creates in a feature subfolder, with its own kit, never selects the checker code."""
+        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
+        nested = self.feature/'packages/web'
+        self.plant(nested)
+        self.assert_hooks_use_main_code(nested)
+
+    def test_hooks_under_a_planted_outer_repo_use_main_code(self):
+        """#222: an outer repo the agent creates in a writable parent, with no trusted Codex hooks, never selects the checker code."""
+        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
+        self.plant(self.root)
+        self.assert_hooks_use_main_code(self.feature)
 
     def test_board_start_preserves_parent_python_isolation(self):
         harness = '''import json,os,socket,sys
