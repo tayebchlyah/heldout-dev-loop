@@ -6,7 +6,6 @@ import base64
 import json
 import os
 import plistlib
-import pwd
 import re
 import shutil
 import subprocess
@@ -24,8 +23,7 @@ import macos
 from common import LineReader, METADATA, darwin_temp, require_started, start_marker, stop
 
 REQUIREMENTS = Path('/etc/codex/requirements.toml')
-MANAGED_PREFERENCES = (Path('/Library/Managed Preferences/com.openai.codex.plist'),
-                       Path('/Library/Managed Preferences', pwd.getpwuid(os.getuid()).pw_name, 'com.openai.codex.plist'))
+MANAGED_PREFERENCES = Path('/Library/Managed Preferences')
 
 
 def merge(left, right):
@@ -135,7 +133,8 @@ def requirement_denies():
     sources = []
     if REQUIREMENTS.exists():
         sources.append(REQUIREMENTS.read_text())
-    for preferences in MANAGED_PREFERENCES:
+    name = 'com.openai.codex.plist'
+    for preferences in sorted([MANAGED_PREFERENCES / name, *MANAGED_PREFERENCES.glob('*/' + name)]):
         if preferences.exists():
             encoded = plistlib.loads(preferences.read_bytes()).get('requirements_toml_base64')
             if encoded is not None:
@@ -143,7 +142,10 @@ def requirement_denies():
     denies = []
     for source in sources:
         paths = (tomllib.loads(source).get('permissions') or {}).get('filesystem', {}).get('deny_read', [])
-        if not isinstance(paths, list) or not all(isinstance(path, str) and Path(path).is_absolute() for path in paths):
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise ValueError('invalid requirements deny_read')
+        paths = [os.path.expanduser(path) if path == '~' or path.startswith('~/') else path for path in paths]
+        if not all(Path(path).is_absolute() for path in paths):
             raise ValueError('invalid requirements deny_read')
         denies += [path if '*' in path else str(Path(path).resolve()) for path in paths]
     return denies
