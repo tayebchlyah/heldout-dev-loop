@@ -119,18 +119,37 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         argv=[json.loads(x)['argv'][0] for x in self.log.read_text().splitlines()]
         self.assertEqual(sorted(argv),['--harness','board','seal-check','search-wall'])
 
-    def test_hooks_from_a_nested_repo_use_main_code(self):
-        """#212: a repo the agent creates in a feature subfolder, with its own kit, never selects the checker code."""
+    def test_hooks_under_an_agent_made_repo_use_main_code(self):
+        """#212, #222: a repo the agent creates, or a gitfile it writes, never selects the checker code."""
         (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
+        link = Path(tempfile.mkdtemp(prefix='dev-loop-link-'))
+        self.addCleanup(shutil.rmtree, link, True)
+        (link/'root').symlink_to(self.root)
+        config = self.root/'codex/config.toml'
+        trust = lambda path: f'[hooks.state."{path}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n'
         nested = self.feature/'packages/web'
-        self.plant(nested)
-        self.assert_hooks_use_main_code(nested)
-
-    def test_hooks_under_a_planted_outer_repo_use_main_code(self):
-        """#222: an outer repo the agent creates in a writable parent, with no trusted Codex hooks, never selects the checker code."""
-        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
-        self.plant(self.root)
-        self.assert_hooks_use_main_code(self.feature)
+        other = self.root/'other'
+        def redirect():
+            self.plant(other)
+            write(self.root/'.git', f'gitdir: {other}/.git\n')
+            config.write_text(trust(self.main) + trust(other))
+        rows = [
+            ('nested repo in the feature', lambda: self.plant(nested), nested),
+            ('nested repo, trust key through a symlink', lambda: (self.plant(nested), config.write_text(trust(link/'root/main'))), nested),
+            ('untrusted outer repo', lambda: self.plant(self.root), self.feature),
+            ('gitfile redirect to a trusted repo', redirect, self.feature),
+        ]
+        for name, arrange, cwd in rows:
+            with self.subTest(name):
+                shutil.rmtree(self.root/'.git', ignore_errors=True)
+                shutil.rmtree(nested, ignore_errors=True)
+                shutil.rmtree(other, ignore_errors=True)
+                (self.root/'.git').unlink(missing_ok=True)
+                self.log.unlink(missing_ok=True)
+                self.marker.unlink(missing_ok=True)
+                config.write_text(trust(self.main))
+                arrange()
+                self.assert_hooks_use_main_code(cwd)
 
     def test_board_start_preserves_parent_python_isolation(self):
         harness = '''import json,os,socket,sys
