@@ -41,8 +41,8 @@ def version_files(repo: Path, head: str) -> list[str]:
 
 def version_pairs(repo: Path, mb: str, head: str, path: str) -> set[tuple[str, str]] | None:
     """The (old, new) version token pairs of a version-only diff of `path`, else None."""
-    diff = subprocess.run(["git", "-C", str(repo), "diff", "-U0", "--text", "--no-renames", mb, head, "--", path],
-                          capture_output=True)
+    diff = subprocess.run(["git", "-C", str(repo), "diff", "-U0", "--text", "--no-renames", "--no-ext-diff", "--no-textconv",
+                           mb, head, "--", path], capture_output=True)
     if diff.returncode != 0:
         return None
     hunks: list[tuple[list[bytes], list[bytes]]] = []
@@ -85,11 +85,11 @@ def kit_allowed(repo: Path, mb: str, head: str, paths: set[str], ref: dict) -> s
     return allowed | {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in dropped and p not in ref}
 
 
-def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
+def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = True) -> list[str]:
     """The sorted paths of `paths` that no rule allows: `CHANGELOG.md`, a version-only change of a `version_files`
     path, a `dev-loop.json` change of `version` only, a kit copy of a kit upgrade that equals the kit the merge
-    base's own installer builds (none in a repo without the kit source). `base` and `head` are commit shas; contents
-    compare from their merge base. Raises ConfigError."""
+    base's own installer builds (none in a repo without the kit source, or with `build` false). `base` and `head` are
+    commit shas; contents compare from their merge base. Raises ConfigError."""
     listed = version_files(repo, head)
     merged = release.run_git(repo, "merge-base", base, head)
     if merged.returncode != 0:
@@ -112,7 +112,7 @@ def blocking(repo: Path, base: str, head: str, paths: list[str]) -> list[str]:
         if old == new:
             allowed.add("dev-loop.json")
     was, now = release.version_at(repo, mb), release.version_at(repo, head)
-    ref = release.kit_reference(repo, mb) if was and now and was != now else None
+    ref = release.kit_reference(repo, mb) if build and was and now and was != now else None
     if ref is not None:
         allowed |= kit_allowed(repo, mb, head, set(paths), ref)
     return sorted(p for p in paths if p not in allowed or p in MERGED)

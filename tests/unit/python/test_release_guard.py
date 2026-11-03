@@ -50,8 +50,10 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
                     self.assertIn(part, reason)
                 if absent:
                     self.assertNotIn(absent, reason)
-        self.assertIn(f"release-check --repo {self.repo} --tag v1.0.0", self.calls.read_text())
-        self.assertIn(f"release-check --repo {self.repo} --sha {self.c}", self.calls.read_text())
+        self.assertIn(f"release-check --no-build --repo {self.repo} --tag v1.0.0", self.calls.read_text())
+        self.assertIn(f"release-check --no-build --repo {self.repo} --sha {self.c}", self.calls.read_text())
+        # #199: both guards build no kit reference, so no commit's lib/kit.mjs runs on the host.
+        self.assertEqual({line.split(" --repo ")[0] for line in self.calls.read_text().splitlines()}, {"release-check --no-build"})
         # A subagent is denied before the CLI runs.
         self.calls.unlink()
         self.stub("slow")
@@ -72,7 +74,7 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
                 self.assertEqual(got, "ask", reason)
                 if sha:
                     self.assertIn(f"a release create at {sha} needs explicit permission each time; release-check: no-audit", reason)
-                    self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} --sha {sha}\n")
+                    self.assertEqual(self.calls.read_text(), f"release-check --no-build --repo {self.repo} --sha {sha}\n")
         got, reason, _ = self.guard("claude", "gh release create v2.0.0 --target nowhere")
         self.assertIn("release-check failed: target nowhere does not resolve", reason)
         got, reason, _ = self.guard("codex", "gh release create v1.0.0")
@@ -120,7 +122,7 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
                 got, reason, _ = self.guard("claude", command)
                 self.assertEqual(got, "ask", reason)
                 self.assertIn("release-check: ok", reason)
-                self.assertEqual(self.calls.read_text(), f"release-check --repo {self.repo} {want}\n")
+                self.assertEqual(self.calls.read_text(), f"release-check --no-build --repo {self.repo} {want}\n")
                 if want.startswith("--sha"):
                     self.assertIn(want.removeprefix("--sha "), reason)
         self.calls.unlink()

@@ -172,7 +172,7 @@ def release_suffix(repo, args):
     if not main or not os.path.isfile(cli):
         return "; release-check failed: no CLI"
     try:
-        r = subprocess.run(["python3", cli, "release-check", "--repo", repo, *args],
+        r = subprocess.run(["python3", cli, "release-check", "--no-build", "--repo", repo, *args],
                            capture_output=True, text=True, errors="replace", timeout=3)
     except subprocess.TimeoutExpired:
         return "; release-check failed: timeout"
