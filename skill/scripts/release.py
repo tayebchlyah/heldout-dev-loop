@@ -358,7 +358,7 @@ def check_archive(tar: tarfile.TarFile) -> None:
                 raise ValueError(member.name)
 
 
-def kit_build(repo: Path, commit: str, script: str, *args: str):
+def kit_build(repo: Path, commit: str, script: str, *args: str) -> object:
     """The JSON that the node `script` prints, run on `commit`'s own kit source with the source folder, the
     `harnesses` and `args`; None when the tree at `commit` is not the kit source, its `dev-loop.json` has no
     `harnesses`, or `git` or `node` fails. The source is extracted under `<git common dir>/dev-loop/`, which the Codex
@@ -391,7 +391,7 @@ def kit_build(repo: Path, commit: str, script: str, *args: str):
             check_archive(tar)
             tar.extractall(tmp)
         built = subprocess.run(["node", "--input-type=module", "-e", script, tmp, json.dumps(harnesses), *args],
-                               capture_output=True, text=True, timeout=NODE_TIMEOUT)
+                               capture_output=True, text=True, encoding="utf-8", timeout=NODE_TIMEOUT)
         return json.loads(built.stdout) if built.returncode == 0 else None
     except (OSError, ValueError, tarfile.TarError, subprocess.TimeoutExpired):
         return None

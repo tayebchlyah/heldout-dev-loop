@@ -112,16 +112,14 @@ def kit_allowed(repo: Path, mb: str, head: str, paths: set[str], ref: dict) -> s
     return allowed | {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in dropped and p not in ref}
 
 
-def regular_files(repo: Path, commit: str, paths: list[str]) -> dict[str, bytes]:
-    """The content of each of `paths` that is a regular non-executable file at `commit`."""
+def tree_files(repo: Path, commit: str, paths: list[str]) -> dict[str, bytes | None]:
     tree = release.run_git(repo, "ls-tree", "-z", "--full-tree", commit, "--", *paths)
-    found = {}
+    found: dict[str, bytes | None] = {}
     for line in tree.stdout.split("\0") if tree.returncode == 0 else []:
         meta, _, path = line.partition("\t")
-        if path and meta.startswith("100644 blob "):
+        if path:
             read = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", meta.split(" ")[2]], capture_output=True)
-            if read.returncode == 0:
-                found[path] = read.stdout
+            found[path] = read.stdout if meta.startswith("100644 blob ") and read.returncode == 0 else None
     return found
 
 
@@ -130,20 +128,20 @@ def merged_allowed(repo: Path, base: str, head: str, paths: set[str]) -> set[str
     merges into that file at `base` (#206). Each must be a regular non-executable file at `head`, and at `base` unless
     absent there; none when the base has no kit source (`release.kit_build`)."""
     among = sorted(paths & MERGED)
-    if not among:
+    before, after = tree_files(repo, base, among), tree_files(repo, head, among)
+    inputs = {}
+    for path, content in before.items():
+        try:
+            inputs[path] = content.decode() if content is not None else None
+        except UnicodeDecodeError:
+            inputs[path] = None
+    allowed = {p for p in among if after.get(p) is not None and (p not in before or inputs[p] is not None)}
+    if not allowed:
         return set()
-    before, after = regular_files(repo, base, among), regular_files(repo, head, among)
-    present = {p for p in among if release.run_git(repo, "cat-file", "-e", f"{base}:{p}").returncode == 0}
-    if not after or not present <= before.keys():
-        return set()
-    try:
-        inputs = {p: before[p].decode() for p in present}
-    except UnicodeDecodeError:
-        return set()
-    merged = release.kit_build(repo, base, MERGE_SCRIPT, json.dumps(inputs))
+    merged = release.kit_build(repo, base, MERGE_SCRIPT, json.dumps({p: t for p, t in inputs.items() if t is not None}))
     if not isinstance(merged, dict):
         return set()
-    return {p for p in after if isinstance(merged.get(p), str) and after[p] == merged[p].encode()}
+    return {p for p in allowed if isinstance(merged.get(p), str) and after[p] == merged[p].encode()}
 
 
 def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = True) -> list[str]:
