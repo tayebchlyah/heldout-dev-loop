@@ -1,7 +1,7 @@
 import test from 'node:test'
 import { execFileSync, spawnSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { entries, fakePackage, git, hookCommands, init, readJson, run, setup, snapshot, tempDir, upgrade } from './helpers.mjs'
@@ -254,8 +254,9 @@ test('Codex outer hook entries execute main scripts from a feature worktree', ()
   for (const name of readdirSync(join(feature, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
     writeFileSync(join(feature, '.dev-loop/hooks/codex', name), `#!/bin/sh\nprintf tampered >'${marker}'\n`)
   }
+  const env = trustCodexHooks(home, repo)
   for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
-    const output = execFileSync('/bin/sh', ['-c', command], { cwd: feature, input: '{}', encoding: 'utf8' })
+    const output = execFileSync('/bin/sh', ['-c', command], { cwd: feature, input: '{}', encoding: 'utf8', env })
     assert.equal(output.trim(), 'main-hook', command)
     assert.equal(existsSync(marker), false)
   }
@@ -309,29 +310,37 @@ const trustCodexHooks = (home, ...mains) => {
   return { ...process.env, CODEX_HOME: join(home, '.codex') }
 }
 
-test('Codex outer hook entries take an outer repo only when it is a listed worktree with trusted hooks (#222)', async (t) => {
+test('Codex hook entries select the main checkout from the trusted projects and its listed worktrees (#224)', async (t) => {
   const { home, repo: root } = setup()
   const repo = join(root, 'main')
   mkdirSync(repo)
   git(repo, 'init', '-q')
   init(repo, home, ['--yes', '--harness=both'])
   const scripts = readdirSync(join(repo, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))
-  for (const name of scripts) writeFileSync(join(repo, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
+  const kit = (dir, word) => {
+    mkdirSync(join(dir, '.dev-loop/hooks/codex'), { recursive: true })
+    for (const name of scripts) writeFileSync(join(dir, '.dev-loop/hooks/codex', name), `#!/bin/sh\necho ${word} "$KIT_MAIN"\n`, { mode: 0o755 })
+  }
+  kit(repo, 'main-hook')
   git(repo, 'add', '-A')
   git(repo, 'commit', '-qm', 'fixture')
   const feature = join(repo, '.claude/worktrees/probe')
   git(repo, 'worktree', 'add', '-qb', 'fix/probe', feature)
-  const kit = (dir, word) => {
-    mkdirSync(join(dir, '.dev-loop/hooks/codex'), { recursive: true })
-    for (const name of scripts) writeFileSync(join(dir, '.dev-loop/hooks/codex', name), `#!/bin/sh\necho ${word}\n`, { mode: 0o755 })
-  }
+  const sibling = join(root, 'sibling')
+  git(repo, 'worktree', 'add', '-qb', 'fix/sibling', sibling)
+  const planted = join(sibling, 'packages/web')
+  mkdirSync(planted, { recursive: true })
+  kit(planted, 'planted-hook')
+  git(planted, 'init', '-q')
   kit(root, 'outer-hook')
   const elsewhere = join(root, 'elsewhere')
   mkdirSync(elsewhere)
   git(elsewhere, 'init', '-q')
-  kit(elsewhere, 'outer-hook')
+  kit(elsewhere, 'elsewhere-hook')
   const link = join(tempDir('dev-loop-link-'), 'root')
   symlinkSync(root, link)
+  const real = realpathSync(repo)
+  const outer = realpathSync(root)
   const redirect = () => {
     renameSync(join(root, '.git'), join(root, '.git-real'))
     writeFileSync(join(root, '.git'), `gitdir: ${join(elsewhere, '.git')}\n`)
@@ -349,27 +358,44 @@ test('Codex outer hook entries take an outer repo only when it is a listed workt
     writeFileSync(join(admin, 'gitdir'), `${join(root, '.git')}\n`)
     return undo
   }
+  const mainHook = `main-hook ${real}`
+  const cwds = [repo, feature, sibling, planted, join(planted, 'src')]
   const rows = [
-    ['only main trusted', () => trustEntry(repo), null, 'main-hook'],
-    ['main and root trusted', () => trustEntry(repo) + trustEntry(root), null, 'outer-hook'],
-    ['root trusted, key spelled through a symlink', () => trustEntry(repo) + trustEntry(link), null, 'outer-hook'],
-    ['root trusted only in a comment', () => trustEntry(repo) + `# ${trustEntry(root).split('\n')[0]}\n`, null, 'main-hook'],
-    ['gitfile at root redirects to a trusted repo', () => trustEntry(repo) + trustEntry(elsewhere), redirect, 'main-hook'],
-    ['gitfile at root names a gitdir that lists root as a worktree', () => trustEntry(repo) + trustEntry(elsewhere), listRoot, 'main-hook'],
+    ['only main trusted: the project, its nested and sibling worktrees, a repo planted below', () => trustEntry(repo), null, cwds, mainHook],
+    ['no trust entry blocks', () => '', null, cwds, null],
+    ['a commented trust line blocks', () => `# ${trustEntry(repo).split('\n')[0]}\n`, null, cwds, null],
+    ['an outer trusted project wins', () => trustEntry(repo) + trustEntry(root), null, cwds, `outer-hook ${outer}`],
+    ['trust key spelled through a symlink', () => trustEntry(repo) + trustEntry(link), null, cwds, `outer-hook ${outer}`],
+    ['gitfile planted at an ancestor naming an untrusted repo', () => trustEntry(repo), redirect, cwds, mainHook],
+    ['untrusted repo built to list the ancestor as a worktree', () => trustEntry(repo), listRoot, cwds, mainHook],
   ]
-  for (const [name, config, plant, expected] of rows) await t.test(name, () => {
+  for (const [name, config, plant, folders, expected] of rows) await t.test(name, () => {
     const env = trustCodexHooks(home)
     writeFileSync(join(home, '.codex/config.toml'), config())
     const undo = plant?.()
     try {
-      for (const cwd of [repo, feature]) {
+      for (const cwd of folders) {
+        mkdirSync(cwd, { recursive: true })
         for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
-          const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
-          assert.equal(output.trim(), expected, `${name}, ${cwd}: ${command}`)
+          const result = spawnSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
+          if (expected === null) {
+            assert.equal(result.status, 2, `${name}, ${cwd}`)
+            assert.match(result.stderr, /^Blocked: dev-loop hook script missing: \/\.dev-loop\/hooks\/codex\//m)
+          } else {
+            assert.equal(result.stdout.trim(), expected, `${name}, ${cwd}: ${command}`)
+          }
         }
       }
     } finally {
       undo?.()
+    }
+  })
+
+  await t.test('the script gets the main of the hook process folder, whatever the stdin cwd names', () => {
+    const env = trustCodexHooks(home, repo)
+    for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
+      const result = spawnSync('/bin/sh', ['-c', command], { cwd: repo, input: JSON.stringify({ cwd: planted }), encoding: 'utf8', env })
+      assert.equal(result.stdout.trim(), mainHook, command)
     }
   })
 })
@@ -399,21 +425,23 @@ test('a Codex hook command blocks with exit 2 for a bare first worktree or a mai
   git(main, 'worktree', 'add', '-qb', 'fix/probe', feature)
   const run = (command, cwd) => spawnSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' })
   for (const command of hookCommands(join(source, '.codex/hooks.json'))) {
-    for (const [cwd, folder] of [[linked, ''], [planted, ''], [feature, '.*/main']]) {
+    for (const cwd of [linked, planted, feature]) {
       const result = run(command, cwd)
       assert.equal(result.status, 2, `${cwd}: ${command}`)
       assert.equal(result.stdout, '')
-      assert.match(result.stderr, new RegExp(`^Blocked: dev-loop hook script missing: ${folder}/\\.dev-loop/hooks/codex/[\\w.-]+$`, 'm'))
+      assert.match(result.stderr, /^Blocked: dev-loop hook script missing: \/\.dev-loop\/hooks\/codex\/[\w.-]+$/m)
     }
   }
 })
 
-// Each earlier Codex command form (#158, #200, #212, #222), from the parts of a current command: the old
+// Each earlier Codex command form (#158, #200, #212, #222, #224), from the parts of a current command: the old
 // prefix with the old tail, the old prefix in front of the current tail, and the current tail behind an old prefix.
 const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
   `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`,
   `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || [ -d "$w/.dev-loop" ]; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
-  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || { [ -d "$w/.dev-loop" ] && grep -qsF "[hooks.state.\\"$w/.codex/hooks.json:" "\${CODEX_HOME:-$HOME/.codex}/config.toml"; }; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || { [ -d "$w/.dev-loop" ] && grep -qsF "[hooks.state.\\"$w/.codex/hooks.json:" "\${CODEX_HOME:-$HOME/.codex}/config.toml"; }; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && [ "$(cd "$w" 2>/dev/null && pwd -P)" = "$d" ] && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
   .flatMap((prefix) => [
     [prefix, ({ script, args }) => `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`],
     [prefix, ({ script, command }) => `"${prefix}/.dev-loop/hooks/codex/${command.slice(command.indexOf(`${script}"`))}`],

@@ -15,6 +15,7 @@ extends = ":workspace"
 ".env.*" = "deny"
 "**/.env" = "deny"
 "**/.env.*" = "deny"
+".dev-loop" = "read"
 
 [permissions.dev-workspace.network]
 enabled = true

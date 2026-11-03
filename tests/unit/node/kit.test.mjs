@@ -6,8 +6,8 @@ import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs
 import { packageRoot, tempDir } from './helpers.mjs'
 
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
-const CODEX_MAIN = `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && [ "$(cd "$w" 2>/dev/null && pwd -P)" = "$d" ] && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`
-const codex = (script, args = '') => `f="${CODEX_MAIN}/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"${args}`
+const CODEX_MAIN = `t=$(sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | while IFS= read -r p; do p=$(cd "$p" 2>/dev/null && pwd -P) || continue; [ -n "$p" ] && [ -d "$p/.dev-loop" ] || continue; w=$(git -C "$p" worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); [ -n "$w" ] && [ "$(cd "$w" 2>/dev/null && pwd -P)" = "$p" ] || continue; git -C "$p" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | while IFS= read -r l; do printf '%s\\t%s\\n' "$(cd "$l" 2>/dev/null && pwd -P)" "$p"; done; done); d=$(pwd -P) m=; while :; do x=$(printf '%s\\n' "$t" | D=$d awk -F'\\t' '$1==ENVIRON["D"]{print $2; exit}'); [ -n "$x" ] && m=$x; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m"`
+const codex = (script, args = '') => `m=$(${CODEX_MAIN}); f="$m/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; KIT_MAIN="$m" exec "$f"${args}`
 
 test('a Claude hook command points at the project hook folder and keeps its arguments', () => {
   assert.equal(
@@ -59,7 +59,6 @@ test('a Codex-only kit has no link and no Claude path', () => {
   assert.ok(paths.includes('.dev-loop/hooks/codex/session-start.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/seal.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/git-pin.sh'))
-  assert.ok(paths.includes('.dev-loop/hooks/codex/kit-main.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/acceptance-wall.sh'))
   assert.ok(paths.includes('.codex/rules/dev-loop.rules'))
   assert.ok(paths.includes('.agents/skills/dev-loop/SKILL.md'))

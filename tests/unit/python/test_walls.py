@@ -584,8 +584,8 @@ class GitGuardParityTests(unittest.TestCase):
 
     @staticmethod
     def body(path: Path) -> list[str]:
-        return [line.replace(' KIT_MAIN="$(kit_main "$CWD")"', "") for line in path.read_text().splitlines()
-                if not line.startswith(("#", "deny() ", "ask() ", "TESTER=", ". \"${0%/*}/kit-main.sh\""))]
+        return [line for line in path.read_text().splitlines()
+                if not line.startswith(("#", "deny() ", "ask() ", "TESTER="))]
 
     def test_codex_guard_matches_claude_guard(self) -> None:
         self.assertEqual(self.body(CODEX_ASSETS / "hooks" / "git-guard.sh"), self.body(CLAUDE_HOOKS / "git-guard.sh"))
@@ -594,7 +594,7 @@ class GitGuardParityTests(unittest.TestCase):
         codex = (CODEX_ASSETS / "hooks" / "git-guard.py").read_text()
         codex = codex.replace('["python3", "-I", cli, "release-check"', '["python3", cli, "release-check"')
         for kit, claude in (
-            ('MAIN = os.environ["KIT_MAIN"]\n', ""),
+            ('MAIN = os.environ.get("KIT_MAIN", "")\n', ""),
             ('not MAIN or git(repo, *common) != git(MAIN, *common)', "git(repo, *common) != git(START, *common)"),
             ('    if not MAIN:\n        return "; release-check failed: no CLI"\n', ""),
             ('    cli = os.path.join(MAIN, ', '    main = git(START, "worktree", "list", "--porcelain")[1].partition("\\n")[0].removeprefix("worktree ")\n    cli = os.path.join(main, '),
@@ -608,8 +608,6 @@ class GitGuardParityTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 shutil.copy(hooks / "git-guard.sh", tmp)
                 shutil.copy(hooks / "git-pin.sh", tmp)
-                if hooks != CLAUDE_HOOKS:
-                    shutil.copy(hooks / "kit-main.sh", tmp)
                 result = subprocess.run(
                     [shell, str(Path(tmp) / "git-guard.sh")], text=True, capture_output=True, check=False,
                     input=json.dumps({"cwd": tmp, "tool_input": {"command": "git push origin feat"}}),

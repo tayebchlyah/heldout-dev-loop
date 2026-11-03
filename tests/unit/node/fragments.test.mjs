@@ -329,6 +329,7 @@ test('the Codex fragment scopes the dev-workspace network to the managed proxy a
   assert.equal('unix_sockets' in network, false)
   assert.equal('dangerously_allow_all_unix_sockets' in network, false)
   assert.deepEqual(Object.entries(network.domains), D3_HOSTS.map((host) => [host, 'allow']))
+  assert.equal(config.permissions['dev-workspace'].filesystem[':workspace_roots']['.dev-loop'], 'read')
   const docker = config.permissions['dev-docker']
   assert.equal(docker.extends, 'dev-workspace')
   assert.ok(docker.description)

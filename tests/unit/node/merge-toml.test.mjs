@@ -211,8 +211,9 @@ const d2Merge = (current) => {
   return result
 }
 
-test('KEY_MERGED_TABLES names the three D2 headers', () => {
-  assert.deepEqual([...KEY_MERGED_TABLES].sort(), ['[features]', '[permissions.dev-workspace.network.domains]', '[permissions.dev-workspace.network]'].sort())
+test('KEY_MERGED_TABLES names the D2 headers and the workspace roots table (#224)', () => {
+  assert.deepEqual([...KEY_MERGED_TABLES].sort(), ['[features]', '[permissions.dev-workspace.network.domains]', '[permissions.dev-workspace.network]',
+    '[permissions.dev-workspace.filesystem.":workspace_roots"]'].sort())
 })
 
 test('a missing kit key is added to the user table after its last definition line', () => {

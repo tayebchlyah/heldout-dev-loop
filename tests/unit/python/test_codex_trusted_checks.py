@@ -43,7 +43,7 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
             write(self.feature/'.agents/skills/dev-loop/scripts'/name, planted)
         write(self.feature/'json.py', planted)
         write(self.root/'codex/config.toml', f'[hooks.state."{self.main}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n')
-        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature), 'CODEX_HOME':str(self.root/'codex')}
+        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature), 'CODEX_HOME':str(self.root/'codex'), 'KIT_MAIN':str(self.main)}
         self.env.pop('DEV_LOOP_NOTES', None)
 
     def git(self, cwd, *args):
@@ -119,37 +119,16 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         argv=[json.loads(x)['argv'][0] for x in self.log.read_text().splitlines()]
         self.assertEqual(sorted(argv),['--harness','board','seal-check','search-wall'])
 
-    def test_hooks_under_an_agent_made_repo_use_main_code(self):
-        """#212, #222: a repo the agent creates, or a gitfile it writes, never selects the checker code."""
-        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
-        link = Path(tempfile.mkdtemp(prefix='dev-loop-link-'))
-        self.addCleanup(shutil.rmtree, link, True)
-        (link/'root').symlink_to(self.root)
-        config = self.root/'codex/config.toml'
-        trust = lambda path: f'[hooks.state."{path}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n'
-        feature = self.main/'.claude/worktrees/probe'
-        self.git(self.main, 'worktree', 'add', '-qb', 'fix/probe', str(feature))
-        nested = feature/'packages/web'
-        other = self.root/'other'
-        def redirect():
-            self.plant(other)
-            write(self.root/'.git', f'gitdir: {other}/.git\n')
-            config.write_text(trust(self.main) + trust(other))
-        rows = [
-            ('nested repo in the feature', lambda: self.plant(nested), nested),
-            ('nested repo, trust key through a symlink', lambda: (self.plant(nested), config.write_text(trust(link/'root/main'))), nested),
-            ('untrusted outer repo', lambda: self.plant(self.root), feature),
-            ('gitfile redirect to a trusted repo', redirect, feature),
-        ]
-        for name, arrange, cwd in rows:
+    def test_hooks_run_the_code_of_the_main_the_hook_command_names(self):
+        """#212, #222, #224: a repo or a gitfile the agent writes never selects the checker code, whatever the stdin cwd."""
+        nested = self.feature/'packages/web'
+        for name, arrange, cwd in (('nested repo in a sibling feature worktree', lambda: self.plant(nested), nested),
+                                   ('repo planted above the project', lambda: self.plant(self.root/'above'), self.feature)):
             with self.subTest(name):
-                shutil.rmtree(self.root/'.git', ignore_errors=True)
                 shutil.rmtree(nested, ignore_errors=True)
-                shutil.rmtree(other, ignore_errors=True)
-                (self.root/'.git').unlink(missing_ok=True)
+                shutil.rmtree(self.root/'above', ignore_errors=True)
                 self.log.unlink(missing_ok=True)
                 self.marker.unlink(missing_ok=True)
-                config.write_text(trust(self.main))
                 arrange()
                 self.assert_hooks_use_main_code(cwd)
 
@@ -196,14 +175,11 @@ print(json.dumps({**result,'stop':stopped['state']}))
         self.assertEqual(self.calls()[0]['argv'][:4],['release-check','--no-build','--repo',str(self.feature)])
 
     def test_release_check_ignores_a_repo_planted_in_a_feature_subfolder(self):
-        """#224: the release-check CLI comes from the kit main, not from the first worktree of the hook cwd."""
-        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
-        feature = self.main/'.claude/worktrees/probe'
-        self.git(self.main, 'worktree', 'add', '-qb', 'fix/probe', str(feature))
-        planted = feature/'packages/web'
+        """#224: the release-check CLI comes from the main the hook command names, not from the first worktree of the hook cwd."""
+        planted = self.feature/'packages/web'
         self.plant(planted)
         self.git(planted, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'x')
-        for command, expected in ((f'git -C {feature} push origin HEAD:refs/tags/v1.0.0', 'release-check: ok'),
+        for command, expected in ((f'git -C {self.feature} push origin HEAD:refs/tags/v1.0.0', 'release-check: ok'),
                                   ('git push origin HEAD:refs/tags/v1.0.0', 'release-check failed: another repository')):
             with self.subTest(command=command):
                 self.log.unlink(missing_ok=True)
@@ -212,3 +188,10 @@ print(json.dumps({**result,'stop':stopped['state']}))
                 self.assertIn(expected, json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])
                 self.assertFalse(self.marker.exists())
                 self.assertEqual(self.log.exists(), expected == 'release-check: ok')
+
+    def test_release_check_without_a_main_has_no_cli(self):
+        env = {k: v for k, v in self.env.items() if k != 'KIT_MAIN'}
+        r = subprocess.run(['bash', str(CODEX_ASSETS/'hooks/git-guard.sh')], cwd=self.feature, env=env, capture_output=True, text=True,
+                           input=json.dumps({'cwd': str(self.feature), 'tool_input': {'command': 'git push origin HEAD:refs/tags/v1.0.0'}}))
+        self.assertIn('release-check failed: no CLI', json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason'])
+        self.assertFalse(self.log.exists())

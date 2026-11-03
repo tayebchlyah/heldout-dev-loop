@@ -4,16 +4,15 @@
 # stop (SubagentStop): run `devloop.py audit`, then `seal-check`; block on a seal violation only.
 # turn (Stop): run `seal-check`; block on a seal violation or an open taint record.
 # stop_hook_active true: no block. Input that is not JSON, no dev-loop.json, or no CLI: exit 0, silent.
-# The CLI comes from the main checkout kit_main (kit-main.sh) gives for the hook cwd. Never starts the board.
+# The CLI comes from the main checkout in KIT_MAIN, set by the hook command. Never starts the board.
 . "${0%/*}/git-pin.sh"
-. "${0%/*}/kit-main.sh"
 mode=$1
 input=$(cat)
 printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || exit 0
 dir=$(printf '%s' "$input" | jq -r '.cwd // empty')
 [ -n "$dir" ] || exit 0
 top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
-main=$(kit_main "$top")
+main=$KIT_MAIN
 cli="$main/.agents/skills/dev-loop/scripts/devloop.py"
 [ -f "$top/dev-loop.json" ] && [ -f "$cli" ] || exit 0
 cd "$top" || exit 0

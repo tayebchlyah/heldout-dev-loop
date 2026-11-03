@@ -45,7 +45,7 @@ RUNNERS = {"sh", "bash", "zsh", "eval", "ssh", "su"}
 EXPANDS = set("${}*?[~" + chr(96))
 PUNCT = ";&|()" + chr(96)
 START = os.environ["CWD"]
-MAIN = os.environ["KIT_MAIN"]
+MAIN = os.environ.get("KIT_MAIN", "")
 # Git refuses an alias that shadows a builtin. Empty when git cannot list them, so
 # every command from an unknown folder asks.
 _r = subprocess.run(["git", "--list-cmds=builtins"], capture_output=True, text=True)
