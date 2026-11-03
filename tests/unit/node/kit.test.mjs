@@ -6,7 +6,8 @@ import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs
 import { packageRoot, tempDir } from './helpers.mjs'
 
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
-const CODEX = `"$(git worktree list --porcelain | sed -n '1s/^worktree //p')/.dev-loop/hooks/codex/`
+const CODEX_MAIN = `$(git worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^bare$/{w=""} /^$/{if(w!="")exit} END{print w}')`
+const codex = (script, args = '') => `f="${CODEX_MAIN}/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"${args}`
 
 test('a Claude hook command points at the project hook folder and keeps its arguments', () => {
   assert.equal(
@@ -17,8 +18,8 @@ test('a Claude hook command points at the project hook folder and keeps its argu
 })
 
 test('a Codex hook command points at the project hook folder, rendered or raw', () => {
-  assert.equal(projectCommand('/h/.codex/hooks/gate.sh'), `${CODEX}gate.sh"`)
-  assert.equal(projectCommand('{{HOME}}/.codex/hooks/gate.sh'), `${CODEX}gate.sh"`)
+  assert.equal(projectCommand('/h/.codex/hooks/gate.sh'), codex('gate.sh'))
+  assert.equal(projectCommand('{{HOME}}/.codex/hooks/seal.sh turn'), codex('seal.sh', ' turn'))
 })
 
 test('a command with no hook path does not change', () => {
@@ -128,9 +129,9 @@ test('the fragments merge into the project files with project commands', () => {
   const hooks = actions[1]
   const raw = readFileSync(hooks.source, 'utf8')
   for (const text of [raw, raw.split('{{HOME}}').join('/h')]) {
-    const codex = JSON.parse(hooks.rewrite(text))
-    assert.equal(codex.hooks.SessionStart[0].hooks[0].command, `${CODEX}session-start.sh"`)
-    assert.equal(codex.hooks.PreToolUse[0].hooks[0].command, `${CODEX}git-guard.sh"`)
+    const codexHooks = JSON.parse(hooks.rewrite(text))
+    assert.equal(codexHooks.hooks.SessionStart[0].hooks[0].command, codex('session-start.sh'))
+    assert.equal(codexHooks.hooks.PreToolUse[0].hooks[0].command, codex('git-guard.sh'))
   }
 
   const toml = actions[2]

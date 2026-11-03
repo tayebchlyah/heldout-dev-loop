@@ -224,6 +224,31 @@ class HookPlantedProgramTests(unittest.TestCase):
                 self.stop(harness)
                 self.assertFalse(self.marker.exists())
 
+    def test_a_submodule_filter_never_runs_and_a_moved_pointer_runs_the_gate(self) -> None:
+        sub = self.repo / "sub"
+        self.git("init", "-q", str(sub))
+        write(sub / ".gitattributes", "* filter=plant\n")
+        write(sub / "f.txt", "x\n")
+        self.git("-C", str(sub), "add", ".")
+        self.git("-C", str(sub), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "sub")
+        write(self.repo / "dev-loop.json", json.dumps({"commands": {"gate": "echo gate ran; exit 1"}}))
+        self.git("-C", str(self.repo), "-c", "advice.addEmbeddedRepo=false", "add", "sub", "dev-loop.json")
+        self.git("-C", str(self.repo), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "gitlink")
+        self.git("-C", str(sub), "config", "filter.plant.clean", str(self.program))
+        later = time.time() + 3600
+        os.utime(sub / "f.txt", (later, later))
+        for move, harness, script in [(False, "claude", "gate.sh"), (False, "codex", "gate.sh"), (False, "claude", "tree-hash.sh"),
+                                      (True, "claude", "gate.sh"), (True, "codex", "gate.sh")]:
+            if move:
+                self.git("-C", str(sub), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q",
+                         "--allow-empty", "-m", "moved")
+            self.marker.unlink(missing_ok=True)
+            with self.subTest(move=move, harness=harness, script=script):
+                result = self.run_hook(harness, script, {"hook_event_name": "Stop", "cwd": str(self.repo)})
+                self.assertFalse(self.marker.exists())
+                if move:
+                    self.assertIn("gate ran", json.loads(result.stdout)["reason"])
+
     def test_a_failing_required_filter_runs_the_gate(self) -> None:
         self.git("-C", str(self.repo), "config", "filter.plant.clean", "false")
         self.git("-C", str(self.repo), "config", "filter.plant.required", "true")
