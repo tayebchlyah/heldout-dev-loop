@@ -129,23 +129,35 @@ class MergeCheckTests(MergeCheckCase):
 
     def test_harness_config_change_waits(self) -> None:
         """A change to a harness config file waits for the user, whatever `merge_human_paths` says."""
-        rows = {
-            ".claude/settings.json": (["x/*"], [{"reason": "harness-config", "path": ".claude/settings.json"}]),
-            ".codex/config.toml": ([], [{"reason": "harness-config", "path": ".codex/config.toml"}]),
-            ".codex/hooks.json": ([".codex/*"], [{"reason": "human-path", "path": ".codex/hooks.json",
-                                                  "pattern": ".codex/*"},
-                                                 {"reason": "harness-config", "path": ".codex/hooks.json"}]),
-            ".Claude/Settings.JSON": ([], [{"reason": "harness-config", "path": ".Claude/Settings.JSON"}]),
-            ".claude/agents/x.md": (["x/*"], []),
-            ".codex/rules/x": ([], []),
-        }
-        for path, (patterns, expected) in rows.items():
-            with self.subTest(path=path):
+        def harness(path: str) -> dict:
+            return {"reason": "harness-config", "path": path}
+        rows = [
+            (".claude/settings.json", {"merge_human_paths": ["x/*"]}, None, [harness(".claude/settings.json")]),
+            (".claude/settings.local.json", {}, None, [harness(".claude/settings.local.json")]),
+            (".codex/config.toml", {}, None, [harness(".codex/config.toml")]),
+            (".codex/hooks.json", {"merge_human_paths": [".codex/*"]}, None,
+             [{"reason": "human-path", "path": ".codex/hooks.json", "pattern": ".codex/*"},
+              harness(".codex/hooks.json")]),
+            (".mcp.json", {}, None, [harness(".mcp.json")]),
+            (".Claude/Settings.JSON", {}, None, [harness(".Claude/Settings.JSON")]),
+            (".codex", {}, "cfg", [harness(".codex")]),
+            (".codex/hooks.json", None, None, [{"reason": "config-unreadable"}, harness(".codex/hooks.json")]),
+            (".claude/agents/x.md", {"merge_human_paths": ["x/*"]}, None, []),
+            (".codex/rules/x", {}, None, []),
+        ]
+        for path, config, link, expected in rows:
+            with self.subTest(path=path, config=config):
                 self.tearDown()
                 self.setUp()
-                self.main_config({"merge_human_paths": patterns})
+                self.main_config(config, raw=None if config is not None else "{")
                 wt, _ = self.reviewed_feature()
-                self.commit(wt, path, "{}\n")
+                if link is None:
+                    put(wt / path, "{}\n")
+                else:
+                    put(wt / link / "config.toml", "{}\n")
+                    (wt / path).symlink_to(link)
+                git(wt, "add", "-A", "-f", path, *([link] if link else []))
+                git(wt, "commit", "-q", "-m", path)
                 self.gate_green(wt, self.head(wt))
                 out = self.ok(wt)
                 self.assertEqual(out["reasons"], expected)

@@ -20,7 +20,8 @@ from status import rebasing
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
 CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
 DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
-HARNESS_CONFIG = (".claude/settings.json", ".codex/config.toml", ".codex/hooks.json")
+HARNESS_CONFIG = (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml", ".codex/hooks.json",
+                  ".mcp.json", ".claude", ".codex")
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
