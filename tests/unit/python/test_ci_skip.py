@@ -98,6 +98,17 @@ class CiSkipTests(unittest.TestCase):
         code, out = self.check(RELEASE)
         self.assertEqual((code, out), (0, {"skip": True, "kind": "release", "blocking": [], "base": self.base, "head": self.head}))
 
+    def test_release_diff_runs_no_git_config_program(self) -> None:
+        # #199: a diff driver the repo config names never runs on the host from a version diff.
+        for name, key, attributes in [("external diff", "diff.external", ""), ("textconv", "diff.tc.textconv", "* diff=tc\n")]:
+            with self.subTest(name):
+                self.setUp()
+                marker = self.tmp / "marker"
+                self.git("config", key, f"sh -c 'echo ran >> {marker}; cat \"$1\"' -")
+                (self.repo / ".git" / "info" / "attributes").write_text(attributes)
+                _, out = self.check(RELEASE)
+                self.assertEqual((out["skip"], marker.exists()), (True, False))
+
     def test_code_next_to_release_blocks(self) -> None:
         code, out = self.check({**RELEASE, "src/app.py": "x = 1\n"})
         self.assertEqual((code, out["skip"], out["kind"], out["blocking"]), (0, False, None, ["src/app.py"]))
