@@ -130,7 +130,7 @@ class ReviewYieldContractTests(unittest.TestCase):
 
     def test_open_needs_validation_item_blocks_a_release(self) -> None:
         self.assertIn("NEEDS VALIDATION", stage_text(7))
-        self.assertIn("a ruling under it says", stage_text(7))
+        self.assertIn("its newest ruling says", stage_text(7))
         self.assertIn("`accept` or `close`", stage_text(7))
 
     def test_every_fix_round_starts_a_new_implementer(self) -> None:
