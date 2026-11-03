@@ -295,8 +295,17 @@ test('a Codex hook command blocks with exit 2 for a bare first worktree or a mai
   }
 })
 
+// Each earlier Codex command form (#158, #200), from the parts of a current command: the old
+// prefix with the old tail, the old prefix in front of the current tail, and a prefix swap that cuts the current one.
+const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"]
+  .flatMap((prefix) => [
+    [prefix, (script, args) => `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`],
+    [prefix, (script, args, command) => `"${prefix}/.dev-loop/hooks/codex/${command.slice(command.indexOf(`${script}"`))}`],
+    [prefix, (script, args, command) => command.replace(/\$\(git worktree list[^)]*\)/, prefix)],
+  ])
+
 test('Codex upgrade migrates each earlier command form once and preserves user hooks and Claude bytes', () => {
-  for (const prefix of ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"]) {
+  for (const [prefix, form] of OLD_CODEX_FORMS) {
     const { home, repo } = setup()
     init(repo, home, ['--yes', '--harness=both'])
     const claude = readFileSync(join(repo, '.claude/settings.json'))
@@ -304,7 +313,7 @@ test('Codex upgrade migrates each earlier command form once and preserves user h
     const hooks = readJson(path)
     for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const hook of group.hooks) {
       const [, script, args] = /\/hooks\/codex\/([\w.-]+)".*exec "\$f"(.*)$/s.exec(hook.command)
-      hook.command = `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`
+      hook.command = form(script, args, hook.command)
     }
     const oldGate = structuredClone(hooks.hooks.Stop[0])
     oldGate.matcher = 'old-matcher'
@@ -317,6 +326,11 @@ test('Codex upgrade migrates each earlier command form once and preserves user h
     const after = readFileSync(path)
     const commands = hookCommands(path)
     assert.equal(commands.filter((command) => command.includes('/codex/gate.sh"; ')).length, 2, prefix)
+    for (const [event, groups] of Object.entries(readJson(path).hooks)) {
+      const own = groups.flatMap((group) => group.hooks.map((hook) => hook.command)).filter((command) => command.includes('/.dev-loop/'))
+        .map((command) => /\/hooks\/codex\/([\w.-]+)".*exec "\$f"(.*)$/s.exec(command)?.slice(1).join('') ?? command)
+      assert.deepEqual(own, [...new Set(own)], `${prefix} ${event}`)
+    }
     assert.equal(commands.some((command) => command.startsWith(`"${prefix}`)), false, prefix)
     assert.ok(commands.includes('echo mine'))
     assert.ok(readFileSync(join(repo, '.claude/settings.json')).equals(claude))
