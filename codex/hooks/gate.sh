@@ -21,13 +21,18 @@ dirty=$(git status --porcelain --ignore-submodules=dirty 2>/dev/null) && [ -z "$
 
 if [ -n "$gate" ]; then set -- sh -c "$gate"; else set -- scripts/gate.sh; fi
 main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
-# The output comes back through a pipe, never a file path the confined gate could swap (#200).
-output=$({ GATE_SCOPE=changed python3 -I "$(dirname "$0")/sandbox.py" "$main" "$cwd" -- "$@" </dev/null 2>&1; echo "exit $?"; } | tail -c 3010)
-status=${output##*exit }
+# The gate writes to an unnamed temp file this hook holds open (#200): no path for the confined gate to swap, and a
+# child it leaves running neither holds the hook nor adds to the status, the launcher's own exit.
+reason=$(GATE_SCOPE=changed python3 -I -c 'import subprocess, sys, tempfile
+with tempfile.TemporaryFile() as out:
+    code = subprocess.run(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=out, stderr=out).returncode
+    out.seek(max(0, out.tell() - 3000))
+    sys.stdout.buffer.write(out.read())
+sys.exit(code)' python3 -I "$(dirname "$0")/sandbox.py" "$main" "$cwd" -- "$@")
+status=$?
 if [ "$status" -eq 0 ]; then
   board
 else
-  reason=$(printf '%s' "${output%exit *}" | tail -c 3000)
   lead="Gate failed. Fix it. Do not weaken or skip tests."
   if [ "$status" -eq 125 ] && printf '%s' "$reason" | grep -q 'Sandbox startup failed'; then
     lead="The sandbox could not start. This is an environment problem, not a test failure."
