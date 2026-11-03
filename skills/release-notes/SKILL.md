@@ -17,7 +17,7 @@ User asked for release notes: `/release-notes <version>` or `/release-notes --al
      - `### ⬆️ Upgrade`: the manual steps, one numbered list, in the order the user runs them.
      - `### ✨ New Features`: one short paragraph per feature a user can see. A bold lead of a few words, then what it does and why a user cares. At most three sentences.
      - `### 💥 Breaking Changes`: one bullet per change that breaks what worked before.
-     - `### 🔒 Security`: one bullet per security feature or fix.
+     - `### 🔒 Security`: one bullet per security fix, or per feature whose purpose is to protect the user (never in `New Features`).
      - `### ⚡️ Performance`: one bullet per speed or cost gain a user can see.
      - `### 📝 Documentation & Content`: one bullet per doc change a user can see.
      - `### 🐛 Bug Fixes`: one bullet per other fix a user can see.
