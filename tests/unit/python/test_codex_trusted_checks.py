@@ -96,6 +96,29 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         self.assertEqual((r.returncode,r.stdout),(0,''))
         self.assertEqual(self.calls()[0]['argv'],['board','--event','prompt'])
 
+    def test_hooks_from_a_nested_repo_use_main_code(self):
+        """#212: a repo the agent creates in a feature subfolder, with its own kit, never selects the checker code."""
+        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
+        nested = self.feature/'packages/web'
+        planted = (self.feature/'.agents/skills/dev-loop/scripts/devloop.py').read_text()
+        for name in ['devloop.py','check_setup.py']:
+            write(nested/'.agents/skills/dev-loop/scripts'/name, planted)
+        (nested/'.dev-loop/hooks/codex').mkdir(parents=True)
+        write(nested/'dev-loop.json', '{"version":"0.0.0"}')
+        self.git(nested.parent, 'init', '-q', str(nested))
+        runs = [('seal.sh',('turn',),{}), ('session-start.sh',(),{}), ('board.sh',('prompt',),{}),
+                ('acceptance-wall.sh',(),{'agent_id':'probe','agent_type':'implementer','tool_name':'Bash',
+                                          'tool_input':{'command':'rg needle .'}})]
+        for script, args, extra in runs:
+            subprocess.run(['sh',str(CODEX_ASSETS/'hooks'/script),*args],cwd=nested,input=json.dumps({'cwd':str(nested),**extra}),
+                           capture_output=True,text=True,env=self.env)
+        end=time.monotonic()+5
+        while time.monotonic()<end and len(self.log.read_text().splitlines() if self.log.exists() else [])<4:
+            time.sleep(.02)
+        self.assertFalse(self.marker.exists())
+        argv=[json.loads(x)['argv'][0] for x in self.log.read_text().splitlines()]
+        self.assertEqual(sorted(argv),['--harness','board','seal-check','search-wall'])
+
     def test_board_start_preserves_parent_python_isolation(self):
         harness = '''import json,os,socket,sys
 from pathlib import Path

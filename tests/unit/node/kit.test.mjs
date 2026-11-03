@@ -6,7 +6,7 @@ import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs
 import { packageRoot, tempDir } from './helpers.mjs'
 
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
-const CODEX_MAIN = `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`
+const CODEX_MAIN = `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || [ -d "$w/.dev-loop" ]; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`
 const codex = (script, args = '') => `f="${CODEX_MAIN}/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"${args}`
 
 test('a Claude hook command points at the project hook folder and keeps its arguments', () => {
@@ -59,6 +59,7 @@ test('a Codex-only kit has no link and no Claude path', () => {
   assert.ok(paths.includes('.dev-loop/hooks/codex/session-start.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/seal.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/git-pin.sh'))
+  assert.ok(paths.includes('.dev-loop/hooks/codex/kit-main.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/acceptance-wall.sh'))
   assert.ok(paths.includes('.codex/rules/dev-loop.rules'))
   assert.ok(paths.includes('.agents/skills/dev-loop/SKILL.md'))
