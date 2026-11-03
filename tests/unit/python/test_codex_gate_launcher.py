@@ -1,8 +1,10 @@
 """Automatic Codex gate launch through the public hook and native CLI boundary."""
 from __future__ import annotations
 
+import base64
 import json
 import os
+import plistlib
 import re
 import shlex
 import shutil
@@ -341,14 +343,15 @@ class CodexHookSandboxTests(unittest.TestCase):
     def managed(self, requirements, *command, mdm=None):
         source = ('import sys; sys.dont_write_bytecode=True; from pathlib import Path; sys.path.insert(0,sys.argv[1]); '
                   'import sandbox; sandbox.REQUIREMENTS=Path(sys.argv[2]); '
-                  'sandbox.MANAGED_PREFERENCES=(Path(sys.argv[3]),); sys.argv=["sandbox.py"]+sys.argv[4:]; sys.exit(sandbox.main())')
+                  'sandbox.MANAGED_PREFERENCES=Path(sys.argv[3]); sys.argv=["sandbox.py"]+sys.argv[4:]; sys.exit(sandbox.main())')
         file = self.root / 'requirements.toml'
         if requirements is not None:
             write(file, requirements)
-        plist = self.root / 'com.openai.codex.plist'
+        managed = self.root / 'managed'
         if mdm is not None:
-            plist.write_bytes(mdm)
-        return subprocess.run([sys.executable, '-I', '-c', source, str(CODEX_ASSETS / 'hooks'), str(file), str(plist),
+            write(managed / 'user/com.openai.codex.plist', '')
+            (managed / 'user/com.openai.codex.plist').write_bytes(mdm)
+        return subprocess.run([sys.executable, '-I', '-c', source, str(CODEX_ASSETS / 'hooks'), str(file), str(managed),
                                str(self.main), str(self.feature), '--', *command],
                               input='', text=True, capture_output=True, env=self.env)
 
@@ -377,19 +380,24 @@ class CodexHookSandboxTests(unittest.TestCase):
         self.assert_denied(result, [first, second])
 
     def test_mdm_requirements_deny_read_paths_become_deny_rules(self):
-        import base64, plistlib
         secret = self.root / 'mdm-secret'
         write(secret, 'DUMMY')
         toml = '[permissions.filesystem]\ndeny_read = [' + json.dumps(str(secret)) + ']\n'
         mdm = plistlib.dumps({'requirements_toml_base64': base64.b64encode(toml.encode()).decode()})
         self.assert_denied(self.managed(None, *self.read_probe(secret), mdm=mdm), [secret])
 
+    def test_home_deny_read_path_expands_like_profile_rules(self):
+        secret = self.root / 'home-like/admin-secret'
+        write(secret, 'DUMMY')
+        self.env['HOME'] = str(self.root / 'home-like')
+        result = self.managed('[permissions.filesystem]\ndeny_read = ["~/admin-secret"]\n', *self.read_probe(secret))
+        self.assert_denied(result, [secret])
+
     def test_absent_requirement_sources_add_no_rule(self):
         result = self.managed(None, sys.executable, '-I', '-c', 'pass')
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_unreadable_or_invalid_requirements_block_before_native_or_gate(self):
-        import base64, plistlib
         cases = {'bad toml': ('deny_read = [', None), 'not a list': ('[permissions.filesystem]\ndeny_read = "/x"\n', None),
                  'not a table': ('permissions = 1\n', None), 'relative path': ('[permissions.filesystem]\ndeny_read = ["x"]\n', None),
                  'unreadable': ('[permissions.filesystem]\ndeny_read = []\n', None),
@@ -399,7 +407,7 @@ class CodexHookSandboxTests(unittest.TestCase):
         for name, (requirements, mdm) in cases.items():
             with self.subTest(name=name):
                 (self.root / 'requirements.toml').unlink(missing_ok=True)
-                (self.root / 'com.openai.codex.plist').unlink(missing_ok=True)
+                shutil.rmtree(self.root / 'managed', ignore_errors=True)
                 self.log.unlink(missing_ok=True)
                 if name == 'unreadable':
                     write(self.root / 'requirements.toml', requirements)
