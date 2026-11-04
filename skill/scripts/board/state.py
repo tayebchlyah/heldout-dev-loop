@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 from pathlib import Path
 
 from . import store
 
 NAME = "board-state.json"
+# #239: every file the board keeps in the state folder; none is ever opened through a link.
+FILES = ("board.lock", "board-claims.json", "board-features.json", NAME, "board-events.jsonl")
 SESSIONS = 50  # D12: the most sessions the map keeps.
 AGENT_IDLE_MINUTES = 30  # A subagent with no transcript activity for this long no longer runs: a killed one fires no SubagentStop.
 # The note fields the entry holds itself; `digest` covers the others.
@@ -24,6 +27,20 @@ def digest(fields: dict) -> str:
         rest["tasks"] = [{k: v for k, v in t.items() if k not in ("started", "done")} if isinstance(t, dict) else t
                          for t in tasks]
     return hashlib.sha256(json.dumps(rest, sort_keys=True).encode()).hexdigest()
+
+
+def unsafe(folder: Path) -> str | None:
+    """#239: `state-link` when the state folder or one of its FILES is a link, `state-owner` when the folder is not
+    a folder this user owns, else None (a missing folder too)."""
+    try:
+        info = os.lstat(folder)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(info.st_mode):
+        return "state-link"
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        return "state-owner"
+    return "state-link" if any((folder / name).is_symlink() for name in FILES) else None
 
 
 def load(folder: Path) -> dict:
@@ -48,7 +65,10 @@ def save(folder: Path, data: dict) -> None:
 
 
 def save_last_run(folder: Path, at: str, skipped: list[dict]) -> None:
-    """D5: save `last_run` only, every other key kept. The caller holds the lock or needs none."""
+    """D5: save `last_run` only, every other key kept. The caller holds the lock or needs none. An unsafe folder
+    (#239) gets nothing."""
+    if unsafe(folder):
+        return
     folder.mkdir(parents=True, exist_ok=True)
     data = load(folder)
     data["last_run"] = {"at": at, "skipped": skipped}

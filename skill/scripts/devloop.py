@@ -116,6 +116,7 @@ def slug_from_title(filename: str) -> str:
 
 FRONTMATTER_CACHE: dict[str, dict[str, str]] | None = None
 SPECS_CACHE: dict[str, list[tuple[str, Path]]] | None = None
+FOLLOW_NOTE_LINKS = True
 
 
 def cache_notes() -> None:
@@ -176,13 +177,26 @@ def specs(notes: Path) -> list[tuple[str, Path]]:
     return found
 
 
+def skip_note_links() -> None:
+    """#239: from now on in this process, `specs` and `find_plan` skip a linked spec, plan or feature folder. For the
+    board hook, which runs on the host and copies spec text into the vault; `decide` keeps a linked spec (#51)."""
+    global FOLLOW_NOTE_LINKS
+    FOLLOW_NOTE_LINKS = False
+
+
+def linked(path: Path, *folders: Path) -> bool:
+    return not FOLLOW_NOTE_LINKS and any(p.is_symlink() for p in (path, *folders))
+
+
 def read_specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
     for path in sorted((notes / FEATURES).glob("*/Spec.md")):
-        found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
-    if "specs" in old_layout(notes):
+        if not linked(path, path.parent):
+            found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
+    if "specs" in old_layout(notes) and not linked(notes / "specs"):
         for path in sorted((notes / "specs").glob("*.md")):
-            found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
+            if not linked(path):
+                found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
     return found
 
 
@@ -193,8 +207,11 @@ def is_spec(notes: Path, path: Path) -> bool:
 def find_plan(notes: Path, spec: Path) -> Path | None:
     if spec.name == "Spec.md" and spec.parent.parent == notes / FEATURES:
         plan = spec.parent / "Plan.md"
-        return plan if plan.is_file() else None
-    plans = [p for p in sorted((notes / "plans").glob("*.md")) if frontmatter(p).get("spec") in (spec.name, spec.stem)]
+        return plan if plan.is_file() and not linked(plan, spec.parent) else None
+    if linked(notes / "plans"):
+        return None
+    plans = [p for p in sorted((notes / "plans").glob("*.md"))
+             if not linked(p) and frontmatter(p).get("spec") in (spec.name, spec.stem)]
     return plans[-1] if plans else None
 
 

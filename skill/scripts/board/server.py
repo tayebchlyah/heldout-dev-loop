@@ -19,7 +19,6 @@ import socket
 import stat
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,7 +38,6 @@ SUBFOLDERS = ("Features", "features")
 MAX_BYTES = 65536
 MAX_NOTES = 500
 WALK_EVERY = 60
-LOG = Path(tempfile.gettempdir()) / "dev-loop-board.log"
 LOG_BYTES = 65536
 
 
@@ -158,6 +156,28 @@ def pidfile(port: int) -> Path:
     return Path.home() / ".config" / "dev-loop" / f"board-server.{port}.pid"
 
 
+def log_path() -> Path:
+    """#239: beside the pidfile, never in the shared temp folder."""
+    return Path.home() / ".config" / "dev-loop" / "board.log"
+
+
+def open_log(log: Path) -> int | None:
+    """#239: the log for append with no link follow, mode 0600, a regular file this user owns; else None."""
+    with contextlib.suppress(OSError):
+        if log.lstat().st_size > LOG_BYTES:
+            log.replace(log.with_name(f"{log.name}.1"))
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        return None
+    info = os.fstat(fd)
+    if stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid():
+        return fd
+    os.close(fd)
+    return None
+
+
 def probe(port: int) -> tuple[str, dict]:
     """GET /health: `none` (refused), `stalled` (no answer in 2 s), `busy` (not a board, or a pid that is not the
     pidfile's), or `board`."""
@@ -201,12 +221,14 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
            "--me", me]
     for root in roots:
         cmd += ["--root", str(root)]
-    with contextlib.suppress(OSError):
-        if LOG.stat().st_size > LOG_BYTES:
-            LOG.replace(LOG.with_name(f"{LOG.name}.1"))
-    with open(LOG, "a") as log:
-        proc = subprocess.Popen(cmd, start_new_session=True, cwd="/", stdin=subprocess.DEVNULL, stdout=log,
-                                stderr=log)
+    log = log_path()
+    fd = open_log(log)
+    try:
+        out = fd if fd is not None else subprocess.DEVNULL
+        proc = subprocess.Popen(cmd, start_new_session=True, cwd="/", stdin=subprocess.DEVNULL, stdout=out, stderr=out)
+    finally:
+        if fd is not None:
+            os.close(fd)
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline and proc.poll() is None and probe(port)[0] != "board":
         time.sleep(0.02)
@@ -223,7 +245,7 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
     # C3: another run started a board at the same moment.
     if kind == "board" and all(str(r) in (found.get("roots") or []) for r in roots):
         return {"state": "running", "url": url}
-    return {"state": "error", "url": url, "message": f"the board server did not start on port {port}, see {LOG}"}
+    return {"state": "error", "url": url, "message": f"the board server did not start on port {port}, see {log}"}
 
 
 def ensure(port: int, version: str, roots: list[Path], here: str, me: str) -> dict:
