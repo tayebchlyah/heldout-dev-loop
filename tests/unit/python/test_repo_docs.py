@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -16,6 +17,18 @@ sys.path.insert(0, str(HERE))
 from support import ROOT, budget_report  # noqa: E402
 
 
+README_SECTIONS = ["What and why", "The loop", "Quick start", "How it works", "Usage", "Configuration",
+                   "Inspirations and credits", "Security model and limits", "Contributing", "License"]
+HOW_IT_WORKS = ["Tracks", "Shaping and Delivery", "The held-out suite and its seal", "The walls",
+                "The feature gate", "The autonomy grant"]
+README_LINKS = ["docs/usage.md", "docs/configuration.md", "docs/commands.md", "docs/upgrade.md",
+                "CONTRIBUTING.md", "SECURITY.md", "LICENSE"]
+
+
+def readme_section(readme: str, title: str) -> str:
+    return readme.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
+
+
 def help_commands() -> set[str]:
     text = subprocess.run([sys.executable, str(ROOT / "skill" / "scripts" / "devloop.py"), "--help"],
                           capture_output=True, text=True, check=True).stdout
@@ -26,6 +39,46 @@ class RepoDocsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.agents = (ROOT / "AGENTS.md").read_text()
         self.cli = self.agents.split("## devloop CLI", 1)[1].split("\n## ", 1)[0]
+
+    def test_readme_sections_in_order(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        self.assertEqual(readme.splitlines()[0], "# heldout-dev-loop")
+        self.assertEqual(re.findall(r"^## (.+)$", readme, re.M), README_SECTIONS)
+        self.assertEqual(re.findall(r"^### (.+)$", readme_section(readme, "How it works"), re.M), HOW_IT_WORKS)
+        self.assertIn("```mermaid", readme_section(readme, "The loop"))
+        self.assertIn("actions/workflows/ci.yml/badge.svg", readme)
+        self.assertIn("license-MIT", readme)
+
+    def test_readme_links_each_guide_and_community_file(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        for target in README_LINKS:
+            with self.subTest(target=target):
+                self.assertIn(f"]({target})", readme)
+                self.assertTrue((ROOT / target).is_file())
+
+    def test_inspirations_row_per_source_and_adapted_rows_name_a_source_line(self) -> None:
+        section = readme_section((ROOT / "README.md").read_text(), "Inspirations and credits")
+        rows = [[c.strip() for c in line.strip().strip("|").split("|")] for line in section.splitlines()
+                if line.startswith("| ") and not line.startswith(("| Part", "| ---"))]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertEqual(len(row), 5, row)
+            self.assertIn(row[3], ("invoked", "adapted", "idea"), row)
+        for src in json.loads((ROOT / "upstream.json").read_text())["sources"]:
+            with self.subTest(source=src["name"]):
+                mine = [row for row in rows if f"`{src['name']}`" in row[2]]
+                self.assertTrue(mine)
+                for row in mine:
+                    if row[3] == "adapted":
+                        path = re.fullmatch(r"`([^`]+)`", row[4]).group(1)
+                        lines = (ROOT / path).read_text().splitlines()
+                        self.assertTrue(any(src["version"] in line and ("Source" in line or "adapt" in line.lower())
+                                            for line in lines), (src["name"], path))
+                self.assertIn(f"https://github.com/{src['repo']}", section)
+        held_out = [row for row in rows if row[0].startswith("Held-out suite")]
+        self.assertEqual([row[3] for row in held_out], ["idea"])
+        self.assertIn("machine learning", held_out[0][2])
+        self.assertIn("scripts/upstream_watch.py", section)
 
     def test_budget(self) -> None:
         report = budget_report(ROOT / "AGENTS.md", 16000)
