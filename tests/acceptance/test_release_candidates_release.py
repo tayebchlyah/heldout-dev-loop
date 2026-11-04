@@ -324,10 +324,11 @@ class TextTests(unittest.TestCase):
     def test_o45_release_md_cycle_steps(self) -> None:
         """O45 as superseded, D10 of Written Release Notes: release.md runs the cycle through `/release`, with no
         rc upgrade PR step; the dogfood upgrade is `commands.release_prepare`; `release_check` runs
-        `scripts/canary.sh` and `promoted --sha`; `release_verify` runs the `npx` upgrade."""
+        `scripts/canary.sh` and `promoted --sha`; `release_verify` runs the `npx` upgrade of
+        `github:tayebchlyah/heldout-dev-loop` (Go Public supersedes the old URL)."""
         text = RELEASE_MD.read_text()
         self.assertRegex(text, r"(?<![\w-])/release(?![\w-])")
-        self.assertNotIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", text)
+        self.assertNotIn("npx github:tayebchlyah/heldout-dev-loop#vX.Y.Z-rc.N upgrade", text)
         commands = json.loads(DEV_LOOP_JSON.read_text()).get("commands") or {}
         self.assertEqual(commands.get("release_prepare"), "node bin/install.mjs upgrade", commands)
         self.assertEqual(commands.get("release_check"), "scripts/release-check.sh", commands)
@@ -336,7 +337,7 @@ class TextTests(unittest.TestCase):
         self.assertIn("scripts/canary.sh", check)
         self.assertRegex(check, r"repo_rules\.py promoted\b[^\n]*--sha")
         self.assertRegex(RELEASE_VERIFY_SH.read_text(),
-                         r"npx\b[^\n]*github:tchlyah/dev-loop#\S*RELEASE_TAG\S*[^\n]*\bupgrade\b")
+                         r"npx\b[^\n]*github:tayebchlyah/heldout-dev-loop#\S*RELEASE_TAG\S*[^\n]*\bupgrade\b")
 
     def test_o46_cli_references(self) -> None:
         """O46: status.md names direction, worktree-newer and main-newer; release-plan.md names exclude."""
