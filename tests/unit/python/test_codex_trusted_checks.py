@@ -1,6 +1,7 @@
 """Trusted checker execution through Codex hooks with linked feature inputs."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -31,7 +32,7 @@ class CodexTrustedChecksTests(unittest.TestCase):
         self.scripts = self.main/'.agents/skills/dev-loop/scripts'
         fake = '''import json,os,sys
 with open(os.environ['CHECK_LOG'],'a') as f:
- f.write(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),'isolated':sys.flags.isolated})+'\\n')
+ f.write(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),'isolated':sys.flags.isolated,'file':__file__})+'\\n')
 if sys.argv[1]=='search-wall': print(json.dumps({'deny':True,'reason':'trusted search denial'}))
 elif sys.argv[1]=='seal-check': print(json.dumps({'violations':[],'taint':[]}))
 elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
@@ -43,8 +44,10 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
             write(self.feature/'.agents/skills/dev-loop/scripts'/name, planted)
         write(self.feature/'json.py', planted)
         write(self.root/'codex/config.toml', f'[hooks.state."{self.main}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n')
-        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature), 'CODEX_HOME':str(self.root/'codex')}
-        self.env.pop('DEV_LOOP_NOTES', None)
+        self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature), 'CODEX_HOME':str(self.root/'codex'),
+                    'HOME':str(self.root/'home')}
+        for key in ('DEV_LOOP_NOTES', 'KIT_ROOT', 'KIT_MAIN'):
+            self.env.pop(key, None)
 
     def git(self, cwd, *args):
         return subprocess.check_output(['git','-C',str(cwd),*args],text=True,stderr=subprocess.DEVNULL)
@@ -105,51 +108,82 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         write(repo/'dev-loop.json', '{"version":"0.0.0"}')
         self.git(repo.parent, 'init', '-q', str(repo))
 
-    def assert_hooks_use_main_code(self, cwd):
-        runs = [('seal.sh',('turn',),{}), ('session-start.sh',(),{}), ('board.sh',('prompt',),{}),
-                ('acceptance-wall.sh',(),{'agent_id':'probe','agent_type':'implementer','tool_name':'Bash',
-                                          'tool_input':{'command':'rg needle .'}})]
-        for script, args, extra in runs:
-            subprocess.run(['sh',str(CODEX_ASSETS/'hooks'/script),*args],cwd=cwd,input=json.dumps({'cwd':str(cwd),**extra}),
-                           capture_output=True,text=True,env=self.env)
-        end=time.monotonic()+5
-        while time.monotonic()<end and len(self.log.read_text().splitlines() if self.log.exists() else [])<4:
-            time.sleep(.02)
-        self.assertFalse(self.marker.exists())
-        argv=[json.loads(x)['argv'][0] for x in self.log.read_text().splitlines()]
-        self.assertEqual(sorted(argv),['--harness','board','seal-check','search-wall'])
-
-    def test_hooks_under_an_agent_made_repo_use_main_code(self):
-        """#212, #222: a repo the agent creates, or a gitfile it writes, never selects the checker code."""
-        (self.main/'.dev-loop/hooks/codex').mkdir(parents=True)
-        link = Path(tempfile.mkdtemp(prefix='dev-loop-link-'))
-        self.addCleanup(shutil.rmtree, link, True)
-        (link/'root').symlink_to(self.root)
-        config = self.root/'codex/config.toml'
-        trust = lambda path: f'[hooks.state."{path}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n'
-        nested = self.feature/'packages/web'
-        other = self.root/'other'
+    def test_kit_root_selects_the_cli_whatever_repo_the_cwd_is_in(self):
+        """#212, #222, #227: a repo the agent creates, or a gitfile it writes, never selects the checker code."""
+        kit = self.root/'kit copy'
+        for name in ['devloop.py','check_setup.py']:
+            write(kit/'.agents/skills/dev-loop/scripts'/name, (self.scripts/name).read_text())
+        env = {**self.env, 'KIT_ROOT':str(kit), 'KIT_MAIN':str(self.main)}
+        nested, other = self.feature/'packages/web', self.root/'other'
         def redirect():
             self.plant(other)
             write(self.root/'.git', f'gitdir: {other}/.git\n')
-            config.write_text(trust(self.main) + trust(other))
-        rows = [
-            ('nested repo in the feature', lambda: self.plant(nested), nested),
-            ('nested repo, trust key through a symlink', lambda: (self.plant(nested), config.write_text(trust(link/'root/main'))), nested),
-            ('untrusted outer repo', lambda: self.plant(self.root), self.feature),
-            ('gitfile redirect to a trusted repo', redirect, self.feature),
-        ]
+        def nest():
+            self.plant(nested)
+            self.git(nested, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '--allow-empty', '-m', 'agent')
+        runs =[('seal.sh',('turn',),{}), ('session-start.sh',(),{}), ('board.sh',('prompt',),{}),
+                ('acceptance-wall.sh',(),{'agent_id':'probe','agent_type':'implementer','tool_name':'Bash',
+                                          'tool_input':{'command':'rg needle .'}}),
+                ('git-guard.sh',(),{'tool_input':{'command':'git push origin HEAD:refs/tags/v1.0.0'}})]
+        rows = [('the feature', lambda: None, self.feature),
+                ('nested repo in the feature', nest, nested),
+                ('gitfile at the root to a planted repo', redirect, self.feature)]
         for name, arrange, cwd in rows:
             with self.subTest(name):
-                shutil.rmtree(self.root/'.git', ignore_errors=True)
+                (self.root/'.git').unlink(missing_ok=True)
                 shutil.rmtree(nested, ignore_errors=True)
                 shutil.rmtree(other, ignore_errors=True)
-                (self.root/'.git').unlink(missing_ok=True)
                 self.log.unlink(missing_ok=True)
-                self.marker.unlink(missing_ok=True)
-                config.write_text(trust(self.main))
                 arrange()
-                self.assert_hooks_use_main_code(cwd)
+                for script, args, extra in runs:
+                    subprocess.run(['bash' if script == 'git-guard.sh' else 'sh',str(CODEX_ASSETS/'hooks'/script),*args],
+                                   cwd=cwd,input=json.dumps({'cwd':str(cwd),**extra}),capture_output=True,text=True,env=env)
+                end=time.monotonic()+5
+                while time.monotonic()<end and len(self.log.read_text().splitlines() if self.log.exists() else [])<5:
+                    time.sleep(.02)
+                self.assertFalse(self.marker.exists())
+                logged=[json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
+                self.assertEqual(sorted(x['argv'][0] for x in logged),
+                                 ['--harness','board','release-check','seal-check','search-wall'])
+                for x in logged:
+                    self.assertTrue(Path(x['file']).is_relative_to(kit), x)
+
+    def test_session_start_names_files_that_differ_from_the_copy(self):
+        """#227 (D2): files of the main checkout that differ from the trusted copy, at most 5, in the context."""
+        kit = self.root/'kit copy'
+        d6 = ['.agents/skills/dev-loop/scripts/'+n for n in ['devloop.py','check_setup.py','status.py']] + \
+             ['.dev-loop/hooks/codex/'+n for n in ['board.sh','gate.sh','seal.sh','session-start.sh']]
+        for rel in d6[2:]:
+            write(self.main/rel, rel+'\n')
+        files = {rel:'sha256:'+hashlib.sha256((self.main/rel).read_bytes()).hexdigest() for rel in d6}
+        manifest = json.dumps({'files':{**files, '.agents/skills/dev-loop/SKILL.md':'sha256:0'}})
+        for base in (self.main, kit):
+            write(base/'.dev-loop/MANIFEST.json', manifest)
+        for rel in d6:
+            write(kit/rel, (self.main/rel).read_text())
+        write(self.main/'.agents/skills/dev-loop/SKILL.md', 'not a D6 file, not in the copy\n')
+        env = {**self.env, 'KIT_ROOT':str(kit), 'KIT_MAIN':str(self.main)}
+        lead = 'dev-loop: the hooks run the trusted kit copy; these files differ from it: '
+        rows = [('no change', [], None),
+                ('one hook changed', ['.dev-loop/hooks/codex/board.sh'], '.dev-loop/hooks/codex/board.sh'),
+                ('all changed', d6, ', '.join(sorted(d6)[:5]))]
+        for name, changed, paths in rows:
+            with self.subTest(name):
+                for rel in changed:
+                    write(self.main/rel, 'changed\n')
+                r = subprocess.run(['sh',str(CODEX_ASSETS/'hooks/session-start.sh')],cwd=self.feature,
+                                   input=json.dumps({'cwd':str(self.feature)}),capture_output=True,text=True,env=env)
+                self.assertEqual(r.returncode, 0)
+                if paths is None:
+                    self.assertNotIn('dev-loop: the hooks run', r.stdout)
+                    self.assertIn('This repo runs the dev-loop skill.', r.stdout)
+                    continue
+                context = json.loads(r.stdout)['hookSpecificOutput']
+                self.assertEqual(context['hookEventName'], 'SessionStart')
+                lines = context['additionalContext'].split('\n')
+                self.assertEqual(lines[0], 'This repo runs the dev-loop skill. Invoke it before any other action.')
+                self.assertIn('untrusted dev-loop hooks: stop', lines[1])
+                self.assertEqual(lines[2:], [lead+paths])
 
     def test_board_start_preserves_parent_python_isolation(self):
         harness = '''import json,os,socket,sys

@@ -78,6 +78,18 @@ class CodexHookSandboxTests(unittest.TestCase):
                     else:
                         self.assertIn('--include-managed-config', args)
 
+    def test_gate_takes_main_from_kit_main(self):
+        other = self.root / 'kit main'
+        other.mkdir()
+        self.git(other, 'init', '-q')
+        write(other / '.codex/config.toml', self.config.read_text())
+        self.git(other, 'add', '.')
+        self.git(other, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'other')
+        self.env.update(KIT_MAIN=str(other), HOME=str(self.root / 'home'))
+        self.gate()
+        args = json.loads(self.log.read_text())
+        self.assertEqual(args[args.index('-C')+1], str(other))
+
     def test_gate_output_reaches_the_reason_through_no_path_the_gate_can_swap(self):
         secret = self.root / 'secret'
         secret.write_text('DUMMY=canary')

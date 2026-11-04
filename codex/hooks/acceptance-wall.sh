@@ -23,7 +23,6 @@
 # for other subagents an MCP search tool, an MCP tool that runs code or reads a remote copy, a resource
 # listing; the audit reads their results.
 . "${0%/*}/git-pin.sh"
-. "${0%/*}/kit-main.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
 fail() { echo "Blocked: guard error: $1" >&2; exit 2; }
@@ -98,8 +97,9 @@ if [ -n "$verdict" ]; then
   exit 2
 fi
 word='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
-main=$(kit_main "$top")
-cli=$main/.agents/skills/dev-loop/scripts/devloop.py
+main=$KIT_MAIN
+[ -n "$main" ] || main=$(git -C "$cwd" worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')
+cli=${KIT_ROOT:-$main}/.agents/skills/dev-loop/scripts/devloop.py
 if [ "$tool" = Bash ] && [ -n "$agent_id" ] && [ "$agent_type" != spec_tester ] && [ -n "$top" ] && [ -f "$cli" ] \
   && field .tool_input.command | grep -Eq "$word"; then
   out=$(printf '%s' "$input" | python3 -I "$cli" search-wall 2>/dev/null) || fail "search check failed"

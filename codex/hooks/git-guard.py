@@ -167,8 +167,8 @@ def release_suffix(repo, args):
         return ""
     if other_repo(repo):
         return "; release-check failed: another repository"
-    main = git(START, "worktree", "list", "--porcelain")[1].partition("\n")[0].removeprefix("worktree ")
-    cli = os.path.join(main, ".agents", "skills", "dev-loop", "scripts", "devloop.py")
+    main = os.environ.get("KIT_MAIN") or git(START, "worktree", "list", "--porcelain")[1].partition("\n")[0].removeprefix("worktree ")
+    cli = os.path.join(os.environ.get("KIT_ROOT") or main, ".agents", "skills", "dev-loop", "scripts", "devloop.py")
     if not main or not os.path.isfile(cli):
         return "; release-check failed: no CLI"
     try:
