@@ -438,6 +438,8 @@ def check_codex_root(root: Path, rules_path: Path) -> list[str]:
         failures.append("Codex hooks are not enabled")
     if config.get("features", {}).get("unified_exec_tty") is not False:
         failures.append("Codex tty sessions are on: write_stdin passes the walls (features.unified_exec_tty)")
+    if config.get("web_search") != "disabled":
+        failures.append("Codex native web search is on: no hook sees it (web_search)")
 
     profile_name = config.get("default_permissions")
     profiles = config.get("permissions", {})

@@ -598,6 +598,15 @@ class ProjectSetupCheckerTests(unittest.TestCase):
                 write(config, kit_text.replace("unified_exec_tty = false\n", new))
                 self.assert_codex_failure("Codex tty sessions are on: write_stdin passes the walls (features.unified_exec_tty)")
 
+    def test_codex_native_web_search_fails(self) -> None:
+        self.init("codex")
+        config = self.repo / ".codex" / "config.toml"
+        kit_text = config.read_text()
+        for name, new in (("live", 'web_search = "live"\n'), ("missing", "")):
+            with self.subTest(name=name):
+                write(config, kit_text.replace('web_search = "disabled"\n', new))
+                self.assert_codex_failure("Codex native web search is on: no hook sees it (web_search)")
+
     def test_codex_all_unix_sockets_fails(self) -> None:
         self.init("codex")
         self.edit_codex_config("allow_local_binding = true\n",
