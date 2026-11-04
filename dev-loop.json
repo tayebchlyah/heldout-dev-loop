@@ -26,8 +26,8 @@
   ],
   "merge_human_paths": [
     ".github/*",
-    "scripts/acceptance.sh",
-    "scripts/release-*.sh",
-    "scripts/canary.sh"
+    "scripts/*",
+    "tests/unit/python/test_dev_loop.py",
+    "tests/unit/python/junit_report.py"
   ]
 }
