@@ -39,13 +39,14 @@
 # Tool walls (#97): LSP is denied to every subagent, spec-tester included: its results name files the
 # call does not. MCP tools (mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool)
 # are denied to implementer and spec-tester; any other subagent gets the name rule on the path fields,
-# filePath and uri included, a file:// value by its path. Monitor is walled as Bash on its command:
-# the name rule, the search rule and the audit. Open for other subagents: an MCP search tool, an MCP
-# tool that runs code or reads a remote copy of the repo, a resource listing; the audit reads their
-# results. WebFetch, WebSearch and Agent are denied to implementer and spec-tester (#240): the public
-# repository on the web holds both walled sides, a nested agent has no wall; their disallowedTools list
-# them too. Other subagents keep them, with the name rule on url. A project agent's frontmatter hooks are skipped in an untrusted folder or a -p or SDK
-# session; this hook holds every rule of the implementer and spec-tester walls (#139).
+# filePath and uri included, a file:// value by its path. Monitor is walled as Bash on its command: the
+# name rule, the search rule and the audit. Open for other subagents: an MCP search tool, an MCP tool
+# that runs code or reads a remote copy of the repo, a resource listing; the audit reads their results.
+# WebFetch, WebSearch and Agent are denied to implementer and spec-tester (#240): the public repository
+# on the web holds both walled sides, a nested agent has no wall; their disallowedTools list them too.
+# Other subagents keep them, with the name rule on url. A project agent's frontmatter hooks are skipped
+# in an untrusted folder or a -p or SDK session; this hook holds every rule of the implementer and
+# spec-tester walls (#139).
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.

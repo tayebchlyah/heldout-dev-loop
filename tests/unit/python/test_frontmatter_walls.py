@@ -31,7 +31,7 @@ PROBES = {
     "ReadMcpResourceTool": lambda target: {"uri": f"file://{target}"},
     "ReadMcpResourceDirTool": lambda target: {"uri": f"file://{target}"},
 }
-OPEN_TOOLS = {
+WEB_AND_AGENT_TOOLS = {
     "WebFetch": {"url": "https://example.com/", "prompt": "x"},
     "WebSearch": {"query": "x"},
     "Agent": {"description": "x", "prompt": "x", "subagent_type": "general-purpose"},
@@ -50,10 +50,15 @@ class Wall(NamedTuple):
     folders: tuple[str, ...]
 
 
-def agent_hooks(path: Path) -> tuple[str, list[Hook]]:
+def agent_head(path: Path) -> tuple[str, list[str]]:
     lines = path.read_text().splitlines()
     head = lines[1:lines.index("---", 1)]
     name = next(line.split(": ", 1)[1] for line in head if line.startswith("name: "))
+    return name, head
+
+
+def agent_hooks(path: Path) -> tuple[str, list[Hook]]:
+    name, head = agent_head(path)
     hooks, inside, event, matcher = [], False, "", ""
     for line in head:
         if not line.startswith(" "):
@@ -74,9 +79,7 @@ def agents() -> list[tuple[str, list[Hook]]]:
 def disallowed_tools() -> dict[str, list[str]]:
     policy = {}
     for path in sorted((ROOT / "claude" / "agents").glob("*.md")):
-        lines = path.read_text().splitlines()
-        head = lines[1:lines.index("---", 1)]
-        name = next(line.split(": ", 1)[1] for line in head if line.startswith("name: "))
+        name, head = agent_head(path)
         found = [line.split(": ", 1)[1].split(", ") for line in head if line.startswith("disallowedTools: ")]
         if found:
             policy[name] = found[0]
@@ -151,21 +154,20 @@ class FrontmatterWallTwinTests(unittest.TestCase):
                 self.assertEqual((done.returncode, done.stderr), (0, ""))
 
 
-
 class DisallowedToolsTwinTests(unittest.TestCase):
     def test_each_walled_agent_disallows_the_web_and_agent_tools(self) -> None:
         policy = disallowed_tools()
         self.assertEqual(sorted(policy), ["implementer", "spec-tester"])
         for name, tools in policy.items():
             with self.subTest(agent=name):
-                self.assertLessEqual(set(OPEN_TOOLS), set(tools))
+                self.assertLessEqual(set(WEB_AND_AGENT_TOOLS), set(tools))
 
     def test_the_settings_twin_denies_every_disallowed_tool(self) -> None:
         matcher = twin_matcher()
         for name, tools in disallowed_tools().items():
             for pattern in tools:
                 tool = MCP_NAME if pattern == "mcp__*" else pattern
-                tool_input = OPEN_TOOLS.get(tool) or PROBES[tool]("docs/probe.py")
+                tool_input = WEB_AND_AGENT_TOOLS.get(tool) or PROBES[tool]("docs/probe.py")
                 with self.subTest(agent=name, tool=tool):
                     self.assertRegex(tool, f"^(?:{matcher})$")
                     done = twin({"agent_id": "sub-1", "agent_type": name, "tool_name": tool, "tool_input": tool_input})
@@ -173,7 +175,7 @@ class DisallowedToolsTwinTests(unittest.TestCase):
                     self.assertTrue(done.stderr.startswith("Blocked: "), done.stderr)
 
     def test_the_web_and_agent_tools_stay_open_to_the_main_session_and_other_subagents(self) -> None:
-        for tool, tool_input in OPEN_TOOLS.items():
+        for tool, tool_input in WEB_AND_AGENT_TOOLS.items():
             for caller in ({}, {"agent_id": "sub-1", "agent_type": "general-purpose"}):
                 with self.subTest(tool=tool, caller=caller):
                     done = twin({**caller, "tool_name": tool, "tool_input": tool_input})
