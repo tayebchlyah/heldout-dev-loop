@@ -46,8 +46,7 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
         write(self.root/'codex/config.toml', f'[hooks.state."{self.main}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n')
         self.env = {**os.environ, 'CHECK_LOG':str(self.log), 'PYTHONPATH':str(self.feature), 'CODEX_HOME':str(self.root/'codex'),
                     'HOME':str(self.root/'home')}
-        for key in ('DEV_LOOP_NOTES', 'KIT_ROOT', 'KIT_MAIN'):
-            self.env.pop(key, None)
+        self.env.pop('DEV_LOOP_NOTES', None)
 
     def git(self, cwd, *args):
         return subprocess.check_output(['git','-C',str(cwd),*args],text=True,stderr=subprocess.DEVNULL)
@@ -134,6 +133,7 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
                 shutil.rmtree(nested, ignore_errors=True)
                 shutil.rmtree(other, ignore_errors=True)
                 self.log.unlink(missing_ok=True)
+                self.marker.unlink(missing_ok=True)
                 arrange()
                 for script, args, extra in runs:
                     subprocess.run(['bash' if script == 'git-guard.sh' else 'sh',str(CODEX_ASSETS/'hooks'/script),*args],
@@ -155,22 +155,26 @@ elif sys.argv[1]=='release-check': print(json.dumps({'ok':True}))
              ['.dev-loop/hooks/codex/'+n for n in ['board.sh','gate.sh','seal.sh','session-start.sh']]
         for rel in d6[2:]:
             write(self.main/rel, rel+'\n')
-        files = {rel:'sha256:'+hashlib.sha256((self.main/rel).read_bytes()).hexdigest() for rel in d6}
-        manifest = json.dumps({'files':{**files, '.agents/skills/dev-loop/SKILL.md':'sha256:0'}})
-        for base in (self.main, kit):
-            write(base/'.dev-loop/MANIFEST.json', manifest)
-        for rel in d6:
-            write(kit/rel, (self.main/rel).read_text())
+        manifest = '.dev-loop/MANIFEST.json'
+        texts = {rel:(self.main/rel).read_text() for rel in d6}
+        files = {rel:'sha256:'+hashlib.sha256(text.encode()).hexdigest() for rel, text in texts.items()}
+        texts[manifest] = json.dumps({'files':{**files, '.agents/skills/dev-loop/SKILL.md':'sha256:0'}})
         write(self.main/'.agents/skills/dev-loop/SKILL.md', 'not a D6 file, not in the copy\n')
         env = {**self.env, 'KIT_ROOT':str(kit), 'KIT_MAIN':str(self.main)}
         lead = 'dev-loop: the hooks run the trusted kit copy; these files differ from it: '
-        rows = [('no change', [], None),
-                ('one hook changed', ['.dev-loop/hooks/codex/board.sh'], '.dev-loop/hooks/codex/board.sh'),
-                ('all changed', d6, ', '.join(sorted(d6)[:5]))]
-        for name, changed, paths in rows:
+        change = lambda *rels: lambda: [write(self.main/rel, 'changed\n') for rel in rels]
+        rows = [('no change', lambda: None, None),
+                ('one hook changed', change('.dev-loop/hooks/codex/board.sh'), '.dev-loop/hooks/codex/board.sh'),
+                ('main MANIFEST changed', change(manifest), manifest),
+                ('D6 file missing on main', lambda: (self.main/d6[5]).unlink(), d6[5]),
+                ('D6 file missing in the copy', lambda: (kit/d6[4]).unlink(), d6[4]),
+                ('all changed', change(*d6), ', '.join(sorted(d6)[:5]))]
+        for name, arrange, paths in rows:
             with self.subTest(name):
-                for rel in changed:
-                    write(self.main/rel, 'changed\n')
+                for base in (self.main, kit):
+                    for rel, text in texts.items():
+                        write(base/rel, text)
+                arrange()
                 r = subprocess.run(['sh',str(CODEX_ASSETS/'hooks/session-start.sh')],cwd=self.feature,
                                    input=json.dumps({'cwd':str(self.feature)}),capture_output=True,text=True,env=env)
                 self.assertEqual(r.returncode, 0)

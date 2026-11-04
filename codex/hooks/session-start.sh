@@ -36,7 +36,7 @@ try:
               and v.startswith("sha256:") and p.startswith((".dev-loop/hooks/codex/", ".agents/skills/dev-loop/scripts/"))}
 except (TypeError, ValueError, AttributeError):
     pass
-differ = sorted(p for p in paths if read(copy, p) is None or read(copy, p) != read(main, p))
+differ = sorted(p for p in paths if (data := read(copy, p)) is None or data != read(main, p))
 print(", ".join(differ[:5]))' "$KIT_ROOT" "$KIT_MAIN" 2>/dev/null)
 fi
 if [ -n "$drift" ]; then
