@@ -18,6 +18,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 import uuid
@@ -92,7 +93,14 @@ class CodexHookSandboxFlows(unittest.TestCase):
         return done
 
     def stop_board(self) -> None:
-        cli = self.main / ".agents/skills/dev-loop/scripts/devloop.py"
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            listed = subprocess.run(["ps", "-axo", "command="], capture_output=True, text=True, timeout=20)
+            if not any(str(self.root) in line and "/.dev-loop/hooks/" in line
+                       for line in listed.stdout.splitlines()):
+                break
+            time.sleep(0.2)
+        cli =self.main / ".agents/skills/dev-loop/scripts/devloop.py"
         subprocess.run([sys.executable, "-I", str(cli), "board", "--stop-server"], cwd=self.main,
                        env=self.env, capture_output=True, timeout=20)
 
