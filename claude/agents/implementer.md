@@ -3,7 +3,7 @@ name: implementer
 description: Implements one plan task from a brief. Never reads the held-out acceptance suite in tests/acceptance. Use for every SDD implementer dispatch.
 model: sonnet
 effort: medium
-disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool
+disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent
 hooks:
   PreToolUse:
     - matcher: "Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool"

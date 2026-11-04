@@ -49,7 +49,7 @@ class SkillContractTests(unittest.TestCase):
         claude = (SKILL_ROOT / "references" / "claude.md").read_text()
         codex = (SKILL_ROOT / "references" / "codex.md").read_text()
         for value in ("`LSP` is denied to every subagent", "`Monitor` is walled as `Bash`",
-                      "`disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool`",
+                      "`disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent`",
                       "an MCP search tool", "(#139, checked in Claude Code 2.1.310", "`Skipping frontmatter hooks`"):
             self.assertIn(value, claude)
         for value in ("`Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates`",

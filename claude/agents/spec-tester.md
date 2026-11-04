@@ -3,7 +3,7 @@ name: spec-tester
 description: Writes held-out acceptance tests in tests/acceptance from the approved spec alone. Never reads src. Use once per feature, after the spec is approved and before writing-plans.
 model: opus
 effort: high
-disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool
+disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent
 hooks:
   PreToolUse:
     - matcher: "Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool"
