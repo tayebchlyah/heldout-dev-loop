@@ -1,4 +1,4 @@
-"""Fill the Codex kit copy: python3 -I -c <this file> <block|warn> <kit> <source>.
+"""Fill the Codex kit copy: python3 -I -c <this file> <block|warn|session> <kit> <source>.
 
 Stages the MANIFEST and its D6 files from the source checkout, checks each staged
 byte against the hash, then renames the staging folder to the kit folder, whose
@@ -92,6 +92,9 @@ def main(argv: list[str]) -> int:
     text = message(source, failed)
     if mode == "warn":
         print(json.dumps({"systemMessage": text}))
+    elif mode == "session":
+        context = f"This repo runs the dev-loop skill. Invoke it before any other action.\n{text}"
+        print(json.dumps({"systemMessage": text, "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}))
     else:
         print(text, file=sys.stderr)
     return 2

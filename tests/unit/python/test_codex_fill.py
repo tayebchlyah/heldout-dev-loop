@@ -122,6 +122,14 @@ class CodexFillTests(unittest.TestCase):
         self.assertEqual(err, "")
         self.assertEqual(json.loads(out), {"systemMessage": self.fill.message(str(self.source), SCRIPTS[0])})
 
+    def test_session_mode_prints_the_message_and_the_skill_instruction(self) -> None:
+        (self.source / SCRIPTS[0]).write_bytes(b"changed\n")
+        code, out, err = self.run_main("session")
+        text = self.fill.message(str(self.source), SCRIPTS[0])
+        self.assertEqual((code, err), (2, ""))
+        self.assertEqual(json.loads(out), {"systemMessage": text, "hookSpecificOutput": {"hookEventName": "SessionStart",
+            "additionalContext": f"This repo runs the dev-loop skill. Invoke it before any other action.\n{text}"}})
+
     def test_a_source_change_after_staging_never_reaches_the_copy(self) -> None:
         original = self.fill.stage
 

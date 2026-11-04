@@ -89,6 +89,7 @@ function assertNoMarker(f) {
   assert.equal(existsSync(f.marker), false, 'a changed kit file ran')
 }
 
+const SKILL_LINE = 'This repo runs the dev-loop skill. Invoke it before any other action.'
 const message = (source, path) => `Blocked: dev-loop kit at ${source} does not match the trusted hooks: ${path}. Restore the kit files on main (git checkout), or run upgrade, then /hooks.`
 
 function assertBlocked(results, source, path) {
@@ -99,7 +100,9 @@ function assertBlocked(results, source, path) {
       assert.equal(result.stderr, `${message(source, path)}\n`, hook.name)
     } else {
       assert.equal(result.status, 0, hook.name)
-      assert.deepEqual(JSON.parse(result.stdout), { systemMessage: message(source, path) }, hook.name)
+      const output = { systemMessage: message(source, path) }
+      if (hook.script === 'session-start.sh') output.hookSpecificOutput = { hookEventName: 'SessionStart', additionalContext: `${SKILL_LINE}\n${message(source, path)}` }
+      assert.deepEqual(JSON.parse(result.stdout), output, hook.name)
     }
   }
 }
