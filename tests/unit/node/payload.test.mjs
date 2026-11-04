@@ -137,10 +137,10 @@ test('no tracked file holds an absolute home path or a personal name', () => {
   // forbidden substrings verbatim, which would otherwise make this test
   // fail against itself once it is a tracked file.
   const forbiddenPathPrefix = '/' + 'Users/'
-  const forbiddenName = 'Tay' + 'eb'
+  const forbiddenNames = ['Tay' + 'eb', 'Chl' + 'yah']
   for (const [relative, text] of trackedTexts()) {
     assert.ok(!text.includes(forbiddenPathPrefix), `absolute path in ${relative}`)
-    assert.ok(!text.includes(forbiddenName), `personal name in ${relative}`)
+    for (const name of forbiddenNames) assert.ok(!text.includes(name), `personal name in ${relative}`)
   }
 })
 
@@ -219,8 +219,7 @@ test('no tracked file names an internal client or project', (t) => {
   const names = readNames(notes)
   if (!names) return t.skip('no Internal Names.md in the notes folder')
   assert.ok(names.size > 0, 'Internal Names.md lists no name')
-  // shortcut: the installed dev-loop kit under .agents/skills/dev-loop/ is a copy of the guarded source, cleared by the next upgrade; drop this filter after it
-  for (const [relative, text] of trackedTexts((line) => !line.startsWith('.agents/skills/dev-loop/'))) {
+  for (const [relative, text] of trackedTexts()) {
     assert.deepEqual(internalNames(text, names), [], `internal name in ${relative}`)
   }
 })
