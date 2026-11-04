@@ -1,0 +1,26 @@
+name: Feature
+description: Propose a change to dev-loop.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: A pull request waits for a go from the maintainer on this issue. See CONTRIBUTING.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What goes wrong or costs too much today, with an example.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What you want dev-loop to do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways you considered, and why you did not choose them.

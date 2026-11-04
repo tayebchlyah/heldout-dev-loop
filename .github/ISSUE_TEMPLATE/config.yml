@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/tayebchlyah/heldout-dev-loop/discussions
+    about: Ask a question or discuss an idea before you open an issue.
+  - name: Security vulnerability
+    url: https://github.com/tayebchlyah/heldout-dev-loop/security/advisories/new
+    about: Report a vulnerability privately. Never in a public issue.
