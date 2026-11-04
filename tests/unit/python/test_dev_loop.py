@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import contextlib
-import importlib
+import importlib.util
 import io
 import json
 import re
