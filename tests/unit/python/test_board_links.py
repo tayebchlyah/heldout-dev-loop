@@ -19,7 +19,7 @@ from support import ROOT  # noqa: E402
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import devloop  # noqa: E402
 from board import server, state, writer  # noqa: E402
-from board_fixtures import Board, put  # noqa: E402
+from board_fixtures import MACHINE, Board, put  # noqa: E402
 
 STATE_FILES = ("board.lock", "board-claims.json", "board-features.json", "board-state.json", "board-events.jsonl")
 
@@ -234,6 +234,89 @@ class LinkedSpecTests(Board):
         for path in (self.board_dir / "Features").glob("*.md"):
             self.assertNotIn("SECRET-TOKEN-123", path.read_text(), path)
         self.assertNotEqual(self.note("leak").get("title"), "SECRET-TOKEN-123")
+
+    def merged(self, spec: Path | None, worktree: Path | None = None, stage: int = 3) -> dict:
+        """`writer.merge` of one feature, as the hook runs it after the specs were listed."""
+        ctx = writer.Context(dl=devloop, repo=self.repo, notes=self.notes, folder=self.board_dir, state=self.root,
+                             state_fd=-1, machine=MACHINE, project="p", data={"sessions": {}},
+                             claude=self.root / "claude", shipped_kept=5)
+        found = {"stage": stage, "track": "M", "worktree": str(worktree) if worktree else None}
+        return writer.merge(ctx, {}, "leak", found, spec, "2026-11-04T00:00:00Z", "")
+
+    def test_spec_and_plan_swapped_for_links_after_the_listing_are_not_read(self) -> None:
+        """#239 finding 1: `merge` reads the spec, its frontmatter and the plan through no link, whatever the listing saw."""
+        secret = self.repo / ".env"
+        put(secret, "---\nacceptance: LEAK\n---\n# SECRET-TOKEN-123\n\n## Goal\n\nSECRET-GOAL\n\n## Assumptions\n\n"
+                    "- SECRET-ASSUMPTION\n\n### Task 1: SECRET-TASK\n")
+        folder = self.notes / "Features" / "Leak"
+        folder.mkdir()
+        os.symlink(secret, folder / "Spec.md")
+        os.symlink(secret, folder / "Plan.md")
+        with mock.patch.object(devloop, "find_plan", return_value=folder / "Plan.md"):
+            note = self.merged(folder / "Spec.md")
+        self.assertEqual((note["title"], note["description"], note["acceptance"], note["tasks"]), ("leak", "", "", []))
+        self.assertNotIn("SECRET", json.dumps(note))
+
+    def test_spec_below_a_swapped_folder_is_not_read(self) -> None:
+        """#239 finding 1: a `Features` or `Features/<x>` folder swapped for a link after the listing: no text."""
+        real = self.spec("leak", "Leak")
+        self.assertEqual(self.merged(real)["title"], "Leak")
+        away = self.root / "away"
+        real.parent.rename(away)
+        os.symlink(away, real.parent)
+        self.assertEqual(self.merged(real)["title"], "leak")
+        real.parent.unlink()
+        features = self.notes / "Features"
+        features.rename(self.root / "away-features")
+        os.symlink(self.root / "away-features", features)
+        self.assertEqual(self.merged(features / "Leak" / "Spec.md")["title"], "leak")
+
+    def test_linked_features_folder_gives_no_entry(self) -> None:
+        """#239 finding 2: a linked `<notes>/Features` folder is not listed and gives no plan."""
+        far = self.root / "far"
+        put(far / "Leak" / "Spec.md", "---\nfeature: leak\n---\n# Far\n")
+        put(far / "Leak" / "Plan.md", "# Plan\n")
+        shutil.rmtree(self.notes / "Features")
+        os.symlink(far, self.notes / "Features")
+        self.assertEqual(devloop.read_specs(self.notes), [])
+        self.assertIsNone(devloop.find_plan(self.notes, self.notes / "Features" / "Leak" / "Spec.md"))
+        with mock.patch.object(devloop, "FOLLOW_NOTE_LINKS", True):
+            self.assertEqual([slug for slug, _ in devloop.read_specs(self.notes)], ["leak"])
+
+    def test_track_s_decision_log_is_read_through_no_link(self) -> None:
+        """#239 finding 3: a linked `decisions.md`, a linked `dev-loop` folder or a FIFO gives an empty log."""
+        quick = self.worktree("quick", prefix="fix")
+        git_dir = Path(devloop.git(quick, "rev-parse", "--absolute-git-dir"))
+        log = git_dir / "dev-loop" / "decisions.md"
+        sample = ("## Decision log\n\n| Time | Stage | Session | Kind | Risk | Decision | Why | Evidence | Result |\n"
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                  "| t | 5 |  | decision |  | SECRET-DECISION | why | e |  |\n")
+        put(self.root / "secret.md", sample)
+        put(log, sample)
+        self.assertEqual(self.merged(None, quick, 6)["decisions"], ["SECRET-DECISION: why"])
+        log.unlink()
+        os.symlink(self.root / "secret.md", log)
+        self.assertEqual(self.merged(None, quick, 6)["decisions"], [])
+        log.unlink()
+        os.mkfifo(log)
+        self.assertEqual(self.merged(None, quick, 6)["decisions"], [])
+        log.unlink()
+        shutil.move(str(log.parent), str(self.root / "real-state"))
+        os.symlink(self.root / "real-state", log.parent)
+        put(self.root / "real-state" / "decisions.md", sample)
+        self.assertEqual(self.merged(None, quick, 6)["decisions"], [])
+
+    def test_claim_of_a_linked_feature_says_the_link_is_skipped(self) -> None:
+        """#239 finding 4: `--claim` of a feature whose spec is linked: the error names the skipped link."""
+        os.symlink(self.repo / "GLOSSARY.md", self.notes / "Features" / "leak")
+        code, out = self.board("--claim", "leak")
+        self.assertEqual(code, 1)
+        self.assertIn("no spec for leak", out["error"])
+        self.assertIn("linked", out["error"])
+        (self.notes / "Features" / "leak").unlink()
+        code, out = self.board("--claim", "plain")
+        self.assertEqual(code, 1)
+        self.assertNotIn("linked", out["error"])
 
 
 class ServerStartMessageTests(Board):

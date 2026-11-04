@@ -89,7 +89,7 @@ def iso(stamp: float) -> str:
     return time.strftime(TIME, time.gmtime(stamp))
 
 
-def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: int, doing: set[int],
+def tasks(plan: str | None, ledger: Path | None, saved: dict, now: str, stage: int, doing: set[int],
           briefs: set[int], done_time: Callable[[int, str], str | None]) -> list[dict]:
     """D7, D9, D14: plan headings, done from the ledger `complete` lines, doing from the native list (`doing`) plus
     each briefed task before one of them (in review), else the first task with a brief (SDD may write every brief
@@ -101,7 +101,7 @@ def tasks(plan: Path | None, ledger: Path | None, saved: dict, now: str, stage: 
     if plan is None:
         return []
     titles: dict[int, str] = {}
-    for n, title in re.findall(r"^#{2,3} Task (\d+)\b[:.]?\s*(.*)$", plan.read_text(), re.MULTILINE):
+    for n, title in re.findall(r"^#{2,3} Task (\d+)\b[:.]?\s*(.*)$", plan, re.MULTILINE):
         titles.setdefault(int(n), title.strip())
     complete: dict[int, str] = {}
     if ledger is not None and ledger.is_file():
@@ -155,7 +155,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
     stage: int = found["stage"]
     times = dict(entry["stage_times"]) if isinstance(entry.get("stage_times"), dict) else {}
     seen_late = any(k.isdigit() and int(k) >= 3 for k in times)  # D18: a run already saw Stage 3 or later
-    text = spec.read_text() if spec else ""
+    text = (ctx.dl.read_note(ctx.notes, spec) or b"").decode() if spec else ""
     title = re.search(r"^# (.+)$", text, re.MULTILINE)
     goal = re.split(r"\n\s*\n", section(text, "Goal"))[0]
     assumptions = [a.strip() for a in re.findall(r"^[-*] (.+)$", section(text, "Assumptions"), re.MULTILINE)]
@@ -164,6 +164,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         baseline = assumptions
     plan = ctx.dl.find_plan(ctx.notes, spec) if spec else None
     worktree = found["worktree"]
+    plan_text = (ctx.dl.read_note(ctx.notes, plan) or b"").decode() if plan else None  # #239: read once, no link followed.
     ledger = ctx.dl.ledger(Path(worktree), plan) if plan and worktree else None
     saved = entry["tasks"] if isinstance(entry.get("tasks"), dict) else {}
 
@@ -175,7 +176,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         return iso(at) if at is not None else None
 
     doing = sources.native_doing(ctx.claude, state.session_of(ctx.data, slug))
-    task_list = tasks(plan, ledger, saved, now, stage, doing, sources.briefs(ledger.parent) if ledger else set(),
+    task_list = tasks(plan_text, ledger, saved, now, stage, doing, sources.briefs(ledger.parent) if ledger else set(),
                       done_time)
     # D6: each stage time is set once. Stage 5: the ledger birth time, none while the ledger is missing (a Track S
     # feature has no ledger: its first run time). Stage 6: the latest task done time once all tasks are done.
@@ -194,8 +195,8 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
     log = text
     if spec is None and worktree:  # Track S: the log lives in the worktree git dir.
         git_dir = ctx.dl.git(Path(worktree), "rev-parse", "--absolute-git-dir")
-        path = Path(git_dir) / "dev-loop" / "decisions.md" if git_dir else None
-        log = path.read_text() if path is not None and path.is_file() else ""
+        data = ctx.dl.read_below(Path(git_dir), "dev-loop", "decisions.md") if git_dir else None  # #239: no link followed.
+        log = (data or b"").decode()
     return {
         "type": "dev-loop-status",
         "schema": 1,
@@ -207,7 +208,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         "owner": ctx.machine["owner"],
         "machine": ctx.machine["machine"],
         "track": found["track"] or "",
-        "acceptance": ctx.dl.frontmatter(spec).get("acceptance", "").lower() if spec else "",
+        "acceptance": ctx.dl.parse_frontmatter(text).get("acceptance", "").lower() if spec else "",
         "stage": stage,
         "stage_times": times,
         "tasks": task_list,
@@ -275,7 +276,9 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     specs = dict(dl.specs(notes))
     claim = claim.lower() if claim else None
     if claim and claim not in specs:
-        return 1, {"error": f"no spec for {claim} in {notes / dl.FEATURES}"}
+        folder = notes / dl.FEATURES
+        skipped = folder.is_symlink() or any(p.is_symlink() for p in [*folder.glob("*"), *folder.glob("*/Spec.md")])
+        return 1, {"error": f"no spec for {claim} in {folder}" + (" (a linked spec or folder is skipped)" if skipped else "")}
 
     trees = worktrees(dl, repo)
     notes_real = notes.resolve()
