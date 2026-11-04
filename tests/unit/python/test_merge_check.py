@@ -142,8 +142,19 @@ class MergeCheckTests(MergeCheckCase):
             (".Claude/Settings.JSON", {}, None, [harness(".Claude/Settings.JSON")]),
             (".codex", {}, "cfg", [harness(".codex")]),
             (".codex/hooks.json", None, None, [{"reason": "config-unreadable"}, harness(".codex/hooks.json")]),
-            (".claude/agents/x.md", {"merge_human_paths": ["x/*"]}, None, []),
-            (".codex/rules/x", {}, None, []),
+            (".claude/agents/x.md", {"merge_human_paths": ["x/*"]}, None, [harness(".claude/agents/x.md")]),
+            (".codex/rules/x", {}, None, [harness(".codex/rules/x")]),
+            (".codex/agents/x.toml", {}, None, [harness(".codex/agents/x.toml")]),
+            (".dev-loop/hooks/claude/gate.sh", {}, None, [harness(".dev-loop/hooks/claude/gate.sh")]),
+            (".Dev-Loop/MANIFEST.json", {}, None, [harness(".Dev-Loop/MANIFEST.json")]),
+            (".agents/skills/dev-loop/scripts/devloop.py", {}, None,
+             [harness(".agents/skills/dev-loop/scripts/devloop.py")]),
+            (".dev-loop", {}, "cfg", [harness(".dev-loop")]),
+            (".agents/skills/dev-loop", {}, "cfg", [harness(".agents/skills/dev-loop")]),
+            (".agents/skills/pause/SKILL.md", {}, None, []),
+            (".agents/skills/dev-loopx/a", {}, None, []),
+            (".claudex/a", {}, None, []),
+            ("claude/hooks/gate.sh", {}, None, []),
         ]
         for path, config, link, expected in rows:
             with self.subTest(path=path, config=config):
@@ -155,6 +166,7 @@ class MergeCheckTests(MergeCheckCase):
                     put(wt / path, "{}\n")
                 else:
                     put(wt / link / "config.toml", "{}\n")
+                    (wt / path).parent.mkdir(parents=True, exist_ok=True)
                     (wt / path).symlink_to(link)
                 git(wt, "add", "-A", "-f", path, *([link] if link else []))
                 git(wt, "commit", "-q", "-m", path)
