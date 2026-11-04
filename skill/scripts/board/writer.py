@@ -14,6 +14,7 @@ from types import ModuleType
 from typing import Callable
 
 import autonomy  # the scripts folder, on sys.path wherever the board package loads
+from notes_path import main_ref
 from status import cherry, detect_feature, rebasing
 
 from . import sources, state, store
@@ -37,6 +38,7 @@ class Context:
     project: str
     data: dict  # D1: the board state, loaded under the lock, saved once before it is released.
     claude: Path  # D10: the Claude config folder that holds the native task lists.
+    shipped_kept: int
 
 
 def skip(reason: str, feature: str | None = None) -> dict:
@@ -211,6 +213,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         "assumptions_baseline": baseline,
         **({"head": head} if head else {}),
         "shipped_at": "",
+        "shipped_kept": ctx.shipped_kept,
         "backfilled": bool(entry.get("backfilled")),
         "updated": "",
     }
@@ -329,7 +332,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                   *([(event, hook_cwd.resolve(), hook_session, hook_agent, hook_transcript)] if event and hook_cwd else [])]
         claude = dl.claude_home(os.environ, home)
         ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
-                      state.load(state_dir), claude)
+                      state.load(state_dir), claude, shipped_kept(dl, repo))
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
             if evicted(dl, notes):
@@ -394,6 +397,16 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, s
         except (ValueError, TypeError, KeyError, AttributeError):
             continue
     return events
+
+
+def shipped_kept(dl: ModuleType, repo: Path) -> int:
+    """#230: `board.shipped_kept` of `dev-loop.json` on the main ref when it is a whole number of 0 or more, else 5."""
+    ref = main_ref(repo)
+    try:
+        value = json.loads(dl.git(repo, "show", f"{ref}:dev-loop.json") or "")["board"]["shipped_kept"]
+    except (ValueError, KeyError, TypeError):
+        return SHIPPED_KEPT
+    return value if type(value) is int and value >= 0 else SHIPPED_KEPT
 
 
 def kit_version(top: Path) -> str:
@@ -573,7 +586,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         path.unlink()
         payload["removed"].append(str(path))
-    for _, path in sorted(shipped, reverse=True)[SHIPPED_KEPT:]:
+    for _, path in sorted(shipped, reverse=True)[ctx.shipped_kept:]:
         path.unlink()
         payload["removed"].append(str(path))
     # Issue #114: a slug whose own note this run did not see stays only while that note exists in a board folder.
