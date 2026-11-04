@@ -153,6 +153,9 @@ class MergeCheckTests(MergeCheckCase):
             (".agents/skills/dev-loop", {}, "cfg", [harness(".agents/skills/dev-loop")]),
             (".agents/skills/pause/SKILL.md", {}, None, []),
             (".agents/skills/dev-loopx/a", {}, None, []),
+            (".mcp.j\u017fon", {}, None, [harness(".mcp.j\u017fon")]),
+            (".agents/\u017fkills/dev-loop/x.py", {}, None, [harness(".agents/\u017fkills/dev-loop/x.py")]),
+            (".\uff43laude/x", {}, None, []),
             (".claudex/a", {}, None, []),
             ("claude/hooks/gate.sh", {}, None, []),
         ]
@@ -167,7 +170,7 @@ class MergeCheckTests(MergeCheckCase):
                 else:
                     put(wt / link / "config.toml", "{}\n")
                     (wt / path).parent.mkdir(parents=True, exist_ok=True)
-                    (wt / path).symlink_to(link)
+                    (wt / path).symlink_to("../" * path.count("/") + link)
                 git(wt, "add", "-A", "-f", path, *([link] if link else []))
                 git(wt, "commit", "-q", "-m", path)
                 self.gate_green(wt, self.head(wt))

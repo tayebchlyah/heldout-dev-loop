@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 import devloop
@@ -25,7 +26,7 @@ HARNESS_FOLDERS = (".claude", ".codex", ".dev-loop", ".agents/skills/dev-loop")
 
 
 def is_harness_config(path: str) -> bool:
-    path = path.lower()
+    path = unicodedata.normalize("NFD", path).casefold()
     return path in HARNESS_FILES or any(path == f or path.startswith(f"{f}/") for f in HARNESS_FOLDERS)
 
 
