@@ -1,0 +1,19 @@
+# The devloop command
+
+`skill/scripts/devloop.py` does the deterministic work. In a project it runs as `python3 .agents/skills/dev-loop/scripts/devloop.py <command>`. Each command prints one JSON object. Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
+
+- `status`: the current stage of the work, with the check that chose it and the next action. On the default branch it lists the open features.
+- `logged -- <cmd>`: runs a long command and writes its full output to a log file under the git folder.
+- `gate --summary`: runs `commands.gate`, else `scripts/gate.sh`, and reports the exit code, the log, the failure lines and the slowest tests.
+- `size-check [--uncommitted | --all]`: fails a file above 40,000 bytes that is new on the branch or grew on it, and names a line to split it at. `--all` lists every file above the limit. `gate --summary` runs it and `seal` refuses a big acceptance file. `file_size_exempt` in `dev-loop.json` lists paths it skips.
+- `board`: writes a status note per feature to the `dev-loop-board` folder of the notes folder, writes `Dev Loop Board.md` (needs the Obsidian Dataview plugin with JavaScript queries on), and runs a local page at `http://127.0.0.1:7777/` (`DEVLOOP_BOARD_PORT` sets the port). Hooks run it; `--claim <slug>` shows a new spec at Stage 2. Add `dev-loop-board/` to the vault `.gitignore`: `check_setup.py` reports both.
+- `verify-init --base-url <url>`: writes the skeleton of the project's verify skill and its feature map, and the `verify` key.
+- `drive`: drives each feature map route the branch changed in Chromium (needs Playwright in the project), checks the status, the accessible names and the console errors, and saves one screenshot per route. `--routes-from` drives the same routes on the base branch (the before run).
+- `capture --pr <n>`: puts a before and an after screenshot of each driven route (a WebM for a journey) in the PR body, uploaded with `gh pr edit --attach` (gh 2.99.0 or later).
+- `release-plan`, `release-record`, `release-check`: the release security audit. Before a `v*` tag, run `/release-audit` (Codex `$release-audit`) in the main session on `main`: it runs the Cloudflare `security-audit` skill, then `release-record` writes the confirmed and needs-validation findings into `## Deferred` of the project note and one line into `## Release audits`. `release-check --sha HEAD` says whether the commit may get the tag; the git guard runs it on a tag push and `gh release create`. A run takes hours and costs tens of dollars. Target code runs only in the container sandbox `sandbox-run.py` (Docker).
+- `sessions --since <days>`: lists the Claude Code and Codex sessions of every worktree of the repo, largest first, for the weekly `/retro` review. `status` on the default branch gives `review_due` when the last `/garden` run is 7 days old or older, and Stage 1 then refuses new work until the review is done.
+- `review-merge <reviewer>=<file> ...`: merges the Stage 6 reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) into one row per file and line, and lists the rows with a security finding.
+- `acceptance [--failed]`: runs `commands.acceptance` (or `commands.acceptance_failed`) with `DEVLOOP_REPORT_DIR` set, reads the failing tests from the JUnit XML there, checks that no compose build container is older than the newest code commit, records the run, and gives the progress guard verdict (`continue`, `stop`, `green` or `unknown`).
+- `ci wait`: gives one verdict for the pull request of the current branch: conflicts, open review threads, a change request, failed checks (with the failed job and its first error), a merge block, or pass.
+
+The full contract of each command: [`reference/cli/<command>.md`](../reference/cli/).
