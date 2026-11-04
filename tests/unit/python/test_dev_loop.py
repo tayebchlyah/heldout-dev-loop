@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import contextlib
-import importlib.util
+import importlib
 import io
 import json
 import re
@@ -50,86 +50,15 @@ from junit_report import TimedResult, case_outcomes, write_junit  # noqa: E402
 
 
 def wire(name: str) -> None:
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / f"{name}.py")
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load {name} module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
+    module = importlib.import_module(name)
     for value in vars(module).values():
         if isinstance(value, type) and issubclass(value, unittest.TestCase) and value.__module__ == name:
             globals()[value.__name__] = value
 
 
-wire("test_devloop")
-wire("test_status")
-wire("test_merge_check")
-wire("test_merge_binding")
-wire("test_skill_text")
-wire("test_review_text")
-wire("test_seal")
-wire("test_seal_check")
-wire("test_search_wall")
-wire("test_search_hooks")
-wire("test_size")
-wire("test_seal_hooks")
-wire("test_kit_walls")
-wire("test_autonomy")
-wire("test_release")
-wire("test_release_record")
-wire("test_release_carry")
-wire("test_release_guard")
-wire("test_metrics")
-wire("test_metrics_cli")
-wire("test_ci")
-wire("test_ci_skip")
-wire("test_kit_reference")
-wire("test_gardener")
-wire("test_retro")
-wire("test_feature_gate")
-wire("test_case_floor")
-wire("test_upstream_watch")
-wire("test_repo_rules")
-wire("test_repo_docs")
-wire("test_suite_lock")
-wire("test_sandbox_run")
-wire("test_board_robust")
-wire("test_board_layout")
-wire("test_board_tasks")
-wire("test_board_shipped")
-wire("test_board_links")
-wire("test_verify")
-wire("test_capture")
-wire("test_second_review")
-wire("test_check_setup")
-wire("test_setup_checks")
-wire("test_notes_path")
-wire("test_codex_fill")
-wire("test_notes_migrate")
-wire("test_notes_migrate_apply")
-wire("test_walls")
-wire("test_frontmatter_walls")
-wire("test_git_guard")
-wire("test_gh_guard")
-wire("test_push_spellings")
-wire("test_hooks")
-wire("test_codex_gate_launcher")
-wire("test_macos_hook")
-wire("test_codex_trusted_checks")
-wire("test_kit_contracts")
-wire("test_mutation")
-wire("test_audit_common")
-wire("test_audit_seed")
-wire("test_audit_units")
-wire("test_audit_skilltext")
-wire("test_audit_brief")
-wire("test_audit_check")
-wire("test_audit_promote")
-wire("test_audit_fold")
-wire("test_audit_fold_review")
-wire("test_audit_close")
-wire("test_audit_report")
-wire("test_audit_text")
+for _path in sorted(HERE.glob("test_*.py")):
+    if _path.name != Path(__file__).name:
+        wire(_path.stem)
 
 
 class JUnitReportTests(unittest.TestCase):
@@ -151,6 +80,21 @@ class JUnitReportTests(unittest.TestCase):
             cases = list(ET.parse(report).getroot().iter("testcase"))
             self.assertEqual([(c.get("classname"), c.get("name")) for c in cases],
                              [("test_codex_hook_sandbox.Flow", "test_flow")])
+
+    def test_runner_loads_each_test_file_beside_it_but_not_itself(self) -> None:
+        """A new `test_*.py` beside the runner runs with no edit of the runner, which never loads itself."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            shutil.copy(__file__, folder / "test_dev_loop.py")
+            shutil.copy(Path(__file__).parent / "junit_report.py", folder)
+            (folder / "support.py").write_text(f"from pathlib import Path\nSKILL_ROOT = Path({tmp!r})\n")
+            (folder / "test_probe.py").write_text(
+                "import sys, unittest\nclass Probe(unittest.TestCase):\n"
+                "    def test_runner_not_loaded_twice(self): self.assertNotIn('test_dev_loop', sys.modules)\n")
+            result = subprocess.run([sys.executable, "-B", str(folder / "test_dev_loop.py"), "Probe"],
+                                    cwd=tmp, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Ran 1 test", result.stderr)
 
     def test_write_junit_names_each_case_with_its_time_and_failure(self) -> None:
         """The parallel run's JUnit report: one testcase per id, its time, a failure element with the last line."""
