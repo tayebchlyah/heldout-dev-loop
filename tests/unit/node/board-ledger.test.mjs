@@ -253,3 +253,26 @@ test('D7: a negative stage duration from clock skew shows no chip and no total',
   const s = row(html([shippedNote({ stage_times: { 1: iso(Date.parse(SHIP) + 30 * MIN) } })]))
   assert.ok(!text(s).includes('unknown'), text(s))
 })
+
+test('#230: a title shows in Title Case; a slug title shows its words, a spec title keeps its hyphens and capitals', () => {
+  for (const [title, want] of [['codex-gate-managed-deny', 'Codex-gate-managed-deny'], ['', 'F'],
+    ['held-out temp leak in CI', 'Held-out Temp Leak In CI']]) {
+    const s = text(summary(row(html([note({ title })]))))
+    assert.ok(s.includes(want), `${title}: ${s}`)
+  }
+  const s = text(summary(row(html([note({ feature: 'codex-gate-managed-deny', title: 'codex-gate-managed-deny' })]),
+    'p/codex-gate-managed-deny')))
+  assert.ok(s.includes('Codex Gate Managed Deny'), s)
+})
+
+test('#230: a project shows as many shipped rows as the highest shipped_kept of its notes, else 5', () => {
+  const ships = (n, over = {}) => Array.from({ length: n }, (_, i) => shippedNote({ feature: `s${i}`, ...over }))
+  const shown = (notes) => keys(html(notes), /^p\/s/).length
+  assert.equal(shown(ships(8)), 5)
+  assert.equal(shown([...ships(8), note({ shipped_kept: 7 })]), 7)
+  assert.equal(shown(ships(8, { shipped_kept: 2 })), 2)
+  assert.equal(shown([...ships(8, { shipped_kept: 2 }), note({ feature: 'x', shipped_kept: 3 })]), 3)
+  assert.equal(shown(ships(8, { shipped_kept: 0 })), 0)
+  assert.equal(shown(ships(8, { shipped_kept: '9' })), 5)
+  assert.equal(shown([...ships(8), note({ project: 'q', shipped_kept: 1 })]), 5)
+})
