@@ -594,7 +594,8 @@ class GitGuardParityTests(unittest.TestCase):
         codex = (CODEX_ASSETS / "hooks" / "git-guard.py").read_text()
         codex = codex.replace('["python3", "-I", cli, "release-check"', '["python3", cli, "release-check"')
         codex = codex.replace('os.environ.get("KIT_MAIN") or ', '').replace('os.environ.get("KIT_ROOT") or main', 'main')
-        self.assertEqual(codex, (CLAUDE_HOOKS / "git-guard.py").read_text())
+        code = lambda text: [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+        self.assertEqual(code(codex), code((CLAUDE_HOOKS / "git-guard.py").read_text()))
 
     def test_a_guard_without_its_checker_asks(self) -> None:
         for shell, hooks, decision in (("bash", CLAUDE_HOOKS, "ask"), ("sh", CODEX_ASSETS / "hooks", "deny")):

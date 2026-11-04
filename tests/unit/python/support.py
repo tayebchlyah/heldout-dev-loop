@@ -27,6 +27,9 @@ if not any(
         f"GIT_CONFIG_VALUE_{_GIT_CONFIG_COUNT}": "false",
         "GIT_CONFIG_COUNT": str(_GIT_CONFIG_COUNT + 1),
     })
+# A Codex hook command exports KIT_ROOT and KIT_MAIN, and its Stop gate runs this suite (#227): no test hook sees them.
+for _name in ("KIT_ROOT", "KIT_MAIN"):
+    os.environ.pop(_name, None)
 
 ROOT = Path(__file__).resolve().parents[3]
 SKILL_ROOT = ROOT / "skill"

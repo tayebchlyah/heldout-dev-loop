@@ -161,8 +161,8 @@ def other_repo(repo):
 
 
 def release_suffix(repo, args):
-    # The release-check verdict of the CLI in the main worktree of the hook's own
-    # project, 3 s of the hook's 5. Another repository's CLI never runs: it may be planted.
+    # #227: the release-check verdict of the CLI in KIT_ROOT (the trusted kit copy), else in the main
+    # worktree of the hook's own project, 3 s of the hook's 5. Another repository's CLI never runs: it may be planted.
     if os.environ["AGENT_ID"]:
         return ""
     if other_repo(repo):

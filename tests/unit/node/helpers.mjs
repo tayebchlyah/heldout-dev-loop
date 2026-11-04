@@ -19,6 +19,9 @@ if (!fsmonitorOff) {
   process.env[`GIT_CONFIG_VALUE_${gitConfigCount}`] = 'false'
   process.env.GIT_CONFIG_COUNT = String(gitConfigCount + 1)
 }
+// A Codex hook command exports KIT_ROOT and KIT_MAIN, and its Stop gate runs this suite (#227): no test hook sees them.
+delete process.env.KIT_ROOT
+delete process.env.KIT_MAIN
 
 export const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 export const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
