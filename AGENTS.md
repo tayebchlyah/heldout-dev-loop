@@ -42,6 +42,9 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md` (guard test).
 - `dev-loop.json`: this repo's project marker, kit version.
+- `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`, linked from `README.md`. `reference/` stays the agent contract.
+- `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy (guard test). `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`: community files.
+- `.github/rulesets/`: ruleset bodies for `gh api`, contexts equal `ci.yml` job ids (guard test).
 
 ## devloop CLI
 
