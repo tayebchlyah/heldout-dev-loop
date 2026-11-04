@@ -424,6 +424,34 @@ class CodexWallTests(unittest.TestCase):
                 result = self.wall({**caller, "cwd": str(cwd), "tool_name": tool, "tool_input": tool_input})
                 self.assertEqual((result.returncode, result.stderr), (0, "") if expected is None else (2, expected))
 
+    def test_web_tools_by_agent_type(self) -> None:
+        """Web tools are denied to implementer and spec_tester only, with agent_id set (#240)."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        top = Path(tmp.name).resolve() / "repo"
+        put(top / "README.md")
+        git(top, "init", "-q")
+        calls = [("webrun", {"tool_input": {"search_query": [{"q": "x"}]}}),
+                 ("webrun", {"tool_input": {"open": [{"ref_id": "https://example.com"}]}}),
+                 ("web__run", {"tool_input": {"search_query": [{"q": "x"}]}}),
+                 ("webrun", {})]
+        walled = [{"agent_id": "a", "agent_type": "implementer"}, {"agent_id": "b", "agent_type": "spec_tester"}]
+        open_callers = [{}, {"agent_type": "implementer"}]
+        open_callers += [{"agent_id": "d", "agent_type": role}
+                         for role in ("security_reviewer", "task_reviewer", "final_reviewer", "planner", "default")]
+        rows = [(caller, tool, extra, True) for caller in walled for tool, extra in calls]
+        rows += [(caller, tool, extra, False) for caller in open_callers for tool, extra in calls]
+        rows += [({"agent_id": "c", "agent_type": "task_reviewer"}, "mcp__codex_apps__search_service_web_run", {"tool_input": {"q": "x"}}, False)]
+        for caller, tool, extra, deny in rows:
+            with self.subTest(caller=caller, tool=tool, extra=extra):
+                result = self.wall({**caller, "cwd": str(top), "tool_name": tool, **extra})
+                if deny:
+                    self.assertEqual((result.returncode, result.stderr.count("\n")), (2, 1), result.stderr)
+                    self.assertIn("is closed to this agent", result.stderr)
+                    self.assertIn("NEEDS_FACT", result.stderr)
+                else:
+                    self.assertEqual((result.returncode, result.stderr), (0, ""))
+
     def test_a_real_repo_root_and_a_repo_under_a_source_folder_name(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
