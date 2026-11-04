@@ -353,7 +353,7 @@ class BoardHookFixture:
         for harness, source in (("claude", CLAUDE_HOOKS), ("codex", CODEX_HOOKS)):
             target = self.repo / ".dev-loop" / "hooks" / harness
             target.mkdir(parents=True)
-            for script in source.iterdir():
+            for script in (entry for entry in source.iterdir() if entry.is_file()):
                 shutil.copy2(script, target / script.name)
         fake = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
         put(fake, FAKE_DEVLOOP)
@@ -547,7 +547,7 @@ class RobustnessHookFixture:
         for harness, source in (("claude", CLAUDE_HOOKS), ("codex", CODEX_HOOKS)):
             target = self.repo / ".dev-loop" / "hooks" / harness
             target.mkdir(parents=True)
-            for script in source.iterdir():
+            for script in (entry for entry in source.iterdir() if entry.is_file()):
                 shutil.copy2(script, target / script.name)
         self.fake(self.repo, "MAIN")
         git(self.repo, "add", "-A")
