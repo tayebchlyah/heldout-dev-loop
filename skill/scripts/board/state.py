@@ -18,7 +18,7 @@ HELD = ("stage_times", "tasks", "assumptions_baseline", "shipped_at", "head", "b
 
 def digest(fields: dict) -> str:
     """D1: sha256 hex of the JSON (sorted keys) of the note fields the entry does not hold."""
-    rest = {k: v for k, v in fields.items() if k not in HELD}
+    rest = {k: v for k, v in fields.items() if k not in HELD and k != "shipped_kept"}
     tasks = fields.get("tasks")
     if isinstance(tasks, list):  # The entry holds the task times; the titles and states go into the digest.
         rest["tasks"] = [{k: v for k, v in t.items() if k not in ("started", "done")} if isinstance(t, dict) else t
