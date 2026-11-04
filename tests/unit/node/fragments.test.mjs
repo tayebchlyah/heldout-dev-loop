@@ -343,9 +343,8 @@ test('no Codex agent file sets default_permissions', () => {
   }
 })
 
-test('the Codex TOML fragment turns native web search off for the project, where no role file can (#240)', () => {
-  const lines = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8').split('\n')
-  assert.ok(lines.slice(0, lines.findIndex((line) => line.trimStart().startsWith('['))).includes('web_search = "disabled"'))
+test('no Codex kit file sets web_search: the project keeps its own choice (#240)', () => {
+  assert.doesNotMatch(readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8'), /^\s*web_search\s*=/m)
   for (const name of readdirSync(join(packageRoot, 'codex/agents'))) {
     assert.doesNotMatch(readFileSync(join(packageRoot, 'codex/agents', name), 'utf8'), /^\s*web_search\s*=/m, name)
   }
