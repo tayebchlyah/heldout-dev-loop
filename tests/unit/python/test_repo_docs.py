@@ -110,7 +110,7 @@ class RepoDocsTests(unittest.TestCase):
                 self.assertIn(value, text)
         self.assertLess(release.index("release-check"), release.index("git tag"))
         self.assertNotIn("git cliff", release)
-        self.assertNotIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", release)
+        self.assertNotIn("npx github:tayebchlyah/heldout-dev-loop#vX.Y.Z-rc.N upgrade", release)
 
     def test_codex_kit_copy_docs(self) -> None:
         kit = (ROOT / "reference" / "kit.md").read_text()

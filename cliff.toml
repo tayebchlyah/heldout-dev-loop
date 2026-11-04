@@ -15,11 +15,11 @@ body = """
 {%- set title = commit.message | split(pat="\n") | first | trim | split(pat=" (#") | first -%}
 {%- if commit.scope -%}
 {%- set clean_title = title | split(pat="(" ~ commit.scope ~ ")") | last | trim | trim_start_matches(pat=":") | trim -%}
-- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/tchlyah/dev-loop/commit/{{ commit.id }}) - **{{ commit.scope }}**: {{ clean_title }}{% if commit.remote.pr_number and commit.remote.username %} *(PR [#{{ commit.remote.pr_number }}](https://github.com/tchlyah/dev-loop/pull/{{ commit.remote.pr_number }}) by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% elif commit.remote.username %} *(commit by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% endif %}
+- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/tayebchlyah/heldout-dev-loop/commit/{{ commit.id }}) - **{{ commit.scope }}**: {{ clean_title }}{% if commit.remote.pr_number and commit.remote.username %} *(PR [#{{ commit.remote.pr_number }}](https://github.com/tayebchlyah/heldout-dev-loop/pull/{{ commit.remote.pr_number }}) by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% elif commit.remote.username %} *(commit by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% endif %}
 {% else %}
 {%- set first_token = title | split(pat=" ") | first -%}
 {%- set clean_title = title | replace(from=first_token ~ " ", to="") -%}
-- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/tchlyah/dev-loop/commit/{{ commit.id }}) - {{ clean_title }}{% if commit.remote.pr_number and commit.remote.username %} *(PR [#{{ commit.remote.pr_number }}](https://github.com/tchlyah/dev-loop/pull/{{ commit.remote.pr_number }}) by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% elif commit.remote.username %} *(commit by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% endif %}
+- [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/tayebchlyah/heldout-dev-loop/commit/{{ commit.id }}) - {{ clean_title }}{% if commit.remote.pr_number and commit.remote.username %} *(PR [#{{ commit.remote.pr_number }}](https://github.com/tayebchlyah/heldout-dev-loop/pull/{{ commit.remote.pr_number }}) by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% elif commit.remote.username %} *(commit by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}))*{% endif %}
 {%- endif %}
 {% endfor %}
 {% endfor %}
@@ -63,5 +63,5 @@ commit_parsers = [
 ]
 
 [remote.github]
-owner = "tchlyah"
-repo = "dev-loop"
+owner = "tayebchlyah"
+repo = "heldout-dev-loop"

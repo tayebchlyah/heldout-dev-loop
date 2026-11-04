@@ -107,13 +107,13 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 - Release: `reference/release.md`. Stage 7 after a merge: report line `rc: now|later: <reason>`.
 - Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase.
-- No tracked file holds an absolute home path or the owner's personal name. Write `~/Projects/tchlyah/dev-loop`, never its expansion (guard test).
+- No tracked file holds an absolute home path: write a `~` path, never its expansion. Owner's name only as GitHub handle `tayebchlyah` (guard test, case-sensitive).
 - No tracked file names an internal client or project (employer, its customers, private projects). Names live in notes folder `Internal Names.md`, one `- <name>` line each; `tests/unit/node/payload.test.mjs` reads it (skipped: no notes path or no note). New name: add it there, never in the repo.
 - The 3 merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`): merged, never copied whole.
 
 ## Gotchas
 
-- Repo private: no badges, no links needing a public repo. `npx github:tchlyah/dev-loop` install needs Git or SSH credentials that reach it.
+- Repo `tayebchlyah/heldout-dev-loop`, public from 3.0.0: badges and links allowed. Kit names stay `dev-loop` (`dev-loop.json`, the skill, `.dev-loop/`, `devloop.py`).
 
 ## Working principles
 
