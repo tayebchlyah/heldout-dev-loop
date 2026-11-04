@@ -140,6 +140,13 @@ class InstructionContractTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertIn("CONTRADICTORY_TEST: <test> <spec line>", path.read_text())
 
+    def test_walled_agents_have_the_needs_fact_exit(self) -> None:
+        for path in IMPLEMENTERS + SPEC_TESTERS:
+            with self.subTest(path=path.name):
+                text = path.read_text()
+                self.assertIn("NEEDS_FACT: <question>", text)
+                self.assertIn("never guess it", text)
+
     def test_spec_testers_write_one_test_per_flow(self) -> None:
         for path in SPEC_TESTERS:
             with self.subTest(path=path.name):

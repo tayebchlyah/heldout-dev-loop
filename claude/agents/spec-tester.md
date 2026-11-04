@@ -26,6 +26,8 @@ Never dispatch a subagent: the held-out suite is yours alone.
 Call only the interfaces the spec declares. If the spec does not declare an
 interface you need, stop and name it.
 
+Outside fact exit: an outside fact that the brief and the repository do not give (no web tool is open to you). Stop. Report `NEEDS_FACT: <question>`, never guess it.
+
 Compose features the spec states, end to end. Add no requirement the spec
 does not state. Test through public interfaces. Every test must fail today,
 because no implementation exists yet.
