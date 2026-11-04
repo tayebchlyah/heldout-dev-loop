@@ -23,5 +23,11 @@
   "file_size_exempt": [
     "CHANGELOG.md",
     "tests/unit/python/fixtures/git-guard-asks.json"
+  ],
+  "merge_human_paths": [
+    ".github/*",
+    "scripts/acceptance.sh",
+    "scripts/release-*.sh",
+    "scripts/canary.sh"
   ]
 }
