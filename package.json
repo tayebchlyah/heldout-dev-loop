@@ -3,6 +3,15 @@
   "version": "3.0.0-rc.4",
   "private": true,
   "description": "Stage-driven development loop skill for Claude Code and Codex, with its installer.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tayebchlyah/heldout-dev-loop.git"
+  },
+  "homepage": "https://github.com/tayebchlyah/heldout-dev-loop#readme",
+  "bugs": {
+    "url": "https://github.com/tayebchlyah/heldout-dev-loop/issues"
+  },
   "type": "module",
   "bin": {
     "dev-loop": "bin/install.mjs"
