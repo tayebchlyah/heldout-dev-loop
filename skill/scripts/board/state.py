@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import hashlib
 import json
 import os
 import stat
+from collections.abc import Iterator
 from pathlib import Path
 
 from . import store
@@ -43,12 +46,45 @@ def unsafe(folder: Path) -> str | None:
     return "state-link" if any((folder / name).is_symlink() for name in FILES) else None
 
 
-def load(folder: Path) -> dict:
-    """The saved state over the default. A missing, unreadable or non-object file gives the default."""
+def open_dir(folder: Path) -> tuple[int | None, str | None]:
+    """#239: (descriptor, None) of the state folder, opened once with no link follow; every state file operation goes
+    relative to it. A refusal: (None, `state-link`) for a link, (None, `state-owner`) for a non-folder or a folder
+    this user does not own. A missing folder raises FileNotFoundError."""
+    try:
+        fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            return None, "state-link" if os.path.islink(folder) else "state-owner"
+        raise
+    if os.fstat(fd).st_uid != os.getuid():
+        os.close(fd)
+        return None, "state-owner"
+    return fd, None
+
+
+@contextlib.contextmanager
+def _opened(folder: Path, fd: int | None) -> Iterator[int]:
+    if fd is not None:
+        yield fd
+        return
+    own, reason = open_dir(folder)
+    if own is None:
+        raise store.LinkError(f"{folder}: {reason}")
+    try:
+        yield own
+    finally:
+        os.close(own)
+
+
+def load(folder: Path, fd: int | None = None) -> dict:
+    """The saved state over the default, read relative to the folder descriptor `fd` (else the folder, opened with no
+    link follow). A missing, unreadable, linked or non-object file gives the default."""
     data: dict = {"features": {}, "sessions": {}, "last_run": None}
     try:
-        saved = json.loads((folder / NAME).read_text())
-    except (OSError, ValueError):
+        with _opened(folder, fd) as opened:
+            text = store.read_regular(opened, NAME)
+        saved = json.loads(text) if text is not None else None
+    except (OSError, store.LinkError, ValueError):
         return data
     if not isinstance(saved, dict):
         return data
@@ -60,8 +96,9 @@ def load(folder: Path) -> dict:
     return data
 
 
-def save(folder: Path, data: dict) -> None:
-    store.write_file(folder, NAME, json.dumps(data, indent=1) + "\n")
+def save(folder: Path, data: dict, fd: int | None = None) -> None:
+    with _opened(folder, fd) as opened:
+        store.write_in(opened, NAME, json.dumps(data, indent=1) + "\n")
 
 
 def save_last_run(folder: Path, at: str, skipped: list[dict]) -> None:
@@ -70,9 +107,10 @@ def save_last_run(folder: Path, at: str, skipped: list[dict]) -> None:
     if unsafe(folder):
         return
     folder.mkdir(parents=True, exist_ok=True)
-    data = load(folder)
-    data["last_run"] = {"at": at, "skipped": skipped}
-    save(folder, data)
+    with contextlib.suppress(store.LinkError), _opened(folder, None) as opened:
+        data = load(folder, opened)
+        data["last_run"] = {"at": at, "skipped": skipped}
+        save(folder, data, opened)
 
 
 def map_session(data: dict, session: object, slug: str, now: str) -> None:

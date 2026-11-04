@@ -245,7 +245,8 @@ def start(port: int, version: str, roots: list[Path], here: str, me: str, state:
     # C3: another run started a board at the same moment.
     if kind == "board" and all(str(r) in (found.get("roots") or []) for r in roots):
         return {"state": "running", "url": url}
-    return {"state": "error", "url": url, "message": f"the board server did not start on port {port}, see {log}"}
+    where = f"see {log}" if fd is not None else "the log was refused (a link, or not owned by this user)"
+    return {"state": "error", "url": url, "message": f"the board server did not start on port {port}, {where}"}
 
 
 def ensure(port: int, version: str, roots: list[Path], here: str, me: str) -> dict:

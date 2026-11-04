@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import fcntl
+import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from unittest import mock
@@ -15,7 +18,7 @@ from support import ROOT  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import devloop  # noqa: E402
-from board import state  # noqa: E402
+from board import server, state, writer  # noqa: E402
 from board_fixtures import Board, put  # noqa: E402
 
 STATE_FILES = ("board.lock", "board-claims.json", "board-features.json", "board-state.json", "board-events.jsonl")
@@ -65,6 +68,94 @@ class BoardStateLinkTests(Board):
         self.assertEqual(list(folder.iterdir()), [])
         self.assertIsNone(state.unsafe(folder))
         self.assertIsNone(state.unsafe(self.root / "missing"))
+
+
+class StateFolderFdTests(Board):
+    """#239: the state folder is opened once; every state file operation goes through that descriptor."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.folder = self.root / "state"
+        self.folder.mkdir()
+
+    def opened(self) -> int:
+        fd, reason = state.open_dir(self.folder)
+        self.assertIsNone(reason)
+        self.addCleanup(os.close, fd)
+        return fd
+
+    def test_open_dir_refuses_a_link_a_file_and_another_owner(self) -> None:
+        """A link: `state-link`; not a folder, or a folder of another user: `state-owner`."""
+        link, plain = self.root / "link", self.root / "plain"
+        os.symlink(self.folder, link)
+        put(plain, "x\n")
+        self.assertEqual(state.open_dir(link), (None, "state-link"))
+        self.assertEqual(state.open_dir(plain), (None, "state-owner"))
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            self.assertEqual(state.open_dir(self.folder), (None, "state-owner"))
+
+    def test_folder_swapped_for_a_link_after_the_open_is_not_followed(self) -> None:
+        """A folder swapped for a link after the open: the JSON write and the queue drain stay in the opened folder."""
+        fd = self.opened()
+        target = self.root / "elsewhere"
+        target.mkdir()
+        event = {"event": "stop", "cwd": str(self.repo), "session_id": None, "agent_id": None, "transcript_path": None}
+        put(self.folder / "board-events.jsonl", json.dumps(event) + "\n")
+        moved = self.root / "moved"
+        self.folder.rename(moved)
+        os.symlink(target, self.folder)
+        state.save(self.folder, {"features": {}, "sessions": {}, "last_run": None}, fd)
+        self.assertEqual(len(writer.drain(fd, "board-events.jsonl")), 1)
+        self.assertEqual(list(target.iterdir()), [])
+        self.assertTrue((moved / "board-state.json").is_file())
+        self.assertFalse((moved / "board-events.jsonl").exists())
+
+    def test_state_files_planted_as_links_are_not_read(self) -> None:
+        """A link at a state file after the check: `load` gives the default, `read_slugs` nothing."""
+        host = self.root / "host.json"
+        put(host, json.dumps({"features": {"x": {}}, "evil": 1}))
+        os.symlink(host, self.folder / "board-state.json")
+        put(self.root / "host-list.json", json.dumps(["leak"]))
+        os.symlink(self.root / "host-list.json", self.folder / "board-claims.json")
+        self.assertEqual(state.load(self.folder), {"features": {}, "sessions": {}, "last_run": None})
+        self.assertEqual(state.load(self.folder, self.opened()), {"features": {}, "sessions": {}, "last_run": None})
+        self.assertEqual(writer.read_slugs(self.opened(), "board-claims.json"), [])
+
+    def test_unreadable_queue_is_an_error_not_an_empty_queue(self) -> None:
+        """EACCES on the queue is not dropped silently as an empty queue."""
+        if os.getuid() == 0:
+            self.skipTest("root reads any file")
+        fd = self.opened()
+        queue = self.folder / "board-events.jsonl"
+        put(queue, "{}\n")
+        queue.chmod(0)
+        with self.assertRaises(PermissionError):
+            writer.drain(fd, "board-events.jsonl")
+
+    def test_fifo_in_the_state_folder_never_blocks_a_run(self) -> None:
+        """A FIFO at the queue (idle or lock busy) or at the lock: the run ends, no hang."""
+        self.worktree("tiny", prefix="fix")
+        state_dir = self.repo / ".git" / "dev-loop"
+        for name, busy, reason in (("board-events.jsonl", False, None), ("board-events.jsonl", True, "busy"),
+                                   ("board.lock", False, "state-link")):
+            with self.subTest(name=name, busy=busy):
+                shutil.rmtree(state_dir, ignore_errors=True)
+                state_dir.mkdir()
+                holder = None
+                if busy:
+                    holder = os.open(state_dir / "board.lock", os.O_RDWR | os.O_CREAT, 0o600)
+                    fcntl.flock(holder, fcntl.LOCK_EX)
+                os.mkfifo(state_dir / name)
+                try:
+                    code, out = self.board(timeout=30)
+                except subprocess.TimeoutExpired:
+                    self.fail(f"a FIFO at {name} blocked the run")
+                finally:
+                    if holder is not None:
+                        os.close(holder)
+                self.assertEqual(code, 0, out)
+                if reason:
+                    self.assertTrue(self.skipped(out, reason), out)
 
 
 class BoardLogLinkTests(Board):
@@ -143,3 +234,22 @@ class LinkedSpecTests(Board):
         for path in (self.board_dir / "Features").glob("*.md"):
             self.assertNotIn("SECRET-TOKEN-123", path.read_text(), path)
         self.assertNotEqual(self.note("leak").get("title"), "SECRET-TOKEN-123")
+
+
+class ServerStartMessageTests(Board):
+    def start_error(self, fd: int | None) -> str:
+        proc = mock.Mock()
+        proc.poll.return_value = 1
+        with mock.patch.object(server, "open_log", return_value=fd), mock.patch.object(server.subprocess, "Popen", return_value=proc), \
+                mock.patch.object(server, "probe", return_value=("none", {})):
+            out = server.start(self.port, "1.0.0", [], "here", "me", "started")
+        self.assertEqual(out["state"], "error")
+        return out["message"]
+
+    def test_message_names_the_log_only_when_it_was_opened(self) -> None:
+        """A refused log (link, not owned): the message says so and names no log."""
+        opened = os.open(self.root / "log", os.O_WRONLY | os.O_CREAT, 0o600)
+        self.assertIn(", see ", self.start_error(opened))
+        message = self.start_error(None)
+        self.assertNotIn("see", message)
+        self.assertIn("refused", message)
