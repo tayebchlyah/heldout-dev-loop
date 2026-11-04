@@ -309,7 +309,7 @@ class BoardHookLaunchTests(unittest.TestCase):
         for harness, source in self.HOOKS.items():
             target = path / ".dev-loop" / "hooks" / harness
             target.mkdir(parents=True)
-            for script in source.iterdir():
+            for script in (entry for entry in source.iterdir() if entry.is_file()):
                 shutil.copy2(script, target / script.name)
         return path
 
