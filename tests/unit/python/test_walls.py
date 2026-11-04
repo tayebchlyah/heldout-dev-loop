@@ -593,6 +593,7 @@ class GitGuardParityTests(unittest.TestCase):
     def test_codex_checker_matches_claude_checker(self) -> None:
         codex = (CODEX_ASSETS / "hooks" / "git-guard.py").read_text()
         codex = codex.replace('["python3", "-I", cli, "release-check"', '["python3", cli, "release-check"')
+        codex = codex.replace('os.environ.get("KIT_MAIN") or ', '').replace('os.environ.get("KIT_ROOT") or main', 'main')
         self.assertEqual(codex, (CLAUDE_HOOKS / "git-guard.py").read_text())
 
     def test_a_guard_without_its_checker_asks(self) -> None:

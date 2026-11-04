@@ -59,7 +59,7 @@ test('a Codex-only kit has no link and no Claude path', () => {
   assert.ok(paths.includes('.dev-loop/hooks/codex/session-start.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/seal.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/git-pin.sh'))
-  assert.ok(paths.includes('.dev-loop/hooks/codex/kit-main.sh'))
+  assert.ok(!paths.includes('.dev-loop/hooks/codex/kit-main.sh'))
   assert.ok(paths.includes('.dev-loop/hooks/codex/acceptance-wall.sh'))
   assert.ok(paths.includes('.codex/rules/dev-loop.rules'))
   assert.ok(paths.includes('.agents/skills/dev-loop/SKILL.md'))
