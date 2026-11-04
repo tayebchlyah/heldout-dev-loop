@@ -7,6 +7,7 @@ import { packageRoot, tempDir } from './helpers.mjs'
 
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
 const CODEX_MAIN = `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`
+const HASH = '0'.repeat(64)
 const codex = (script, args = '') => `f="${CODEX_MAIN}/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"${args}`
 
 test('a Claude hook command points at the project hook folder and keeps its arguments', () => {
@@ -18,8 +19,17 @@ test('a Claude hook command points at the project hook folder and keeps its argu
 })
 
 test('a Codex hook command points at the project hook folder, rendered or raw', () => {
-  assert.equal(projectCommand('/h/.codex/hooks/gate.sh'), codex('gate.sh'))
-  assert.equal(projectCommand('{{HOME}}/.codex/hooks/seal.sh turn'), codex('seal.sh', ' turn'))
+  assert.equal(projectCommand('/h/.codex/hooks/gate.sh', HASH), codex('gate.sh'))
+  assert.equal(projectCommand('{{HOME}}/.codex/hooks/seal.sh turn', HASH), codex('seal.sh', ' turn'))
+})
+
+test('a Codex hook command needs the MANIFEST hash', () => {
+  assert.throws(() => projectCommand('/h/.codex/hooks/gate.sh'), /MANIFEST hash/)
+  assert.throws(() => projectCommand('/h/.codex/hooks/gate.sh', 'abc'), /MANIFEST hash/)
+  const hooks = projectFragments({ packageRoot, harnesses: ['codex'] })[0]
+  const raw = readFileSync(hooks.source, 'utf8')
+  assert.throws(() => hooks.rewrite(raw), /MANIFEST hash/)
+  assert.doesNotThrow(() => projectFragments({ packageRoot, harnesses: ['codex'], manifestHash: HASH })[0].rewrite(raw))
 })
 
 test('a command with no hook path does not change', () => {
@@ -112,7 +122,7 @@ test('the Claude agents run the project hooks', () => {
 })
 
 test('the fragments merge into the project files with project commands', () => {
-  const actions = projectFragments({ packageRoot, harnesses: ['claude', 'codex'] })
+  const actions = projectFragments({ packageRoot, harnesses: ['claude', 'codex'], manifestHash: HASH })
   assert.deepEqual(actions.map((action) => [action.kind, action.merge, action.target]), [
     ['merge-json', 'settings', '.claude/settings.json'],
     ['merge-json', 'hooks', '.codex/hooks.json'],
