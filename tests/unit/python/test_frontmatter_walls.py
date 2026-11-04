@@ -181,6 +181,15 @@ class DisallowedToolsTwinTests(unittest.TestCase):
                     done = twin({**caller, "tool_name": tool, "tool_input": tool_input})
                     self.assertEqual((done.returncode, done.stderr), (0, ""))
 
+    def test_the_web_and_agent_denial_names_the_needs_fact_exit(self) -> None:
+        for tool, tool_input in WEB_AND_AGENT_TOOLS.items():
+            for agent in ("implementer", "spec-tester"):
+                with self.subTest(tool=tool, agent=agent):
+                    done = twin({"agent_id": "sub-1", "agent_type": agent, "tool_name": tool, "tool_input": tool_input})
+                    self.assertEqual((done.returncode, done.stderr.count("\n")), (2, 1), done.stderr)
+                    self.assertIn("is closed to this agent", done.stderr)
+                    self.assertIn("NEEDS_FACT", done.stderr)
+
     def test_another_subagent_cannot_fetch_a_url_that_names_the_held_out_suite(self) -> None:
         url = "https://github.com/o/r/blob/main/tests/acceptance/api/test_x.py"
         done = twin({"agent_id": "sub-1", "agent_type": "general-purpose", "tool_name": "WebFetch",
