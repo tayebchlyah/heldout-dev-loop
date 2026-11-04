@@ -176,6 +176,8 @@ class MergeCheckTests(MergeCheckCase):
             (".github/workflows/ci.yml", {}, None, [ci(".github/workflows/ci.yml")]),
             (".github/rulesets/main.json", {}, None, [ci(".github/rulesets/main.json")]),
             (".GitHub/Workflows/ci.yml", {}, None, [ci(".GitHub/Workflows/ci.yml")]),
+            (".github/actions/x/action.yml", {}, None, [ci(".github/actions/x/action.yml")]),
+            (".GitHub/Actions/x/action.yml", {}, None, [ci(".GitHub/Actions/x/action.yml")]),
             (".github/workflows", {}, "cfg", [ci(".github/workflows")]),
             (".github/workflows/ci.yml", {"merge_human_paths": [".github/*"]}, None,
              [{"reason": "human-path", "path": ".github/workflows/ci.yml", "pattern": ".github/*"},
