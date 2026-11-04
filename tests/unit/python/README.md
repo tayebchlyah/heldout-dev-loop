@@ -25,5 +25,6 @@ One file per subject. A new test file adds its line here.
 - `test_audit_common.py`, `test_audit_seed.py`, `test_audit_units.py`, `test_audit_skilltext.py`, `test_audit_brief.py`, `test_audit_check.py`, `test_audit_promote.py`, `test_audit_fold.py`, `test_audit_fold_review.py`, `test_audit_close.py`, `test_audit_report.py`: `audit-run` shared core: ids, refs, paths, scope, ledger write; `audit-run seed`: prior run, carry, `touched`, metadata; `audit-run units`, the new-unit builder of fold; `audit/skilltext.py`: skill text by heading, fence, block, schema branch; `audit-run brief`: ids, prompt parts, refusals; `audit-run check`: result file, kind rules; `audit-run promote`: no-follow copy, limits; `audit-run fold`: hunter, discard; critic, verifier, recheck; `audit-run findings`, `status`; `audit-run report`, `release-record` on a tool-made run.
 - `test_audit_text.py`: `release-audit` step 4, `audit-run` contract, `AGENTS.md` lines.
 - `junit_report.py`, `board_fixtures.py`, `audit_fixtures.py`: the one JUnit writer; board fixtures the held-out oracle shares; stub `security-audit` skill, audit run fixtures.
+- `test_codex_fill.py`: `lib/codex_fill.py`: the Codex kit copy fill, MANIFEST hash check, concurrent fills.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
