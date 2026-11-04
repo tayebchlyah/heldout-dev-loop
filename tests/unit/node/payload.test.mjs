@@ -3,7 +3,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync, lstatSync, readlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { packageRoot } from './helpers.mjs'
 import { buildKit } from '../../../lib/kit.mjs'
@@ -145,49 +144,54 @@ test('no tracked file holds an absolute home path or a personal name', () => {
   }
 })
 
-// shortcut: a guessed name can be confirmed against this unsalted hash list, upgrade to a keyed HMAC with the key in a CI secret before the repository goes public
-const INTERNAL_NAME_HASHES = new Set([
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-  'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED', 'REMOVED',
-])
+const words = (text) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
 
-const nameHash = (words) => createHash('sha256').update(words).digest('hex').slice(0, 16)
+function namesFrom(note) {
+  return new Set(note.split('\n').filter((line) => line.startsWith('- ')).map((line) => words(line.slice(2)).join(' ')).filter(Boolean))
+}
 
-function internalNames(text, hashes) {
-  const words = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+function readNames(notes) {
+  const path = join(notes, 'Internal Names.md')
+  return existsSync(path) ? namesFrom(readFileSync(path, 'utf8')) : null
+}
+
+function internalNames(text, names) {
+  const all = words(text)
   const found = new Set()
-  for (let i = 0; i < words.length; i++) {
-    for (let n = 1; n <= 3 && i + n <= words.length; n++) {
-      const name = words.slice(i, i + n).join(' ')
-      if (hashes.has(nameHash(name))) found.add(name)
+  for (let i = 0; i < all.length; i++) {
+    for (let n = 1; n <= 3 && i + n <= all.length; n++) {
+      const name = all.slice(i, i + n).join(' ')
+      if (names.has(name)) found.add(name)
     }
   }
   return [...found]
 }
 
-test('internalNames finds a hashed name of one to three words in any case', () => {
-  const hashes = new Set([nameHash('acme'), nameHash('big shop co')])
-  assert.deepEqual(internalNames('Run the ACME suite', hashes), ['acme'])
-  assert.deepEqual(internalNames('/x/big-shop_co/y', hashes), ['big shop co'])
-  assert.deepEqual(internalNames('acmeshop and big shop', hashes), [])
+test('internalNames finds a listed name of one to three words in any case', () => {
+  const names = namesFrom('---\ntype: note\n---\n# Internal names\n\n- Acme\n- Big-Shop Co  \n  - nested\n\n## More\n')
+  assert.deepEqual([...names].sort(), ['acme', 'big shop co'])
+  assert.deepEqual(internalNames('Run the ACME suite', names), ['acme'])
+  assert.deepEqual(internalNames('/x/big-shop_co/y', names), ['big shop co'])
+  assert.deepEqual(internalNames('acmeshop and big shop', names), [])
 })
 
-test('no tracked file names an internal client or project', () => {
+test('readNames gives null for a folder with no Internal Names.md', () => {
+  assert.equal(readNames(join(packageRoot, 'tests')), null)
+})
+
+test('no tracked file names an internal client or project', (t) => {
+  let notes
+  try {
+    notes = execFileSync('python3', ['skill/scripts/notes_path.py'], { cwd: packageRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  } catch {
+    return t.skip('no notes path: skill/scripts/notes_path.py failed')
+  }
+  const names = readNames(notes)
+  if (!names) return t.skip('no Internal Names.md in the notes folder')
+  assert.ok(names.size > 0, 'Internal Names.md lists no name')
   // shortcut: the installed dev-loop kit under .agents/skills/dev-loop/ is a copy of the guarded source, cleared by the next upgrade; drop this filter after it
   for (const [relative, text] of trackedTexts((line) => !line.startsWith('.agents/skills/dev-loop/'))) {
-    assert.deepEqual(internalNames(text, INTERNAL_NAME_HASHES), [], `internal name in ${relative}`)
+    assert.deepEqual(internalNames(text, names), [], `internal name in ${relative}`)
   }
 })
 
