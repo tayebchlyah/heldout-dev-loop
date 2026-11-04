@@ -228,8 +228,11 @@ test('upgrade of a Codex project replaces the old acceptance-wall entry with one
   group.matcher = 'Bash|apply_patch'
   custom.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] })
   writeFileSync(hooks, JSON.stringify(custom, null, 2))
+  const config = join(repo, '.codex/config.toml')
+  writeFileSync(config, `web_search = "live"\n${readFileSync(config, 'utf8')}`)
 
   upgrade(repo, home, [], fakePackage('99.0.0'))
+  assert.match(readFileSync(config, 'utf8'), /^web_search = "live"$/m)
   const groups = readJson(hooks).hooks.PreToolUse
   const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('acceptance-wall.sh'))
   assert.equal(own.length, 1)

@@ -1,6 +1,5 @@
 default_permissions = "dev-workspace"
 model_reasoning_effort = "high"
-web_search = "disabled"
 
 [features]
 hooks = true
