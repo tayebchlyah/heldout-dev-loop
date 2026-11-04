@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { packageRoot } from './helpers.mjs'
+import { buildKit } from '../../../lib/kit.mjs'
 
 const REQUIRED = [
   'skill/SKILL.md',
@@ -103,6 +104,23 @@ test('the gh prompt rules name their pattern and examples', () => {
     assert.ok(block.match(/\n    match=\[[^\n]*/)[0].includes(example), word)
     assert.ok(block.match(/not_match=\[[^\n]*/)[0].includes('gh pr view 7'), word)
   }
+})
+
+test('LICENSE is MIT for tayebchlyah and the kit ships the same text', () => {
+  const license = readFileSync(join(packageRoot, 'LICENSE'), 'utf8')
+  assert.ok(license.startsWith('MIT License\n\nCopyright (c) 2026 tayebchlyah\n\n'))
+  assert.ok(license.includes('Permission is hereby granted, free of charge, to any person obtaining a copy'))
+  assert.ok(license.includes('THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'))
+  assert.equal(readFileSync(join(packageRoot, 'skill/LICENSE.txt'), 'utf8'), license)
+  const paths = buildKit({ packageRoot, harnesses: ['claude'] }).files.map((file) => file.path)
+  assert.ok(paths.includes('.agents/skills/dev-loop/LICENSE.txt'))
+  const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+  assert.equal(pkg.license, 'MIT')
+  assert.equal(pkg.private, true)
+  assert.equal(pkg.name, 'dev-loop')
+  assert.deepEqual(pkg.repository, { type: 'git', url: 'git+https://github.com/tayebchlyah/heldout-dev-loop.git' })
+  assert.equal(pkg.homepage, 'https://github.com/tayebchlyah/heldout-dev-loop#readme')
+  assert.deepEqual(pkg.bugs, { url: 'https://github.com/tayebchlyah/heldout-dev-loop/issues' })
 })
 
 function trackedTexts(keep = () => true) {
