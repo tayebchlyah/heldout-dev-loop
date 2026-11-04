@@ -10,7 +10,7 @@ const CODEX_MAIN = `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w
 const FILL = readFileSync(join(packageRoot, 'lib', 'codex_fill.py'), 'utf8').replace(/\n$/, '')
 const HASH = '0'.repeat(64)
 const codex = (script, args = '', hash = HASH, { fill = FILL, after = '' } = {}) => {
-  const [mode, code] = ['git-guard.sh', 'acceptance-wall.sh'].includes(script) ? ['block', 2] : ['warn', 0]
+  const [mode, code] = ['git-guard.sh', 'acceptance-wall.sh'].includes(script) ? ['block', 2] : script === 'session-start.sh' ? ['session', 0] : ['warn', 0]
   return `f="\${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/${hash}/.dev-loop/hooks/codex/${script}"; k=\${f%/.dev-loop/*}; m=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); [ -d "$k" ] || python3 -I -c '${fill}' ${mode} "$k" "$m" || exit ${code}; ${after}KIT_ROOT=$k KIT_MAIN=$m exec sh "$f"${args}`
 }
 // Each earlier Codex command prefix (#158, #200, #212, #222).
@@ -38,6 +38,8 @@ test('a Codex hook command runs its script from the kit copy named by H', () => 
   }
   assert.ok(codex('gate.sh', '', hash).includes(' warn "$k" "$m" || exit 0; '))
   assert.ok(codex('git-guard.sh', '', hash).includes(' block "$k" "$m" || exit 2; '))
+  assert.equal(projectCommand('/h/.codex/hooks/session-start.sh', hash), codex('session-start.sh', '', hash))
+  assert.ok(codex('session-start.sh', '', hash).includes(' session "$k" "$m" || exit 0; '))
 })
 
 test('codexHookKey reads the script and arguments of every head', () => {
