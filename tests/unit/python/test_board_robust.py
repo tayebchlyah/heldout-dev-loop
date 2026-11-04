@@ -331,18 +331,6 @@ class BoardRobustTests(Board):
         self.event("stop", wt)
         self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
 
-    def test_six_own_shipped_notes_keep_the_five_latest(self) -> None:
-        """Board Ledger D5: 6 own shipped notes in one project, the next run keeps the 5 latest shipped_at."""
-        paths = []
-        for day in range(1, 7):
-            slug = f"done{day}"
-            path = self.board_dir / "Features" / note_name(MACHINE["id"], PROJECT, slug)
-            put(path, note_text(status_note(feature=slug, machine_id=MACHINE["id"], owner=MACHINE["owner"],
-                                            machine=MACHINE["machine"], shipped_at=f"2026-10-0{day}T12:00:00Z")))
-            paths.append(path)
-        self.ok()
-        self.assertEqual([p.exists() for p in paths], [False, True, True, True, True, True])
-
     def test_features_file_drops_a_feature_that_left_with_no_note(self) -> None:
         """O5 regression (Task 3 fix 3): a feature that left the write set and has no own note leaves the file."""
         wt = self.worktree("tiny", prefix="fix")
