@@ -2,13 +2,24 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, cpSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { projectCommand, buildKit, projectFragments } from '../../../lib/kit.mjs'
+import { projectCommand, buildKit, codexHookKey, projectFragments } from '../../../lib/kit.mjs'
 import { packageRoot, tempDir } from './helpers.mjs'
 
 const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/'
 const CODEX_MAIN = `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`
+const FILL = readFileSync(join(packageRoot, 'lib', 'codex_fill.py'), 'utf8').replace(/\n$/, '')
 const HASH = '0'.repeat(64)
-const codex = (script, args = '') => `f="${CODEX_MAIN}/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"${args}`
+const codex = (script, args = '', hash = HASH) => {
+  const [mode, code] = ['git-guard.sh', 'acceptance-wall.sh'].includes(script) ? ['block', 2] : ['warn', 0]
+  return `f="\${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/${hash}/.dev-loop/hooks/codex/${script}"; k=\${f%/.dev-loop/*}; m=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); [ -d "$k" ] || python3 -I -c '${FILL}' ${mode} "$k" "$m" || exit ${code}; KIT_ROOT=$k KIT_MAIN=$m exec sh "$f"${args}`
+}
+// Each earlier Codex command prefix (#158, #200, #212, #222).
+const OLD_PREFIXES = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
+  `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`,
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || [ -d "$w/.dev-loop" ]; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || { [ -d "$w/.dev-loop" ] && grep -qsF "[hooks.state.\\"$w/.codex/hooks.json:" "\${CODEX_HOME:-$HOME/.codex}/config.toml"; }; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
+  CODEX_MAIN]
+const OLD_TAIL = '"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"'
 
 test('a Claude hook command points at the project hook folder and keeps its arguments', () => {
   assert.equal(
@@ -18,9 +29,29 @@ test('a Claude hook command points at the project hook folder and keeps its argu
   assert.equal(projectCommand('~/.claude/hooks/gate.sh'), `${CLAUDE}gate.sh"`)
 })
 
-test('a Codex hook command points at the project hook folder, rendered or raw', () => {
-  assert.equal(projectCommand('/h/.codex/hooks/gate.sh', HASH), codex('gate.sh'))
-  assert.equal(projectCommand('{{HOME}}/.codex/hooks/seal.sh turn', HASH), codex('seal.sh', ' turn'))
+test('a Codex hook command runs its script from the kit copy named by H', () => {
+  const hash = 'a'.repeat(64)
+  for (const home of ['{{HOME}}', '/h']) {
+    assert.equal(projectCommand(`${home}/.codex/hooks/gate.sh`, hash), codex('gate.sh', '', hash))
+    assert.equal(projectCommand(`${home}/.codex/hooks/seal.sh turn`, hash), codex('seal.sh', ' turn', hash))
+    assert.equal(projectCommand(`${home}/.codex/hooks/git-guard.sh`, hash), codex('git-guard.sh', '', hash))
+  }
+  assert.ok(codex('gate.sh', '', hash).includes(' warn "$k" "$m" || exit 0; '))
+  assert.ok(codex('git-guard.sh', '', hash).includes(' block "$k" "$m" || exit 2; '))
+})
+
+test('codexHookKey reads the script and arguments of every head', () => {
+  const current = codex('seal.sh', ' turn')
+  const newTail = current.slice(current.indexOf('seal.sh"') + 'seal.sh'.length)
+  const commands = [current, codex('seal.sh', ' turn', 'f'.repeat(64))]
+  for (const prefix of OLD_PREFIXES) for (const start of ['"', 'f="']) for (const tail of [`${OLD_TAIL} turn`, newTail, '" turn']) {
+    commands.push(`${start}${prefix}/.dev-loop/hooks/codex/seal.sh${tail}`)
+  }
+  for (const command of commands) assert.equal(codexHookKey(command), 'seal.sh" turn', command)
+  for (const command of ['echo mine', 'timeout 60 "$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh"',
+    '"$(git rev-parse --show-toplevel)/sub/.dev-loop/hooks/codex/gate.sh"', codex('seal.sh', ' turn', 'A'.repeat(64))]) {
+    assert.equal(codexHookKey(command), null, command)
+  }
 })
 
 test('a Codex hook command needs the MANIFEST hash', () => {

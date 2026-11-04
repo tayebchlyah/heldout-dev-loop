@@ -221,9 +221,10 @@ def stale_paths(repo: Path, record_sha: str, target: str, build: bool) -> list[s
     kit = {p for p in blocked if p.startswith(KIT_ROOTS) or p == MANIFEST}
     merged = blocked & ci_skip.MERGED
     if build and (kit | merged).issuperset(p for p in blocked if not is_test_or_doc(p)):
-        if kit and (ref := kit_reference(repo, record_sha)) is not None:
-            blocked -= ci_skip.kit_allowed(repo, record_sha, target, kit, ref)
-        blocked -= ci_skip.merged_allowed(repo, record_sha, target, merged)
+        if (ref := kit_reference(repo, record_sha)) is not None:
+            if kit:
+                blocked -= ci_skip.kit_allowed(repo, record_sha, target, kit, ref)
+            blocked -= ci_skip.merged_allowed(repo, record_sha, target, merged, ref)
     return code if blocked.intersection(code) else None
 
 

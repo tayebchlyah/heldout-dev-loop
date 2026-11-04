@@ -1,10 +1,10 @@
 import test from 'node:test'
-import { execFileSync, spawnSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { entries, fakePackage, git, hookCommands, init, readJson, run, setup, snapshot, tempDir, upgrade } from './helpers.mjs'
+import { entries, fakePackage, git, hookCommands, init, readJson, run, setup, snapshot, upgrade } from './helpers.mjs'
 
 // A package whose kit renames the Claude gate.sh to stop-gate.sh and the
 // Codex session-start.sh to repo-start.sh, with the fragments following.
@@ -86,13 +86,15 @@ test('upgrade --dry-run reports the removed hook entries and writes nothing', ()
 test('upgrade with no hook change leaves the hook files byte-identical', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes'])
-  const files = ['.claude/settings.json', '.codex/hooks.json']
-  const before = files.map((file) => readFileSync(join(repo, file)))
+  const hash = () => createHash('sha256').update(readFileSync(join(repo, '.dev-loop/MANIFEST.json'))).digest('hex')
+  const claude = readFileSync(join(repo, '.claude/settings.json'))
+  const codex = readFileSync(join(repo, '.codex/hooks.json'), 'utf8')
+  const old = hash()
   upgrade(repo, home, [], fakePackage('99.0.0'))
-  files.forEach((file, index) => assert.ok(readFileSync(join(repo, file)).equals(before[index]), file))
-  for (const dir of ['.claude', '.codex']) {
-    assert.equal(readdirSync(join(repo, dir)).some((name) => name.includes('.bak-')), false)
-  }
+  assert.ok(readFileSync(join(repo, '.claude/settings.json')).equals(claude))
+  assert.equal(readdirSync(join(repo, '.claude')).some((name) => name.includes('.bak-')), false)
+  assert.notEqual(hash(), old)
+  assert.equal(readFileSync(join(repo, '.codex/hooks.json'), 'utf8'), codex.split(old).join(hash()))
 })
 
 test('upgrade from 2.0.0 adds the board hook entries once', () => {
@@ -236,168 +238,6 @@ test('upgrade of a Codex project replaces the old acceptance-wall entry with one
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
 
-
-test('Codex outer hook entries execute main scripts from a feature worktree', () => {
-  const { home, repo: root } = setup()
-  const repo = join(root, 'main with spaces')
-  mkdirSync(repo)
-  git(repo, 'init', '-q')
-  init(repo, home, ['--yes', '--harness=both'])
-  for (const name of readdirSync(join(repo, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
-    writeFileSync(join(repo, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
-  }
-  git(repo, 'add', '-A')
-  git(repo, 'commit', '-qm', 'fixture')
-  const feature = join(root, 'feature with spaces')
-  git(repo, 'worktree', 'add', '-qb', 'fix/probe', feature)
-  const marker = join(feature, 'tampered')
-  for (const name of readdirSync(join(feature, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
-    writeFileSync(join(feature, '.dev-loop/hooks/codex', name), `#!/bin/sh\nprintf tampered >'${marker}'\n`)
-  }
-  for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
-    const output = execFileSync('/bin/sh', ['-c', command], { cwd: feature, input: '{}', encoding: 'utf8' })
-    assert.equal(output.trim(), 'main-hook', command)
-    assert.equal(existsSync(marker), false)
-  }
-})
-
-test('Codex outer hook entries execute main scripts from a nested repo in a feature subfolder (#212)', () => {
-  const { home, repo: root } = setup()
-  const repo = join(root, 'main')
-  mkdirSync(repo)
-  git(repo, 'init', '-q')
-  init(repo, home, ['--yes', '--harness=both'])
-  for (const name of readdirSync(join(repo, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
-    writeFileSync(join(repo, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
-  }
-  git(repo, 'add', '-A')
-  git(repo, 'commit', '-qm', 'fixture')
-  const feature = join(repo, '.claude/worktrees/probe')
-  git(repo, 'worktree', 'add', '-qb', 'fix/probe', feature)
-  const marker = join(root, 'nested-ran')
-  const plant = (dir) => {
-    mkdirSync(join(dir, '.dev-loop/hooks/codex'), { recursive: true })
-    for (const name of readdirSync(join(repo, '.dev-loop/hooks/codex'))) {
-      writeFileSync(join(dir, '.dev-loop/hooks/codex', name), `#!/bin/sh\nprintf ran >'${marker}'\n`, { mode: 0o755 })
-    }
-    git(dir, 'init', '-q')
-  }
-  const web = join(feature, 'packages/web')
-  plant(web)
-  // A nested repo whose config names another work tree: the walk follows folders, not what git reports (#212).
-  const elsewhere = join(root, 'elsewhere')
-  plant(elsewhere)
-  const other = join(feature, 'packages/api')
-  mkdirSync(other, { recursive: true })
-  git(other, 'init', '-q')
-  git(other, 'config', 'core.worktree', elsewhere)
-  const env = trustCodexHooks(home, repo)
-  for (const cwd of [web, join(web, 'src'), other]) {
-    mkdirSync(cwd, { recursive: true })
-    for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
-      const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
-      assert.equal(output.trim(), 'main-hook', `${cwd}: ${command}`)
-      assert.equal(existsSync(marker), false)
-    }
-  }
-})
-
-const trustEntry = (path) => `[hooks.state."${path}/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:0"\n`
-const trustCodexHooks = (home, ...mains) => {
-  mkdirSync(join(home, '.codex'), { recursive: true })
-  writeFileSync(join(home, '.codex/config.toml'), mains.map(trustEntry).join('\n'))
-  return { ...process.env, CODEX_HOME: join(home, '.codex') }
-}
-
-test('Codex outer hook entries take an outer repo only when it is a listed worktree with trusted hooks (#222)', async (t) => {
-  const { home, repo: root } = setup()
-  const repo = join(root, 'main')
-  mkdirSync(repo)
-  git(repo, 'init', '-q')
-  init(repo, home, ['--yes', '--harness=both'])
-  const scripts = readdirSync(join(repo, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))
-  for (const name of scripts) writeFileSync(join(repo, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
-  git(repo, 'add', '-A')
-  git(repo, 'commit', '-qm', 'fixture')
-  const feature = join(repo, '.claude/worktrees/probe')
-  git(repo, 'worktree', 'add', '-qb', 'fix/probe', feature)
-  const kit = (dir, word) => {
-    mkdirSync(join(dir, '.dev-loop/hooks/codex'), { recursive: true })
-    for (const name of scripts) writeFileSync(join(dir, '.dev-loop/hooks/codex', name), `#!/bin/sh\necho ${word}\n`, { mode: 0o755 })
-  }
-  kit(root, 'outer-hook')
-  const elsewhere = join(root, 'elsewhere')
-  mkdirSync(elsewhere)
-  git(elsewhere, 'init', '-q')
-  kit(elsewhere, 'outer-hook')
-  const link = join(tempDir('dev-loop-link-'), 'root')
-  symlinkSync(root, link)
-  const redirect = () => {
-    renameSync(join(root, '.git'), join(root, '.git-real'))
-    writeFileSync(join(root, '.git'), `gitdir: ${join(elsewhere, '.git')}\n`)
-    return () => {
-      rmSync(join(root, '.git'))
-      renameSync(join(root, '.git-real'), join(root, '.git'))
-    }
-  }
-  const rows = [
-    ['only main trusted', () => trustEntry(repo), null, 'main-hook'],
-    ['main and root trusted', () => trustEntry(repo) + trustEntry(root), null, 'outer-hook'],
-    ['root trusted, key spelled through a symlink', () => trustEntry(repo) + trustEntry(link), null, 'outer-hook'],
-    ['root trusted only in a comment', () => trustEntry(repo) + `# ${trustEntry(root).split('\n')[0]}\n`, null, 'main-hook'],
-    ['gitfile at root redirects to a trusted repo', () => trustEntry(repo) + trustEntry(elsewhere), redirect, 'main-hook'],
-  ]
-  for (const [name, config, plant, expected] of rows) await t.test(name, () => {
-    const env = trustCodexHooks(home)
-    writeFileSync(join(home, '.codex/config.toml'), config())
-    const undo = plant?.()
-    try {
-      for (const cwd of [repo, feature]) {
-        for (const command of hookCommands(join(repo, '.codex/hooks.json'))) {
-          const output = execFileSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8', env })
-          assert.equal(output.trim(), expected, `${name}, ${cwd}: ${command}`)
-        }
-      }
-    } finally {
-      undo?.()
-    }
-  })
-})
-
-test('a Codex hook command blocks with exit 2 for a bare first worktree or a main checkout with no kit script', () => {
-  const { home, repo: root } = setup()
-  const source = join(root, 'source')
-  mkdirSync(source)
-  git(source, 'init', '-q')
-  init(source, home, ['--yes', '--harness=both'])
-  for (const name of readdirSync(join(source, '.dev-loop/hooks/codex')).filter((name) => name.endsWith('.sh'))) {
-    writeFileSync(join(source, '.dev-loop/hooks/codex', name), '#!/bin/sh\necho main-hook\n')
-  }
-  git(source, 'add', '-A')
-  git(source, 'commit', '-qm', 'kit')
-  const bare = join(root, 'bare.git')
-  git(root, 'clone', '-q', '--bare', source, bare)
-  const linked = join(root, 'linked')
-  git(bare, 'worktree', 'add', '-q', linked)
-  const planted = join(root, 'a-feature')
-  git(bare, 'worktree', 'add', '-q', '-b', 'fix/planted', planted)
-  const main = join(root, 'main')
-  mkdirSync(main)
-  git(main, 'init', '-q')
-  git(main, 'commit', '-q', '--allow-empty', '-m', 'no kit')
-  const feature = join(root, 'feature')
-  git(main, 'worktree', 'add', '-qb', 'fix/probe', feature)
-  const run = (command, cwd) => spawnSync('/bin/sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' })
-  for (const command of hookCommands(join(source, '.codex/hooks.json'))) {
-    for (const [cwd, folder] of [[linked, ''], [planted, ''], [feature, '.*/main']]) {
-      const result = run(command, cwd)
-      assert.equal(result.status, 2, `${cwd}: ${command}`)
-      assert.equal(result.stdout, '')
-      assert.match(result.stderr, new RegExp(`^Blocked: dev-loop hook script missing: ${folder}/\\.dev-loop/hooks/codex/[\\w.-]+$`, 'm'))
-    }
-  }
-})
-
 // Each earlier Codex command form (#158, #200, #212, #222), from the parts of a current command: the old
 // prefix with the old tail, the old prefix in front of the current tail, and the current tail behind an old prefix.
 const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
@@ -410,7 +250,7 @@ const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree lis
     [prefix, ({ command }) => `f="${prefix}${command.slice(command.indexOf('/.dev-loop/'))}`],
   ])
 const codexParts = (command) => {
-  const match = /\/hooks\/codex\/([\w.-]+)".*exec "\$f"(.*)$/s.exec(command)
+  const match = /\/hooks\/codex\/([\w.-]+)".*KIT_MAIN=\$m exec sh "\$f"(.*)$/s.exec(command)
   return match && { script: match[1], args: match[2], command }
 }
 // User hooks that run a kit script their own way (#200): wrapped, or from another folder.
@@ -424,7 +264,7 @@ test('Codex upgrade migrates each earlier command form once and preserves user h
     const claude = readFileSync(join(repo, '.claude/settings.json'))
     const path = join(repo, '.codex/hooks.json')
     const hooks = readJson(path)
-    const head = hooks.hooks.Stop[0].hooks[0].command.split('/.dev-loop/')[0]
+    const head = hooks.hooks.Stop[0].hooks[0].command.split('/dev-loop/kit/')[0]
     for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const hook of group.hooks) {
       hook.command = form(codexParts(hook.command))
     }
