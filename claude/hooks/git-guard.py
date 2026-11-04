@@ -594,7 +594,7 @@ def check(cmd, cwds, drift, top=False):
     # for the whole line when unreliable() finds a quote, escape, comment, heredoc
     # or case that can fool the parser: a cd then only adds its targets.
     # #238: a private-use character in the line would read as one of the parser's own marks (MASK, REDIRECTS).
-    if re.search("[-]", cmd):
+    if any(0xE000 <= ord(c) <= 0xF8FF for c in cmd):
         ask("a command the guard cannot read")
     try:
         segs = list(segments(mask_quoted(cmd)))

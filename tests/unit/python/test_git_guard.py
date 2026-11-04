@@ -535,3 +535,8 @@ class PrivateUseCharacterTests(GuardRepo, unittest.TestCase):
     def test_a_private_use_character_before_a_push_or_release_is_refused(self) -> None:
         self.assert_refused([f"X={chr(0xE100 + n)} {tail}" for n in range(4)
                              for tail in ("git push origin v1", "gh release create v1")], "the guard cannot read")
+
+    def test_a_mask_mark_and_the_range_ends_are_refused_bare_and_quoted(self) -> None:
+        marks = [chr(0xE000), chr(0xE007), chr(0xF8FF)]
+        self.assert_refused([f"X={c} git push origin v1" for c in marks]
+                            + [f'git push origin "v1{c}"' for c in marks], "the guard cannot read")
