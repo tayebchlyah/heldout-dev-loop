@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, cpSync, writeFileSync } from 'node:fs'
+import { readFileSync, cpSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { projectCommand, buildKit, codexHookKey, projectFragments } from '../../../lib/kit.mjs'
 import { packageRoot, tempDir } from './helpers.mjs'
@@ -190,6 +191,27 @@ test('the fragments merge into the project files with project commands', () => {
   assert.equal(toml.rewrite(tomlText), tomlText)
 
   assert.deepEqual(projectFragments({ packageRoot, harnesses: ['claude'] }).map((action) => action.target), ['.claude/settings.json'])
+})
+
+function kitSourceCopy(fill) {
+  const root = tempDir('kit-')
+  for (const folder of ['skill', 'skills', 'claude', 'codex']) cpSync(join(packageRoot, folder), join(root, folder), { recursive: true })
+  mkdirSync(join(root, 'lib'))
+  for (const name of ['kit.mjs', 'manifest.mjs']) copyFileSync(join(packageRoot, 'lib', name), join(root, 'lib', name))
+  if (fill !== undefined) writeFileSync(join(root, 'lib', 'codex_fill.py'), fill)
+  return root
+}
+
+test('buildKit works from a kit source with no lib/codex_fill.py', async () => {
+  const root = kitSourceCopy()
+  const copy = await import(pathToFileURL(join(root, 'lib', 'kit.mjs')).href)
+  assert.ok(copy.buildKit({ packageRoot: root, harnesses: ['claude', 'codex'] }).files.length > 0)
+})
+
+test('a Codex command refuses a fill text that holds a single quote', async () => {
+  const root = kitSourceCopy("print('x')\n")
+  const copy = await import(pathToFileURL(join(root, 'lib', 'kit.mjs')).href)
+  assert.throws(() => copy.projectCommand('{{HOME}}/.codex/hooks/seal.sh', HASH), /no single quote/)
 })
 
 test('the kit has no simplifier', () => {
