@@ -184,10 +184,10 @@ function renderBoard(features, nowMs, opts) {
 
   const shipRows = [];
   for (const p of new Set(shipped.map((f) => f.project))) {
-    // #230: the highest shipped_kept a note of the project carries, else 5.
-    const shippedKept = notes.filter((f) => f.project === p && f.shippedKept !== null).map((f) => f.shippedKept);
+    // #230: the shipped_kept of the project's most recently updated note that has one, else 5.
+    const newest = notes.filter((f) => f.project === p && f.shippedKept !== null).sort((a, b) => at(b.updated) - at(a.updated))[0];
     shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped))
-      .slice(0, shippedKept.length ? Math.max(...shippedKept) : 5)
+      .slice(0, newest ? newest.shippedKept : 5)
       .map((f) => ({ ...model({ ...f, stage: 7 }), shipped: true, end: ms(f.shipped) })));
   }
   const all = [...rows, ...shipRows];

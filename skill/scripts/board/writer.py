@@ -587,8 +587,8 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         path.unlink()
         payload["removed"].append(str(path))
     for _, path, fields in shipped[:ctx.shipped_kept]:
-        if path not in ships and fields.get("shipped_kept") == ctx.shipped_kept:
-            continue
+        if path not in ships:
+            continue  # D12: a shipped note is never rewritten.
         fields["shipped_kept"] = ctx.shipped_kept
         try:
             store.write_file(path.parent, path.name, store.note_text(fields))
@@ -597,7 +597,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
             continue
         payload["notes"].append(str(path))
         entry = ctx.data["features"].get(fields["feature"])
-        if path in ships and isinstance(entry, dict):
+        if isinstance(entry, dict):
             entry.update(shipped_at=fields["shipped_at"], updated=fields["updated"])
     # Issue #114: a slug whose own note this run did not see stays only while that note exists in a board folder.
     old_folder = board.parent / "dev-loop-board" / "features"
