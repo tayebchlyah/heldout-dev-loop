@@ -144,6 +144,36 @@ test('no tracked file holds an absolute home path or a personal name', () => {
   }
 })
 
+const OLD_OWNER = 'tch' + 'lyah'
+const INSTALLED_KIT = ['.agents/', '.claude/skills/', '.claude/agents/', '.codex/', '.dev-loop/']
+const outsideInstalledKit = (path) => !INSTALLED_KIT.some((prefix) => path.startsWith(prefix))
+const oldUrls = (text) => [`${OLD_OWNER}/dev-loop`, `github:${OLD_OWNER}/`, `github.com/${OLD_OWNER}/`].filter((url) => text.includes(url))
+const PRIVATE_TEXT = [
+  new RegExp('\\b(?:repo|repository) is ' + 'private', 'i'),
+  new RegExp('\\bRepo ' + 'private\\b'),
+  new RegExp('Git or SSH ' + 'credentials', 'i'),
+]
+const privateText = (text) => PRIVATE_TEXT.map((pattern) => text.match(pattern)?.[0].toLowerCase()).filter(Boolean)
+
+test('oldUrls finds the old owner and not the new handle', () => {
+  assert.deepEqual(oldUrls('npx github:tayebchlyah/heldout-dev-loop#v1 init, https://github.com/tayebchlyah/heldout-dev-loop'), [])
+  assert.equal(oldUrls(`npx github:${OLD_OWNER}/dev-loop#v1`).length, 2)
+  assert.equal(oldUrls(`https://github.com/${OLD_OWNER}/x`).length, 1)
+})
+
+test('no tracked file outside the installed kit names the old repository URL', () => {
+  for (const [relative, text] of trackedTexts(outsideInstalledKit)) {
+    assert.deepEqual(oldUrls(text), [], `old URL in ${relative}`)
+  }
+})
+
+test('no tracked file outside the installed kit has the private repository text', () => {
+  assert.deepEqual(privateText('The repository is ' + 'private, so'), ['repository is ' + 'private'])
+  for (const [relative, text] of trackedTexts(outsideInstalledKit)) {
+    assert.deepEqual(privateText(text), [], `private text in ${relative}`)
+  }
+})
+
 const words = (text) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
 
 function namesFrom(note) {
