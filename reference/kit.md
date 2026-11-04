@@ -119,6 +119,8 @@ Codex kit copy upgrade (#227): each Codex hook command names `H`, the sha256 of 
 
 Codex tty upgrade (#140): `upgrade` adds `unified_exec_tty = false` to `[features]` of `.codex/config.toml` (key merge). No hook fires on `write_stdin`, so a tty shell let a subagent type past every wall. A project value is kept and named; `check_setup.py` fails until it is `false`. No hook entry changes, so no `/hooks` trust is needed. Codex reads the config at session start: restart a running Codex session, which keeps its tty until then.
 
+Walled agents web upgrade (#240): `upgrade` refreshes the `deny-acceptance-to-subagents.sh` entry in place (its matcher adds `WebFetch|WebSearch|Agent`) and writes the new `disallowedTools` into `.claude/agents/implementer.md` and `spec-tester.md`. Codex: the `acceptance-wall.sh` matcher adds `web.*`, which changes the hook `trusted_hash`, so Codex skips `acceptance-wall.sh` until `/hooks` trusts the hooks again; until then `check_setup.py --harness codex` reports `pre_tool_use` untrusted. No config key changes: a project `web_search` value stays the project's, and the Codex main session and the other roles keep web search.
+
 Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fails below it). `upgrade` merges `[features]`, `[permissions.dev-workspace.network]` and `[permissions.dev-workspace.network.domains]` key by key: each missing kit key is added, each project value is kept and named in a `kept your own <table> <key>` line. It adds `network_proxy`, `mode`, `allow_local_binding`, the domains and the `dev-docker` tables. Other tables keep the table-level merge.
 
 3.0.0 upgrade (breaking): from 2.1.x, in this order.
