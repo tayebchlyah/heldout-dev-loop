@@ -25,7 +25,7 @@ Notes path: `skill/scripts/notes_path.py` resolves it, for every `devloop` comma
 
 ## Verify after install
 
-Applies when `dev-loop.json` exists. Without it, `check_setup.py` prints one failure line, `no dev-loop.json in <repo>. Run npx github:tchlyah/dev-loop#<tag> init`, exit 1:
+Applies when `dev-loop.json` exists. Without it, `check_setup.py` prints one failure line, `no dev-loop.json in <repo>. Run npx github:tayebchlyah/heldout-dev-loop#<tag> init`, exit 1:
 
 ```bash
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
@@ -91,7 +91,7 @@ Each other job:
 
 ## Upgrade
 
-Upgrade: `npx github:tchlyah/dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tchlyah/dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither. `uninstall-global` removes a 1.4 install from its own frozen lists (files, 1.4 and 1.5 hook commands).
+Upgrade: `npx github:tayebchlyah/heldout-dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tayebchlyah/heldout-dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither. `uninstall-global` removes a 1.4 install from its own frozen lists (files, 1.4 and 1.5 hook commands).
 
 Notes layout upgrade: `notes-migrate` moves a notes folder in the old layout to the feature folder layout (`reference/cli/notes-migrate.md`). Every machine sharing the notes folder upgrades the kit first, then one runs it.
 
@@ -125,7 +125,7 @@ Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fai
 
 1. Ship each in-flight feature first (Seal upgrade).
 2. Update the CLIs to the minimums `check_setup.py` checks (`MIN_VERSIONS`): Claude Code 2.1.295 (`onFailure`), codex-cli 0.166.0 (native hook sandbox, `network_proxy`, hook `agent_type`). Older CLIs cannot run the new hooks.
-3. `npx github:tchlyah/dev-loop#v3.0.0 upgrade` on a branch, one PR, merged to `main`. The output lists each section of `CHANGELOG.md` after the installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: once `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` entry and the new walls until `/hooks`, so a Codex agent would run them with no guard.
+3. `npx github:tayebchlyah/heldout-dev-loop#v3.0.0 upgrade` on a branch, one PR, merged to `main`. The output lists each section of `CHANGELOG.md` after the installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: once `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` entry and the new walls until `/hooks`, so a Codex agent would run them with no guard.
 4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks. The list is in Seal upgrade and Codex wall timeout upgrade, and for a project still on 2.1.0 also Board upgrade from 2.1.0 (the PostToolUse `board.sh` hook is new from 2.1.0). `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line (Verify after install):
    - a `ui` project: `devloop.py verify-init --base-url <url>`, or `"verify": false` in `dev-loop.json`;

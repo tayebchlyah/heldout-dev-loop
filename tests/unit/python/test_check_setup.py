@@ -164,7 +164,7 @@ class ProjectConfigTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     (result.returncode, result.stdout),
-                    (1, f"{harness}: FAIL\n- no dev-loop.json in {tmp}. Run npx github:tchlyah/dev-loop#<tag> init\n"),
+                    (1, f"{harness}: FAIL\n- no dev-loop.json in {tmp}. Run npx github:tayebchlyah/heldout-dev-loop#<tag> init\n"),
                 )
 
 
@@ -460,7 +460,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
                 for location in [folder, dangling_link]:
                     self.assertIn(
                         f"- user-level dev-loop skill found: {location}. "
-                        "Run npx github:tchlyah/dev-loop#<tag> uninstall-global",
+                        "Run npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global",
                         result.stdout,
                     )
 

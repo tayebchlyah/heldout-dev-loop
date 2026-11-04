@@ -13,7 +13,7 @@ Read this file only in Claude Code. Preserve these names and walls.
 - Repo settings: `.claude/settings.json` denies `Agent(caveman:cavecrew-reviewer)`, `Agent(caveman:cavecrew-builder)`, and `Agent(caveman:cavecrew-investigator)`. It sets `ENABLE_STOP_REVIEW=0`, `ENABLE_COMMIT_REVIEW=0`, `SG_PUSH_SWEEP=0`, and `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (the `TaskCreate`/`TaskUpdate` checklist).
 - Read a file with `Read`, never `sed -n` or `cat`, before you `Edit` it: `Edit` refuses a file `Read` has not read.
 - User deny list keeps `Skill(superpowers:verification-before-completion)`, `Read(./.env)`, and `Read(./.env.*)`.
-- Install with `npx github:tchlyah/dev-loop#<tag> init`. Repair or update with `npx github:tchlyah/dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .`.
+- Install with `npx github:tayebchlyah/heldout-dev-loop#<tag> init`. Repair or update with `npx github:tayebchlyah/heldout-dev-loop#<tag> upgrade`. Validate with `python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .`.
 
 ## Delivery autonomy
 

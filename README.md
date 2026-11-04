@@ -5,10 +5,8 @@ Stage-driven development loop for Claude Code and Codex. Each piece of work is s
 ## Install
 
 ```bash
-npx github:tchlyah/dev-loop#<tag> init
+npx github:tayebchlyah/heldout-dev-loop#<tag> init
 ```
-
-The repository is private, so this works only once your Git or SSH credentials reach it (`git ls-remote git@github.com:tchlyah/dev-loop.git` should succeed). Otherwise npx fails to fetch it.
 
 Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`).
 
@@ -19,9 +17,9 @@ Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=
 Run each with a release tag. Run `init` and `upgrade` from the top level of a git repository; `uninstall-global` runs from anywhere:
 
 ```bash
-npx github:tchlyah/dev-loop#<tag> init              # install the kit into this repository
-npx github:tchlyah/dev-loop#<tag> upgrade           # update the kit to the tag's version
-npx github:tchlyah/dev-loop#<tag> uninstall-global  # remove the 1.4 global install
+npx github:tayebchlyah/heldout-dev-loop#<tag> init              # install the kit into this repository
+npx github:tayebchlyah/heldout-dev-loop#<tag> upgrade           # update the kit to the tag's version
+npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global  # remove the 1.4 global install
 ```
 
 `init` writes `dev-loop.json`, `.dev-loop/MANIFEST.json`, the skill in `.agents/skills/dev-loop/`, the `pause`, `continue`, `release-audit` and `garden` skills in `.agents/skills/<name>/` and the files of the chosen harnesses (`--harness=claude|codex|both`) under `.claude/`, `.codex/` and `.dev-loop/hooks/`. `--notes=<path>` sets the notes folder in the gitignored `dev-loop.local.json`. Commit the result. Kit files are never edited in a project: change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit unless `--force`. A call with no command prints the usage and exits 1.
@@ -58,13 +56,13 @@ A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<
 
 ## Before the first `init` on a machine
 
-Remove the 1.4 global install first: `npx github:tchlyah/dev-loop#<tag> uninstall-global` (try `--dry-run` first). With a global `dev-loop` skill still in place, Claude Code runs the global skill instead of the project one, and Codex runs neither. `check_setup.py` fails while a user-level `dev-loop` skill exists. `uninstall-global` refuses when no hook of yours runs a `git-guard.sh` outside the dev-loop install, because a vault guard that lived there would go too (`--force` skips this check).
+Remove the 1.4 global install first: `npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global` (try `--dry-run` first). With a global `dev-loop` skill still in place, Claude Code runs the global skill instead of the project one, and Codex runs neither. `check_setup.py` fails while a user-level `dev-loop` skill exists. `uninstall-global` refuses when no hook of yours runs a `git-guard.sh` outside the dev-loop install, because a vault guard that lived there would go too (`--force` skips this check).
 
 ## Upgrade and rollback
 
-- **Upgrade:** on a branch, run `npx github:tchlyah/dev-loop#<new tag> upgrade`, commit the diff, open a PR. Each person gets the new version with `git pull`.
+- **Upgrade:** on a branch, run `npx github:tayebchlyah/heldout-dev-loop#<new tag> upgrade`, commit the diff, open a PR. Each person gets the new version with `git pull`.
 - **Rollback of a project:** `git revert` the upgrade commit.
-- **Rollback of a machine to 1.4:** `npx github:tchlyah/dev-loop#v1.4.0` reinstalls the global install. Do not keep it on a machine whose projects use the kit.
+- **Rollback of a machine to 1.4:** `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` reinstalls the global install. Do not keep it on a machine whose projects use the kit.
 
 Upgrade notes per version (board, seal, 2.0.0): [`reference/kit.md`](reference/kit.md) `## Upgrade`.
 
@@ -79,11 +77,11 @@ Upgrade notes per version (board, seal, 2.0.0): [`reference/kit.md`](reference/k
 - The 1.4 `vault_notes:` notes fallback, the `vault_notes:` SessionStart detection and the `--global` install are gone.
 - User settings: remove the user-level denies of `executing-plans`, Pocock `tdd` and Pocock `diagnosing-bugs` from `~/.claude/settings.json`. Codex: install Pocock `tdd`, `diagnosing-bugs`, `pr` and `prototype`.
 
-From 1.4.0: write `dev-loop.local.json` with your notes path, run `npx github:tchlyah/dev-loop#v2.0.0 uninstall-global` (try `--dry-run` first, and keep a personal vault guard first), then `init`, change the user deny list, install the Codex skills, rename `CONTEXT.md` to `GLOSSARY.md` if you want, and run `check_setup.py`.
+From 1.4.0: write `dev-loop.local.json` with your notes path, run `npx github:tayebchlyah/heldout-dev-loop#v2.0.0 uninstall-global` (try `--dry-run` first, and keep a personal vault guard first), then `init`, change the user deny list, install the Codex skills, rename `CONTEXT.md` to `GLOSSARY.md` if you want, and run `check_setup.py`.
 
 From 1.5.x: run `upgrade` on a branch, then the user steps above.
 
-Rollback: `git revert` the upgrade commit, then `npx github:tchlyah/dev-loop#v1.4.0` on each machine for a 1.4 project.
+Rollback: `git revert` the upgrade commit, then `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` on each machine for a 1.4 project.
 
 ## Notes folder
 
@@ -110,11 +108,11 @@ Every merged file the installer replaces (`.claude/settings.json`, `.codex/hooks
 ## Develop
 
 ```bash
-git clone git@github.com:tchlyah/dev-loop.git ~/Projects/tchlyah/dev-loop
-cd ~/Projects/tchlyah/dev-loop
+git clone https://github.com/tayebchlyah/heldout-dev-loop.git
+cd heldout-dev-loop
 ```
 
-To try a change in a project, run `node ~/Projects/tchlyah/dev-loop/bin/install.mjs init` (or `upgrade`) from the project's top level.
+To try a change in a project, run `node <path to your clone>/bin/install.mjs init` (or `upgrade`) from the project's top level.
 
 ```bash
 npm ci && npx playwright install chromium   # once per clone or worktree

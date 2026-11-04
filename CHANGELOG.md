@@ -6,7 +6,7 @@
 
 1. From 2.1.x, ship each in-flight feature first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
 2. Update the CLIs to the minimums `check_setup.py` checks: Claude Code 2.1.295 and codex-cli 0.166.0 (the native hook sandbox). Older CLIs cannot run the new hooks.
-3. Run `npx github:tchlyah/dev-loop#v3.0.0-rc.4 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
+3. Run `npx github:tayebchlyah/heldout-dev-loop#v3.0.0-rc.4 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
 4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1, rc.2 or rc.3: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line: a UI project: `devloop.py verify-init --base-url <url>`, or `"verify": false` in `dev-loop.json`; `old-notes-layout`: step 7; Codex: install the Pocock skills `wayfinder` and `retro`; GitHub: turn on "allow rebase merging" (`ci wait`); `security_audit` set: pull its images and keep Docker running; the vault `.gitignore` lines for `Dev Loop Board/` (skipped with `"board_vault_git": "shared"` in `dev-loop.local.json`) and `Security Audit/`, and the Cloudflare `security-audit` skill; Codex network without the managed proxy: `upgrade` adds `features.network_proxy`, the domain list and `dev-docker`, and a profile you changed by hand may need the same keys; `scripts/gate.sh` lacks the `core.fsmonitor` guard: export `core.fsmonitor=false` through `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` before its first git call.
 6. End each open session and start a new one. Codex reads `unified_exec_tty = false` only at session start. A feature in Delivery resumes with `/continue`. The 2.1.x kit has no `kit_drift` `main-newer`, so an old session never stops by itself.
@@ -123,7 +123,7 @@
 - The project kit no longer holds the skill test files.
 - The `decide` and `pause` usage text names `--repo`.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.1...v3.0.0-rc.4
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.1...v3.0.0-rc.4
 
 ## [2.1.1] - 2026-10-16
 
@@ -148,7 +148,7 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.1...v3.0.0-rc.4
 - After the kit upgrade lands on `main`, restart each in-flight Session B from the main checkout. A worktree on the old kit runs the 2.1.0 board writer and writes a duplicate note with wrong times in `dev-loop-board/`.
 - Codex: trust the new PostToolUse hook with `/hooks`.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.0...v2.1.1
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.0...v2.1.1
 
 ## [2.1.0] - 2026-10-16
 
@@ -176,7 +176,7 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v2.1.0...v2.1.1
 - Codex: trust the new `board.sh` hooks with `/hooks`.
 - A project that set `CLAUDE_CODE_ENABLE_TODO_TOOLS` to another value now fails `check_setup.py`.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v2.0.0...v2.1.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.0.0...v2.1.0
 
 ## [2.0.0] - 2026-10-14
 
@@ -201,7 +201,7 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v2.0.0...v2.1.0
 
 ### Upgrade notes
 
-- From 1.5.x: `npx github:tchlyah/dev-loop#v2.0.0 upgrade` on a branch, then the steps below.
+- From 1.5.x: `npx github:tayebchlyah/heldout-dev-loop#v2.0.0 upgrade` on a branch, then the steps below.
 - From 1.4.0: write `dev-loop.local.json` with the notes path (keep a personal vault guard outside dev-loop first), run `uninstall-global --dry-run`, then `uninstall-global`, then `init` on a branch.
 - Remove the user-level denies of `superpowers:executing-plans`, `mattpocock-skills:tdd` and `mattpocock-skills:diagnosing-bugs` from `~/.claude/settings.json`: a user deny wins over a project allow.
 - Codex: install the Pocock skills `tdd`, `diagnosing-bugs`, `pr` and `prototype`.
@@ -210,13 +210,13 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v2.0.0...v2.1.0
 - The 1.4 fallbacks are gone: `vault_notes:`, `--global` and `--link`. `check_setup.py` needs `dev-loop.json`. Optional: rename `CONTEXT.md` to `GLOSSARY.md`.
 - Run `check_setup.py --harness claude|codex --repo .`. Rollback: `git revert` the upgrade commit.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v1.5.0...v2.0.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.5.0...v2.0.0
 
 ## [1.5.0] - 2026-10-13
 
 ### Highlights
 
-**dev-loop in each project.** `npx github:tchlyah/dev-loop#<tag> init` writes the kit into the repository for Claude Code and Codex, so the team shares one version through git. `upgrade` replaces the kit and prints the release notes, and `uninstall-global` removes the 1.4 global install. `.dev-loop/MANIFEST.json` records each kit file, so `upgrade` and `check_setup.py` catch a local edit.
+**dev-loop in each project.** `npx github:tayebchlyah/heldout-dev-loop#<tag> init` writes the kit into the repository for Claude Code and Codex, so the team shares one version through git. `upgrade` replaces the kit and prints the release notes, and `uninstall-global` removes the 1.4 global install. `.dev-loop/MANIFEST.json` records each kit file, so `upgrade` and `check_setup.py` catch a local edit.
 
 **Notes folder per person.** The notes folder now comes from `DEV_LOOP_NOTES`, the gitignored `dev-loop.local.json`, or `notes` in `dev-loop.json`. The kit has no vault rule, and the SessionStart hooks find dev-loop by `dev-loop.json`.
 
@@ -235,12 +235,12 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v1.5.0...v2.0.0
 
 ### Upgrade notes
 
-- Before the first `init` on a machine, run `npx github:tchlyah/dev-loop#v1.5.0 uninstall-global` (`--dry-run` first). With the global skill still in place, Claude Code runs it instead of the project one, and Codex runs neither.
+- Before the first `init` on a machine, run `npx github:tayebchlyah/heldout-dev-loop#v1.5.0 uninstall-global` (`--dry-run` first). With the global skill still in place, Claude Code runs it instead of the project one, and Codex runs neither.
 - `--vault`, `DEV_LOOP_VAULT` and the vault prompt are gone. Set the notes folder with `init --notes=<path>` or in `dev-loop.local.json`.
 - The vault guard is no longer in the kit: keep your own if you need one.
-- Upgrade later with `upgrade` on a branch and a PR. Rollback: `git revert` the upgrade commit, or `npx github:tchlyah/dev-loop#v1.4.0` to put a machine back on the global install.
+- Upgrade later with `upgrade` on a branch and a PR. Rollback: `git revert` the upgrade commit, or `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` to put a machine back on the global install.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v1.4.0...v1.5.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.4.0...v1.5.0
 
 ## [1.4.0] - 2026-10-12
 
@@ -256,7 +256,7 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v1.4.0...v1.5.0
 - A deny wall matches a path on whole segments only.
 - A replaced skill is backed up outside its skills folder, so Codex no longer lists dev-loop three times.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v1.3.0...v1.4.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.3.0...v1.4.0
 
 ## [1.3.0] - 2026-10-03
 
@@ -274,7 +274,7 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v1.3.0...v1.4.0
 
 - Run the installer again (or use link mode) so `~/.claude/settings.json` gets the new `SubagentStart` hook.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v1.2.0...v1.3.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.2.0...v1.3.0
 
 ## [1.2.0] - 2026-10-01
 
@@ -295,7 +295,7 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v1.2.0...v1.3.0
 
 - `check_setup.py` now needs the mutation setup: a `[tool.mutmut]` `only_mutate` list and a JSON Stryker config with a `mutate` list.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v1.1.0...v1.2.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.1.0...v1.2.0
 
 ## [1.1.0] - 2026-09-18
 
@@ -305,13 +305,13 @@ Full changes: https://github.com/tchlyah/dev-loop/compare/v1.1.0...v1.2.0
 - Link mode copies the Codex agents.
 - The skill tells unplanned deployment and infrastructure work apart from planned work.
 
-Full changes: https://github.com/tchlyah/dev-loop/compare/v1.0.0...v1.1.0
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.0.0...v1.1.0
 
 ## [1.0.0] - 2026-09-14
 
 ### Highlights
 
-**dev-loop for Claude Code and Codex.** `npx github:tchlyah/dev-loop` installs the stage-driven development loop skill, its subagents and its hooks for both harnesses, by copy or by link. Every replaced file gets a timestamped backup.
+**dev-loop for Claude Code and Codex.** `npx github:tayebchlyah/heldout-dev-loop` installs the stage-driven development loop skill, its subagents and its hooks for both harnesses, by copy or by link. Every replaced file gets a timestamped backup.
 
 **Merges that keep your config.** The installer merges its hook entries, deny rules, Codex profiles and Codex rules into your files and never touches an entry it did not add.
 
