@@ -588,7 +588,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         payload["removed"].append(str(path))
     for _, path, fields in shipped[:ctx.shipped_kept]:
         if path not in ships:
-            continue  # D12: a shipped note is never rewritten.
+            continue
         fields["shipped_kept"] = ctx.shipped_kept
         try:
             store.write_file(path.parent, path.name, store.note_text(fields))

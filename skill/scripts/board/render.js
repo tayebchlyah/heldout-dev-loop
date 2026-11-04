@@ -184,8 +184,9 @@ function renderBoard(features, nowMs, opts) {
 
   const shipRows = [];
   for (const p of new Set(shipped.map((f) => f.project))) {
-    // #230: the shipped_kept of the project's most recently updated note that has one, else 5.
-    const newest = notes.filter((f) => f.project === p && f.shippedKept !== null).sort((a, b) => at(b.updated) - at(a.updated))[0];
+    // #230: the shipped_kept of the project's most recently updated active note that has one, else of the newest shipped note that has one, else 5.
+    const newest = notes.filter((f) => f.project === p && f.shippedKept !== null)
+      .sort((a, b) => (a.shipped ? 1 : 0) - (b.shipped ? 1 : 0) || at(b.updated) - at(a.updated))[0];
     shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped))
       .slice(0, newest ? newest.shippedKept : 5)
       .map((f) => ({ ...model({ ...f, stage: 7 }), shipped: true, end: ms(f.shipped) })));
