@@ -9,9 +9,9 @@ const CLAUDE = '"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-lo
 const CODEX_MAIN = `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`
 const FILL = readFileSync(join(packageRoot, 'lib', 'codex_fill.py'), 'utf8').replace(/\n$/, '')
 const HASH = '0'.repeat(64)
-const codex = (script, args = '', hash = HASH) => {
+const codex = (script, args = '', hash = HASH, { fill = FILL, after = '' } = {}) => {
   const [mode, code] = ['git-guard.sh', 'acceptance-wall.sh'].includes(script) ? ['block', 2] : ['warn', 0]
-  return `f="\${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/${hash}/.dev-loop/hooks/codex/${script}"; k=\${f%/.dev-loop/*}; m=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); [ -d "$k" ] || python3 -I -c '${FILL}' ${mode} "$k" "$m" || exit ${code}; KIT_ROOT=$k KIT_MAIN=$m exec sh "$f"${args}`
+  return `f="\${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/${hash}/.dev-loop/hooks/codex/${script}"; k=\${f%/.dev-loop/*}; m=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); [ -d "$k" ] || python3 -I -c '${fill}' ${mode} "$k" "$m" || exit ${code}; ${after}KIT_ROOT=$k KIT_MAIN=$m exec sh "$f"${args}`
 }
 // Each earlier Codex command prefix (#158, #200, #212, #222).
 const OLD_PREFIXES = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
@@ -43,13 +43,17 @@ test('a Codex hook command runs its script from the kit copy named by H', () => 
 test('codexHookKey reads the script and arguments of every head', () => {
   const current = codex('seal.sh', ' turn')
   const newTail = current.slice(current.indexOf('seal.sh"') + 'seal.sh'.length)
-  const commands = [current, codex('seal.sh', ' turn', 'f'.repeat(64))]
+  const commands = [current, codex('seal.sh', ' turn', 'f'.repeat(64)), codex('seal.sh', ' turn', 'f'.repeat(64), { fill: 'import sys' }),
+    codex('seal.sh', ' turn', HASH, { after: '[ -f "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; ' })]
   for (const prefix of OLD_PREFIXES) for (const start of ['"', 'f="']) for (const tail of [`${OLD_TAIL} turn`, newTail, '" turn']) {
     commands.push(`${start}${prefix}/.dev-loop/hooks/codex/seal.sh${tail}`)
   }
   for (const command of commands) assert.equal(codexHookKey(command), 'seal.sh" turn', command)
   for (const command of ['echo mine', 'timeout 60 "$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/gate.sh"',
-    '"$(git rev-parse --show-toplevel)/sub/.dev-loop/hooks/codex/gate.sh"', codex('seal.sh', ' turn', 'A'.repeat(64))]) {
+    '"$(git rev-parse --show-toplevel)/sub/.dev-loop/hooks/codex/gate.sh"', codex('seal.sh', ' turn', 'A'.repeat(64)),
+    `f="\${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/${HASH}/.dev-loop/hooks/codex/gate.sh"; echo user-step; KIT_ROOT=$k KIT_MAIN=$m exec sh "$f"`,
+    codex('gate.sh', '', HASH, { after: 'echo user-step; ' }), `f="\${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/${HASH}/.dev-loop/hooks/codex/gate.sh" turn`,
+codex('seal.sh', ' turn', HASH, { fill: "x' ; echo '" })]) {
     assert.equal(codexHookKey(command), null, command)
   }
 })
