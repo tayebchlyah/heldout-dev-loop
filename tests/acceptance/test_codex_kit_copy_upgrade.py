@@ -93,7 +93,7 @@ class CodexKitCopyUpgradeFlow(unittest.TestCase):
             self.assertFalse((s.home / ".codex/dev-loop/kit").exists(), "uninstall-global left the kit copies")
 
         with self.subTest(oracle="O13"):
-            later = Scratch(self, installer=kit_source(self))
+            later = Scratch(self, installer=kit_source(self) / "bin/install.mjs")
             before = later.manifest_hash()
             later.call("PreToolUse", "git-guard.sh", **ECHO)
             home = tree(later.codex_home)
