@@ -266,15 +266,17 @@ test('#230: a title shows in Title Case; a slug title shows its words, a spec ti
   assert.ok(s.includes('Codex Gate Managed Deny'), s)
 })
 
-test('#230: a project shows as many shipped rows as the shipped_kept of its most recently updated note that has one, else 5', () => {
+test('#230: a project shows as many shipped rows as the shipped_kept of its most recently updated active note that has one, else of its newest shipped note, else 5', () => {
   const ships = (n, over = {}) => Array.from({ length: n }, (_, i) => shippedNote({ feature: `s${i}`, updated: ago(60), ...over }))
   const shown = (notes) => keys(html(notes), /^p\/s/).length
   assert.equal(shown(ships(8)), 5)
   assert.equal(shown([...ships(8), note({ shipped_kept: 7 })]), 7)
   assert.equal(shown(ships(8, { shipped_kept: 2 })), 2)
   assert.equal(shown([...ships(8, { shipped_kept: 10 }), note({ feature: 'x', shipped_kept: 3, updated: ago(1) })]), 3)
-  assert.equal(shown([...ships(8, { shipped_kept: 2 }), note({ feature: 'x', shipped_kept: 7, updated: ago(120) })]), 2)
+  assert.equal(shown([...ships(8, { shipped_kept: 2 }), note({ feature: 'x', shipped_kept: 7, updated: ago(120) })]), 7)
   assert.equal(shown([...ships(8, { shipped_kept: 2 }), note({ feature: 'x', updated: ago(1) })]), 2)
+  assert.equal(shown([...ships(8, { shipped_kept: 5, updated: ago(1) }), note({ feature: 'x', shipped_kept: 2, updated: ago(120) })]), 2)
+  assert.equal(shown([...ships(4, { shipped_kept: 2, updated: ago(120) }), ...ships(4, { shipped_kept: 6, updated: ago(1) }).map((n, i) => ({ ...n, feature: `s${i + 4}` }))]), 6)
   assert.equal(shown(ships(8, { shipped_kept: 0 })), 0)
   assert.equal(shown(ships(8, { shipped_kept: '9' })), 5)
   assert.equal(shown([...ships(8), note({ project: 'q', shipped_kept: 1 })]), 5)
