@@ -52,7 +52,7 @@ class SkillContractTests(unittest.TestCase):
                       "`disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent`",
                       "an MCP search tool", "(#139, checked in Claude Code 2.1.310", "`Skipping frontmatter hooks`",
                       "`NEEDS_FACT: <question>`", "`NEEDS_FACT` comes before the seal commit", "`work from the spec`",
-                      "decide --kind discovery", "a shell fetch (`curl`, `gh api`)"):
+                      "decide --kind discovery", "the shell route (`curl`, `gh api`)"):
             self.assertIn(value, claude)
         for value in ("`Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*`",
                       "`view_image` is walled by `path`", "no hook fires on `exec`, one fires on each inner tool call",
