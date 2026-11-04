@@ -242,6 +242,16 @@ test('a bare first worktree blocks the walls on the MANIFEST and warns the rest'
   assert.equal(existsSync(f.copy), false)
 })
 
+test('a copy without a wall script blocks that wall', () => {
+  const f = fixture()
+  mkdirSync(f.copy, { recursive: true })
+  for (const hook of f.hooks.filter((hook) => WALLS.includes(hook.script))) {
+    const result = runHook(f, hook)
+    assert.equal(result.status, 2, hook.name)
+    assert.equal(result.stderr, `Blocked: dev-loop hook script missing: ${join(f.copy, '.dev-loop/hooks/codex', hook.script)}\n`, hook.name)
+  }
+})
+
 test('eight hooks at once fill one copy', async () => {
   const f = fixture()
   const guard = f.hooks.find((hook) => hook.script === 'git-guard.sh')
