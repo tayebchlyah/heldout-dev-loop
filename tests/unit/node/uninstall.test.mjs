@@ -250,3 +250,46 @@ test('uninstall-global moves a dangling skill link aside', () => {
   assert.equal(readdirSync(join(home, '.claude/skills')).length, 0)
   assert.equal(readdirSync(join(home, '.claude/backups/skills')).length, 1)
 })
+
+function kitHome() {
+  const home = tempDir('dev-loop-home-')
+  writeAt(home, '.codex/dev-loop/kit/abc123/x', 'copy\n')
+  return home
+}
+
+test('uninstall-global removes the Codex kit copies', () => {
+  const home = kitHome()
+  const output = run(home, ['uninstall-global'])
+  assert.match(output, /remove +~\/\.codex\/dev-loop\/kit$/m)
+  assert.equal(existsSync(join(home, '.codex/dev-loop/kit')), false)
+  assert.equal(existsSync(join(home, '.codex/dev-loop')), true)
+})
+
+test('uninstall-global leaves a kit copy under another CODEX_HOME', () => {
+  const home = kitHome()
+  const other = tempDir('dev-loop-codex-')
+  writeAt(other, 'dev-loop/kit/abc123/x', 'copy\n')
+  execFileSync('node', [bin, 'uninstall-global'], {
+    cwd: packageRoot, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, HOME: home, USER: 'ada', CODEX_HOME: other },
+  })
+  assert.equal(existsSync(join(other, 'dev-loop/kit/abc123/x')), true)
+  assert.equal(existsSync(join(home, '.codex/dev-loop/kit')), false)
+})
+
+test('uninstall-global --dry-run names the kit copies and keeps them', () => {
+  const home = kitHome()
+  const output = run(home, ['uninstall-global', '--dry-run'])
+  assert.match(output, /~\/\.codex\/dev-loop\/kit/)
+  assert.equal(existsSync(join(home, '.codex/dev-loop/kit/abc123/x')), true)
+})
+
+test('uninstall-global removes a kit symlink, not its target', () => {
+  const home = tempDir('dev-loop-home-')
+  const target = tempDir('dev-loop-target-')
+  writeAt(target, 'keep', 'kept\n')
+  mkdirSync(join(home, '.codex/dev-loop'), { recursive: true })
+  symlinkSync(target, join(home, '.codex/dev-loop/kit'))
+  run(home, ['uninstall-global'])
+  assert.throws(() => lstatSync(join(home, '.codex/dev-loop/kit')))
+  assert.equal(readFileSync(join(target, 'keep'), 'utf8'), 'kept\n')
+})
