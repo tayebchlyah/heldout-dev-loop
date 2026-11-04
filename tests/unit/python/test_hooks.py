@@ -250,7 +250,7 @@ class HookPlantedProgramTests(unittest.TestCase):
                 if move:
                     self.assertIn("gate ran", json.loads(result.stdout)["reason"])
 
-    def test_gate_status_runs_no_index_hook_from_the_worktree(self) -> None:
+    def plant_index_hook(self) -> float:
         self.env.pop("GIT_OPTIONAL_LOCKS", None)
         write(self.repo / ".husky" / "post-index-change", f"#!/bin/sh\necho x >> {self.marker}\n")
         os.chmod(self.repo / ".husky" / "post-index-change", 0o755)
@@ -261,6 +261,21 @@ class HookPlantedProgramTests(unittest.TestCase):
         self.marker.unlink(missing_ok=True)
         later = time.time() + 3600
         os.utime(self.repo / "tracked.txt", (later, later))
+        return later
+
+    def test_tree_hash_runs_no_index_hook_from_the_worktree(self) -> None:
+        self.plant_index_hook()
+        self.git("-C", str(self.repo), "diff", "HEAD", "--binary")
+        self.assertTrue(self.marker.exists(), "control: the unpinned diff refreshes the index and runs the hook")
+        self.marker.unlink()
+        later = time.time() + 7200
+        os.utime(self.repo / "tracked.txt", (later, later))
+        result = self.run_hook("claude", "tree-hash.sh", {})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.marker.exists())
+
+    def test_gate_status_runs_no_index_hook_from_the_worktree(self) -> None:
+        later = self.plant_index_hook()
         self.git("-C", str(self.repo), "status", "--porcelain")
         self.assertTrue(self.marker.exists(), "control: the unpinned status refreshes the index and runs the hook")
         for harness in ("claude", "codex"):
