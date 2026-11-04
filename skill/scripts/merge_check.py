@@ -21,13 +21,26 @@ from status import rebasing
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
 CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
 DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
-HARNESS_FILES = (".mcp.json",)
-HARNESS_FOLDERS = (".claude", ".codex", ".dev-loop", ".agents/skills/dev-loop")
+HARNESS_NAMES = (".claude", ".codex", ".dev-loop", ".mcp.json")
+CI_FOLDERS = (".github/workflows", ".github/rulesets")
+
+
+def fold(path: str) -> str:
+    """The path as a case-insensitive APFS compares it: Unicode NFD, then full case folding."""
+    return unicodedata.normalize("NFD", path).casefold()
 
 
 def is_harness_config(path: str) -> bool:
-    path = unicodedata.normalize("NFD", path).casefold()
-    return path in HARNESS_FILES or any(path == f or path.startswith(f"{f}/") for f in HARNESS_FOLDERS)
+    """A segment `.claude`, `.codex`, `.dev-loop` or `.mcp.json`, or `.agents/skills`, at any depth: a harness
+    reads a nested folder too. A last segment `.agents`: a symlink or file there."""
+    parts = fold(path).split("/")
+    return (any(p in HARNESS_NAMES for p in parts) or parts[-1] == ".agents"
+            or any(a == ".agents" and b == "skills" for a, b in zip(parts, parts[1:])))
+
+
+def is_ci_config(path: str) -> bool:
+    path = fold(path)
+    return any(path == f or path.startswith(f"{f}/") for f in CI_FOLDERS)
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
@@ -200,6 +213,7 @@ def merge_check(args: argparse.Namespace) -> int:
         if changed:
             reasons.append({"reason": "config-changed"})
     reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if is_harness_config(p))
+    reasons.extend({"reason": "ci-config", "path": p} for p in landing_paths if is_ci_config(p))
 
     reviewed = reviewed_head(worktree, notes, spec)
     # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.
