@@ -233,6 +233,29 @@ test('dev-loop.json maps commands.acceptance to the script that runs both runner
   assert.ok(script.includes('node --test'))
 })
 
+test('the ruleset files hold the CI job ids and the release tags', () => {
+  const read = (path) => readFileSync(join(packageRoot, path), 'utf8')
+  const jobs = [...read('.github/workflows/ci.yml').split(/^jobs:$/m)[1].matchAll(/^ {2}([\w-]+):\s*$/gm)].map((m) => m[1])
+  assert.deepEqual(jobs, ['changes', 'test', 'acceptance'])
+  const rule = (set, type) => set.rules.find((r) => r.type === type)
+  const main = JSON.parse(read('.github/rulesets/main.json'))
+  assert.equal(main.target, 'branch')
+  assert.equal(main.enforcement, 'active')
+  assert.deepEqual(main.conditions.ref_name.include, ['~DEFAULT_BRANCH'])
+  assert.deepEqual(main.rules.map((r) => r.type).sort(),
+    ['deletion', 'non_fast_forward', 'pull_request', 'required_linear_history', 'required_status_checks'])
+  assert.deepEqual(rule(main, 'required_status_checks').parameters.required_status_checks.map((c) => c.context).sort(), [...jobs].sort())
+  assert.equal(rule(main, 'pull_request').parameters.required_approving_review_count, 0)
+  assert.deepEqual(rule(main, 'pull_request').parameters.allowed_merge_methods, ['rebase'])
+  assert.deepEqual(main.bypass_actors, [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' }])
+  const tags = JSON.parse(read('.github/rulesets/release-tags.json'))
+  assert.equal(tags.target, 'tag')
+  assert.equal(tags.enforcement, 'active')
+  assert.deepEqual(tags.conditions.ref_name.include, ['refs/tags/v*'])
+  assert.deepEqual(tags.rules.map((r) => r.type).sort(), ['creation', 'deletion', 'non_fast_forward', 'update'])
+  assert.deepEqual(tags.bypass_actors, [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }])
+})
+
 test('ci.yml has a job named acceptance that runs commands.acceptance', () => {
   const ci = readFileSync(join(packageRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
   const marker = JSON.parse(readFileSync(join(packageRoot, 'dev-loop.json'), 'utf8'))
