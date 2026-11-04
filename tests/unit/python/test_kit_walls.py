@@ -178,6 +178,8 @@ class CanaryScriptTests(unittest.TestCase):
         for line in runs:
             self.assertIn("--dangerously-bypass-hook-trust", line)
         self.assertNotIn('-c "projects.', text)
+        self.assertEqual(len([line for line in runs if "-c features.standalone_web_search=true" in line]), 1)
+        self.assertIn('[ "$h" = codex ] && web_canary', text)
         self.assertIn("never redirect or discard", text)
         self.assertIn("A route reported without running it is a failure", text)
         self.assertEqual(text.count('[ "$v" = not-run ] && [ "$h" = codex ] && [ "$agent" = spec_tester ] && v=refused'), 1)
@@ -331,6 +333,39 @@ class CanaryScriptTests(unittest.TestCase):
                                          str(reply_file), "CANARYNET1", docker], capture_output=True, text=True)
                 expected = "\n".join(f"codex network {line}" for line in lines)
                 self.assertEqual((result.returncode, result.stdout.strip()), (code, expected), result.stderr)
+
+    def test_web_verdict_reads_the_implementer_transcript(self):
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, True)
+        opened = 'await tools.web__run({open: [{ref_id: "https://example.com"}]})'
+        denial = "Blocked: webrun is closed to this agent: the web holds a public copy of the repository."
+
+        def call(cid, name, text, key="input"):
+            return {"payload": {"type": "custom_tool_call", "call_id": cid, "name": name, key: text}}
+
+        def result(cid, text):
+            return {"payload": {"type": "custom_tool_call_output", "call_id": cid, "output": text}}
+
+        blocked = [call("c1", "exec", opened), result("c1", denial)]
+        for name, objs, rc, code, word in [
+            ("blocked", blocked, 0, 0, "blocked"),
+            ("no-denial", [call("c1", "exec", opened), result("c1", "results: x")], 0, 1, "LEAK"),
+            ("renamed", [call("c1", "browse__open", '{"url": "https://example.com"}', "arguments"),
+                         result("c1", "Example Domain This domain is for use in examples")], 0, 1, "LEAK"),
+            ("second-open", blocked + [call("c2", "exec", "await tools.web__run({})"), result("c2", "results: x")],
+             0, 1, "LEAK"),
+            ("no-web-call", [call("c1", "exec", "ls"), result("c1", "README.md")], 0, 0, "refused"),
+            ("harness-failed", blocked, 1, 1, "ERROR"),
+            ("no-transcript", [], 0, 1, "ERROR"),
+        ]:
+            with self.subTest(name=name):
+                folder = work / name
+                folder.mkdir()
+                if objs:
+                    put(folder / "agent.jsonl", "".join(json.dumps(o) + "\n" for o in objs))
+                run = subprocess.run(["/bin/bash", str(self.script), "--self-test-web-verdict", str(rc), str(folder)],
+                                     capture_output=True, text=True)
+                self.assertEqual((run.returncode, run.stdout), (code, f"codex web implementer {word}\n"), run.stderr)
 
     def test_codex_network_check_runs_after_the_sandbox_canary(self):
         text = self.script.read_text()
