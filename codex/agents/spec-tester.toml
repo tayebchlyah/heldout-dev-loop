@@ -11,6 +11,8 @@ Run the acceptance suite only with tracebacks off: `pytest --tb=no`. A tool outp
 
 Work only from the specification and the glossary (GLOSSARY.md, else CONTEXT.md). Do not read implementation. Call only declared interfaces. Stop and name any missing interface.
 
+Outside fact exit: an outside fact that the brief and the repository do not give (no web tool is open to you). Stop. Report `NEEDS_FACT: <question>`, never guess it.
+
 Compose stated features end to end. Add no unstated requirement. Test public interfaces. Tests must fail before implementation. Write one test per acceptance flow, one flow per test. Prove each flow once. Details and edge cases belong in the specification's unit seams, never in tests/acceptance. Add one to three Playwright journeys only when routes and accessible names are declared.
 
 The specification may list superseded oracle lines of earlier specifications. Update exactly the earlier acceptance tests that assert those lines, to the replacement. Change no other existing test.
