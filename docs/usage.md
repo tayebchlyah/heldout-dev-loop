@@ -20,7 +20,7 @@ npx github:tayebchlyah/heldout-dev-loop#<tag> upgrade           # update the kit
 npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global  # remove the 1.4 global install
 ```
 
-`init` writes `dev-loop.json`, `.dev-loop/MANIFEST.json`, the skill in `.agents/skills/dev-loop/`, the `pause`, `continue`, `release-audit` and `garden` skills in `.agents/skills/<name>/` and the files of the chosen harnesses (`--harness=claude|codex|both`) under `.claude/`, `.codex/` and `.dev-loop/hooks/`. `--notes=<path>` sets the notes folder in the gitignored `dev-loop.local.json`. Commit the result. Kit files are never edited in a project: change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit unless `--force`. A call with no command prints the usage and exits 1.
+`init` writes `dev-loop.json`, `.dev-loop/MANIFEST.json`, the skill in `.agents/skills/dev-loop/`, the `pause`, `continue`, `release-audit`, `garden`, `release` and `release-notes` skills in `.agents/skills/<name>/` and the files of the chosen harnesses (`--harness=claude|codex|both`) under `.claude/`, `.codex/` and `.dev-loop/hooks/`. `--notes=<path>` sets the notes folder in the gitignored `dev-loop.local.json`. Commit the result. Kit files are never edited in a project: change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit unless `--force`. A call with no command prints the usage and exits 1.
 
 ## After installing
 

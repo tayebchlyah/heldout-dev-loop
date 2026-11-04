@@ -152,14 +152,16 @@ Credits:
 - `codex-sandbox`: [https://github.com/openai/codex](https://github.com/openai/codex), Apache-2.0, rust-v0.166.0. The Seatbelt policies; license and NOTICE in `skill/references/licenses/Codex Sandbox.txt`.
 - `security-audit`: [https://github.com/cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill), MIT, pinned commit `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`. The Stage 6 security verifier and `/release-audit`.
 
-The copied license texts are in `skill/references/spec.md`, `building.md`, `verify.md`, `benchmark.md` and `skill/references/licenses/`. `scripts/upstream_watch.py` checks these sources each week (`.github/workflows/upstream-watch.yml`) and keeps one `upstream-watch` issue open with what changed.
+The vendor text under `## Scope, Claude Code` and `## Scope, Codex` in `skill/references/building.md` comes from the Anthropic Claude prompting docs (https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 and https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5) and the OpenAI Codex docs (https://developers.openai.com/api/docs/guides/latest-model).
+
+The copied license texts are in `skill/references/spec.md`, `building.md`, `verify.md` and `skill/references/licenses/`. `scripts/upstream_watch.py` checks these sources each week (`.github/workflows/upstream-watch.yml`) and keeps one `upstream-watch` issue open with what changed.
 
 ## Security model and limits
 
 - The walls and the seal stop a careless agent, not a hostile agent or a hostile user.
-- The hooks run on your machine with your rights. dev-loop adds no sandbox around them.
+- The hooks run on your machine with your rights, with one exception: on Codex, the feature gate hook runs under native Codex confinement (a Seatbelt adapter on macOS). The other Codex hooks, and every Claude Code hook with the gate it starts, run on the host.
 - The known gaps are listed in `skill/references/claude.md` and `skill/references/codex.md`.
-- Each release has a security audit, and an open security finding blocks the release tag.
+- Each release has a security audit, and an open security finding makes `release-check` refuse the tag in `/release`, and the git guard refuses the tag push. An admin can still push a tag by other means.
 
 Report a vulnerability as [SECURITY.md](SECURITY.md) says.
 
