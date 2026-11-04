@@ -130,9 +130,11 @@ class RepoDocsTests(unittest.TestCase):
     def test_kit_and_release_files(self) -> None:
         kit = (ROOT / "reference" / "kit.md").read_text()
         for value in ("`.dev-loop/MANIFEST.json`", "Ruling R10", "\n## Upgrade\n", "Tool walls upgrade (#97)",
-                      "`/hooks` trusts it again"):
+                      "`/hooks` trusts it again",
+                      "Walled agents web upgrade (#240)", "`/hooks` trusts the hooks again"):
             with self.subTest(value=value):
                 self.assertIn(value, kit)
+        self.assertNotIn('web_search = "disabled"', kit)
         for value in (
             "release_notes", "version_files", "release_prepare", "release_check", "release_verify",
             "ci-skip", ".devloop-base", "--github-output", "needs: changes", "release-notes --tag",
