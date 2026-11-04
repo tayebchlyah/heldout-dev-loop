@@ -128,9 +128,13 @@ class MergeCheckTests(MergeCheckCase):
                     self.assertIsNone(out["reviewed"])
 
     def test_harness_config_change_waits(self) -> None:
-        """A change to a harness config file waits for the user, whatever `merge_human_paths` says."""
+        """A change to a harness config or CI definition file waits for the user, whatever `merge_human_paths`
+        says."""
         def harness(path: str) -> dict:
             return {"reason": "harness-config", "path": path}
+
+        def ci(path: str) -> dict:
+            return {"reason": "ci-config", "path": path}
         rows = [
             (".claude/settings.json", {"merge_human_paths": ["x/*"]}, None, [harness(".claude/settings.json")]),
             (".claude/settings.local.json", {}, None, [harness(".claude/settings.local.json")]),
@@ -151,8 +155,34 @@ class MergeCheckTests(MergeCheckCase):
              [harness(".agents/skills/dev-loop/scripts/devloop.py")]),
             (".dev-loop", {}, "cfg", [harness(".dev-loop")]),
             (".agents/skills/dev-loop", {}, "cfg", [harness(".agents/skills/dev-loop")]),
-            (".agents/skills/pause/SKILL.md", {}, None, []),
-            (".agents/skills/dev-loopx/a", {}, None, []),
+            (".agents/skills/pause/SKILL.md", {}, None, [harness(".agents/skills/pause/SKILL.md")]),
+            (".agents/skills/continue/SKILL.md", {}, None, [harness(".agents/skills/continue/SKILL.md")]),
+            (".agents/skills/y/SKILL.md", {}, None, [harness(".agents/skills/y/SKILL.md")]),
+            (".agents/skills/dev-loopx/a", {}, None, [harness(".agents/skills/dev-loopx/a")]),
+            (".agents/skills", {}, "cfg", [harness(".agents/skills")]),
+            (".agents", {}, "cfg", [harness(".agents")]),
+            ("pkg/.claude/skills/y/SKILL.md", {}, None, [harness("pkg/.claude/skills/y/SKILL.md")]),
+            ("pkg/.claude/settings.json", {}, None, [harness("pkg/.claude/settings.json")]),
+            ("pkg/.agents/skills/y/SKILL.md", {}, None, [harness("pkg/.agents/skills/y/SKILL.md")]),
+            ("pkg/.codex/config.toml", {}, None, [harness("pkg/.codex/config.toml")]),
+            ("pkg/.codex/hooks.json", {}, None, [harness("pkg/.codex/hooks.json")]),
+            ("pkg/.mcp.json", {}, None, [harness("pkg/.mcp.json")]),
+            ("a/b/.Claude/x", {}, None, [harness("a/b/.Claude/x")]),
+            ("pkg/.claude", {}, "cfg", [harness("pkg/.claude")]),
+            ("pkg/a.mcp.json", {}, None, []),
+            ("pkg/.claudex/a", {}, None, []),
+            ("pkg/agents/skills/a", {}, None, []),
+            (".agentsx/skills/a", {}, None, []),
+            (".github/workflows/ci.yml", {}, None, [ci(".github/workflows/ci.yml")]),
+            (".github/rulesets/main.json", {}, None, [ci(".github/rulesets/main.json")]),
+            (".GitHub/Workflows/ci.yml", {}, None, [ci(".GitHub/Workflows/ci.yml")]),
+            (".github/workflows", {}, "cfg", [ci(".github/workflows")]),
+            (".github/workflows/ci.yml", {"merge_human_paths": [".github/*"]}, None,
+             [{"reason": "human-path", "path": ".github/workflows/ci.yml", "pattern": ".github/*"},
+              ci(".github/workflows/ci.yml")]),
+            (".github/workflows/ci.yml", None, None, [{"reason": "config-unreadable"}, ci(".github/workflows/ci.yml")]),
+            (".github/ISSUE_TEMPLATE/bug.md", {}, None, []),
+            ("pkg/.github/workflows/ci.yml", {}, None, []),
             (".mcp.j\u017fon", {}, None, [harness(".mcp.j\u017fon")]),
             (".agents/\u017fkills/dev-loop/x.py", {}, None, [harness(".agents/\u017fkills/dev-loop/x.py")]),
             (".\uff43laude/x", {}, None, []),
