@@ -200,9 +200,10 @@ test('init writes Codex files that parse and hook commands that point into the p
   const commands = (hooks) => Object.values(hooks).flat().flatMap((group) => group.hooks.map((hook) => hook.command))
 
   const codexHooks = readJson(join(repo, '.codex/hooks.json'))
+  const hash = sha256(readFileSync(join(repo, '.dev-loop/MANIFEST.json'))).slice('sha256:'.length)
   for (const command of commands(codexHooks.hooks)) {
-    assert.ok(command.startsWith('f="$(d=$(pwd -P) m= i=; while :; do'), command)
-    assert.ok(command.includes('printf %s "$m")/.dev-loop/hooks/codex/'), command)
+    assert.ok(command.startsWith('f="${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/'), command)
+    assert.ok(command.includes(`/dev-loop/kit/${hash}/.dev-loop/hooks/codex/`), command)
   }
   assertValidToml(readFileSync(join(repo, '.codex/config.toml'), 'utf8'))
 

@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
+import ci_skip  # noqa: E402
 import release  # noqa: E402
 
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main"]
@@ -243,6 +245,8 @@ class KitSourceFlowTests(KitFixture):
         config = json.loads((self.repo / "dev-loop.json").read_text())
         (self.repo / "dev-loop.json").write_text(json.dumps({**config, "version_files": ["package.json"]}) + "\n")
         (self.repo / "CHANGELOG.md").write_text("# Changelog\n\n## [3.0.0] - 2026-10-01\n")
+        with (self.repo / ".gitignore").open("a") as ignore:
+            ignore.write("*.bak-*\n")
         self.a = self.commit()
         self.notes = self.tmp / "Notes"
         (self.notes / "Security Audit" / "Run 1").mkdir(parents=True)
@@ -302,7 +306,7 @@ class KitSourceFlowTests(KitFixture):
         (self.notes / "Security Audit" / "Run 1" / "run-metadata.json").write_text(
             json.dumps({"source_ref": {"commit": record}, "run_status": "complete"}))
         target = self.release()
-        stale = [{"reason": "stale-audit", "paths": [release.MANIFEST, "dev-loop.json", "package.json"]}]
+        stale = [{"reason": "stale-audit", "paths": [".codex/hooks.json", release.MANIFEST, "dev-loop.json", "package.json"]}]
         for args, reasons, ran in [((), [], True), (("--no-build",), stale, False)]:
             with self.subTest(args=args):
                 marker.unlink(missing_ok=True)
@@ -381,6 +385,26 @@ class KitSourceFlowTests(KitFixture):
                     json.dumps({"source_ref": {"commit": record}, "run_status": "complete"}))
                 target = self.release(change=edit)
                 self.assertEqual(self.devloop("release-check", *args, "--sha", target)["reasons"], reasons)
+
+    def test_merged_hooks_take_the_hash_of_the_head_manifest(self) -> None:
+        hooks = ".codex/hooks.json"
+        ref = release.kit_reference(self.repo, self.a)
+        def manifest_hash() -> str:
+            return hashlib.sha256((self.repo / release.MANIFEST).read_bytes()).hexdigest()
+        old = manifest_hash()
+
+        def follow() -> None:
+            text = (self.repo / hooks).read_text()
+            written = re.search(r"/dev-loop/kit/([0-9a-f]{64})/", text).group(1)
+            (self.repo / hooks).write_text(text.replace(written, manifest_hash()))
+        rows = [("version only", False, {hooks}), ("files differ, hooks follow the MANIFEST", True, set())]
+        for name, edit, allowed in rows:
+            with self.subTest(row=name):
+                git(self.repo, "reset", "-q", "--hard", self.a)
+                head = self.release(edit, follow)
+                self.assertNotEqual(manifest_hash(), old)
+                self.assertIn(f"/dev-loop/kit/{manifest_hash()}/", (self.repo / hooks).read_text())
+                self.assertEqual(ci_skip.merged_allowed(self.repo, self.a, head, {hooks}, ref), allowed)
 
     def test_ci_skip_upgrade_merged_configs(self) -> None:
         settings = ".claude/settings.json"

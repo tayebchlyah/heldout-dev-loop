@@ -6,6 +6,7 @@ Shared by `devloop.py` (`ci-skip`) and `release.py` (`release-check`).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -23,7 +24,7 @@ MERGE_SCRIPT = """
 import { pathToFileURL } from 'node:url'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-const [root, harnesses, inputs] = process.argv.slice(1)
+const [root, harnesses, inputs, hash] = process.argv.slice(1)
 const { buildKit, droppedHookCommands, projectFragments } = await import(pathToFileURL(root + '/lib/kit.mjs'))
 const { runPlan } = await import(pathToFileURL(root + '/lib/plan.mjs'))
 const manifest = await import(pathToFileURL(root + '/lib/manifest.mjs'))
@@ -32,7 +33,7 @@ const kit = buildKit({ packageRoot: root, harnesses: list })
 const kept = new Set([...kit.files.map((f) => f.path), ...kit.links.map((l) => l.path)])
 const project = join(root, 'project')
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
-const fragments = projectFragments({ packageRoot: root, harnesses: list, manifestHash: manifest.manifestHash?.(manifest.manifestText(version, kit)) })
+const fragments = projectFragments({ packageRoot: root, harnesses: list, manifestHash: hash || manifest.manifestHash?.(manifest.manifestText(version, kit)) })
 for (const [path, text] of Object.entries(JSON.parse(inputs))) {
   mkdirSync(dirname(join(project, path)), { recursive: true })
   writeFileSync(join(project, path), text)
@@ -125,10 +126,16 @@ def tree_files(repo: Path, commit: str, paths: list[str]) -> dict[str, bytes | N
     return found
 
 
-def merged_allowed(repo: Path, base: str, head: str, paths: set[str]) -> set[str]:
+def merged_allowed(repo: Path, base: str, head: str, paths: set[str], ref: dict[str, tuple[str, str]]) -> set[str]:
     """The merged config files of `paths` whose content at `head` equals what the `upgrade` of `base`'s own installer
-    merges into that file at `base` (#206). Each must be a regular non-executable file at `head`, and at `base` unless
-    absent there; none when the base has no kit source (`release.kit_build`)."""
+    merges into that file at `base` (#206), with the hash of the `head` MANIFEST in the Codex hook commands (#227). Each
+    must be a regular non-executable file at `head`, and at `base` unless absent there; none when the base has no kit
+    source (`release.kit_build`), or when the MANIFEST `files` at `head` differ from the kit `ref` the base builds."""
+    if release.MANIFEST not in release.kit_matches(repo, head, {release.MANIFEST}, ref):
+        return set()
+    manifest = tree_files(repo, head, [release.MANIFEST]).get(release.MANIFEST)
+    if manifest is None:
+        return set()
     among = sorted(paths & MERGED)
     before, after = tree_files(repo, base, among), tree_files(repo, head, among)
     inputs = {}
@@ -140,7 +147,8 @@ def merged_allowed(repo: Path, base: str, head: str, paths: set[str]) -> set[str
     allowed = {p for p in among if after.get(p) is not None and (p not in before or inputs[p] is not None)}
     if not allowed:
         return set()
-    merged = release.kit_build(repo, base, MERGE_SCRIPT, json.dumps({p: t for p, t in inputs.items() if t is not None}))
+    merged = release.kit_build(repo, base, MERGE_SCRIPT, json.dumps({p: t for p, t in inputs.items() if t is not None}),
+                               hashlib.sha256(manifest).hexdigest())
     if not isinstance(merged, dict):
         return set()
     return {p for p in allowed if isinstance(merged.get(p), str) and after[p] == merged[p].encode()}
@@ -178,7 +186,7 @@ def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = T
     remerged = set()
     if ref is not None:
         allowed |= kit_allowed(repo, mb, head, set(paths), ref)
-        remerged = merged_allowed(repo, mb, head, set(paths))
+        remerged = merged_allowed(repo, mb, head, set(paths), ref)
         allowed |= remerged
     return sorted(p for p in paths if p not in allowed or p in MERGED - remerged)
 
