@@ -26,11 +26,13 @@ import { dirname, join } from 'node:path'
 const [root, harnesses, inputs] = process.argv.slice(1)
 const { buildKit, droppedHookCommands, projectFragments } = await import(pathToFileURL(root + '/lib/kit.mjs'))
 const { runPlan } = await import(pathToFileURL(root + '/lib/plan.mjs'))
+const manifest = await import(pathToFileURL(root + '/lib/manifest.mjs'))
 const list = JSON.parse(harnesses)
 const kit = buildKit({ packageRoot: root, harnesses: list })
 const kept = new Set([...kit.files.map((f) => f.path), ...kit.links.map((l) => l.path)])
 const project = join(root, 'project')
-const fragments = projectFragments({ packageRoot: root, harnesses: list })
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+const fragments = projectFragments({ packageRoot: root, harnesses: list, manifestHash: manifest.manifestHash?.(manifest.manifestText(version, kit)) })
 for (const [path, text] of Object.entries(JSON.parse(inputs))) {
   mkdirSync(dirname(join(project, path)), { recursive: true })
   writeFileSync(join(project, path), text)

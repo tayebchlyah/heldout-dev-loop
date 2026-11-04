@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { sha256, buildManifest, readManifest, compareManifest } from '../../../lib/manifest.mjs'
+import { sha256, buildManifest, manifestText, manifestHash, readManifest, compareManifest } from '../../../lib/manifest.mjs'
 import { tempDir } from './helpers.mjs'
 
 const kit = {
@@ -28,6 +28,11 @@ function writeKit(repo) {
 
 test('sha256 names the algorithm and hashes the utf8 content', () => {
   assert.equal(sha256('é'), `sha256:${createHash('sha256').update(Buffer.from('é', 'utf8')).digest('hex')}`)
+})
+
+test('manifestText is the MANIFEST bytes and manifestHash their hex sha256', () => {
+  assert.equal(manifestText('1.2.3', kit), `${JSON.stringify(buildManifest('1.2.3', kit), null, 2)}\n`)
+  assert.equal(manifestHash('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
 })
 
 test('the manifest lists the version and each kit path, sorted, with the link', () => {
