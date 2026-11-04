@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -38,6 +39,15 @@ def groups_running(config: object, script: str) -> list[tuple[list, dict]]:
             else:
                 found.extend(groups_running(item, script))
     return found
+
+
+def toml_keys(value: object) -> list[str]:
+    """Every key name, at any depth, of a parsed TOML document."""
+    if isinstance(value, dict):
+        return [name for key, item in value.items() for name in (key, *toml_keys(item))]
+    if isinstance(value, list):
+        return [name for item in value for name in toml_keys(item)]
+    return []
 
 
 def frontmatter(path: Path) -> str:
@@ -115,7 +125,9 @@ class InstallUpgradeTests(unittest.TestCase):
 
     def test_f3_install_and_upgrade_write_the_wall_entries(self) -> None:
         """O14 to O18: the kit source matchers and agent keys; `init` writes them; `upgrade` replaces the earlier
-        wall entries and keeps a user entry; `reference/kit.md` names the Codex hook trust step."""
+        wall entries and keeps a user entry; `reference/kit.md` names the Codex hook trust step. O14 to O17 as
+        amended by Walled Agents No Web O7 to O10: the web tools and `Agent` in the matchers and
+        `disallowedTools`, no `web_search` key after `init`, a project `web_search` kept by `upgrade`."""
         # O14, O15: the kit source.
         claude_fragment = json.loads(CLAUDE_FRAGMENT.read_text())
         self.assert_one_entry(claude_fragment, NET, CLAUDE_MATCHER)
@@ -136,6 +148,9 @@ class InstallUpgradeTests(unittest.TestCase):
         for name in ("implementer.md", "spec-tester.md"):
             with self.subTest(oracle="O16", agent=f".claude/agents/{name}"):
                 self.assert_agent(fresh / ".claude" / "agents" / name)
+        with self.subTest(oracle="O16", file=".codex/config.toml"):
+            config = tomllib.loads((fresh / ".codex" / "config.toml").read_text())
+            self.assertNotIn("web_search", toml_keys(config))
 
         # O17: upgrade of the earlier entries, a user entry beside each.
         old = self.project("old-gizmos")
@@ -149,7 +164,13 @@ class InstallUpgradeTests(unittest.TestCase):
             group["matcher"] = old_matcher
             holder.append(json.loads(json.dumps(USER_GROUP)))
             path.write_text(json.dumps(config, indent=2) + "\n")
+        codex_config = old / ".codex" / "config.toml"
+        own = [line for line in codex_config.read_text().splitlines(keepends=True)
+               if not re.match(r"\s*web_search\s*=", line)]
+        codex_config.write_text('web_search = "live"\n' + "".join(own))
         self.install("upgrade", old)
+        with self.subTest(oracle="O17", file="config.toml"):
+            self.assertEqual(tomllib.loads(codex_config.read_text()).get("web_search"), "live")
         for path, script, _, matcher in files:
             with self.subTest(oracle="O17", file=path.name):
                 config = json.loads(path.read_text())
