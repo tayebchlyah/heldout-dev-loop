@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import json
 import os
@@ -23,6 +24,7 @@ TIME = "%Y-%m-%dT%H:%M:%SZ"
 STOP_WAITING = {2: "approve the spec", 3: "reply in the session", 4: "reply in the session",
                 5: "reply in the session", 6: "reply in the session", 7: "review the PR"}
 SHIPPED_KEPT = 5
+QUEUE, CLAIMS, FEATURES = "board-events.jsonl", "board-claims.json", "board-features.json"
 TEMPLATE = Path(__file__).with_name("board-note.md")
 
 
@@ -34,6 +36,7 @@ class Context:
     notes: Path
     folder: Path
     state: Path
+    state_fd: int  # #239: the state folder, opened once; every state file goes through it.
     machine: dict
     project: str
     data: dict  # D1: the board state, loaded under the lock, saved once before it is released.
@@ -69,10 +72,10 @@ def worktrees(dl: ModuleType, repo: Path) -> dict[Path, str | None]:
     return found
 
 
-def read_slugs(path: Path) -> list[str]:
+def read_slugs(dir_fd: int, name: str) -> list[str]:
     try:
-        claims = json.loads(path.read_text())
-    except (OSError, ValueError):
+        claims = json.loads(store.read_regular(dir_fd, name) or "")
+    except ValueError:
         return []
     return [c for c in claims if isinstance(c, str)] if isinstance(claims, list) else []
 
@@ -281,9 +284,18 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         state.save_last_run(state_dir, now, payload["skipped"])
         return 0, payload
     state_dir.mkdir(parents=True, exist_ok=True)
-    queue = state_dir / "board-events.jsonl"
-    lock_fd = os.open(state_dir / "board.lock", os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(lock_fd, "a+") as lock:
+    state_fd, reason = state.open_dir(state_dir)  # #239: opened once; a folder swapped for a link later is not followed.
+    if state_fd is None:
+        payload["skipped"].append(skip(reason))
+        return 0, payload
+    lock_fd = store.open_regular(state_fd, "board.lock", os.O_RDWR | os.O_APPEND | os.O_CREAT)
+    if lock_fd is None:  # #239: a link or a FIFO at the lock.
+        os.close(state_fd)
+        payload["skipped"].append(skip("state-link"))
+        return 0, payload
+    fds = contextlib.ExitStack()
+    fds.callback(os.close, state_fd)
+    with fds, os.fdopen(lock_fd, "a+") as lock:
         # DEVLOOP_TEST_CLAIM_WAIT: tests only, a shorter D7 claim wait than the spec's 10 s.
         if not take(lock, float(os.environ.get("DEVLOOP_TEST_CLAIM_WAIT") or 10) if claim else 0):
             if claim:  # D7: a claim is never dropped silently.
@@ -291,9 +303,10 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             # D2, D13: the lock holder applies it; a run without an event queues `null`, a refresh.
             line = json.dumps({"event": event, "cwd": str(hook_cwd or repo), "session_id": hook_session,
                                "agent_id": hook_agent, "transcript_path": hook_transcript, "at": time.strftime(TIME, time.gmtime())})
-            fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-            with os.fdopen(fd, "a") as handle:
-                handle.write(line + "\n")
+            fd = store.open_regular(state_fd, QUEUE, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+            if fd is not None:  # #239: a link or a FIFO at the queue: nothing is written.
+                with os.fdopen(fd, "a") as handle:
+                    handle.write(line + "\n")
             payload["skipped"].append(skip("busy"))
             return 0, payload
         found: dict[str, dict] = {}
@@ -303,8 +316,6 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                 found[slug] = detect_feature(repo, slug, notes)
             return found[slug]
 
-        claims_file = state_dir / "board-claims.json"
-
         def refresh(first: bool) -> tuple[dict, dict, list[str]]:
             """D13: each pass reads git, the specs and the worktrees again. D10: claims. A claim goes when its
             feature has a worktree here, ships, or has no spec."""
@@ -313,11 +324,11 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             pass_specs = dict(dl.specs(notes)) if not first else specs
             pass_trees = worktrees(dl, repo) if not first else trees
             tree_slugs = [s for s in dict.fromkeys(pass_trees.values()) if s]
-            old_claims = read_slugs(claims_file)
+            old_claims = read_slugs(state_fd, CLAIMS)
             pass_claims = [c for c in dict.fromkeys([*old_claims, claim] if first and claim else old_claims)
                            if c not in tree_slugs and c in pass_specs and detect(c)["stage"] != "shipped"]
             if pass_claims != old_claims:
-                store.write_file(state_dir, claims_file.name, json.dumps(pass_claims) + "\n")
+                store.write_in(state_fd, CLAIMS, json.dumps(pass_claims) + "\n")
             return pass_specs, pass_trees, pass_claims
 
         specs, trees, claims = refresh(True)
@@ -332,11 +343,11 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             state.save_last_run(state_dir, now, payload["skipped"])
             return 0, payload
         (folder / dl.BOARD_FEATURES).mkdir(exist_ok=True)
-        events = [*drain(queue),
+        events = [*drain(state_fd, QUEUE),
                   *([(event, hook_cwd.resolve(), hook_session, hook_agent, hook_transcript)] if event and hook_cwd else [])]
         claude = dl.claude_home(os.environ, home)
-        ctx = Context(dl, repo, notes, folder, state_dir, store.load_machine(home), store.project_name(repo),
-                      state.load(state_dir), claude, shipped_kept(dl, repo))
+        ctx = Context(dl, repo, notes, folder, state_dir, state_fd, store.load_machine(home), store.project_name(repo),
+                      state.load(state_dir, state_fd), claude, shipped_kept(dl, repo))
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
             if evicted(dl, notes):
@@ -344,14 +355,14 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                 # waits for a run that sees every spec.
                 payload["skipped"].append(skip("placeholder"))
                 break
-            events = drain(queue)  # D2: events queued during this write.
+            events = drain(state_fd, QUEUE)  # D2: events queued during this write.
             if not events:
                 break
             specs, trees, claims = refresh(False)
         # A catch-up pass sees the per-feature skips of the passes before it: each one once, in order.
         payload["skipped"] = [dict(k) for k in dict.fromkeys(tuple(s.items()) for s in payload["skipped"])]
         ctx.data["last_run"] = {"at": now, "skipped": payload["skipped"]}
-        state.save(state_dir, ctx.data)
+        state.save(state_dir, ctx.data, state_fd)
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
         board_note(Path(top), folder, payload)
     return 0, payload
@@ -379,21 +390,21 @@ def take(lock, wait: float) -> bool:
             time.sleep(0.1)
 
 
-def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, str | None]]:
-    """The queued events in order, as (event, resolved cwd, session_id, agent_id, transcript_path); the queue file is
-    deleted. Bad lines are dropped."""
-    taken = queue.with_name(f".{queue.name}.{os.getpid()}.drain")
+def drain(dir_fd: int, name: str) -> list[tuple[str | None, Path, str | None, str | None, str | None]]:
+    """The queued events in order, as (event, resolved cwd, session_id, agent_id, transcript_path); the queue file
+    `name` of the folder `dir_fd` is deleted. Bad lines are dropped."""
+    taken = f".{name}.{os.getpid()}.drain"
     try:
-        os.replace(queue, taken)  # An append after the rename lands in a new queue file.
+        os.replace(name, taken, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)  # An append after the rename lands in a new queue file.
     except FileNotFoundError:
         return []
-    try:  # #239: a queue swapped for a link is dropped unread.
-        fd = os.open(taken, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = store.open_regular(dir_fd, taken, os.O_RDONLY)  # #239: a queue swapped for a link or a FIFO is dropped unread.
+    if fd is None:
+        text = ""
+    else:
         with os.fdopen(fd) as handle:
             text = handle.read()
-    except OSError:
-        text = ""
-    taken.unlink()
+    os.unlink(taken, dir_fd=dir_fd)
     events = []
     for line in text.splitlines():
         try:
@@ -558,8 +569,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
         payload["notes"].append(str(path))
 
     # D11: the features file scopes deletion to this repo, so a run never deletes the note of another clone.
-    features_file = ctx.state / "board-features.json"
-    old_features = read_slugs(features_file)
+    old_features = read_slugs(ctx.state_fd, FEATURES)
     features = [f for f in old_features if f not in kept] + sorted(kept)
     own_names: set[str] = set()
     own_features: set[str] = set()
@@ -614,7 +624,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
                 or store.note_name(machine["id"], project, f) not in own_names
                 and any((d / store.note_name(machine["id"], project, f)).exists() for d in (folder, old_folder))]
     if features != old_features:
-        store.write_file(ctx.state, features_file.name, json.dumps(features) + "\n")
+        store.write_in(ctx.state_fd, FEATURES, json.dumps(features) + "\n")
     # D1: an entry goes once its feature is out of the write set and has no own-name note in either folder.
     for slug in list(ctx.data["features"]):
         name = store.note_name(machine["id"], project, slug)

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import hashlib
 import json
 import os
 import re
 import secrets
 import socket
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -130,6 +133,49 @@ def write_file(folder: Path, name: str, text: str) -> None:
         os.replace(temp, target)
     except BaseException:
         temp.unlink(missing_ok=True)
+        raise
+
+
+def open_regular(dir_fd: int, name: str, flags: int, mode: int = 0o600) -> int | None:
+    """#239: `name` in the folder `dir_fd`, opened with no link follow and no block; None for a link, a FIFO or any
+    other file that is not a regular file. Other errors (a missing file, no permission) are raised."""
+    try:
+        fd = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, mode, dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENXIO):
+            return None
+        raise
+    if stat.S_ISREG(os.fstat(fd).st_mode):
+        return fd
+    os.close(fd)
+    return None
+
+
+def read_regular(dir_fd: int, name: str) -> str | None:
+    """#239: the text of the regular file `name` in the folder `dir_fd`; None when it is missing, unreadable, not
+    text, a link or not a regular file."""
+    try:
+        fd = open_regular(dir_fd, name, os.O_RDONLY)
+        if fd is None:
+            return None
+        with os.fdopen(fd) as handle:
+            return handle.read()
+    except (OSError, ValueError):
+        return None
+
+
+def write_in(dir_fd: int, name: str, text: str) -> None:
+    """#239: `write_file` inside the folder `dir_fd`: exclusive temp file, then rename, both relative to the folder
+    descriptor, so a folder swapped for a link after the open redirects nothing."""
+    temp = f".{name}.{os.getpid()}.tmp"
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(text)
+        os.replace(temp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp, dir_fd=dir_fd)
         raise
 
 
