@@ -250,6 +250,27 @@ class HookPlantedProgramTests(unittest.TestCase):
                 if move:
                     self.assertIn("gate ran", json.loads(result.stdout)["reason"])
 
+    def test_gate_status_runs_no_index_hook_from_the_worktree(self) -> None:
+        self.env.pop("GIT_OPTIONAL_LOCKS", None)
+        write(self.repo / ".husky" / "post-index-change", f"#!/bin/sh\necho x >> {self.marker}\n")
+        os.chmod(self.repo / ".husky" / "post-index-change", 0o755)
+        self.git("-C", str(self.repo), "config", "core.hooksPath", ".husky")
+        write(self.repo / "dev-loop.json", json.dumps({"commands": {"gate": "exit 1"}}))
+        self.git("-C", str(self.repo), "add", "dev-loop.json", ".husky")
+        self.git("-C", str(self.repo), "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "husky")
+        self.marker.unlink(missing_ok=True)
+        later = time.time() + 3600
+        os.utime(self.repo / "tracked.txt", (later, later))
+        self.git("-C", str(self.repo), "status", "--porcelain")
+        self.assertTrue(self.marker.exists(), "control: the unpinned status refreshes the index and runs the hook")
+        for harness in ("claude", "codex"):
+            self.marker.unlink(missing_ok=True)
+            later += 60
+            os.utime(self.repo / "tracked.txt", (later, later))
+            with self.subTest(harness=harness):
+                self.stop(harness)
+                self.assertFalse(self.marker.exists())
+
     def test_a_failing_required_filter_runs_the_gate(self) -> None:
         self.git("-C", str(self.repo), "config", "filter.plant.clean", "false")
         self.git("-C", str(self.repo), "config", "filter.plant.required", "true")

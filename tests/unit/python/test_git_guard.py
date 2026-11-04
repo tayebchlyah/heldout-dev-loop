@@ -11,7 +11,7 @@ import unittest
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 
-from support import CLAUDE_HOOKS, CODEX_ASSETS, GUARD_ASKS
+from support import CLAUDE_HOOKS, CODEX_ASSETS, GUARD_ASKS, GuardRepo
 
 
 class ClaudeGitGuardPushTests(unittest.TestCase):
@@ -527,3 +527,11 @@ class CodexGitGuardPushTests(ClaudeGitGuardPushTests):
         )
         decision = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] if result.stdout else "allow"
         return "ask" if decision == "deny" else decision
+
+
+class PrivateUseCharacterTests(GuardRepo, unittest.TestCase):
+    """A private-use character, the code points the parser uses for its own marks, makes a line unreadable (#238)."""
+
+    def test_a_private_use_character_before_a_push_or_release_is_refused(self) -> None:
+        self.assert_refused([f"X={chr(0xE100 + n)} {tail}" for n in range(4)
+                             for tail in ("git push origin v1", "gh release create v1")], "the guard cannot read")
