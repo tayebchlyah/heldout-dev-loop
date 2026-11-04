@@ -8,6 +8,7 @@ startup outcomes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -25,7 +26,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALLER = ROOT / "bin/install.mjs"
-HOOK = re.compile(r"/\.dev-loop/hooks/codex/([\w.-]+)\"(.*)$")
+KIT_HEAD = "${CODEX_HOME:-$HOME/.codex}/dev-loop/kit/"
+KIT_HOOK = re.compile(re.escape(KIT_HEAD) + r"([0-9a-f]{64})/\.dev-loop/hooks/codex/([\w.-]+)\"")
+ARGS = {("SessionStart", "board.sh"): "session-start", ("UserPromptSubmit", "board.sh"): "prompt",
+        ("PostToolUse", "board.sh"): "post-tool", ("Stop", "seal.sh"): "turn", ("SubagentStart", "seal.sh"): "start",
+        ("SubagentStop", "seal.sh"): "stop"}
 
 
 def put(path: Path, text: str, executable: bool = False) -> None:
@@ -111,6 +116,9 @@ class CodexHookSandboxFlows(unittest.TestCase):
 
     def hooks(self) -> dict:
         return json.loads((self.main / ".codex/hooks.json").read_text())["hooks"]
+
+    def manifest_digest(self) -> str:
+        return hashlib.sha256((self.main / ".dev-loop/MANIFEST.json").read_bytes()).hexdigest()
 
     def call(self, event: str, script: str, **fields) -> subprocess.CompletedProcess[str]:
         entries = [hook["command"] for group in self.hooks().get(event, []) for hook in group["hooks"]
@@ -332,7 +340,9 @@ Path("macos-result-" + who + ".json").write_text(json.dumps(report))
             self.assertEqual(system_ps.stat().st_uid, before_stat.st_uid, "system ps owner changed")
 
     def test_upgrade_trusts_main_hooks_and_preserves_claude_and_network_scope(self) -> None:
-        """F3, O5/O9/O10 plus Network Scope: migrate old entries, keep user hooks and network rules."""
+        """F3, O5 (amended by Codex Kit Copy: run the outer script from the kit copy at
+        `<CODEX_HOME>/dev-loop/kit/<H>/`, filled from main)/O9/O10 plus Network Scope: migrate old entries, keep
+        user hooks and network rules."""
         claude = (self.main / ".claude/settings.json").read_bytes()
         config = self.main / ".codex/config.toml"
         text = config.read_text().replace('[permissions.dev-workspace.network.domains]',
@@ -344,10 +354,12 @@ Path("macos-result-" + who + ".json").write_text(json.dumps(report))
         for event, groups in hooks.items():
             for group in groups:
                 for hook in group["hooks"]:
-                    match = HOOK.search(hook.get("command", ""))
+                    match = KIT_HOOK.search(hook.get("command", ""))
                     self.assertIsNotNone(match, hook)
-                    script, suffix = match.groups()
+                    digest, script = match.groups()
+                    self.assertEqual(digest, self.manifest_digest(), hook)
                     expected.append((event, script, group.get("matcher")))
+                    suffix = f" {ARGS[(event, script)]}" if (event, script) in ARGS else ""
                     hook["command"] = f'"$(git rev-parse --show-toplevel)/.dev-loop/hooks/codex/{script}"{suffix}'
         user = {"type": "command", "command": "echo pelican-user-hook"}
         hooks["Stop"].append({"hooks": [user]})
@@ -357,10 +369,12 @@ Path("macos-result-" + who + ".json").write_text(json.dumps(report))
         self.assertEqual((self.main / ".claude/settings.json").read_bytes(), claude)
         self.assertEqual(tomllib.loads(config.read_text())["permissions"]["dev-workspace"]["network"], network)
         self.assertIn(user, [hook for group in self.hooks()["Stop"] for hook in group["hooks"]])
+        digest = self.manifest_digest()
         for event, script, matcher in expected:
             matching = [hook for group in self.hooks()[event] if group.get("matcher") == matcher
                         for hook in group["hooks"] if f"/{script}\"" in hook.get("command", "")]
             self.assertEqual(len(matching), 1, f"duplicate {event}/{script}")
+            self.assertIn(f'{KIT_HEAD}{digest}/.dev-loop/hooks/codex/{script}"', matching[0]["command"])
         marker = shlex.quote(str(self.marker))
         for script in (self.feature / ".dev-loop/hooks/codex").glob("*.sh"):
             put(script, f"#!/bin/sh\nprintf feature-hook >> {marker}\n", True)
@@ -373,6 +387,11 @@ Path("macos-result-" + who + ".json").write_text(json.dumps(report))
             with self.subTest(event=event, script=script):
                 self.call(event, script, tool_name="Bash", tool_input={"command": "echo local-test"})
         self.assertFalse(self.marker.exists(), "installed entry ran feature-controlled code on host")
+        copy = self.home / ".codex/dev-loop/kit" / digest
+        manifest = json.loads((self.main / ".dev-loop/MANIFEST.json").read_text())["files"]
+        for path in [".dev-loop/MANIFEST.json"] + [name for name in manifest if name.startswith(
+                (".dev-loop/hooks/codex/", ".agents/skills/dev-loop/scripts/"))]:
+            self.assertEqual((copy / path).read_bytes(), (self.main / path).read_bytes(), f"kit copy {path}")
 
     def test_launcher_failure_blocks_without_host_fallback(self) -> None:
         """F4, O7: startup error blocks a dirty feature gate and never runs its command on host."""
