@@ -236,7 +236,7 @@ test('upgrade of a Codex project replaces the old acceptance-wall entry with one
   const groups = readJson(hooks).hooks.PreToolUse
   const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('acceptance-wall.sh'))
   assert.equal(own.length, 1)
-  assert.equal(own[0].matcher, 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates')
+  assert.equal(own[0].matcher, 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*')
   assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })

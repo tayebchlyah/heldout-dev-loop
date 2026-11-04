@@ -419,7 +419,7 @@ test('init writes the tool walls of both harnesses (#97)', () => {
   const own = (file, script) => readJson(join(repo, file)).hooks.PreToolUse
     .flatMap((entry) => entry.hooks.filter((hook) => hook.command.includes(script)).map(() => entry.matcher))
   assert.deepEqual(own('.claude/settings.json', 'deny-acceptance-to-subagents.sh'), ['Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent'])
-  assert.deepEqual(own('.codex/hooks.json', 'acceptance-wall.sh'), ['Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates'])
+  assert.deepEqual(own('.codex/hooks.json', 'acceptance-wall.sh'), ['Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*'])
   assert.doesNotMatch(readFileSync(join(repo, '.codex/config.toml'), 'utf8'), /^\s*web_search\s*=/m)
   for (const name of ['implementer.md', 'spec-tester.md']) {
     const text = readFileSync(join(repo, '.claude/agents', name), 'utf8')

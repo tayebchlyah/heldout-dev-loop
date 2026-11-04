@@ -213,7 +213,7 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
       ],
     },
     {
-      matcher: 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates',
+      matcher: 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*',
       hooks: [
         {
           type: 'command',
