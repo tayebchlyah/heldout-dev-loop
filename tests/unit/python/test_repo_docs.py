@@ -112,6 +112,23 @@ class RepoDocsTests(unittest.TestCase):
         self.assertNotIn("git cliff", release)
         self.assertNotIn("npx github:tchlyah/dev-loop#vX.Y.Z-rc.N upgrade", release)
 
+    def test_codex_kit_copy_docs(self) -> None:
+        kit = (ROOT / "reference" / "kit.md").read_text()
+        codex = (ROOT / "skill" / "references" / "codex.md").read_text()
+        paragraph = next(p for p in kit.split("\n\n") if p.startswith("Codex kit copy upgrade (#227)"))
+        gaps = re.search(r"^- Gaps.*$", codex, re.M).group(0)
+        for text, value in (
+            (paragraph, "/hooks"),
+            (paragraph, "1 MB"),
+            (gaps, ".codex/hooks.json"),
+            (gaps, "turn a hook off"),
+        ):
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+        for value in ("kit-main", "innermost repo"):
+            with self.subTest(absent=value):
+                self.assertNotIn(value, codex)
+
 
 if __name__ == "__main__":
     unittest.main()
