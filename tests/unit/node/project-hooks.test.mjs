@@ -243,7 +243,8 @@ test('upgrade of a Codex project replaces the old acceptance-wall entry with one
 const OLD_CODEX_FORMS = ['$(git rev-parse --show-toplevel)', "$(git worktree list --porcelain | sed -n '1s/^worktree //p')",
   `$(git worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')`,
   `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || [ -d "$w/.dev-loop" ]; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
-  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || { [ -d "$w/.dev-loop" ] && grep -qsF "[hooks.state.\\"$w/.codex/hooks.json:" "\${CODEX_HOME:-$HOME/.codex}/config.toml"; }; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); { [ -z "$i" ] || { [ -d "$w/.dev-loop" ] && grep -qsF "[hooks.state.\\"$w/.codex/hooks.json:" "\${CODEX_HOME:-$HOME/.codex}/config.toml"; }; } && m=$w; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`,
+  `$(d=$(pwd -P) m= i=; while :; do if [ -e "$d/.git" ]; then w=$(git -C "$d" worktree list --porcelain | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}'); if [ -z "$i" ]; then m=$w; elif [ -d "$w/.dev-loop" ] && git -C "$d" worktree list --porcelain | sed -n 's/^worktree //p' | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$d" ] && exit 0; done; exit 1; } && sed -n -E 's|^[[]hooks[.]state[.]"(/.*)/[.]codex/hooks[.]json:[^"]*"[]][[:space:]]*$|\\1|p' "\${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | { while IFS= read -r p; do [ "$(cd "$p" 2>/dev/null && pwd -P)" = "$w" ] && exit 0; done; exit 1; }; then m=$w; fi; i=1; fi; [ "$d" = / ] && break; d=\${d%/*}; d=\${d:-/}; done; printf %s "$m")`]
   .flatMap((prefix) => [
     [prefix, ({ script, args }) => `"${prefix}/.dev-loop/hooks/codex/${script}"${args}`],
     [prefix, ({ script, command }) => `"${prefix}/.dev-loop/hooks/codex/${command.slice(command.indexOf(`${script}"`))}`],
@@ -292,6 +293,41 @@ test('Codex upgrade migrates each earlier command form once and preserves user h
     upgrade(repo, home, [], pkg)
     assert.ok(readFileSync(path).equals(after), prefix)
   }
+})
+
+test('upgrade of an rc.4 Codex project rewrites each entry once, removes kit-main.sh and asks for /hooks', () => {
+  const rc4 = OLD_CODEX_FORMS.find(([prefix]) => prefix.includes('hooks[.]state'))[0]
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=both'])
+  const claude = readFileSync(join(repo, '.claude/settings.json'))
+  const path = join(repo, '.codex/hooks.json')
+  const hooks = readJson(path)
+  const head = hooks.hooks.Stop[0].hooks[0].command.split('/dev-loop/kit/')[0]
+  const scripts = []
+  for (const groups of Object.values(hooks.hooks)) for (const group of groups) for (const hook of group.hooks) {
+    const { script, args } = codexParts(hook.command)
+    scripts.push(script + args)
+    hook.command = `f="${rc4}/.dev-loop/hooks/codex/${script}"; [ -x "$f" ] || { echo "Blocked: dev-loop hook script missing: $f" >&2; exit 2; }; exec "$f"${args}`
+  }
+  hooks.hooks.Stop.push({ hooks: [{ type: 'command', command: 'echo mine' }] })
+  writeFileSync(path, JSON.stringify(hooks))
+  const kitMain = join(repo, '.dev-loop/hooks/codex/kit-main.sh')
+  writeFileSync(kitMain, '#!/bin/sh\n')
+  const manifestPath = join(repo, '.dev-loop/MANIFEST.json')
+  const manifest = readJson(manifestPath)
+  manifest.files['.dev-loop/hooks/codex/kit-main.sh'] = `sha256:${createHash('sha256').update('#!/bin/sh\n').digest('hex')}`
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+
+  const output = upgrade(repo, home, [], fakePackage('99.0.0'))
+  const commands = hookCommands(path)
+  const own = commands.filter((command) => command !== 'echo mine')
+  assert.deepEqual(own.map((command) => { const parts = codexParts(command); return parts.script + parts.args }).sort(), scripts.sort())
+  assert.ok(own.every((command) => command.startsWith(head)))
+  assert.ok(commands.every((command) => !command.includes('hooks.state') && !command.includes('while :; do')))
+  assert.ok(commands.includes('echo mine'))
+  assert.equal(existsSync(kitMain), false)
+  assert.match(output, /run \/hooks in Codex/)
+  assert.ok(readFileSync(join(repo, '.claude/settings.json')).equals(claude))
 })
 
 test('Codex init migrates an existing exact legacy hook without replacing a user command', () => {
