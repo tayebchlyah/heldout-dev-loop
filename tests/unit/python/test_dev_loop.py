@@ -50,11 +50,20 @@ from junit_report import TimedResult, case_outcomes, write_junit  # noqa: E402
 
 
 def wire(name: str) -> None:
-    module = importlib.import_module(name)
+    module = sys.modules.get(name)
+    if module is None or Path(getattr(module, "__file__", None) or "").resolve() != HERE / f"{name}.py":
+        spec = importlib.util.spec_from_file_location(name, HERE / f"{name}.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
     for value in vars(module).values():
         if isinstance(value, type) and issubclass(value, unittest.TestCase) and value.__module__ == name:
             globals()[value.__name__] = value
 
+
+for _name, _module in list(sys.modules.items()):
+    if (HERE / f"{_name}.py").exists() and Path(getattr(_module, "__file__", None) or "").resolve() != HERE / f"{_name}.py":
+        del sys.modules[_name]
 
 for _path in sorted(HERE.glob("test_*.py")):
     if _path.name != Path(__file__).name:
@@ -80,6 +89,21 @@ class JUnitReportTests(unittest.TestCase):
             cases = list(ET.parse(report).getroot().iter("testcase"))
             self.assertEqual([(c.get("classname"), c.get("name")) for c in cases],
                              [("test_codex_hook_sandbox.Flow", "test_flow")])
+
+    def test_discover_never_swaps_a_unit_helper_for_a_same_named_discovered_file(self) -> None:
+        """A discovered `test_devloop.py` never replaces the unit file of that name the runner wires."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "test_devloop.py").write_text(
+                "import unittest\nclass Stub(unittest.TestCase):\n"
+                "    def test_stub(self): self.assertEqual(2 + 2, 4)\n")
+            (folder / "test_e_bootstrap.py").write_text(
+                "import sys\n"
+                f"sys.path.insert(0, {str(Path(__file__).parent)!r})\n"
+                "import test_dev_loop\n")
+            result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(folder / "r.xml")],
+                                    capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runner_loads_each_test_file_beside_it_but_not_itself(self) -> None:
         """A new `test_*.py` beside the runner runs with no edit of the runner, which never loads itself."""
