@@ -42,7 +42,9 @@
 # filePath and uri included, a file:// value by its path. Monitor is walled as Bash on its command:
 # the name rule, the search rule and the audit. Open for other subagents: an MCP search tool, an MCP
 # tool that runs code or reads a remote copy of the repo, a resource listing; the audit reads their
-# results. A project agent's frontmatter hooks are skipped in an untrusted folder or a -p or SDK
+# results. WebFetch, WebSearch and Agent are denied to implementer and spec-tester (#240): the public
+# repository on the web holds both walled sides, a nested agent has no wall; their disallowedTools list
+# them too. Other subagents keep them, with the name rule on url. A project agent's frontmatter hooks are skipped in an untrusted folder or a -p or SDK
 # session; this hook holds every rule of the implementer and spec-tester walls (#139).
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
@@ -113,6 +115,10 @@ case "$TOOL" in
   mcp__*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool)
     case "$(echo "$IN" | jq -r '.agent_type // empty')" in
       implementer|spec-tester) echo "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell." >&2; exit 2 ;;
+    esac ;;
+  WebFetch|WebSearch|Agent)
+    case "$(echo "$IN" | jq -r '.agent_type // empty')" in
+      implementer|spec-tester) echo "Blocked: $TOOL is closed to this agent: the web holds a public copy of the repository, a nested agent has no wall. Work from the brief and the named folders." >&2; exit 2 ;;
     esac ;;
 esac
 TESTER=

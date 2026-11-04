@@ -50,7 +50,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
       ],
     },
     {
-      matcher: 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool',
+      matcher: 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent',
       hooks: [
         {
           type: 'command',
@@ -343,6 +343,14 @@ test('no Codex agent file sets default_permissions', () => {
   }
 })
 
+test('the Codex TOML fragment turns native web search off for the project, where no role file can (#240)', () => {
+  const lines = readFileSync(join(packageRoot, 'codex/config.permissions.toml'), 'utf8').split('\n')
+  assert.ok(lines.slice(0, lines.findIndex((line) => line.trimStart().startsWith('['))).includes('web_search = "disabled"'))
+  for (const name of readdirSync(join(packageRoot, 'codex/agents'))) {
+    assert.doesNotMatch(readFileSync(join(packageRoot, 'codex/agents', name), 'utf8'), /^\s*web_search\s*=/m, name)
+  }
+})
+
 test('the Claude SessionStart command detects dev-loop.json only', () => {
   const command = readJson('claude/settings.fragment.json').hooks.SessionStart[0].hooks[0].command
   const run = (files) => {
@@ -366,7 +374,7 @@ test('the Claude agents wall LSP, MCP and Monitor (#97)', () => {
   for (const name of ['implementer.md', 'spec-tester.md']) {
     const head = readFileSync(join(packageRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
     assert.match(head, /^ {4}- matcher: "Read\|Edit\|Write\|Grep\|Glob\|Bash\|Monitor\|LSP\|mcp__\.\*\|ListMcpResourcesTool\|ReadMcpResourceTool\|ReadMcpResourceDirTool"$/m, name)
-    assert.match(head, /^disallowedTools: LSP, mcp__\*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool$/m, name)
+    assert.match(head, /^disallowedTools: LSP, mcp__\*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent$/m, name)
     assert.doesNotMatch(head, /^tools:/m, name)
     assert.match(head, /^ {10}onFailure: block$/m, name)
   }
