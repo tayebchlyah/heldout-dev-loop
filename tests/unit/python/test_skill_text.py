@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import tempfile
@@ -111,6 +112,21 @@ class InstructionContractTests(unittest.TestCase):
         for value in ["Merge danger", "the one fact", "`human-path`", "You ran it", "gh pr edit"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
+
+    def test_copied_text_names_its_source_and_license(self) -> None:
+        stage = stage_text(7)
+        self.assertIn("Source: pstack 0.15.36 `pstack/skills/blast-radius/SKILL.md`", stage)
+        self.assertIn("(references/building.md#pstack-license)", stage)
+        self.assertIn("\n## pstack license\n", (SKILL_ROOT / "references" / "building.md").read_text())
+        self.assertIn("License: MIT, [spec.md](spec.md#licenses)", (SKILL_ROOT / "references" / "tests.md").read_text())
+        self.assertIn("\n## Licenses\n", (SKILL_ROOT / "references" / "spec.md").read_text())
+
+    def test_policy_module_names_its_source_and_change(self) -> None:
+        doc = ast.get_docstring(ast.parse((REPO_ROOT / "codex" / "hooks" / "macos_policy.py").read_text()))
+        for value in ("Source: openai/codex rust-v0.166.0", "seatbelt_base_policy.sbpl", "seatbelt_network_policy.sbpl",
+                      "seatbelt_read_only_platform_defaults.sbpl", "Apache-2.0 section 4(b)", "Python string", "verbatim"):
+            with self.subTest(value=value):
+                self.assertIn(value, doc)
 
     def test_implementers_read_building_and_tests(self) -> None:
         for path in IMPLEMENTERS:
