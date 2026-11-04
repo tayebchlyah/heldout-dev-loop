@@ -256,7 +256,8 @@ test('D7: a negative stage duration from clock skew shows no chip and no total',
 
 test('#230: a title shows in Title Case; a slug title shows its words, a spec title keeps its hyphens and capitals', () => {
   for (const [title, want] of [['codex-gate-managed-deny', 'Codex-gate-managed-deny'], ['', 'F'],
-    ['held-out temp leak in CI', 'Held-out Temp Leak In CI']]) {
+    ['held-out temp leak in CI', 'Held-out Temp Leak In CI'],
+    ['(wip) board ledger', '(Wip) Board Ledger'], ['fix `code` now', 'Fix `Code` Now'], ['élan 9lives', 'Élan 9Lives']]) {
     const s = text(summary(row(html([note({ title })]))))
     assert.ok(s.includes(want), `${title}: ${s}`)
   }

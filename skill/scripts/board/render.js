@@ -39,8 +39,8 @@ function renderBoard(features, nowMs, opts) {
     const title = str(f.title) && str(f.title) !== str(f.feature) ? str(f.title) : str(f.feature).replace(/-/g, " ");
     return {
       project: str(f.project), feature: str(f.feature), machine_id: str(f.machine_id),
-      title: title.replace(/(^|\s)(\S)/g, (m, s, c) => s + c.toUpperCase()) || "Untitled feature",
-      kept: Number.isInteger(f.shipped_kept) && f.shipped_kept >= 0 ? f.shipped_kept : null,
+      title: title.replace(/\S+/g, (w) => w.replace(/\p{L}/u, (c) => c.toUpperCase())) || "Untitled feature",
+      shippedKept: Number.isInteger(f.shipped_kept) && f.shipped_kept >= 0 ? f.shipped_kept : null,
       owner: str(f.owner) || "Unknown", machine: str(f.machine) || "unknown machine",
       track: str(f.track), acceptance: str(f.acceptance), stage: Math.min(Math.max(Math.floor(Number(f.stage)) || 1, 1), 7), times,
       tasks: Array.isArray(f.tasks) ? f.tasks.filter((t) => t && typeof t === "object") : [],
@@ -185,9 +185,9 @@ function renderBoard(features, nowMs, opts) {
   const shipRows = [];
   for (const p of new Set(shipped.map((f) => f.project))) {
     // #230: the highest shipped_kept a note of the project carries, else 5.
-    const kept = notes.filter((f) => f.project === p && f.kept !== null).map((f) => f.kept);
+    const shippedKept = notes.filter((f) => f.project === p && f.shippedKept !== null).map((f) => f.shippedKept);
     shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped))
-      .slice(0, kept.length ? Math.max(...kept) : 5)
+      .slice(0, shippedKept.length ? Math.max(...shippedKept) : 5)
       .map((f) => ({ ...model({ ...f, stage: 7 }), shipped: true, end: ms(f.shipped) })));
   }
   const all = [...rows, ...shipRows];
