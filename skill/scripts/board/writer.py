@@ -402,6 +402,8 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, s
 def shipped_kept(dl: ModuleType, repo: Path) -> int:
     """#230: `board.shipped_kept` of `dev-loop.json` on the main ref when it is a whole number of 0 or more, else 5."""
     ref = main_ref(repo)
+    if not ref:
+        return SHIPPED_KEPT
     try:
         value = json.loads(dl.git(repo, "show", f"{ref}:dev-loop.json") or "")["board"]["shipped_kept"]
     except (ValueError, KeyError, TypeError):
@@ -552,7 +554,8 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
     features = [f for f in old_features if f not in kept] + sorted(kept)
     own_names: set[str] = set()
     own_features: set[str] = set()
-    shipped: list[tuple[str, Path]] = []
+    shipped: list[tuple[str, Path, dict]] = []
+    ships: set[Path] = set()
     for path in sorted(folder.glob("*.md")):
         if path.name.startswith(".") or path.name == store.BOARD_NOTE or path.is_symlink():
             continue
@@ -570,25 +573,32 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
                 or feature in old_features and merged_head(ctx, saved, detect(feature))):
             # D12: the first run that sees the ship sets shipped_at, once.
             fields.update(shipped_at=now, updated=now)
-            if isinstance(entry, dict):
-                entry.update(shipped_at=now, updated=now)
-            try:
-                store.write_file(path.parent, path.name, store.note_text(fields))
-            except store.LinkError:
-                payload["skipped"].append(skip("link", feature))
-                continue
-            payload["notes"].append(str(path))
+            ships.add(path)
         if fields.get("shipped_at"):
-            shipped.append((str(fields["shipped_at"]), path))
+            shipped.append((str(fields["shipped_at"]), path, fields))
             continue
         if feature in kept or feature not in old_features:
             own_features.add(feature)
             continue
         path.unlink()
         payload["removed"].append(str(path))
-    for _, path in sorted(shipped, reverse=True)[ctx.shipped_kept:]:
+    shipped.sort(key=lambda row: row[0], reverse=True)
+    for _, path, _ in shipped[ctx.shipped_kept:]:
         path.unlink()
         payload["removed"].append(str(path))
+    for _, path, fields in shipped[:ctx.shipped_kept]:
+        if path not in ships and fields.get("shipped_kept") == ctx.shipped_kept:
+            continue
+        fields["shipped_kept"] = ctx.shipped_kept
+        try:
+            store.write_file(path.parent, path.name, store.note_text(fields))
+        except store.LinkError:
+            payload["skipped"].append(skip("link", str(fields["feature"])))
+            continue
+        payload["notes"].append(str(path))
+        entry = ctx.data["features"].get(fields["feature"])
+        if path in ships and isinstance(entry, dict):
+            entry.update(shipped_at=fields["shipped_at"], updated=fields["updated"])
     # Issue #114: a slug whose own note this run did not see stays only while that note exists in a board folder.
     old_folder = board.parent / "dev-loop-board" / "features"
     features = [f for f in features if f in kept or f in own_features
