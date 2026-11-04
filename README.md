@@ -1,132 +1,172 @@
-# dev-loop
+# heldout-dev-loop
 
-Stage-driven development loop for Claude Code and Codex. Each piece of work is sized as Track S, M or L. A Track M or L feature runs in one session by default, in two parts: Shaping (Stages 1 and 2, at high effort) frames it and writes the spec and stops at the spec approval; Delivery (Stages 3 to 7, at medium effort) chains acceptance tests, plan, build, feature gate, ship under an autonomy grant. A Track S change has no spec and no plan: it is built, goes through the review wave of the feature gate (no acceptance tests), then ships.
+[![CI](https://github.com/tayebchlyah/heldout-dev-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/tayebchlyah/heldout-dev-loop/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Install
+A stage-driven development loop for Claude Code and Codex, where the acceptance tests are written from the spec and held out from the agent that writes the code.
+
+The repository is `heldout-dev-loop`. The kit it installs keeps the name `dev-loop`: the `dev-loop` skill, `dev-loop.json`, `.dev-loop/` and `devloop.py`.
+
+## What and why
+
+dev-loop is a skill, a set of subagents and hooks, and an installer. It takes a coding agent from a request to a merged pull request through fixed stages: frame the work, write a spec, write acceptance tests, plan, build, review, ship.
+
+An agent that writes both the code and its tests grades its own work: when a test fails, it can change the test instead of the code. dev-loop splits the two. A separate agent writes the acceptance tests from the approved spec alone, before any code exists. The agents that write the code never read those tests, and hooks enforce it. The tests are a held-out set, as in machine learning: the code passes them only if it does what the spec says.
+
+The rest of the loop keeps the agent honest in the same way: three reviewers and a reviewer from the other model family read the whole branch, a decision log records each choice the agent made alone, and a fixed list of events stops the agent and waits for you.
+
+## The loop
+
+```mermaid
+flowchart LR
+  S0[0 Bootstrap] --> S1
+  subgraph Shaping
+    S1[1 Frame] --> S2[2 Spec]
+  end
+  S2 -->|you approve the spec| S3
+  subgraph Delivery
+    S3[3 Acceptance tests] --> S4[4 Plan] --> S5[5 Build] --> S6[6 Feature gate] --> S7[7 Ship]
+  end
+  S1 -.->|"Track S: no spec, no plan"| S5
+```
+
+- **0 Bootstrap**: once per repository: the gate script, the stacks, the notes folder.
+- **1 Frame**: a grilling session sizes the work as Track S, M or L.
+- **2 Spec**: the spec, its acceptance oracle and the earlier lines it supersedes. You approve it.
+- **3 Acceptance tests**: `spec-tester` writes the held-out suite from the spec and seals it.
+- **4 Plan**: a planner subagent writes a plan of small tasks.
+- **5 Build**: test-first, task by task, in the feature worktree.
+- **6 Feature gate**: review wave, triage, fix wave, a drive of the real app, the acceptance loop.
+- **7 Ship**: push, pull request, CI, then a merge or a wait for you.
+
+## Quick start
+
+From the top level of a git repository:
 
 ```bash
 npx github:tayebchlyah/heldout-dev-loop#<tag> init
 ```
 
-Flags: `--yes`, `--dry-run`, `--force`, `--harness=claude|codex|both`, `--notes=<path>` (`init`).
-
-`check_setup.py` reports a repo with no notes path as a top-level failure: `missing notes path for <repo>. Write {"notes": "<path>"} to <main worktree>/dev-loop.local.json`.
-
-## Commands
-
-Run each with a release tag. Run `init` and `upgrade` from the top level of a git repository; `uninstall-global` runs from anywhere:
-
-```bash
-npx github:tayebchlyah/heldout-dev-loop#<tag> init              # install the kit into this repository
-npx github:tayebchlyah/heldout-dev-loop#<tag> upgrade           # update the kit to the tag's version
-npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global  # remove the 1.4 global install
-```
-
-`init` writes `dev-loop.json`, `.dev-loop/MANIFEST.json`, the skill in `.agents/skills/dev-loop/`, the `pause`, `continue`, `release-audit` and `garden` skills in `.agents/skills/<name>/` and the files of the chosen harnesses (`--harness=claude|codex|both`) under `.claude/`, `.codex/` and `.dev-loop/hooks/`. `--notes=<path>` sets the notes folder in the gitignored `dev-loop.local.json`. Commit the result. Kit files are never edited in a project: change dev-loop, then run `upgrade`. `upgrade` refuses on a local edit unless `--force`. A call with no command prints the usage and exits 1.
-
-## Project settings
-
-`dev-loop.json` holds `version` and `harnesses`, and optional keys:
-
-- `commands`: the project's own command for a step. Keys: `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`. Each value is a non-empty string. A missing key falls back to `scripts/gate.sh`, `docker compose` and the stack's test runner. `check_setup.py` fails on any other key.
-- `merge`: `auto` (the default) or `human`. With `auto`, Stage 7 merges a Track S or M pull request after green CI and the review wave, when it is a two-way door with a small blast radius. A one-way door or a Track L pull request waits for you. With `human`, every pull request waits for you. Stage 7 runs `devloop.py merge-check` to decide, and `merge_human_paths` in `dev-loop.json` lists path patterns whose changes always wait for you.
-- `security_audit`: `{"images": {"<name>": "<image>"}}`, the container images the release audit sandbox may start (name: lower case letters, digits, `_` and `-`). Pull each image first; `check_setup.py` reports a stopped Docker engine or a missing image. No key: the audit runs source-only. Add `security-audit/` to the vault `.gitignore`.
-
-## Verify skill
-
-A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<skill>/`: how an agent launches, checks, drives and cleans up the real app, and a feature map, one file per feature, with the routes and the accessible names a user sees. Stage 0 writes it with `devloop.py verify-init`, then `skill/references/verify.md`. Stage 6 runs `devloop.py drive` on the routes the branch changed, and one subagent checks the layout on the screenshots. Stage 7 adds the before and after screens to the PR body. `"verify": false` in `dev-loop.json` opts out.
-
-## The devloop command
-
-`skill/scripts/devloop.py` does the deterministic work. In a project it runs as `python3 .agents/skills/dev-loop/scripts/devloop.py <command>`. Each command prints one JSON object. Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
-
-- `status`: the current stage of the work, with the check that chose it and the next action. On the default branch it lists the open features.
-- `logged -- <cmd>`: runs a long command and writes its full output to a log file under the git folder.
-- `gate --summary`: runs `commands.gate`, else `scripts/gate.sh`, and reports the exit code, the log, the failure lines and the slowest tests.
-- `size-check [--uncommitted | --all]`: fails a file above 40,000 bytes that is new on the branch or grew on it, and names a line to split it at. `--all` lists every file above the limit. `gate --summary` runs it and `seal` refuses a big acceptance file. `file_size_exempt` in `dev-loop.json` lists paths it skips.
-- `board`: writes a status note per feature to the `dev-loop-board` folder of the notes folder, writes `Dev Loop Board.md` (needs the Obsidian Dataview plugin with JavaScript queries on), and runs a local page at `http://127.0.0.1:7777/` (`DEVLOOP_BOARD_PORT` sets the port). Hooks run it; `--claim <slug>` shows a new spec at Stage 2. Add `dev-loop-board/` to the vault `.gitignore`: `check_setup.py` reports both.
-- `verify-init --base-url <url>`: writes the skeleton of the project's verify skill and its feature map, and the `verify` key.
-- `drive`: drives each feature map route the branch changed in Chromium (needs Playwright in the project), checks the status, the accessible names and the console errors, and saves one screenshot per route. `--routes-from` drives the same routes on the base branch (the before run).
-- `capture --pr <n>`: puts a before and an after screenshot of each driven route (a WebM for a journey) in the PR body, uploaded with `gh pr edit --attach` (gh 2.99.0 or later).
-- `release-plan`, `release-record`, `release-check`: the release security audit. Before a `v*` tag, run `/release-audit` (Codex `$release-audit`) in the main session on `main`: it runs the Cloudflare `security-audit` skill, then `release-record` writes the confirmed and needs-validation findings into `## Deferred` of the project note and one line into `## Release audits`. `release-check --sha HEAD` says whether the commit may get the tag; the git guard runs it on a tag push and `gh release create`. A run takes hours and costs tens of dollars. Target code runs only in the container sandbox `sandbox-run.py` (Docker).
-- `sessions --since <days>`: lists the Claude Code and Codex sessions of every worktree of the repo, largest first, for the weekly `/retro` review. `status` on the default branch gives `review_due` when the last `/garden` run is 7 days old or older, and Stage 1 then refuses new work until the review is done.
-- `review-merge <reviewer>=<file> ...`: merges the Stage 6 reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) into one row per file and line, and lists the rows with a security finding.
-- `acceptance [--failed]`: runs `commands.acceptance` (or `commands.acceptance_failed`) with `DEVLOOP_REPORT_DIR` set, reads the failing tests from the JUnit XML there, checks that no compose build container is older than the newest code commit, records the run, and gives the progress guard verdict (`continue`, `stop`, `green` or `unknown`).
-- `ci wait`: gives one verdict for the pull request of the current branch: conflicts, open review threads, a change request, failed checks (with the failed job and its first error), a merge block, or pass.
-
-## Before the first `init` on a machine
-
-Remove the 1.4 global install first: `npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global` (try `--dry-run` first). With a global `dev-loop` skill still in place, Claude Code runs the global skill instead of the project one, and Codex runs neither. `check_setup.py` fails while a user-level `dev-loop` skill exists. `uninstall-global` refuses when no hook of yours runs a `git-guard.sh` outside the dev-loop install, because a vault guard that lived there would go too (`--force` skips this check).
-
-## Upgrade and rollback
-
-- **Upgrade:** on a branch, run `npx github:tayebchlyah/heldout-dev-loop#<new tag> upgrade`, commit the diff, open a PR. Each person gets the new version with `git pull`.
-- **Rollback of a project:** `git revert` the upgrade commit.
-- **Rollback of a machine to 1.4:** `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` reinstalls the global install. Do not keep it on a machine whose projects use the kit.
-
-Upgrade notes per version (board, seal, 2.0.0): [`reference/kit.md`](reference/kit.md) `## Upgrade`.
-
-## Upgrade to 2.0.0
-
-2.0.0 breaks these:
-
-- Stages chain under an autonomy grant. "One stage per invocation" is gone.
-- Tracks S, M and L. A Track M or L spec needs `feature:` and `track:` in its frontmatter (a 1.x spec still resolves by its title).
-- Stage 1 uses Pocock `grilling` only. Superpowers `brainstorming`, `test-driven-development`, `systematic-debugging` and `finishing-a-development-branch` are denied in the project. Pocock `tdd`, `diagnosing-bugs` and `pr` replace them.
-- The feature gate has three reviewers. `simplify`, the Codex `simplifier` agent and the mutation step are gone. Mutation is a nightly job.
-- The 1.4 `vault_notes:` notes fallback, the `vault_notes:` SessionStart detection and the `--global` install are gone.
-- User settings: remove the user-level denies of `executing-plans`, Pocock `tdd` and Pocock `diagnosing-bugs` from `~/.claude/settings.json`. Codex: install Pocock `tdd`, `diagnosing-bugs`, `pr` and `prototype`.
-
-From 1.4.0: write `dev-loop.local.json` with your notes path, run `npx github:tayebchlyah/heldout-dev-loop#v2.0.0 uninstall-global` (try `--dry-run` first, and keep a personal vault guard first), then `init`, change the user deny list, install the Codex skills, rename `CONTEXT.md` to `GLOSSARY.md` if you want, and run `check_setup.py`.
-
-From 1.5.x: run `upgrade` on a branch, then the user steps above.
-
-Rollback: `git revert` the upgrade commit, then `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` on each machine for a 1.4 project.
-
-## Notes folder
-
-Feature folders (`Features/<YYYYMMDD> <Title>/` with `Framing.md`, `Spec.md`, `Plan.md`) live in a notes folder, any local folder. `skill/scripts/notes_path.py` finds it, first match wins:
-
-1. `DEV_LOOP_NOTES` environment variable.
-2. `notes` in `dev-loop.local.json` in the current worktree, then in the main worktree. This file is gitignored: each person and each machine sets its own path. A new worktree has no copy, so it uses the main worktree's file.
-3. `notes` in the committed `dev-loop.json`, read from `main` (`origin/main`, else `main`): a key committed only on a branch is ignored. For a team that keeps its notes in the repository (for example `docs/dev-loop`).
-
-A path is absolute, starts with `~`, or is relative to the repository root. The folder must exist. `init --notes=<path>` writes the local file.
-
-## Backups
-
-Every merged file the installer replaces (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) gets a backup at `<file>.bak-<timestamp>`. It never removes or reorders an entry it did not add. If your `.codex/config.toml` already declares a table the fragment also declares, your table wins and the installer prints one line naming it.
-
-## After installing
-
-`check_setup.py` can report three things under "User actions required" that no installer can fix. All are expected, not a broken install:
-
-1. **Trusted Codex hooks.** Codex only trusts hook definitions after you run `/hooks` inside Codex and approve the dev-loop hooks. Until you trust the project and its hooks, the trusted-project and trusted-hook-hash checks fail.
-2. **Third-party skills.** dev-loop does not ship the Codex skills `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr` and `prototype` (Matt Pocock's skills). Install them separately from their own source.
-3. **The security-audit skill.** For both harnesses, the Stage 6 security verifier reads its prompt from Cloudflare's `security-audit` skill, pinned to one commit. Install it with `npx skills add https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 --skill security-audit --global --agent claude-code codex`.
-
-## Develop
-
-```bash
-git clone https://github.com/tayebchlyah/heldout-dev-loop.git
-cd heldout-dev-loop
-```
-
-To try a change in a project, run `node <path to your clone>/bin/install.mjs init` (or `upgrade`) from the project's top level.
-
-```bash
-npm ci && npx playwright install chromium   # once per clone or worktree
-npm test                                    # node suite: installer, board render and drive tests
-python3 tests/unit/python/test_dev_loop.py  # skill suite
-scripts/acceptance.sh                       # held-out acceptance suite (CI job `acceptance`), JUnit with DEVLOOP_REPORT_DIR
-```
-
-## Verify
-
-In a project with `dev-loop.json`:
+Use a release tag, for example `v3.0.0`. Flags and the other commands are in [docs/usage.md](docs/usage.md). Commit the result, then check the install for each harness you use:
 
 ```bash
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
 ```
 
+Then start a session in the repository and describe the work. The SessionStart hook loads the `dev-loop` skill, and `devloop.py status` picks the stage. Three steps need you once ([docs/usage.md](docs/usage.md), After installing): trust the hooks in Codex with `/hooks`, install Matt Pocock's skills for Codex, and install the `security-audit` skill.
+
+## How it works
+
+### Tracks
+
+Stage 1 sizes the work.
+
+- **Track S**: a small change. No spec and no plan: build, the review wave, ship.
+- **Track M**: a spec, a plan, then an inline build in the same session.
+- **Track L**: a spec with a threat model, a plan, then one fresh implementer subagent per task. Never merged without you.
+
+### Shaping and Delivery
+
+A Track M or L feature runs in one session by default, in two parts. **Shaping** (Stages 1 and 2, high effort, on `main`) ends when you approve the spec. **Delivery** (Stages 3 to 7, medium effort) runs in the feature's own git worktree and branch. A new session is optional: `/pause` writes a pause note, `/continue` takes over from it, also after a usage limit or in the other harness.
+
+### The held-out suite and its seal
+
+`spec-tester` reads the spec and the glossary, never the source code, and writes `tests/acceptance/`. It commits with `devloop.py seal`, which adds trailers with a hash of the suite. After that commit the suite is frozen: only `spec-tester` changes it, and only when the spec oracle changes. `seal-check` runs in the gate and in the Stop hooks and finds any other change. A transcript audit at SubagentStop records a taint when a subagent read a file it must not read; the work of a tainted implementer is reverted.
+
+### The walls
+
+Hooks deny, per agent role: a read, an edit or a search of the held-out suite by an implementer; a write in `tests/acceptance/` by the main session; an edit of an installed kit file; and a risky git or gh command (a push to `main`, a force push, a tag push, a `gh api` write) unless you allow it. The Claude Code and Codex walls differ; each harness reference lists its own gaps.
+
+### The feature gate
+
+Stage 6 runs once per feature, at one commit:
+
+1. **Review wave**: three reviewers (correctness, spec, standards) and a second reviewer of the other model family (Codex for Claude Code, Claude for Codex), whole branch, one table each.
+2. **Triage**: the tables merge by file and line. Each security finding goes to a verifier. Only a confirmed defect must be fixed; the rest goes to a weekly review list.
+3. **Fix wave**: one fresh implementer per group of files.
+4. **Drive**: in a project with a UI, the verify skill drives the changed routes in Chromium and keeps screenshots.
+5. **Acceptance loop**: the held-out suite runs, and each failure is classified as product, test or environment before the next round. A round must reduce the failing count, or the loop stops.
+
+### The autonomy grant
+
+In Delivery the agent does not ask questions. It runs a command, a test or a read to answer them, makes the open decision, and logs it with `devloop.py decide` in the spec's decision log. It stops only for a fixed list: a gate red after three fix rounds, a one-way decision the spec does not cover, an action that deletes data or reaches production, a tag push, a conflict with an earlier spec, and a few more. `devloop.py merge-check` decides whether the pull request may merge without you. The final report lists each risky decision first.
+
+## Usage
+
+Start a session in a project and say what you want. dev-loop runs the stage `status` gives. Each stage ends with a direct gate, so the next stage starts from green.
+
+- `/pause` and `/continue`: stop the work now, and take it over later, in this or another session or harness.
+- `/release-audit`, then `/release`: the security audit of a release, and the release itself.
+- `/garden`: the weekly review of the findings that were not fixed.
+
+The `devloop` command does the deterministic work, as `python3 .agents/skills/dev-loop/scripts/devloop.py <command>`, with one JSON object on stdout. Some of its commands:
+
+- `status`: the stage of the work and the next action.
+- `gate --summary`: the project gate, with its failures, the seal check and the size check.
+- `size-check`: fails a new or grown file above 40,000 bytes and names where to split it.
+- `review-merge`: merges the Stage 6 reviewer tables into one row per file and line.
+- `acceptance [--failed]`: runs the held-out suite through `commands.acceptance` and gives the progress guard verdict. This repository maps `commands.acceptance` to `scripts/acceptance.sh`.
+- `ci wait`, `merge-check`: the Stage 7 CI verdict and merge decision.
+
+All commands: [docs/commands.md](docs/commands.md). Install, verify and backups: [docs/usage.md](docs/usage.md).
+
+## Configuration
+
+`dev-loop.json` at the top of the repository holds the kit `version` and the `harnesses`, and optional keys: `commands` (your own gate, stack and acceptance commands), `merge` (`auto` or `human`), `merge_human_paths`, `verify` and `security_audit`. See [docs/configuration.md](docs/configuration.md).
+
+The feature notes (framing, spec, plan, decision log) live in a notes folder outside the repository, any local folder, for example an Obsidian vault. Each person sets its path in the gitignored `dev-loop.local.json`. A team can commit a path in `dev-loop.json` instead.
+
+Upgrade, rollback and the breaking changes of each version: [docs/upgrade.md](docs/upgrade.md).
+
+## Inspirations and credits
+
+dev-loop takes ideas and text from these projects. **Invoked**: installed apart and called at run time. **Adapted**: text copied and changed, with a Source line in the kit file. **Idea**: no text taken.
+
+| Part | Idea | Source | Relation | Kit file |
+| --- | --- | --- | --- | --- |
+| Stage 1 framing | A relentless question round before any spec, and a throwaway prototype for UI work | Matt Pocock skills (`pocock-skills`) `grilling`, `prototype` | invoked | - |
+| Spec seam rule | Test at the highest existing seam, ideally one | `pocock-skills` `to-spec` | adapted | `skill/references/spec.md` |
+| Feature maps | A map of features with local issue files for an effort larger than one feature | `pocock-skills` `setup-matt-pocock-skills` (local issue tracker) | adapted | `skill/references/maps.md` |
+| Test seams | The interface is the test surface | `pocock-skills` `codebase-design` | adapted | `skill/references/tests.md` |
+| Build and review skills | Test-first, diagnosis, PR body, code review, domain terms | `pocock-skills` `tdd`, `diagnosing-bugs`, `pr`, `code-review`, `domain-modeling`, `wayfinder` | invoked | - |
+| Spec builder check | A fresh agent lists what it would have to guess to build from the spec | Superpowers (`superpowers`) `brainstorming` builder check prompt | adapted | `skill/references/spec.md` |
+| Plan and execution | Small planned tasks, executed inline or by one subagent per task | `superpowers` `writing-plans`, `executing-plans`, `subagent-driven-development` | invoked | - |
+| Track L threat model | Trust boundaries, assets and STRIDE before hardening | Addy Osmani agent-skills (`agent-skills`) `security-and-hardening` | adapted | `skill/references/spec.md` |
+| Doubt review | An adversarial reviewer gets the artifact and the contract, never the claim | `agent-skills` `doubt-driven-development` | adapted | `skill/references/spec.md` |
+| Code volume rules | Write less code, change only what the request needs | Ponytail (`ponytail`) `AGENTS.md` | adapted | `skill/references/building.md` |
+| Building principles | Prove it works, fix root causes, attack the premise | pstack (`pstack`) principle skills | adapted | `skill/references/building.md` |
+| Merge danger ladder | Prove the one fact a risky change is safe because of | `pstack` `blast-radius` | adapted | `skill/SKILL.md` |
+| Benchmark checklist | Write the claim and the noise floor before you measure | `pstack` `benchmark-checklist` | adapted | `skill/references/benchmark.md` |
+| Verify skill | A project skill that launches, drives and cleans up the real app | `pstack` `create-verification-skill` | adapted | `skill/references/verify.md` |
+| Codex macOS sandbox | The Seatbelt policies that confine a Codex hook | OpenAI Codex (`codex-sandbox`) Seatbelt policies | adapted | `codex/hooks/macos_policy.py` |
+| Security review and release audit | A vulnerability verifier prompt and a full audit workflow | Cloudflare (`security-audit`) | invoked | - |
+| Held-out suite | Tests the builder never sees, as the held-out test set of machine learning | the held-out test set of machine learning | idea | - |
+
+Credits:
+
+- `pocock-skills`: [https://github.com/mattpocock/skills](https://github.com/mattpocock/skills), MIT, v1.3.2. Framing, seams, maps and the build and review skills.
+- `superpowers`: [https://github.com/obra/superpowers](https://github.com/obra/superpowers), MIT, 7.0.1. The builder check and the plan and execution skills.
+- `agent-skills`: [https://github.com/addyosmani/agent-skills](https://github.com/addyosmani/agent-skills), MIT, 0.6.15. The threat model and the doubt review.
+- `ponytail`: [https://github.com/DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail), MIT, v5.3.3. The code volume rules.
+- `pstack`: [https://github.com/cursor/plugins/tree/main/pstack](https://github.com/cursor/plugins/tree/main/pstack), MIT (`pstack/LICENSE`), 0.15.36. The principles, the merge danger ladder, the benchmark checklist and the verify skill.
+- `codex-sandbox`: [https://github.com/openai/codex](https://github.com/openai/codex), Apache-2.0, rust-v0.166.0. The Seatbelt policies; license and NOTICE in `skill/references/licenses/Codex Sandbox.txt`.
+- `security-audit`: [https://github.com/cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill), MIT, pinned commit `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`. The Stage 6 security verifier and `/release-audit`.
+
+The copied license texts are in `skill/references/spec.md`, `building.md`, `verify.md`, `benchmark.md` and `skill/references/licenses/`. `scripts/upstream_watch.py` checks these sources each week (`.github/workflows/upstream-watch.yml`) and keeps one `upstream-watch` issue open with what changed.
+
+## Security model and limits
+
+- The walls and the seal stop a careless agent, not a hostile agent or a hostile user.
+- The hooks run on your machine with your rights. dev-loop adds no sandbox around them.
+- The known gaps are listed in `skill/references/claude.md` and `skill/references/codex.md`.
+- Each release has a security audit, and an open security finding blocks the release tag.
+
+Report a vulnerability as [SECURITY.md](SECURITY.md) says.
+
+## Contributing
+
+Open an issue first and wait for a go before a pull request. The rules, the gate and the commit format are in [CONTRIBUTING.md](CONTRIBUTING.md). Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). The kit ships the same text as `LICENSE.txt` in the skill folder.
