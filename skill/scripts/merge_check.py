@@ -22,24 +22,21 @@ TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.
 CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
 DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 HARNESS_NAMES = (".claude", ".codex", ".dev-loop", ".mcp.json")
-CI_FOLDERS = (".github/workflows", ".github/rulesets")
+CI_FOLDERS = (".github/workflows", ".github/actions", ".github/rulesets")
 
 
-def fold(path: str) -> str:
-    """The path as a case-insensitive APFS compares it: Unicode NFD, then full case folding."""
+def apfs_fold(path: str) -> str:
     return unicodedata.normalize("NFD", path).casefold()
 
 
 def is_harness_config(path: str) -> bool:
-    """A segment `.claude`, `.codex`, `.dev-loop` or `.mcp.json`, or `.agents/skills`, at any depth: a harness
-    reads a nested folder too. A last segment `.agents`: a symlink or file there."""
-    parts = fold(path).split("/")
+    parts = apfs_fold(path).split("/")
     return (any(p in HARNESS_NAMES for p in parts) or parts[-1] == ".agents"
             or any(a == ".agents" and b == "skills" for a, b in zip(parts, parts[1:])))
 
 
 def is_ci_config(path: str) -> bool:
-    path = fold(path)
+    path = apfs_fold(path)
     return any(path == f or path.startswith(f"{f}/") for f in CI_FOLDERS)
 
 
