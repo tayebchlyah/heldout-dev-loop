@@ -32,7 +32,7 @@ from board_fixtures import (DEVLOOP, ISO_Z, MACHINE, PROJECT, VERSION, Board, gi
 class BoardRobustTests(Board):
     def setUp(self) -> None:
         super().setUp()
-        log = mock.patch.object(server, "LOG", self.root / "dev-loop-board.log")
+        log = mock.patch.object(server, "log_path", lambda: self.root / "dev-loop-board.log")
         log.start()
         self.addCleanup(log.stop)
 
@@ -519,7 +519,7 @@ class BoardRobustTests(Board):
 
     def test_start_keeps_one_old_log_generation(self) -> None:
         """A log over the cap moves to `.1` at launch, replacing the older one; a log at the cap stays."""
-        log, old = server.LOG, self.root / "dev-loop-board.log.1"
+        log, old = server.log_path(), self.root / "dev-loop-board.log.1"
         child = mock.Mock(pid=0)
         child.poll.return_value = 0
         for size, kept, moved in ((server.LOG_BYTES + 1, "", "x" * (server.LOG_BYTES + 1)),

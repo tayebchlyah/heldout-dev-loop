@@ -262,6 +262,9 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
     common = Path(dl.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     state_dir = common / "dev-loop"
     now = time.strftime(TIME, time.gmtime())
+    if reason := state.unsafe(state_dir):  # #239: a run writes no state file through a link.
+        payload["skipped"].append(skip(reason))
+        return 0, payload
     if evicted(dl, notes):
         payload["skipped"].append(skip("placeholder"))
         state.save_last_run(state_dir, now, payload["skipped"])
@@ -279,7 +282,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         return 0, payload
     state_dir.mkdir(parents=True, exist_ok=True)
     queue = state_dir / "board-events.jsonl"
-    with open(state_dir / "board.lock", "a+") as lock:
+    lock_fd = os.open(state_dir / "board.lock", os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, "a+") as lock:
         # DEVLOOP_TEST_CLAIM_WAIT: tests only, a shorter D7 claim wait than the spec's 10 s.
         if not take(lock, float(os.environ.get("DEVLOOP_TEST_CLAIM_WAIT") or 10) if claim else 0):
             if claim:  # D7: a claim is never dropped silently.
@@ -287,7 +291,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             # D2, D13: the lock holder applies it; a run without an event queues `null`, a refresh.
             line = json.dumps({"event": event, "cwd": str(hook_cwd or repo), "session_id": hook_session,
                                "agent_id": hook_agent, "transcript_path": hook_transcript, "at": time.strftime(TIME, time.gmtime())})
-            fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            fd = os.open(queue, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, "a") as handle:
                 handle.write(line + "\n")
             payload["skipped"].append(skip("busy"))
@@ -313,7 +317,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
             pass_claims = [c for c in dict.fromkeys([*old_claims, claim] if first and claim else old_claims)
                            if c not in tree_slugs and c in pass_specs and detect(c)["stage"] != "shipped"]
             if pass_claims != old_claims:
-                claims_file.write_text(json.dumps(pass_claims) + "\n")
+                store.write_file(state_dir, claims_file.name, json.dumps(pass_claims) + "\n")
             return pass_specs, pass_trees, pass_claims
 
         specs, trees, claims = refresh(True)
@@ -383,7 +387,12 @@ def drain(queue: Path) -> list[tuple[str | None, Path, str | None, str | None, s
         os.replace(queue, taken)  # An append after the rename lands in a new queue file.
     except FileNotFoundError:
         return []
-    text = taken.read_text()
+    try:  # #239: a queue swapped for a link is dropped unread.
+        fd = os.open(taken, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd) as handle:
+            text = handle.read()
+    except OSError:
+        text = ""
     taken.unlink()
     events = []
     for line in text.splitlines():
@@ -605,7 +614,7 @@ def write(ctx: Context, specs: dict[str, Path], trees: dict[Path, str | None], c
                 or store.note_name(machine["id"], project, f) not in own_names
                 and any((d / store.note_name(machine["id"], project, f)).exists() for d in (folder, old_folder))]
     if features != old_features:
-        features_file.write_text(json.dumps(features) + "\n")
+        store.write_file(ctx.state, features_file.name, json.dumps(features) + "\n")
     # D1: an entry goes once its feature is out of the write set and has no own-name note in either folder.
     for slug in list(ctx.data["features"]):
         name = store.note_name(machine["id"], project, slug)
