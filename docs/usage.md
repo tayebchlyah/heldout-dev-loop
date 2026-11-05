@@ -45,4 +45,4 @@ A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<
 
 ## Backups
 
-Every merged file the installer replaces (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) gets a backup at `<file>.bak-<timestamp>`. It never removes or reorders an entry it did not add. If your `.codex/config.toml` already declares a table the fragment also declares, your table wins and the installer prints one line naming it.
+Every merged file the installer replaces (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`) gets a backup at `<file>.bak-<timestamp>`. A run that writes a backup adds a `*.bak-*` line to `.gitignore`, so the backups stay out of the upgrade commit. It never removes or reorders an entry it did not add. If your `.codex/config.toml` already declares a table the fragment also declares, your table wins and the installer prints one line naming it.

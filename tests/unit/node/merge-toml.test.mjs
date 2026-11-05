@@ -160,6 +160,17 @@ test('a target whose own root key shares a name with the fragment keeps its valu
   assertValidToml(text)
 })
 
+test('a quoted root key is the bare key: the user value stays once, and the merge parses as TOML', () => {
+  for (const key of ['"model_reasoning_effort"', "'model_reasoning_effort'", '"sandbox_mode"']) {
+    const current = `${key} = "low"\n\n[features]\nhooks = true\n`
+    const { text } = mergeCodexConfig(current, realFragment)
+    assertValidToml(text)
+    const bare = key.slice(1, -1)
+    if (bare === 'sandbox_mode') assert.ok(!text.includes(key), 'the legacy sandbox_mode goes in any quote style')
+    else assert.ok(text.includes(`${key} = "low"`) && !text.includes(`${bare} = "high"`), text)
+  }
+})
+
 test('a target that defines a table by a root dotted key does not also receive that table', () => {
   const current = 'model = "gpt-5"\nfeatures.hooks = false\n'
   const { text } = mergeCodexConfig(current, realFragment)
