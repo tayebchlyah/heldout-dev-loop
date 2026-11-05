@@ -30,10 +30,20 @@ def z_paths(text: str) -> list[str]:
     return [path for path in text.split("\0") if path]
 
 
+def tree_blobs(repo: Path, rev: str) -> dict[str, str]:
+    blobs = {}
+    for line in z_paths(run_git(repo, "ls-tree", "-r", "-z", rev, "--", f":(top){ACCEPTANCE_DIR}/").stdout):
+        meta, path = line.split("\t", 1)
+        blobs[path] = meta.split()[2]
+    return blobs
+
+
 def commit_violations(repo: Path, base: str) -> list[dict]:
     found = []
     sealed: dict[str, str] = {}  # path -> its blob (or `deleted`) in the newest valid seal commit
     seals: set[str] = set()  # the valid seal commits
+    expected = tree_blobs(repo, base)
+    before: list[tuple[str, str]] = []
     # The body, not `%(trailers)`: git sees no trailer block once `This reverts commit` lines share its paragraph.
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
@@ -53,14 +63,14 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
             if patch is None or PATCH.findall(last) != [patch]:
                 found.append({**violation("bad-seal", commit=sha), **({"patch": "failed"} if patch is None else {})})
                 continue
+        parent = tree_blobs(repo, f"{sha}^1")
+        before += [(sha, path) for path, _ in entries if parent.get(path, "deleted") != expected.get(path, "deleted")]
+        expected.update(entries)
         sealed.update(entries)
         seals.add(sha)
-    pathspec = f":(top){ACCEPTANCE_DIR}/"
-    changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, "HEAD", "--", pathspec).stdout)
-    at_head = {}
-    for line in z_paths(run_git(repo, "ls-tree", "-r", "-z", "HEAD", "--", pathspec).stdout):
-        meta, path = line.split("\t", 1)
-        at_head[path] = meta.split()[2]
+    changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, "HEAD", "--",
+                              f":(top){ACCEPTANCE_DIR}/").stdout)
+    at_head = tree_blobs(repo, "HEAD")
 
     def commits(path: str) -> list[str]:
         """D6: the commits that touched the path, valid seal commits left out."""
@@ -71,6 +81,7 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     found += [violation("unsealed", path=path, commits=commits(path)) for path in changed if path not in sealed]
     found += [violation("changed-after-seal", path=path, commits=commits(path)) for path, blob in sorted(sealed.items())
               if at_head.get(path, "deleted") != blob]
+    found += [violation("changed-before-seal", commit=sha, path=path, commits=commits(path)) for sha, path in before]
     return found
 
 
