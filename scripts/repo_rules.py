@@ -64,12 +64,12 @@ def subjects(repo: Path, base: str) -> tuple[dict, int]:
     if log.returncode != 0:
         return {"ok": False, "base": base, "error": "git log failed"}, 1
     head = run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    violations, warnings = [], []
+    violations, older = [], []
     for line in reversed(log.stdout.splitlines()):
         commit, _, subject = line.partition("\t")
         if not subject_ok(subject, emojis):
-            (violations if commit == head else warnings).append({"commit": commit, "subject": subject})
-    return {"ok": not violations, "base": base, "violations": violations, "warnings": warnings}, int(bool(violations))
+            (violations if commit == head else older).append({"commit": commit, "subject": subject})
+    return {"ok": not violations, "base": base, "violations": violations, "warnings": older}, int(bool(violations))
 
 
 CHECKED_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
@@ -80,7 +80,7 @@ KINDS = re.compile(
     r"|(?i:noqa)|nosec|isort:|type:|pyright:|pylint:|pragma|fmt: (?:off|on|skip)|eslint-|biome-ignore|@ts-|shellcheck)"
 )
 DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_]\w*)\1")
+HEREDOC = re.compile(r"<<-?[ \t]*(?:\\(\w+)|(['\"])([^'\"]+)\2|([A-Za-z_]\w*))")
 CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
 
@@ -105,33 +105,50 @@ def code_rows(tokens: list[tokenize.TokenInfo]) -> set[int]:
 
 def shell_trailing(text: str) -> dict[int, str]:
     found: dict[int, str] = {}
-    quote, word = None, None
+    stack: list[str] = []
+    word = None
     for row, line in enumerate(text.splitlines(), 1):
         if word is not None:
             word = None if line.strip() == word else word
             continue
-        opened, i = quote, 0
+        opened, i = bool(stack), 0
         while i < len(line):
-            char = line[i]
-            if quote == "'":
-                quote = None if char == "'" else quote
-            elif quote == '"':
+            char, top = line[i], stack[-1] if stack else ""
+            if top == "'":
+                stack.pop() if char == "'" else None
+            elif top in ('"', "$'"):
                 i += char == "\\"
-                quote = None if char == '"' else quote
+                if char == top[-1]:
+                    stack.pop()
+                elif top == '"' and line.startswith("$(", i):
+                    stack.append("$(")
+                    i += 1
             elif char == "\\":
                 i += 1
+            elif char == ")" and top in ("$(", "("):
+                stack.pop()
+            elif char == "(" and top in ("$(", "("):
+                stack.append("(")
+            elif char == "'" and line[i - 1:i] == "$":
+                stack.append("$'")
             elif char in "'\"":
-                quote = char
-            elif line.startswith("<<", i) and line[i - 1:i] != "<" and line[i + 2:i + 3] != "<" \
-                    and (heredoc := HEREDOC.match(line, i)):
-                word, i = heredoc.group(2), heredoc.end()
+                stack.append(char)
+            elif heredoc_at(line, i) and not stack:
+                heredoc = HEREDOC.match(line, i)
+                word, i = next(g for g in heredoc.group(1, 3, 4) if g), heredoc.end()
                 continue
-            elif char == "#" and (i == 0 or line[i - 1] in " \t"):
-                if line[:i].strip() and opened is None:
+            elif char == "#" and not stack and (i == 0 or line[i - 1] in " \t"):
+                if line[:i].strip() and not opened:
                     found[row] = line[i:].strip()
                 break
             i += 1
     return found
+
+
+def heredoc_at(line: str, i: int) -> bool:
+    before = line[:i]
+    return (line.startswith("<<", i) and line[i - 1:i] != "<" and line[i + 2:i + 3] != "<"
+            and before.count("((") <= before.count("))") and HEREDOC.match(line, i) is not None)
 
 
 def trailing_comments(path: str, text: str) -> dict[int, str]:

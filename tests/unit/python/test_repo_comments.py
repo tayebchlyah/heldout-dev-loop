@@ -37,6 +37,14 @@ class ShellTrailingTests(unittest.TestCase):
             ("echo 'open\nstill # in\nclose' # c\necho # d\n", {4: "# d"}),
             ("x=$((a<<2)) # shift\n", {1: "# shift"}),
             ("cat <<< word # c\necho # d\n", {1: "# c", 2: "# d"}),
+            ('msg="$(printf "%s # %s" a b)"\n', {}),
+            ('x="$(echo "a # b")" # c\n', {1: "# c"}),
+            ("x=$(( 1 << n ))\nfoo # c\nn\n", {2: "# c"}),
+            ("(( a << b )) # c\necho # d\n", {1: "# c", 2: "# d"}),
+            ("cat <<\\EOF\nbody  # nc\nEOF\necho # d\n", {4: "# d"}),
+            ("cat <<'END-X'\nbody  # nc\nEND-X\necho # d\n", {4: "# d"}),
+            ('cat <<"a.b"\nbody  # nc\na.b\necho # d\n', {4: "# d"}),
+            ("echo $'it\\'s' # c\necho b  # late\n", {1: "# c", 2: "# late"}),
         ]:
             with self.subTest(text=text):
                 self.assertEqual(repo_rules.shell_trailing(text), expected)
