@@ -77,6 +77,7 @@ KINDS = re.compile(
     r"|(?:#|//)\s*(?:shortcut: [^,]+, \S|SPDX-License-Identifier|Copyright|License(?::|d under|\s*$)"
     r"|(?i:noqa)|nosec|isort:|type:|pyright:|pylint:|pragma|fmt: (?:off|on|skip)|eslint-|biome-ignore|@ts-|shellcheck)"
 )
+HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_]\w*)\1")
 CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
 
@@ -99,7 +100,40 @@ def code_rows(tokens: list[tokenize.TokenInfo]) -> set[int]:
     return {row for tok in tokens if tok.type not in CODE_TOKENS for row in range(tok.start[0], tok.end[0] + 1)}
 
 
+def shell_trailing(text: str) -> dict[int, str]:
+    found: dict[int, str] = {}
+    quote, word = None, None
+    for row, line in enumerate(text.splitlines(), 1):
+        if word is not None:
+            word = None if line.strip() == word else word
+            continue
+        opened, i = quote, 0
+        while i < len(line):
+            char = line[i]
+            if quote == "'":
+                quote = None if char == "'" else quote
+            elif quote == '"':
+                i += char == "\\"
+                quote = None if char == '"' else quote
+            elif char == "\\":
+                i += 1
+            elif char in "'\"":
+                quote = char
+            elif line.startswith("<<", i) and line[i - 1:i] != "<" and line[i + 2:i + 3] != "<" \
+                    and (heredoc := HEREDOC.match(line, i)):
+                word, i = heredoc.group(2), heredoc.end()
+                continue
+            elif char == "#" and (i == 0 or line[i - 1] in " \t"):
+                if line[:i].strip() and opened is None:
+                    found[row] = line[i:].strip()
+                break
+            i += 1
+    return found
+
+
 def trailing_comments(path: str, text: str) -> dict[int, str]:
+    if path.endswith(".sh"):
+        return shell_trailing(text)
     tokens = python_tokens(text) if path.endswith(".py") else None
     if tokens is None:
         return {}
