@@ -422,7 +422,7 @@ class ReleaseTextTests(unittest.TestCase):
         raw = (ROOT / "skill" / "SKILL.md").read_bytes()
         rule = next(line for line in raw.decode().splitlines() if line.startswith("Release rule."))
         self.assertIn("release-record --fix-wave", rule)
-        self.assertIn("until its newest ruling says", rule)
+        self.assertIn("until a ruling closes it", rule)
         self.assertNotIn("until its line is removed", rule)
         report = budget_report(ROOT / "skill" / "SKILL.md", 40000)
         if report:
