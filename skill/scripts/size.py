@@ -12,6 +12,7 @@ from pathlib import Path
 
 import devloop
 from devloop import emit
+from ci_skip import MERGED
 from seal import merge_base, run_git
 
 LIMIT = 40000
@@ -144,7 +145,7 @@ def run_check(top: Path, mode: str) -> dict:
     if mode != "committed":
         paths += names(top, "ls-files", "--others", "--exclude-standard")
     for path in sorted(set(paths)):
-        if path in kit or any(fnmatch.fnmatchcase(path, p) for p in patterns):
+        if path in kit or path in MERGED or any(fnmatch.fnmatchcase(path, p) for p in patterns):
             continue
         if mode == "committed":
             if path not in head or head[path][0] in ("120000", "160000"):

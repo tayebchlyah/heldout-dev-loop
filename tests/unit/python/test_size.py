@@ -134,6 +134,13 @@ class SizeRuleTests(SizeRepo):
         self.assertEqual(self.reasons("--uncommitted"), [])
         self.assertEqual(self.reasons("--all"), [("kit/big.py", "over")])
 
+    def test_merged_config_files(self) -> None:
+        for path in (".claude/settings.json", ".codex/hooks.json", ".codex/config.toml"):
+            self.commit(path, blob(50000))
+        self.commit(".codex/other.json", blob(50000))
+        for mode in ((), ("--uncommitted",), ("--all",)):
+            self.assertEqual(self.reasons(*mode), [(".codex/other.json", "new" if mode != ("--all",) else "over")])
+
     def test_exempt_list(self) -> None:
         self.commit("dev-loop.json", json.dumps({"file_size_exempt": ["docs/*"]}).encode())
         self.commit("docs/a/b.md", blob(41000))
