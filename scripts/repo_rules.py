@@ -10,6 +10,7 @@ promoted: the final tag --tag vX.Y.Z has the kit source of its highest release c
 from __future__ import annotations
 
 import argparse
+import ast
 import io
 import json
 import re
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import tokenize
 import tomllib
+import warnings
 from pathlib import Path
 
 
@@ -77,6 +79,7 @@ KINDS = re.compile(
     r"|(?:#|//)\s*(?:shortcut: [^,]+, \S|SPDX-License-Identifier|Copyright|License(?::|d under|\s*$)"
     r"|(?i:noqa)|nosec|isort:|type:|pyright:|pylint:|pragma|fmt: (?:off|on|skip)|eslint-|biome-ignore|@ts-|shellcheck)"
 )
+DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_]\w*)\1")
 CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
 
@@ -139,6 +142,81 @@ def trailing_comments(path: str, text: str) -> dict[int, str]:
         return {}
     code = code_rows(tokens)
     return {tok.start[0]: tok.string.strip() for tok in tokens if tok.type == tokenize.COMMENT and tok.start[0] in code}
+
+
+def parse_python(text: str) -> ast.Module | None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            return ast.parse(text)
+        except (SyntaxError, ValueError):
+            return None
+
+
+def module_stem(path: str) -> str:
+    file = Path(path)
+    return file.parent.name if file.name == "__init__.py" else file.stem
+
+
+def dotted(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if not isinstance(node, ast.Attribute):
+        return None
+    head = dotted(node.value)
+    return f"{head}.{node.attr}" if head else None
+
+
+def import_pairs(tree: ast.Module) -> set[tuple[str, str]]:
+    pairs: set[tuple[str, str]] = set()
+    bound: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if node.module:
+                    pairs.add((node.module.split(".")[-1], alias.name))
+                bound[alias.asname or alias.name] = alias.name
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                bound[alias.asname or alias.name] = alias.name.split(".")[-1]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and (name := dotted(node.value)) in bound:
+            pairs.add((bound[name], node.attr))
+    return pairs
+
+
+def owner_public(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, scope: str, public: set[str]) -> bool:
+    if scope == "module":
+        return node.name in public
+    if scope == "class" and not isinstance(node, ast.ClassDef):
+        return not node.name.startswith("_") or (node.name.startswith("__") and node.name.endswith("__"))
+    return False
+
+
+def visit_docstrings(node: ast.AST, scope: str, public: set[str], found: list[tuple[int, int, str]]) -> None:
+    for child in ast.iter_child_nodes(node):
+        if not isinstance(child, DEFS):
+            visit_docstrings(child, scope, public, found)
+            continue
+        is_public = owner_public(child, scope, public)
+        doc = ast.get_docstring(child)
+        if doc is not None and not is_public:
+            first = child.body[0]
+            found.append((first.lineno, first.end_lineno or first.lineno, doc))
+        inner = "class" if is_public and scope == "module" and isinstance(child, ast.ClassDef) else "private"
+        visit_docstrings(child, inner, public, found)
+
+
+def private_docstrings(tree: ast.Module, public: set[str]) -> list[tuple[int, int, str]]:
+    found: list[tuple[int, int, str]] = []
+    visit_docstrings(tree, "module", public, found)
+    return sorted(found)
+
+
+def docstring_texts(text: str) -> set[str]:
+    tree = parse_python(text)
+    nodes = [] if tree is None else [n for n in ast.walk(tree) if isinstance(n, (ast.Module, *DEFS))]
+    return {doc for n in nodes if (doc := ast.get_docstring(n)) is not None}
 
 
 def comment_lines(path: str, text: str) -> dict[int, str]:
