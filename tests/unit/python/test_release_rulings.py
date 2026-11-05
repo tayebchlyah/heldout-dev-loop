@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
+from test_devloop import git, put  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import release  # noqa: E402
@@ -101,6 +104,21 @@ class RulingParseTests(unittest.TestCase):
     def test_column_zero_fence_keeps_the_item(self) -> None:
         lines = [ACCEPT, "```", '{"ok": true}', "```", "  - Ruling 2026-11-05: fix #300 check shows it open"]
         self.assertEqual(scan(lines, "v3.0.0"), (True, []))
+
+    def test_ruling_after_a_column_zero_line_is_unparsed(self) -> None:
+        reopen = "  - Ruling 2026-11-05: fix #300 check shows it open"
+        bad = "  - **Ruling 2026-11-05**: fix #300 x"
+        for column_zero in ("Check output, pasted:", "### Release audit Run 9, 2026-11-03", "**note**"):
+            for ruling in (reopen, ACCEPT, bad):
+                with self.subTest(column_zero=column_zero, ruling=ruling):
+                    self.assertEqual(scan([ACCEPT, column_zero, ruling], "v3.0.0"), (False, [ruling]))
+        self.assertEqual(scan([ACCEPT, "Output:", "  ```", reopen, "  ```", "  - Verdict: x"], "v3.0.0"), (False, []))
+        self.assertEqual(scan(["Output:", "  ```"], "v3.0.0"), (True, ["  ```"]))
+        other = "- 2026-11-02 (security, confirmed, Run 9): y. Fingerprint `f-b`."
+        text = note(ITEM, ACCEPT, "Output:", other, "  - Ruling 2026-11-03: close fixed by #2")
+        self.assertEqual(release.security_items(text, "v3.0.0"), ([], []))
+        text = note("- 2026-11-01 (perf, Run 9): z", "Output:", reopen)
+        self.assertEqual(release.security_items(text, "v3.0.0"), ([], []))
 
     def test_pasted_output_in_a_fence_is_content(self) -> None:
         lines = ["  - Ruling 2026-11-02: fix #170 patch", "  ```", '{"ok": false}', "  - Ruling 2026-11-04: accept old", "  ```"]
@@ -221,6 +239,37 @@ class ScopedRulingTextTests(unittest.TestCase):
                      "unparsed-security"):
             with self.subTest(word=word):
                 self.assertIn(word, text)
+
+
+CLIFF = ('[changelog]\nbody = """\n## [{{ version }}]\n{% for commit in commits %}- {{ commit.message | trim }}\n{% endfor %}"""\n'
+         '[git]\nconventional_commits = false\nfilter_unconventional = false\n')
+
+
+class CliffBodyTests(unittest.TestCase):
+    """#262: in `cliff` mode the step 8 release body holds every commit since the previous final tag, as step 4 does."""
+
+    def test_step_8_body_equals_the_step_4_section(self) -> None:
+        text = (ROOT / "skills/release/SKILL.md").read_text()
+        changelog, body = (re.search(r"`(git cliff [^`]+)`", ScopedRulingTextTests.step("skills/release/SKILL.md", n)).group(1)
+                           for n in (4, 8))
+        entries = lambda out: sorted(line[2:] for line in out.splitlines() if line.startswith("- "))  # noqa: E731
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init", "-q")
+            put(repo / "cliff.toml", CLIFF)
+            for subject, tag in (("start", "v1.0.0"), ("one", None), ("two", "v1.1.0-rc.1"), ("three", None)):
+                git(repo, "commit", "-q", "--allow-empty", "-m", subject)
+                if tag:
+                    git(repo, "tag", tag)
+            for tag in ("v1.1.0-rc.2", "v1.1.0"):
+                with self.subTest(tag=tag):
+                    run = lambda cmd: subprocess.run(shlex.split(cmd.replace("<tag>", tag)), cwd=repo, check=True,  # noqa: E731
+                                                     capture_output=True, text=True).stdout
+                    run(changelog)
+                    section = [s for s in re.split(r"^## \[", (repo / "CHANGELOG.md").read_text(), flags=re.M) if s.strip()][0]
+                    self.assertEqual(entries(section), ["one", "three", "two"])
+                    self.assertEqual(entries(run(body)), entries(section))
+        self.assertIn("before `git tag -a`", text.split("\n8. ")[1])
 
 
 if __name__ == "__main__":
