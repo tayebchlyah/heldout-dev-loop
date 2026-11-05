@@ -15,7 +15,7 @@ sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
-from test_devloop import DEVLOOP, Sandbox, frontmatter, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
+from test_devloop import DEVLOOP, GIT, Sandbox, frontmatter, git, put, run_cli  # noqa: E402  (also sets the core.fsmonitor override)
 import autonomy  # noqa: E402
 
 SPEC = "20261001 Demo.md"
@@ -395,6 +395,24 @@ class AutonomyHookTests(PauseSandbox):
                 self.assertEqual(self.note.exists(), written)
                 if written:
                     self.assertEqual(self.saved()["reason"], "rate_limit")
+
+    def test_rebase_stopped_on_a_conflict_keeps_the_feature_worktree(self) -> None:
+        self.commit(self.repo, "c.txt", "main\n")
+        self.commit(self.wt, "c.txt", "feature\n")
+        for backend in ("--merge", "--apply"):
+            with self.subTest(backend=backend):
+                stopped = subprocess.run([*GIT, "rebase", backend, "main"], cwd=self.wt, capture_output=True, text=True)
+                self.assertNotEqual(stopped.returncode, 0, stopped.stdout)
+                self.assertEqual(json.loads(self.hook("deny-ask.sh", self.ask(self.wt)).stdout)["hookSpecificOutput"]
+                                 ["permissionDecision"], "deny")
+                self.note.unlink(missing_ok=True)
+                self.assertEqual(self.event(EVENT)[0], 0)
+                self.assertEqual(self.saved()["feature"], "demo")
+                self.assertEqual(self.cli("pause")[1]["note"]["feature"], "demo")
+                git(self.wt, "rebase", "--abort")
+        git(self.wt, "checkout", "-q", "--detach")
+        self.assertEqual(self.hook("deny-ask.sh", self.ask(self.wt)).stdout, "")
+        self.assertEqual(self.event(EVENT), (0, {"skipped": "not-a-feature-worktree"}))
 
     def test_check_setup_names_missing_hook_entries(self) -> None:
         import check_setup

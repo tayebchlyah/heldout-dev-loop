@@ -1,7 +1,8 @@
 #!/bin/bash
 # PreToolUse(Edit|Write|NotebookEdit) wall: Stages 3 to 7 run with the session cwd in the feature worktree, so an edit
 # into a feature worktree from any other checkout is denied. Target checkout: git top level of the nearest existing
-# directory of the target, physical. Feature worktree: as deny-ask.sh, and the branch not under release/.
+# directory of the target, physical. Feature worktree: as deny-ask.sh (a rebase's head-name too), and the branch not
+# under release/.
 # Forms of the target checked: as given and with . and .. folded as text, each also with its own symlinks followed.
 # Fails open (no jq, no git, bad input). A path goes only as a quoted argument, never through eval.
 . "${0%/*}/git-pin.sh"
@@ -15,8 +16,17 @@ target=$(printf '%s' "$IN" | jq -r 'if .tool_name == "NotebookEdit" then .tool_i
 [ -n "$target" ] || exit 0
 case "$target" in /*) ;; *) target="$cwd/$target" ;; esac
 
+rebase_head() {
+  local state name
+  for state in rebase-merge rebase-apply; do
+    [ -d "$1/$state" ] || continue
+    [ -f "$1/$state/head-name" ] && name=$(cat "$1/$state/head-name") && printf '%s' "${name#refs/heads/}"
+    return
+  done
+}
+
 feature_top() {
-  local dir=${1%/*} phys top git_dir common
+  local dir=${1%/*} phys top git_dir common branch
   while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir=${dir%/*}; done
   phys=$(cd -P -- "${dir:-/}" 2>/dev/null && pwd -P) || return
   top=$(git -C "$phys" rev-parse --show-toplevel 2>/dev/null) || return
@@ -24,7 +34,8 @@ feature_top() {
   git_dir=$(git -C "$top" rev-parse --absolute-git-dir 2>/dev/null) || return
   common=$(cd -P -- "$top" && cd -P -- "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P) || return
   [ "$(cd -P -- "$git_dir" && pwd -P)" != "$common" ] || return
-  case "$(git -C "$top" symbolic-ref --short -q HEAD 2>/dev/null)" in release/*) return ;; */*) ;; *) return ;; esac
+  branch=$(git -C "$top" symbolic-ref --short -q HEAD 2>/dev/null) || branch=$(rebase_head "$git_dir")
+  case "$branch" in release/*) return ;; */*) ;; *) return ;; esac
   [ -f "$top/dev-loop.json" ] || return
   printf '%s' "$top"
 }

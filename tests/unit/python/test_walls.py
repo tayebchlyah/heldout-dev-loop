@@ -550,6 +550,27 @@ class WorktreeWallTests(unittest.TestCase):
             with self.subTest(stdin=stdin):
                 self.assert_quiet(self.run_wall(stdin))
 
+    def test_rebase_stopped_on_a_conflict_keeps_the_wall(self) -> None:
+        write(self.main / "c.txt", "main\n")
+        git_in(self.main, "add", "-A")
+        git_in(self.main, "commit", "-q", "-m", "main")
+        for name in ("x", "release"):
+            write(self.wt[name] / "c.txt", name + "\n")
+            git_in(self.wt[name], "add", "-A")
+            git_in(self.wt[name], "commit", "-q", "-m", name)
+        for backend in ("--merge", "--apply"):
+            for name, denied in (("x", True), ("release", False)):
+                with self.subTest(backend=backend, worktree=name):
+                    wt = self.wt[name]
+                    stopped = subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "rebase",
+                                              backend, "main"], cwd=wt, capture_output=True, text=True)
+                    self.assertNotEqual(stopped.returncode, 0, stopped.stdout)
+                    result = self.run_wall(self.edit(self.main, wt / "c.txt"))
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get(
+                        "permissionDecision"), "deny" if denied else None)
+                    git_in(wt, "rebase", "--abort")
+
     def test_fails_open(self) -> None:
         envs = {}
         for name, tools in (("no_jq", ("git", "cat")), ("no_git", ("jq", "cat"))):
