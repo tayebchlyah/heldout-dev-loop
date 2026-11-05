@@ -50,7 +50,7 @@ test('upgrade removes the hook entries of kit scripts the package renamed, and a
   const diff = git(repo, 'diff', '--', '.claude/settings.json', '.codex/hooks.json')
   assert.doesNotMatch(diff, /^\+.*(claude\/gate\.sh|session-start\.sh)"/m)
   assert.match(output, /- Stop: "\$\{CLAUDE_PROJECT_DIR:-\$\(git rev-parse --show-toplevel\)\}\/\.dev-loop\/hooks\/claude\/gate\.sh"/)
-  assert.match(output, /- SessionStart: .*\/\.dev-loop\/hooks\/codex\/session-start\.sh"/)
+  assert.match(output, /- SessionStart: session-start\.sh \(\d+ bytes\)\n/)
   for (const file of ['.claude', '.codex']) {
     assert.equal(readdirSync(join(repo, file)).filter((name) => name.includes('.bak-')).length, 1, `one backup in ${file}`)
   }
@@ -79,7 +79,7 @@ test('upgrade --dry-run reports the removed hook entries and writes nothing', ()
   const output = upgrade(repo, home, ['--dry-run'], renamedHooksPackage('99.0.0'))
   assert.match(output, /dry run, nothing written/)
   assert.match(output, /- Stop: .*\/\.dev-loop\/hooks\/claude\/gate\.sh"/)
-  assert.match(output, /- SessionStart: .*\/\.dev-loop\/hooks\/codex\/session-start\.sh"/)
+  assert.match(output, /- SessionStart: session-start\.sh \(\d+ bytes\)\n/)
   assert.deepEqual(snapshot(repo), before)
 })
 

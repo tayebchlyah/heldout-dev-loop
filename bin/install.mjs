@@ -54,6 +54,16 @@ function asker(rl) {
   }
 }
 
+// #263: a Codex hook command holds the whole fill script; the list names its script, arguments and size.
+function shortCommand(item) {
+  const [, event = '', command] = /^(\w+: )?([\s\S]*)$/.exec(item)
+  if (!command.includes('\n')) return item
+  const script = /\/hooks\/\w+\/([\w.-]+)/.exec(command)?.[1]
+  const args = /exec (?:sh )?"\$f"([^\n]*)$/.exec(command)?.[1] ?? ''
+  const head = script ? `${script}${args}` : `${command.split('\n')[0].slice(0, 120)}...`
+  return `${event}${head} (${Buffer.byteLength(command)} bytes)`
+}
+
 function printReports(allReports, flags, short) {
   // uninstall-global names each dev-loop item it leaves in place.
   const kept = allReports.filter((entry) => entry.action === 'kept')
@@ -62,11 +72,11 @@ function printReports(allReports, flags, short) {
   for (const entry of changed) {
     console.log(`  ${entry.action.padEnd(7)} ${short(entry.target)}`)
     if (entry.backup) console.log(`          backup ${short(entry.backup)}`)
-    for (const added of entry.added) console.log(`          + ${added}`)
-    for (const updated of entry.updated ?? []) console.log(`          updated ${updated}`)
+    for (const added of entry.added) console.log(`          + ${shortCommand(added)}`)
+    for (const updated of entry.updated ?? []) console.log(`          updated ${shortCommand(updated)}`)
     // A Codex config table is not a hook command: name the table and why.
     for (const removed of entry.removed ?? []) {
-      console.log(entry.target.endsWith('.toml') ? `          removed ${removed} from ${short(entry.target)} (Codex never applied it)` : `          - ${removed}`)
+      console.log(entry.target.endsWith('.toml') ? `          removed ${removed} from ${short(entry.target)} (Codex never applied it)` : `          - ${shortCommand(removed)}`)
     }
   }
   if (changed.some((entry) => entry.target.endsWith('.codex/hooks.json') && (entry.added.length > 0 || (entry.updated ?? []).length > 0))) {

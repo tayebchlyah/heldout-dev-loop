@@ -41,12 +41,35 @@ test('upgrade of a Claude project adds the .claude/worktrees/ line once, and no 
   assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), 'node_modules\n.claude/worktrees/\n')
 })
 
-test('upgrade of a Codex-only project writes no .gitignore', () => {
+test('upgrade of a Codex-only project writes only the backup line to .gitignore', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes', '--harness=codex'])
   rmSync(join(repo, '.gitignore'))
   upgrade(repo, home, [], fakePackage('99.0.0'))
-  assert.equal(existsSync(join(repo, '.gitignore')), false)
+  assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), '*.bak-*\n')
+})
+
+test('the backups an upgrade writes stay out of git status', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=both'])
+  git(repo, 'add', '-A')
+  git(repo, 'commit', '-qm', 'init')
+  upgrade(repo, home, [], fakePackage('99.0.0'))
+  const backups = readdirSync(join(repo, '.codex')).filter((name) => name.includes('.bak-'))
+  assert.ok(backups.length > 0, 'the upgrade wrote a backup')
+  assert.doesNotMatch(git(repo, 'status', '--porcelain', '--untracked-files=all'), /\.bak-/)
+})
+
+test('upgrade output names a hook command by its script, and keeps the /hooks line and the release notes', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=both'])
+  const pkg = fakePackage('99.0.0', (root) => writeFileSync(join(root, 'CHANGELOG.md'), '# Changelog\n\n## [99.0.0]\n\n- the new release\n'))
+  const output = upgrade(repo, home, [], pkg)
+  assert.match(output, /- the new release/)
+  assert.ok(output.includes(TRUST_LINE), output)
+  assert.match(output, /updated PreToolUse: git-guard\.sh \(\d+ bytes\)\n/)
+  assert.ok(output.length < 8000, `${output.length} bytes: one full Codex command is about 3,700 bytes, so 8,000 allows the list, never two of them`)
+  assert.ok(output.split('\n').every((line) => line.length <= 500), 'no line holds a full hook command')
 })
 
 test('upgrade --dry-run leaves .gitignore alone', () => {
