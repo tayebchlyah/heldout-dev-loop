@@ -3,7 +3,7 @@ name: implementer
 description: Implements one plan task from a brief. Never reads the held-out acceptance suite in tests/acceptance. Use for every SDD implementer dispatch.
 model: sonnet
 effort: medium
-disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool
+disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent
 hooks:
   PreToolUse:
     - matcher: "Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool"
@@ -21,6 +21,8 @@ Test cycle: skill `mattpocock-skills:tdd`. Failing unit test first. Watch it fai
 Satisfy the spec, not the tests you can see.
 
 Contradictory test exit: a failing test you were given contradicts the spec. Stop. Report `CONTRADICTORY_TEST: <test> <spec line>`. Never bend the code to that test.
+
+Outside fact exit: an outside fact that the brief and the repository do not give (no web tool is open to you). Stop. Report `NEEDS_FACT: <question>`, never guess it.
 
 A guard block or a taint report means stop and report; never rephrase the call. One exception: after a search-scope block, search again on named source folders or with the suite excluded.
 

@@ -35,9 +35,12 @@ function renderBoard(features, nowMs, opts) {
     const st = f.stage_times && typeof f.stage_times === "object" ? f.stage_times : {};
     const times = {};
     for (let n = 1; n <= 7; n++) if (isFinite(ms(st[n]))) times[n] = ms(st[n]);
+    // #230: Title Case, as the feature folders. A title that is the slug shows its words.
+    const title = str(f.title) && str(f.title) !== str(f.feature) ? str(f.title) : str(f.feature).replace(/-/g, " ");
     return {
       project: str(f.project), feature: str(f.feature), machine_id: str(f.machine_id),
-      title: str(f.title) || str(f.feature) || "Untitled feature",
+      title: title.replace(/\S+/g, (w) => w.replace(/\p{L}/u, (c) => c.toUpperCase())) || "Untitled feature",
+      shippedKept: Number.isInteger(f.shipped_kept) && f.shipped_kept >= 0 ? f.shipped_kept : null,
       owner: str(f.owner) || "Unknown", machine: str(f.machine) || "unknown machine",
       track: str(f.track), acceptance: str(f.acceptance), stage: Math.min(Math.max(Math.floor(Number(f.stage)) || 1, 1), 7), times,
       tasks: Array.isArray(f.tasks) ? f.tasks.filter((t) => t && typeof t === "object") : [],
@@ -181,7 +184,11 @@ function renderBoard(features, nowMs, opts) {
 
   const shipRows = [];
   for (const p of new Set(shipped.map((f) => f.project))) {
-    shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped)).slice(0, 5)
+    // #230: the shipped_kept of the project's most recently updated active note that has one, else of the newest shipped note that has one, else 5.
+    const newest = notes.filter((f) => f.project === p && f.shippedKept !== null)
+      .sort((a, b) => (a.shipped ? 1 : 0) - (b.shipped ? 1 : 0) || at(b.updated) - at(a.updated))[0];
+    shipRows.push(...shipped.filter((f) => f.project === p).sort((a, b) => at(b.shipped) - at(a.shipped))
+      .slice(0, newest ? newest.shippedKept : 5)
       .map((f) => ({ ...model({ ...f, stage: 7 }), shipped: true, end: ms(f.shipped) })));
   }
   const all = [...rows, ...shipRows];

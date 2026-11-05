@@ -14,6 +14,7 @@ GLOBAL_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-e
 MOVES_HEAD = {"checkout", "switch", "reset", "rebase", "worktree", "init", "clone", "branch"}
 CHANGES_REFS = {"config", "remote", "tag", "update-ref", "symbolic-ref"}
 FEEDERS = {"xargs", "parallel", "find", "fd"}
+RELEASE_TAG = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.[1-9]\d*)?")
 # gh release create options that take a value.
 GH_ARG = {"--target", "-t", "--title", "-n", "--notes", "-F", "--notes-file", "--discussion-category",
           "--notes-start-tag", "-R", "--repo"}
@@ -221,7 +222,7 @@ def check_release(args, cwds):
         rc, sha = git(repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
         if rc:
             ask("a release create", "; release-check failed: refs/remotes/origin/main does not resolve")
-    ask(f"a release create at {sha}", release_suffix(repo, ["--sha", sha]))
+    ask(f"a release create at {sha}", release_suffix(repo, ["--sha", sha, *(["--for", tag] if tag and RELEASE_TAG.fullmatch(tag) else [])]))
 
 
 def unreadable(word):
@@ -517,7 +518,7 @@ def check_push(repo, args, drift):
             rc, sha = git(repo, "rev-parse", "--verify", "--quiet", f"{src}^{{commit}}")
             if rc:
                 ask("a tag push", f"; release-check failed: {src} does not resolve")
-            ask(f"a tag push of {sha}", release_suffix(repo, ["--sha", sha]))
+            ask(f"a tag push of {sha}", release_suffix(repo, ["--sha", sha, *(["--for", name] if RELEASE_TAG.fullmatch(name) else [])]))
         if not dst and spec in ("HEAD", "@"):
             ask("a push from a detached HEAD" if git(repo, "rev-parse", "--git-dir")[0] == 0
                 else "a push from an unknown repository")
@@ -593,6 +594,9 @@ def check(cmd, cwds, drift, top=False):
     # becomes every folder seen so far, and no later cd narrows it. The same holds
     # for the whole line when unreliable() finds a quote, escape, comment, heredoc
     # or case that can fool the parser: a cd then only adds its targets.
+    # #238: a private-use character in the line would read as one of the parser's own marks (MASK, REDIRECTS).
+    if any(0xE000 <= ord(c) <= 0xF8FF for c in cmd):
+        ask("a command the guard cannot read")
     try:
         segs = list(segments(mask_quoted(cmd)))
     except ValueError:
