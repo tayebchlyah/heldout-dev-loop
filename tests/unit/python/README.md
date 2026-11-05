@@ -8,6 +8,7 @@ One file per subject. A new test file adds its line here.
 - `test_codex_gate_launcher.py`, `test_codex_trusted_checks.py`, `test_macos_hook.py`: Codex gate policy, trusted main checkers, macOS confinement and nested broker.
 - `test_hooks.py`, `test_seal.py`: board hook launch, Claude gate hook; `seal`, `audit`.
 - `test_seal_check.py`, `test_search_wall.py`, `test_search_hooks.py`: `seal-check`, `kit-changed`, `weakened`; `search-wall`: direct, via walls.
+- `test_seal_patch.py`: the seal patch value (`patch-id --verbatim`), a failed `patch-id` in `seal`, `seal --rebase-continue`, `seal-check`.
 - `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, `gate` and `seal` size; seal hooks, guard, spec-tester, Codex walls.
 - `test_kit_walls.py`, `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: path, kit, `cd` walls, canary script, Codex trust warning; deny walls, Codex hooks, git and gh guard.
 - `test_frontmatter_walls.py`: the settings twin of each agent frontmatter wall.
