@@ -445,7 +445,7 @@ class SecondReviewRunTests(unittest.TestCase):
         self.stub("claude", f"print({reply!r})")
         out, code, seen = self.review(self.tree(local='{"second_review": {"claude": {"model": "opus[1m]", "effort": "max"}}}'),
                                       harness="codex")
-        self.assertEqual((out["state"], out["reviewer"], out["output"], out["tokens"], code), ("done", "claude", TABLE, 15, 0), out)
+        self.assertEqual((out["state"], out["reviewer"], out["output"], out["tokens"], code), ("done", "claude", TABLE, 35, 0), out)
         self.assertEqual(seen["argv"], ["-p", "--restricted", "--strict-mcp-config", "--tools=Read,Grep,Glob", "--output-format",
                                         "json", "--effort", "max", "--model", "opus[1m]"])
         self.assertIn(".second-review.diff", seen["stdin"])
@@ -545,11 +545,20 @@ class SecondReviewRunTests(unittest.TestCase):
         names = [second_review.record_dir(tree, "codex", now).name for _ in range(3)]
         self.assertEqual(names, ["20260102T030405Z-codex", "20260102T030405Z-codex-2", "20260102T030405Z-codex-3"])
         for reviewer, stdout, stderr, tokens in [
-            ("claude", '{"usage": {"input_tokens": 7, "output_tokens": 3}}', "", 10),
+            ("claude", '{"usage": {"input_tokens": 7, "output_tokens": 3}}', "", 22),
+            ("claude", '{"usage": {"input_tokens": 7, "output_tokens": 3, "cache_read_input_tokens": 100, '
+                       '"cache_creation_input_tokens": 8}}', "", 42),
             ("claude", "not json", "", None), ("claude", '{"result": "x"}', "", None),
             ("codex", "", "tokens used\n1,234\nmore\ntokens used: 56,789\n", 56789), ("codex", "", "nothing", None)]:
             with self.subTest(stdout=stdout, stderr=stderr):
                 self.assertEqual(second_review.tokens(reviewer, stdout, stderr), tokens)
+
+    def test_child_env_keeps_proxy(self) -> None:
+        import second_review
+        keep = {k: "v" for k in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "no_proxy", "SSL_CERT_FILE",
+                                 "NODE_EXTRA_CA_CERTS", "CODEX_CA_CERTIFICATE")}
+        env = second_review.child_env({**keep, "GH_TOKEN": "s", "AWS_SECRET_ACCESS_KEY": "s"}, Path("/b/c"), None)
+        self.assertEqual(set(env), {*keep, "PATH"})
 
 
 class SecondReviewSetupTests(unittest.TestCase):

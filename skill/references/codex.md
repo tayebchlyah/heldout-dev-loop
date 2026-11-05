@@ -56,7 +56,7 @@ Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
    - Invoke skill `code-review` with fixed point `origin/main`.
    - Custom read-only agent `security_reviewer`.
    - Both custom reviewers run at `model_reasoning_effort = "high"` (their agent files).
-   - The Claude reviewer runs inside `dev-workspace`: the managed proxy allows `api.anthropic.com`. It cannot write its config folder and does not need to.
+   - The Claude reviewer runs inside `dev-workspace`: the managed proxy allows `api.anthropic.com`, and `second-review` passes the proxy and CA variables to it. It cannot write its config folder and does not need to.
 2. **Triage, controller.** SKILL.md Stage 6. Read `seal`, `size` and `weakened` from the gate JSON: a `seal` or `size` violation is red. Merge: `python3 .agents/skills/dev-loop/scripts/devloop.py review-merge final-reviewer=<file> code-review=<file> security-reviewer=<file> [second-review:claude=<record>/output.md]`. Security verifier: a fresh `security_reviewer` per security finding. Prompt: the candidate-verifier prompt from `~/.agents/skills/security-audit/VALIDATION-AND-REPORTING.md` (Phase 3, "Candidate-verifier prompt"), plus the finding.
 3. **Fix wave.** A new custom agent `implementer` per round, one file cluster at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`: the process exits 0 (the project gate, `seal` and `size`).
 4. **Drive.** SKILL.md Stage 6, `references/verify.md` section Stage 6. `scripts/devloop.py drive`, then the layout check: one fresh generic worker with the `drive.json` path. After the final full acceptance run: the closing drive (`references/verify.md` Stage 6 step 7).
