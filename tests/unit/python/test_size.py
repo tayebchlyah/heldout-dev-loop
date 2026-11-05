@@ -138,8 +138,27 @@ class SizeRuleTests(SizeRepo):
         for path in (".claude/settings.json", ".codex/hooks.json", ".codex/config.toml"):
             self.commit(path, blob(50000))
         self.commit(".codex/other.json", blob(50000))
-        for mode in ((), ("--uncommitted",), ("--all",)):
-            self.assertEqual(self.reasons(*mode), [(".codex/other.json", "new" if mode != ("--all",) else "over")])
+        expected = {(): "new", ("--uncommitted",): "new", ("--all",): "over"}
+        for mode, why in expected.items():
+            with self.subTest(mode=mode):
+                self.assertEqual(self.reasons(*mode), [(".codex/other.json", why)])
+
+    def test_merged_config_file_grown(self) -> None:
+        self.on_main(".codex/hooks.json", blob(41000))
+        self.commit(".codex/hooks.json", blob(50000))
+        for mode in ((), ("--uncommitted",)):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.reasons(*mode), [])
+
+    def test_merged_config_upgrade_backups(self) -> None:
+        self.write(".codex/hooks.json.bak-20261105T000000", blob(50000))
+        self.write(".claude/settings.json.bak-1", blob(50000))
+        self.write(".codex/hooks.json.bak", blob(50000))
+        self.write(".codex/hooks.json.bak-", blob(50000))
+        self.write("other/.codex/hooks.json.bak-1", blob(50000))
+        self.assertEqual(self.reasons("--uncommitted"),
+                         [(".codex/hooks.json.bak", "new"), (".codex/hooks.json.bak-", "new"),
+                          ("other/.codex/hooks.json.bak-1", "new")])
 
     def test_exempt_list(self) -> None:
         self.commit("dev-loop.json", json.dumps({"file_size_exempt": ["docs/*"]}).encode())
