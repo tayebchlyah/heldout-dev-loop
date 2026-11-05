@@ -327,7 +327,7 @@ class CommentRuleTests(unittest.TestCase):
              {3: "# trailing", 5: "# noqa: E402"}),
             ("a.py", 'x = """a\n# b\n"""  # after\n', {3: "# after"}),
             ("a.py", "def f(:\n    x = 1  # t\n", {}),
-            ("a.sh", "echo x  # t\n", {}),
+            ("a.sh", "echo x  # t\n", {1: "# t"}),
             ("a.mjs", "const a = 1 // z\n", {}),
         ]:
             with self.subTest(path=path, text=text):
