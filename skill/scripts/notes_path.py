@@ -36,16 +36,12 @@ def expand(value: str, base: Path, home: Path) -> Path:
     return path if path.is_absolute() else base / path
 
 
-def notes_value(text: str | bytes, label: str, strict: bool = True) -> str | None:
+def notes_value(text: str | bytes, label: str) -> str | None:
     try:
         value = json.loads(text).get("notes")
     except (ValueError, AttributeError) as exc:
         raise NotesPathError(f"invalid {label}: {exc}") from exc
-    if not isinstance(value, str) or not value:
-        if not strict:
-            return None
-        raise NotesPathError(f"invalid {label}: no notes key")
-    return value
+    return value if isinstance(value, str) and value else None
 
 
 def read_notes(file: Path) -> str | None:
@@ -79,7 +75,7 @@ def read_main_ref_notes(repo: Path) -> tuple[str, str] | None:
         shown = subprocess.run(["git", "-C", str(repo), "show", label], capture_output=True)
     except OSError:
         return None
-    value = notes_value(shown.stdout, label, strict=False) if shown.returncode == 0 else None
+    value = notes_value(shown.stdout, label) if shown.returncode == 0 else None
     return (value, label) if value else None
 
 
@@ -100,9 +96,9 @@ def tracked(main: Path) -> bool:
 
 def resolve(repo: Path, env: Mapping[str, str], home: Path) -> Path:
     """`DEV_LOOP_NOTES` (relative to the repo worktree), else `dev-loop.local.json` read from disk in the main
-    worktree, then `notes` in `dev-loop.json` read from the main ref, never from disk: a branch checked out in
-    the main worktree cannot change it. No main ref or no file on it: no notes key. A feature worktree's own
-    files are never read."""
+    worktree (no `notes` key or an empty one: falls through), then `notes` in `dev-loop.json` read from the main
+    ref, never from disk: a branch checked out in the main worktree cannot change it. No main ref or no file on
+    it: no notes key. A file that is not a JSON object fails. A feature worktree's own files are never read."""
     worktree, main = worktrees(repo)
     found: tuple[str, Path, str] | None = None
     if env.get("DEV_LOOP_NOTES"):
