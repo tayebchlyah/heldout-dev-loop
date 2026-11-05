@@ -115,11 +115,18 @@ def git(cwd: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def checked_out_branch(cwd: Path) -> str | None:
+    """The branch of HEAD; HEAD detached by a rebase: the branch the rebase rewrites, as `status` reads it."""
+    from status import rebasing
+    return git(cwd, "symbolic-ref", "--short", "-q", "HEAD") or rebasing(cwd)
+
+
 def is_feature_worktree(cwd: Path) -> bool:
-    """A linked worktree on a branch with a `/`, whose top level holds `dev-loop.json`."""
+    """A linked worktree on a branch with a `/` (a rebase in progress: its branch), whose top level holds
+    `dev-loop.json`."""
     git_dir = git(cwd, "rev-parse", "--absolute-git-dir")
     common = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    branch = git(cwd, "symbolic-ref", "--short", "-q", "HEAD")
+    branch = checked_out_branch(cwd)
     top = git(cwd, "rev-parse", "--show-toplevel")
     return (git_dir is not None and common is not None and Path(git_dir) != Path(common)
             and bool(branch) and "/" in branch and top is not None and (Path(top) / "dev-loop.json").is_file())
@@ -151,8 +158,8 @@ def find_transcript(session: str, harness: str, env: Mapping[str, str], home: Pa
 
 
 def branch_slug(repo: Path) -> str | None:
-    """The slug of the checked-out branch `<prefix>/<slug>`, or None."""
-    branch = devloop.git(repo, "symbolic-ref", "--short", "-q", "HEAD")
+    """The slug of the checked-out branch `<prefix>/<slug>` (a rebase in progress: its branch), or None."""
+    branch = checked_out_branch(repo)
     return branch.rsplit("/", 1)[1].lower() if branch and "/" in branch else None
 
 
