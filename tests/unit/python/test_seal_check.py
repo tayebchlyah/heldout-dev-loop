@@ -301,7 +301,7 @@ class ChangedBeforeSealTests(SealRepo):
         amended = self.head()
         sealed = self.seal(SUITE, PLAIN.replace("planted", "amended").replace("line 8\n", "line 8\nadded\n"))
         violations = self.check()[1]["violations"]
-        self.assertIn(violation_of("bad-seal", amended), violations)
+        self.assertIn(("bad-seal", amended, None), self.violations())
         self.assertIn(self.before_seal(SUITE, sealed, [amended]), violations)
 
     def test_changed_before_seal_unicode_path(self) -> None:
@@ -310,10 +310,6 @@ class ChangedBeforeSealTests(SealRepo):
         plain = self.commit(path, PLAIN)
         sealed = self.seal(path, BOTH)
         self.assertEqual(self.check()[1]["violations"], [self.before_seal(path, sealed, [plain])])
-
-
-def violation_of(reason: str, commit: str) -> dict:
-    return {"reason": reason, "commit": commit, "path": None}
 
 
 PASSING_GATE = "#!/bin/sh\necho all good\n"
