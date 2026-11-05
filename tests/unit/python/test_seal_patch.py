@@ -16,6 +16,7 @@ from test_devloop import git, put, run_cli  # noqa: E402
 
 HELLO = 'def test_a():\n    assert f("hello world")\n'
 HELLO_AMENDED = 'def test_a():\n    assert f("helloworld")\n'
+TEN = "".join(f"line {n}\n" for n in range(10))
 
 
 class PatchIdTests(SealRepo):
@@ -46,15 +47,64 @@ class PatchIdTests(SealRepo):
         return next(line.split(": ", 1)[1] for line in body.splitlines() if line.startswith(f"{PATCH_TRAILER}: "))
 
     def verbatim(self) -> str:
-        diff = subprocess.run(["git", "-C", str(self.repo), "diff-tree", "-p", "-U0", "--no-renames", "--full-index",
+        diff = subprocess.run(["git", "-C", str(self.repo), "diff-tree", "-p", "-U1", "--no-renames", "--full-index",
                                "HEAD^", "HEAD", "--", f"{ACCEPTANCE_DIR}/"], capture_output=True, check=True).stdout
         out = subprocess.run(["git", "-C", str(self.repo), "patch-id", "--verbatim"], input=diff,
                              capture_output=True, check=True).stdout.decode()
         return hashlib.sha256(out.split(" ", 1)[0].encode()).hexdigest()
 
+    def on_base(self, text: str) -> str:
+        git(self.repo, "checkout", "-q", "main")
+        sha = self.commit(SUITE, text)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        return sha
+
     def test_patch_trailer_is_the_verbatim_patch_id(self) -> None:
         self.seal(SUITE, HELLO)
         self.assertEqual(self.trailer(), self.verbatim())
+
+    def test_patch_trailer_of_a_change_to_a_base_file_is_the_u1_patch_id(self) -> None:
+        self.on_base(TEN)
+        self.seal(SUITE, TEN.replace("line 5\n", "line 5\nadded\n"))
+        self.assertEqual(self.trailer(), self.verbatim())
+
+    def test_moved_line_is_bad_seal(self) -> None:
+        base = "def test_a():\n    x = f()\n    assert x\n\n\ndef test_b():\n    y = g()\n    return y\n"
+        self.on_base(base)
+        self.seal(SUITE, base.replace("    x = f()\n", "    x = f()\n    assert x == 1\n"))
+        put(self.repo / SUITE, base.replace("    return y\n", "    return y\n    assert x == 1\n"))
+        git(self.repo, "commit", "-q", "-a", "--amend", "--no-edit")
+        code, out = self.cli("seal-check")
+        self.assertEqual(code, 1, out)
+        self.assertIn({"reason": "bad-seal", "commit": self.head(), "path": None}, out["violations"])
+
+    def test_clean_rebase_with_one_line_between_keeps_the_seal(self) -> None:
+        start = self.head()
+        for backend in ([], ["--apply"]):
+            with self.subTest(backend=backend):
+                git(self.repo, "checkout", "-q", "main")
+                git(self.repo, "reset", "-q", "--hard", start)
+                self.on_base(TEN)
+                self.seal(SUITE, TEN.replace("line 5\n", "line 5\nadded\n"))
+                git(self.repo, "checkout", "-q", "main")
+                self.commit(SUITE, TEN.replace("line 4\n", "line 4 upstream\n"))
+                git(self.repo, "checkout", "-q", "feat/x")
+                git(self.repo, "rebase", "-q", *backend, "main")
+                self.assertEqual(self.cli("seal-check"), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
+
+    def test_conflict_resolved_with_rebase_continue_keeps_the_seal(self) -> None:
+        self.on_base(TEN)
+        self.seal(SUITE, TEN.replace("line 5\n", "line 5\nadded\n"))
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, TEN.replace("line 5\n", "line 5 upstream\n"))
+        git(self.repo, "checkout", "-q", "feat/x")
+        with self.assertRaises(Exception):
+            git(self.repo, "rebase", "main")
+        self.stage(TEN.replace("line 5\n", "line 5 upstream\nadded\n"))
+        code, out = self.cli("seal", "--rebase-continue")
+        self.assertEqual((code, out.get("rebase")), (0, "continued"), out)
+        self.assertEqual(self.trailer(), self.verbatim())
+        self.assertEqual(self.cli("seal-check")[0], 0)
 
     def test_failed_patch_id_makes_no_commit(self) -> None:
         for mode, error in [("fail", "git patch-id failed: boom"), ("silent", "git patch-id failed: no output")]:
