@@ -20,7 +20,7 @@ User asked to stop now. Any stage, any reason. Do this, in order, nothing else:
      --agent "<id>=<task>" ... --run "<log path>" ...
    ```
 
-   One `--agent` per stopped agent, one `--run` per live run. The note holds the rest itself: stage, ledger line, uncommitted paths, last decision log row, session and transcript.
+   One `--agent` per stopped agent, one `--run` per live run. Shaping, on `main`: add `--feature <slug>` when the slug is known, so `status --feature <slug>` finds the note again. The note holds the rest itself: stage, ledger line, uncommitted paths, last decision log row, session and transcript.
 5. End the turn. Report in 3 lines: what stopped, the note path, how to resume (`/continue` here or in a new session, Codex `$continue`).
 
 No commit: the worktree keeps the uncommitted work.

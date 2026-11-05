@@ -312,6 +312,10 @@ class StatusTests(Sandbox):
         out = self.status(cwd=wt, env=self.with_effort("high"))
         self.assertEqual((out["stage"], out["effort"]), (7, want("high", "medium")))
 
+    def test_effort_want_null_for_a_feature_with_no_spec_and_no_branch(self) -> None:
+        out = self.status("--feature", "tiny", env=self.with_effort("medium"))
+        self.assertEqual((out["stage"], out["track"], out["effort"]), (1, None, {"level": "medium", "want": None}))
+
     def test_effort_want_stage_3(self) -> None:
         self.spec()
         wt = self.worktree()

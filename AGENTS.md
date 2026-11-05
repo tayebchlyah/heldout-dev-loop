@@ -65,7 +65,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `audit`: SubagentStop hook: record a taint when a subagent read files it must not read. `reference/cli/audit.md`
 - `board [--repo <path>] [--event session-start|prompt|stop|subagent-start|subagent-stop|post-tool] [--claim <slug>] [--no-serve] [--stop-server]`: Write the board notes, run the board server. `reference/cli/board.md`
 - `decide --kind decision|discovery --what <text> --why <text> --evidence <text> [--result <text>] [--risk] [--feature <slug>] [--repo <path>]`: Append a row to the decision log. `reference/cli/decide.md`
-- `pause [--event] [--intent <t>] [--verified <t>] [--open <t>] [--next <t>] [--agent <id>=<task> ...] [--run <log> ...] [--repo <path>]`: Write the worktree pause note; `--clear` removes it. `reference/cli/pause.md`
+- `pause [--event] [--intent <t>] [--verified <t>] [--open <t>] [--next <t>] [--agent <id>=<task> ...] [--run <log> ...] [--feature <slug>] [--repo <path>]`: Write the worktree pause note; `--clear` removes it. `reference/cli/pause.md`
 - `second-review --harness claude|codex [--timeout <minutes>]`: Run the other family's CLI as second reviewer, correctness and security only. `reference/cli/second-review.md`
 - `review-merge <reviewer>=<file> [...]`: Merge the Stage 6 reviewer tables by file and line. `reference/cli/review-merge.md`
 - `review-save --reviewer <name> | --done`: Save a reviewer table (stdin) or the Track S marker. `reference/cli/review-save.md`
