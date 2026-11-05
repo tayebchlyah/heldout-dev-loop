@@ -341,10 +341,10 @@ class ReleaseSkillTextTests(unittest.TestCase):
         self.assertIn("a live check when one is cheap, its output quoted under the item", step3)
         self.assertIn("Any other `--fix-wave` error (`foreign-commit`, `wave-exists`, `not-descendant`, `no-audit`, `no-project-note`), or any other `stale-audit`: follow the steps of `skills/release-audit/SKILL.md`", step3)
 
-    def test_release_step_1_fixed_item_close(self) -> None:
-        step1 = self.skill("release").split("\n1. ")[1].split("\n2. ")[0]
-        self.assertIn("ruled `fix #<n>`", step1)
-        self.assertIn("close fixed by #<n>", step1)
+    def test_release_step_3_fixed_item_close(self) -> None:
+        step3 = self.skill("release").split("\n3. ")[1].split("\n4. ")[0]
+        self.assertIn("ruled `fix #<n>`", step3)
+        self.assertIn("close fixed by #<n>", step3)
 
     def test_release_notes_steps_use_output_file(self) -> None:
         text = self.skill("release")
