@@ -130,7 +130,8 @@ Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fai
 3. `npx github:tayebchlyah/heldout-dev-loop#v3.0.0 upgrade` on a branch, one PR, merged to `main`. The output lists each section of `CHANGELOG.md` after the installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: once `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` entry and the new walls until `/hooks`, so a Codex agent would run them with no guard.
 4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks. The list is in Seal upgrade and Codex wall timeout upgrade, and for a project still on 2.1.0 also Board upgrade from 2.1.0 (the PostToolUse `board.sh` hook is new from 2.1.0). `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line (Verify after install):
-   - a `ui` project: `devloop.py verify-init --base-url <url>`, or `"verify": false` in `dev-loop.json`;
+   - Codex: the trust line (project trust, `/hooks`) stays until step 4 is done on that machine;
+   - a `ui` project: `devloop.py verify-init --base-url <url>`, then an agent fills the skill, seeds the feature map and proves it once (Stage 0, `skill/references/verify.md`): until then `check_setup.py` fails on the fill markers and the empty map. Or `"verify": false` in `dev-loop.json`;
    - `old-notes-layout`: `notes-migrate` (Notes layout upgrade);
    - Codex: the Pocock skills `wayfinder` and `retro`;
    - GitHub: "allow rebase merging" on (`ci wait`);
