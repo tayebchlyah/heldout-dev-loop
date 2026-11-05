@@ -39,7 +39,7 @@ SEAL_DOC = REPO_ROOT / "reference" / "cli" / "seal.md"
 HELD_OUT = "tests/acceptance"
 SLUG = "widget"
 BRANCH = f"feat/{SLUG}"
-DIFF_FLAGS = ("-p", "-U0", "--no-renames", "--full-index")
+DIFF_FLAGS = ("-p", "-U1", "--no-renames", "--full-index")
 
 GREETING = f"{HELD_OUT}/test_greeting.py"
 GREETING_TEXT = ('def make_greeting():\n    return "hello world"\n\n\n'
@@ -155,7 +155,7 @@ class VerbatimRepo(unittest.TestCase):
         return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
 
     def verbatim_value(self, *diff_args: str) -> str:
-        """sha256 of the first field of `git patch-id --verbatim` of the -U0 diff under tests/acceptance/."""
+        """sha256 of the first field of `git patch-id --verbatim` of the -U1 diff under tests/acceptance/."""
         diff = subprocess.run(["git", "diff", *diff_args, *DIFF_FLAGS, "--", f"{HELD_OUT}/"], cwd=self.repo,
                               check=True, capture_output=True, text=True).stdout
         self.assertTrue(diff, "empty diff under tests/acceptance")
