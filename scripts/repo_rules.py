@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Repo checks of this repo only (not in the kit). One JSON object on stdout.
 
-comments: each comment line added against <base> is of an allowed kind (CODING_STANDARDS.md).
+comments: each comment line, trailing .sh comment and private docstring added against <base> is of an allowed kind (CODING_STANDARDS.md); a docstring is private unless a .py file outside tests/ imports its name.
 subjects: the subject of each commit in <base>..HEAD follows the gitmoji convention of cliff.toml.
 <base>: git merge-base HEAD origin/main, else main, else none (skipped no-base).
 promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base). With --sha <rev>: the commit <rev> stands for the final tag, before it exists.
@@ -252,7 +252,24 @@ class GitFailed(Exception):
     pass
 
 
-def base_comments(repo: Path, base: str) -> set[str]:
+def public_pairs(repo: Path) -> dict[tuple[str, str], set[str]]:
+    listing = run_git(repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    if listing.returncode != 0:
+        raise GitFailed("git ls-files")
+    pairs: dict[tuple[str, str], set[str]] = {}
+    for path in listing.stdout.split("\0"):
+        if not path.endswith(".py") or path.startswith(("tests/", *SKIPPED_PREFIXES)):
+            continue
+        try:
+            tree = parse_python((repo / path).read_text())
+        except (OSError, UnicodeDecodeError):
+            continue
+        for pair in import_pairs(tree) if tree is not None else ():
+            pairs.setdefault(pair, set()).add(path)
+    return pairs
+
+
+def base_comments(repo: Path, base: str) -> tuple[set[str], set[str]]:
     listing = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", base], cwd=repo, capture_output=True)
     if listing.returncode != 0:
         raise GitFailed("git ls-tree")
@@ -261,7 +278,7 @@ def base_comments(repo: Path, base: str) -> set[str]:
                            input="".join(f"{base}:{p}\n" for p in paths).encode())
     if batch.returncode != 0:
         raise GitFailed("git cat-file")
-    out, pos, texts = batch.stdout, 0, set()
+    out, pos, texts, docs = batch.stdout, 0, set(), set()
     for path in paths:
         end = out.index(b"\n", pos)
         header = out[pos:end].split()
@@ -274,9 +291,11 @@ def base_comments(repo: Path, base: str) -> set[str]:
             source = blob.decode()
             texts.update(comment_lines(path, source).values())
             texts.update(trailing_comments(path, source).values())
+            if path.endswith(".py"):
+                docs.update(docstring_texts(source))
         except UnicodeDecodeError:
             continue
-    return texts
+    return texts, docs
 
 
 def added_lines(repo: Path, base: str) -> dict[str, set[int] | None]:
@@ -299,10 +318,26 @@ def added_lines(repo: Path, base: str) -> dict[str, set[int] | None]:
     return added
 
 
+def docstring_violations(path: str, text: str, rows: set[int] | None,
+                         pairs: dict[tuple[str, str], set[str]], old_docs: set[str]) -> list[dict]:
+    tree = parse_python(text) if path.endswith(".py") else None
+    if tree is None:
+        return []
+    stem = module_stem(path)
+    public = {name for (owner, name), importers in pairs.items() if owner == stem and importers - {path}}
+    found = []
+    for first, last, doc in private_docstrings(tree, public):
+        if (rows is None or not rows.isdisjoint(range(first, last + 1))) and not kind_ok(doc) and doc not in old_docs:
+            line = next((part.strip() for part in doc.splitlines() if part.strip()), "")
+            found.append({"path": path, "line": first, "text": line})
+    return found
+
+
 def comments(repo: Path, base: str) -> tuple[dict, int]:
     try:
-        old = base_comments(repo, base)
+        old, old_docs = base_comments(repo, base)
         added = added_lines(repo, base)
+        pairs = public_pairs(repo)
     except GitFailed as exc:
         return {"ok": False, "base": base, "error": f"{exc} failed"}, 1
     violations = []
@@ -318,6 +353,7 @@ def comments(repo: Path, base: str) -> tuple[dict, int]:
         for n, line in trailing_comments(path, text).items():
             if (rows is None or n in rows) and not kind_ok(line) and line not in old:
                 violations.append({"path": path, "line": n, "text": line})
+        violations.extend(docstring_violations(path, text, rows, pairs, old_docs))
     violations.sort(key=lambda v: (v["path"], v["line"]))
     return {"ok": not violations, "base": base, "violations": violations}, int(bool(violations))
 

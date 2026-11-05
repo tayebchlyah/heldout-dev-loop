@@ -34,7 +34,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only).
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
-- `scripts/repo_rules.py`: repo checks `comments` (allowed comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source), this repo only.
+- `scripts/repo_rules.py`: repo checks `comments` (allowed comments, private docstrings, trailing `.sh` comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source), this repo only.
 - `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
 - `reference/cli/<command>.md`: full contract per `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
@@ -108,7 +108,7 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 - Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
 - Changelog: `release_notes` `written`: prose `CHANGELOG.md` by `/release-notes`. `cliff.toml` kept for `repo_rules.py subjects`. Releases tag-driven (`vX.Y.Z`, `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check (tag equals `package.json`), `promoted`, `release-notes`, `ncipollo/release-action`.
 - Release: `reference/release.md`. Stage 7 after a merge: report line `rc: now|later: <reason>`.
-- Comments: `scripts/repo_rules.py comments` fails a new comment line of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
+- Comments: `scripts/repo_rules.py comments` fails a new comment line, private docstring or trailing `.sh` comment of a kind `CODING_STANDARDS.md` disallows; mark one on behaviour an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase.
 - No tracked file holds an absolute home path: write a `~` path, never its expansion. Owner's name only as GitHub handle `tayebchlyah` (guard test, case-sensitive).
 - No tracked file names an internal client or project (employer, its customers, private projects). Names live in notes folder `Internal Names.md`, one `- <name>` line each; `tests/unit/node/payload.test.mjs` reads it (skipped: no notes path or no note). New name: add it there, never in the repo.

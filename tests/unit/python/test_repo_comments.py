@@ -117,5 +117,94 @@ class DocstringRuleTests(unittest.TestCase):
                 self.assertEqual(repo_rules.import_pairs(repo_rules.parse_python(source)), expected)
 
 
+BASE_STATE = '"""State."""\n\n\ndef keep():\n    """Kept doc."""\n    return 1\n'
+LOAD = '\n\ndef load():\n    """Load the state."""\n    return 2\n'
+LOAD_ROW = ("pkg/state.py", 10, "Load the state.")
+STORE = ('class Store:\n    def get(self):\n        """Get it."""\n\n    def _get(self):\n        """Get it raw."""\n\n'
+         '    def __init__(self):\n        """Make it."""\n')
+
+
+class DocstringCommandTests(CommentsRepo):
+    def base_files(self) -> None:
+        put(self.repo / "pkg/state.py", BASE_STATE)
+        put(self.repo / "seal/__init__.py", '"""Seal."""\n')
+
+    def test_private_function_docstring(self) -> None:
+        self.commit("✨(x) Add", "pkg/state.py", BASE_STATE + LOAD)
+        self.assert_violations([LOAD_ROW])
+
+    def test_importer_forms(self) -> None:
+        put(self.repo / "pkg/state.py", BASE_STATE + LOAD)
+        for path, text, expected in [
+            ("bin/run.py", "from state import load\n", []),
+            ("bin/run.py", "import state\nstate.load()\n", []),
+            ("bin/run.py", "import pkg.state as st\nst.load()\n", []),
+            ("bin/run.py", "from other import load\n", [LOAD_ROW]),
+            ("bin/run.py", "from state import load\ndef f(:\n", [LOAD_ROW]),
+            ("tests/unit/test_state.py", "from state import load\n", [LOAD_ROW]),
+        ]:
+            with self.subTest(path=path, text=text):
+                put(self.repo / path, text)
+                self.assert_violations(expected)
+                (self.repo / path).unlink()
+
+    def test_self_import_is_not_public(self) -> None:
+        put(self.repo / "pkg/state.py", BASE_STATE + LOAD + "\n\nfrom state import load\n")
+        self.assert_violations([LOAD_ROW])
+
+    def test_module_and_test_docstrings(self) -> None:
+        put(self.repo / "pkg/new.py", '"""New module."""\n')
+        put(self.repo / "tests/unit/test_x.py", 'def helper():\n    """Help the test."""\n')
+        self.assert_violations([("tests/unit/test_x.py", 2, "Help the test.")])
+
+    def test_class_methods(self) -> None:
+        put(self.repo / "pkg/store.py", STORE)
+        self.assert_violations([("pkg/store.py", 3, "Get it."), ("pkg/store.py", 6, "Get it raw."),
+                                ("pkg/store.py", 9, "Make it.")])
+        put(self.repo / "bin/run.py", "from store import Store\n")
+        self.assert_violations([("pkg/store.py", 6, "Get it raw.")])
+
+    def test_nested_function(self) -> None:
+        put(self.repo / "pkg/state.py", BASE_STATE + '\n\ndef outer():\n    def load():\n        """Load the state."""\n')
+        put(self.repo / "bin/run.py", "from state import load\n")
+        self.assert_violations([("pkg/state.py", 11, "Load the state.")])
+
+    def test_escapes(self) -> None:
+        put(self.repo / "pkg/esc.py", 'def a():\n    """See https://example.com."""\n\n\ndef b():\n    """Fixes #215."""\n\n\n'
+                                      'def c():\n    """allow-comment: dependency, git drops it."""\n')
+        self.assert_violations([])
+
+    def test_moved_docstring_is_not_new(self) -> None:
+        moved = BASE_STATE.replace("State.", "Other.")
+        put(self.repo / "pkg/other.py", moved)
+        put(self.repo / "pkg/state.py", '"""State."""\n')
+        self.assert_violations([])
+        put(self.repo / "pkg/other.py", moved.replace("Kept doc.", "Kept doc, changed."))
+        self.assert_violations([("pkg/other.py", 5, "Kept doc, changed.")])
+
+    def test_unchanged_docstring_in_a_changed_file(self) -> None:
+        self.commit("✨(x) Add", "pkg/state.py", BASE_STATE.replace("return 1", "return 3"))
+        self.assert_violations([])
+
+    def test_unparsable_file_keeps_the_line_rule(self) -> None:
+        put(self.repo / "bad.py", "def f(:\n    # plain words\n")
+        self.assert_violations([("bad.py", 2, "# plain words")])
+
+    def test_multi_line_docstring(self) -> None:
+        put(self.repo / "pkg/multi.py", '"""M."""\n\n\ndef f():\n    """\n    First words.\n\n    More.\n    """\n')
+        self.assert_violations([("pkg/multi.py", 5, "First words.")])
+
+    def test_skipped_prefixes(self) -> None:
+        for prefix in repo_rules.SKIPPED_PREFIXES:
+            put(self.repo / (prefix + "p.py"), 'def f():\n    """Plain words."""\n')
+        self.assert_violations([])
+
+    def test_init_stem(self) -> None:
+        put(self.repo / "seal/__init__.py", '"""Seal."""\n\n\ndef merge_base():\n    """Find the base."""\n')
+        self.assert_violations([("seal/__init__.py", 5, "Find the base.")])
+        put(self.repo / "bin/run.py", "from seal import merge_base\n")
+        self.assert_violations([])
+
+
 if __name__ == "__main__":
     unittest.main()
