@@ -212,7 +212,7 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None, build: b
                 wave, base = found["line"], found["sha"]
         if base != sha and (paths := stale_paths(repo, base, sha, build)) is not None:
             reasons.append({"reason": "stale-audit", "paths": paths})
-    items, unparsed = security_items(text)
+    items, unparsed = security_items(text, tag)
     if items:
         reasons.append({"reason": "open-security", "items": [i["line"] for i in items]})
     if unparsed:
@@ -707,6 +707,11 @@ def cmd_release_notes(args: argparse.Namespace) -> int:
 
 
 def cmd_release_check(args: argparse.Namespace) -> int:
+    if args.for_tag is not None:
+        if args.tag is not None:
+            return emit({"error": "--for needs --sha"}, 2)
+        if not TAG_RE.fullmatch(args.for_tag):
+            return emit({"error": f"--for {args.for_tag} is not vX.Y.Z or vX.Y.Z-rc.N"}, 2)
     repo = Path(args.repo).resolve()
     notes = None  # a non-release tag is skipped before any note read, so it needs no notes path
     if args.tag is None or is_release_tag(args.tag):
@@ -716,7 +721,7 @@ def cmd_release_check(args: argparse.Namespace) -> int:
             return emit({"error": str(exc)}, 1)
     if notes is not None and "security-audit" in old_layout(notes):
         return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
-    return emit(*check(repo, notes, args.tag or args.sha, args.tag, not args.no_build))
+    return emit(*check(repo, notes, args.tag or args.sha, args.tag or args.for_tag, not args.no_build))
 
 
 def cmd_release_plan(args: argparse.Namespace) -> int:

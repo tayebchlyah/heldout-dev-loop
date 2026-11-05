@@ -35,7 +35,7 @@
                                                       record the end of the fix wave of the current audit
   devloop.py audit-run <step> --run FOLDER [--repo PATH] ...
                                                       the parent-side steps of a release audit run (reference/cli/audit-run.md)
-  devloop.py release-check [--repo PATH] [--no-build] (--tag NAME | --sha REV)
+  devloop.py release-check [--repo PATH] [--no-build] (--tag NAME | --sha REV [--for TAG])
                                                       the release gate: a current audit record, no open security item
   devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
                                                       may CI skip this diff: only a release or a kit upgrade
@@ -405,6 +405,7 @@ def main() -> int:
     target = release.add_mutually_exclusive_group(required=True)
     target.add_argument("--tag")
     target.add_argument("--sha")
+    release.add_argument("--for", dest="for_tag")
     release.add_argument("--no-build", action="store_true")
     release.set_defaults(run=("release", "cmd_release_check"))
 
