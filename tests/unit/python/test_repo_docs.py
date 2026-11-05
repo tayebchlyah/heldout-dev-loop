@@ -184,6 +184,11 @@ class RepoDocsTests(unittest.TestCase):
             with self.subTest(absent=value):
                 self.assertNotIn(value, codex)
 
+    def test_upgrade_steps_name_no_kit_source_path(self) -> None:
+        kit = (ROOT / "reference" / "kit.md").read_text()
+        steps = kit.split("3.0.0 upgrade (breaking)", 1)[1].split("\n\nWhat changes", 1)[0]
+        self.assertEqual(re.findall(r"`(?:skills?|claude|codex|bin|lib)/[^`]*`", steps), [])
+
 
 if __name__ == "__main__":
     unittest.main()
