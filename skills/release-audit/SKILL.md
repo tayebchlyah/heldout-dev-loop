@@ -35,7 +35,7 @@ User asked for the audit before a release tag. Do this, in order. Run in the mai
 5. Run `release-record --run <output> [--base <base>] --harness <harness>`. `--base` only when `base` is not null.
    - `run-incomplete`: read `incomplete_reason` in `<output>/run-metadata.json`, report it. Tell the user the next `/release-audit` (Codex `$release-audit`) continues the same ledger (it is in `prior_runs`), with `--budget` or `--profile` when the budget ran out. Stop.
    - Other `error` (`invalid-run`, `bad-run`, `already-recorded`): report it with its `tail`, stop.
-6. Run `release-check --sha HEAD`.
+6. Run `release-check --sha HEAD`; run from `/release`, which gave the tag: `release-check --sha HEAD --for <tag>`.
 7. Report: the counts, the Deferred lines written, the `carried` items (an `accept` ruling carried forward), the `reopened` items (with `why` and `files`), the `low` lines written to `## Gardener` (a confirmed `low` or `informational` finding does not block the release), the `release-check` result with its reasons.
 
 Never push a tag. Never edit the project note by hand.

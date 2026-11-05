@@ -170,5 +170,35 @@ class RulingCheckTests(unittest.TestCase):
                 self.assertIn(word, text)
 
 
+class ScopedRulingTextTests(unittest.TestCase):
+    """Oracles 14 and 15: the release text passes the tag and names waive and fences."""
+
+    @staticmethod
+    def step(path: str, n: int) -> str:
+        text = (ROOT / path).read_text()
+        return text.split(f"\n{n}. ")[1].split(f"\n{n + 1}. ")[0]
+
+    def test_release_passes_the_tag(self) -> None:
+        text = (ROOT / "skills/release/SKILL.md").read_text()
+        step = lambda n: self.step("skills/release/SKILL.md", n)  # noqa: E731
+        self.assertNotIn("release-check", step(1))
+        for word in ("release-check --sha HEAD --for <tag>", "release-check --sha A --for <tag>", "ruled `fix #<n>`",
+                     "close fixed by #<n>", "waive <tag> <reason>"):
+            with self.subTest(word=word):
+                self.assertIn(word, step(3))
+        self.assertIn("release-check --sha HEAD --for <tag>", step(7))
+        self.assertGreater(text.index("--for <tag>"), text.index("\n2. "))
+
+    def test_release_audit_step_6_passes_the_tag(self) -> None:
+        self.assertIn("release-check --sha HEAD --for <tag>", self.step("skills/release-audit/SKILL.md", 6))
+
+    def test_deferred_triage_names_waive_and_fences(self) -> None:
+        text = (ROOT / "skill/references/deferred.md").read_text()
+        for word in ("waive <tag> <reason>", "--sha <rev> --for <tag>", "release-record", "/garden", "fenced block",
+                     "unparsed-security"):
+            with self.subTest(word=word):
+                self.assertIn(word, text)
+
+
 if __name__ == "__main__":
     unittest.main()
