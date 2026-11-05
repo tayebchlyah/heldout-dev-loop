@@ -49,6 +49,19 @@ test('upgrade of a Codex-only project writes only the backup line to .gitignore'
   assert.equal(readFileSync(join(repo, '.gitignore'), 'utf8'), '*.bak-*\n')
 })
 
+test('upgrade --dry-run names the backup and the .gitignore line the real run writes', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=codex'])
+  rmSync(join(repo, '.gitignore'))
+  const pkg = fakePackage('99.0.0')
+  const before = snapshot(repo)
+  const output = upgrade(repo, home, ['--dry-run'], pkg)
+  assert.deepEqual(snapshot(repo), before)
+  assert.match(output, /backup \.codex\/hooks\.json\.bak-/)
+  assert.match(output, /create {2}\.gitignore/)
+  assert.match(upgrade(repo, home, [], pkg), new RegExp(output.match(/\d+ would change/)[0].replace('would change', 'changed')))
+})
+
 test('the backups an upgrade writes stay out of git status', () => {
   const { home, repo } = setup()
   init(repo, home, ['--yes', '--harness=both'])
