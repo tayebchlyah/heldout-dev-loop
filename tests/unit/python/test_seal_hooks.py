@@ -120,6 +120,31 @@ class SealHookTests(unittest.TestCase):
                 self.assertIn(f"changed-after-seal {later} {SUITE}", reason)
                 self.assertNotIn(out["commit"], reason)
 
+    def test_changed_before_seal_names_the_drop_remedy(self) -> None:
+        lines = "".join(f"line {n}\n" for n in range(12))
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, lines)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        plain = self.commit(SUITE, lines.replace("line 1\n", "line 1 planted\n"))
+        put(self.repo / SUITE, lines.replace("line 1\n", "line 1 planted\n").replace("line 8\n", "line 8\nadded\n"))
+        git(self.repo, "add", "--", SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn(f"changed-before-seal {plain} {SUITE}", reason)
+                self.assertIn("git rebase --onto", reason)
+                self.assertIn("git revert does not clear changed-before-seal", reason)
+
+    def test_unsealed_alone_has_no_drop_remedy(self) -> None:
+        self.commit(SUITE, "def test_flow():\n    pass\n")
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn("unsealed", reason)
+                self.assertNotIn("git rebase --onto", reason)
+
     def test_d6_a_revert_seal_is_not_named_as_an_offender(self) -> None:
         put(self.repo / SUITE, "def test_flow():\n    pass\n")
         git(self.repo, "add", "--", SUITE)

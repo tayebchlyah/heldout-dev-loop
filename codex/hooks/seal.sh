@@ -45,6 +45,9 @@ remedy="Remedy: only spec-tester commits under tests/acceptance/, with devloop.p
 if printf '%s' "$check" | jq -e 'any(.violations[]?; .reason == "kit-changed")' >/dev/null 2>&1; then
   remedy="$remedy Kit files (kit-changed) change only by upgrade: restore them with git checkout <base> -- <path> (or git revert the commit), then change dev-loop and run upgrade."
 fi
+if printf '%s' "$check" | jq -e 'any(.violations[]?; .reason == "changed-before-seal")' >/dev/null 2>&1; then
+  remedy="$remedy A non-seal commit before a seal commit changed a sealed file (changed-before-seal): drop that commit with git rebase --onto <commit>^ <commit>, or remove only its change to the path; a conflict under tests/acceptance/ goes to spec-tester (devloop.py seal --rebase-continue). A git revert does not clear changed-before-seal: the seal commit's parent still holds the change."
+fi
 jq -n --arg reason "Held-out seal check failed.$found
 $remedy" '{decision: "block", reason: $reason}'
 exit 0
