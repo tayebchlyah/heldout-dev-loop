@@ -96,7 +96,7 @@ class ReleaseParseTests(unittest.TestCase):
         for subs, closed, ruling in cases:
             with self.subTest(subs=subs):
                 [found], _ = release.deferred_items(deferred(item, *subs))
-                self.assertEqual((found["closed"], found["ruling"], found["source"], found["fingerprint"]), (closed, ruling, "Run 3", "f-n1"))
+                self.assertEqual((found["closed"], found["ruling"], found["source"], found["fingerprint"]), (closed, ruling and {**ruling, "tag": None}, "Run 3", "f-n1"))
         again = "- 2026-10-31 (security, needs-validation, Run 4): y. Fingerprint `f-n1`."
         text = deferred(item, accept, again)
         self.assertEqual([i["line"] for i in release.deferred_items(text)[0]], [item, again])
@@ -299,7 +299,7 @@ class ReleaseCheckTests(unittest.TestCase):
             (item + "\n  - Ruling 2026-10-26: accept the risk", []),
             (item + "\n  - Ruling 2026-10-26: close not reachable", []),
             (item + "\n  - Ruling 2026-10-26: fix in a slice", ["open-security"]),
-            ("- 2026-10-25 (security, confirmed, Run 1): x\n  - Ruling 2026-10-26: accept", ["open-security"]),
+            ("- 2026-10-25 (security, confirmed, Run 1): x\n  - Ruling 2026-10-26: accept", ["open-security", "unparsed-security"]),
             ("### Some gate\n- [ ] 2026-10-25 (security, needs-validation, review-wave-measurement): y", ["open-security"]),
             ("- Security: the token is logged", ["unparsed-security"]),
             ("- Insecurely named thing", []),

@@ -8,11 +8,14 @@ from __future__ import annotations
 import re
 
 ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
-RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling (\d{4}-\d{2}-\d{2}): (\w+) +\S")
+RULING_RE = re.compile(r"^(?: {2}|\t)- Ruling (\d{4}-\d{2}-\d{2}): (\w+) +\S")
 CLOSING_WORDS = ("accept", "close")
+LEGACY_RE = re.compile(r"(?i)\brc\.\d+ only\b|\bfor rc\.\d+\b|\bbefore the final\b|\bnot (?:a ruling )?for the final\b")
+SHAPE_RE = re.compile(r"(?i)^[ \t]+[-*+]\s*[*_]*ruling")
 FINGERPRINT_RE = re.compile(r"Fingerprint `([^`]+)`")
 SECURITY_RE = re.compile(r"(?i)\bsecurity\b")
 TAG_RE = re.compile(r"v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-rc\.[1-9]\d*)?)")
+WAIVE_RE = re.compile(f"({TAG_RE.pattern}) +\\S")
 CHECKBOX_RE = re.compile(r"^\[[ x]\] ")
 
 
@@ -31,21 +34,37 @@ def section(text: str, heading: str) -> list[str]:
     return out
 
 
-def deferred_items(text: str) -> tuple[list[dict], list[str]]:
-    """(every item in file order, unparsed lines) of `## Deferred`.
+def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[str]]:
+    """(every item in file order, unparsed lines) of `## Deferred`, closed for `tag` (a release tag `v` plus `TAG_RE`, or None).
 
-    An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: its last ruling line in file order and its newest ruling by date (a date tie: the later line)
-    both say `accept` or `close`, so any other word opens it again (#216). `ruling`: `{date, word, carried}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling), else None. A top-level bullet that names security and does
-    not match the item format is unparsed.
+    An item is `{line, verdict, source, fingerprint, closed, ruling}`. A ruling line is two spaces or one tab, `- Ruling <date>: <word> <reason>`. `closed`: its last ruling line in file order and its newest ruling by date (a date tie: the
+    later line) both close it, so any other word opens it again (#216). Closing: `accept`, `close`, and `waive <tag> <reason>` whose tag equals `tag`; a waive of another tag, or any waive with `tag` None, does not close. `ruling`:
+    `{date, word, carried, tag}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling; `tag`: the waive tag, else None), else None. An `accept` or `close` whose reason names a release candidate
+    (`rc.N only`, `for rc.N`, `before the final`, `not for the final`) is no ruling. Unparsed: a top-level bullet that names security and does not match the item format; under an item, an indented bullet that starts
+    with `ruling` and is not a valid ruling (a waive with no tag or reason included), whatever the item state; a rc-scoped `accept` or `close` line while the item is not closed for `tag`; the opening line of a fence
+    (three backticks or tildes) still open at the end of its item. A line inside a fence is never a ruling and never unparsed.
     """
     items: list[dict] = []
     unparsed: list[str] = []
     current: dict | None = None
     newest = ""
+    newest_closes = False
+    fence = ""
+    legacy: list[str] = []
+
+    def flush() -> None:
+        if fence:
+            unparsed.append(fence)
+        if current is not None and not current["closed"]:
+            unparsed.extend(legacy)
+
     for line in section(text, "Deferred"):
         if line.startswith("- "):
+            flush()
             current = None
             newest = ""
+            fence = ""
+            legacy = []
             body = CHECKBOX_RE.sub("", line[2:])
             match = ITEM_RE.match(body)
             if match:
@@ -62,20 +81,39 @@ def deferred_items(text: str) -> tuple[list[dict], list[str]]:
             elif SECURITY_RE.search(line):
                 unparsed.append(line.rstrip())
         elif line.strip() and not line[0].isspace():
+            flush()
             current = None
+            fence = ""
+            legacy = []
         elif current is not None:
+            if line.strip().startswith(("```", "~~~")):
+                fence = "" if fence else line.rstrip()
+                continue
+            if fence:
+                continue
             ruling = RULING_RE.match(line)
-            if ruling:
+            word = ruling.group(2) if ruling else ""
+            reason = line[ruling.end(2):].strip() if ruling else ""
+            waive = WAIVE_RE.match(reason) if word == "waive" else None
+            if ruling and word == "waive" and not waive:
+                ruling = None
+            if ruling and word in CLOSING_WORDS and LEGACY_RE.search(reason):
+                legacy.append(line.rstrip())
+            elif ruling:
                 carried = line[ruling.start(2):].startswith("accept carried from the ")
-                current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2), "carried": carried}
+                current["ruling"] = {"date": ruling.group(1), "word": word, "carried": carried, "tag": waive.group(1) if waive else None}
+                closes = word in CLOSING_WORDS or (waive is not None and waive.group(1) == tag)
                 if ruling.group(1) >= newest:
                     newest = ruling.group(1)
-                    newest_closes = ruling.group(2) in CLOSING_WORDS
-                current["closed"] = ruling.group(2) in CLOSING_WORDS and newest_closes
+                    newest_closes = closes
+                current["closed"] = closes and newest_closes
+            elif SHAPE_RE.match(line):
+                unparsed.append(line.rstrip())
+    flush()
     return items, unparsed
 
 
-def security_items(text: str) -> tuple[list[dict], list[str]]:
-    """(open items, unparsed lines) of `## Deferred`: the items of `deferred_items` that are not closed."""
-    items, unparsed = deferred_items(text)
+def security_items(text: str, tag: str | None = None) -> tuple[list[dict], list[str]]:
+    """(open items, unparsed lines) of `## Deferred`: the items of `deferred_items` that are not closed for `tag`."""
+    items, unparsed = deferred_items(text, tag)
     return [i for i in items if not i["closed"]], unparsed
