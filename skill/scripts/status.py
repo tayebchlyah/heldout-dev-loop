@@ -283,8 +283,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     # Only `status` deletes a note: `board`, `decide` and `pause` run in the same session and must keep it.
     top = git(repo, "rev-parse", "--show-toplevel")
     where = out["worktree"] or top
-    note = pause_state(Path(where), os.environ, delete=True) if where else None
-    if note is not None and args.feature is not None and out["worktree"] is None and note.get("feature") != out["feature"]:
+    named = args.feature is not None and out["worktree"] is None
+    note = pause_state(Path(where), os.environ, delete=not named) if where else None
+    if named and note is not None and note.get("feature") != out["feature"]:
         note = None
     if note is not None:
         out["paused"], out["next"] = note, PAUSED_NEXT
