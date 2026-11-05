@@ -43,7 +43,7 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     sealed: dict[str, str] = {}  # path -> its blob (or `deleted`) in the newest valid seal commit
     seals: set[str] = set()  # the valid seal commits
     expected = tree_blobs(repo, base)
-    before: list[tuple[str, str]] = []
+    changed_before: list[tuple[str, str]] = []
     # The body, not `%(trailers)`: git sees no trailer block once `This reverts commit` lines share its paragraph.
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
@@ -64,7 +64,7 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
                 found.append({**violation("bad-seal", commit=sha), **({"patch": "failed"} if patch is None else {})})
                 continue
         parent = tree_blobs(repo, f"{sha}^1")
-        before += [(sha, path) for path, _ in entries if parent.get(path, "deleted") != expected.get(path, "deleted")]
+        changed_before += [(sha, path) for path, _ in entries if parent.get(path, "deleted") != expected.get(path, "deleted")]
         expected.update(entries)
         sealed.update(entries)
         seals.add(sha)
@@ -81,7 +81,7 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     found += [violation("unsealed", path=path, commits=commits(path)) for path in changed if path not in sealed]
     found += [violation("changed-after-seal", path=path, commits=commits(path)) for path, blob in sorted(sealed.items())
               if at_head.get(path, "deleted") != blob]
-    found += [violation("changed-before-seal", commit=sha, path=path, commits=commits(path)) for sha, path in before]
+    found += [violation("changed-before-seal", commit=sha, path=path, commits=commits(path)) for sha, path in changed_before]
     return found
 
 
