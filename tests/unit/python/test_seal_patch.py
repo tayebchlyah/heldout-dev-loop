@@ -94,3 +94,28 @@ class PatchIdTests(SealRepo):
         self.assertEqual(self.cli("seal", "--rebase-continue"), (1, {"error": "git patch-id failed: boom"}))
         self.assertTrue(state.is_dir())
         self.assertEqual((state / "message").read_text(), message)
+
+    def test_whitespace_only_amend_is_bad_seal(self) -> None:
+        indented = "def test_a():\n    assert f()\n\n\ndef test_b():\n    assert g()\n"
+        cases = [("string literal", HELLO, HELLO_AMENDED),
+                 ("indent into another function", indented, indented.replace("\ndef test_b():\n    assert",
+                                                                             "\n    def test_b():\n        assert"))]
+        for name, sealed, amended in cases:
+            with self.subTest(name):
+                self.seal(SUITE, sealed)
+                put(self.repo / SUITE, amended)
+                git(self.repo, "commit", "-q", "-a", "--amend", "--no-edit")
+                code, out = self.cli("seal-check")
+                self.assertEqual(code, 1, out)
+                self.assertIn({"reason": "bad-seal", "commit": self.head(), "path": None}, out["violations"])
+                git(self.repo, "reset", "-q", "--hard", "main")
+
+    def test_failed_patch_id_uses_the_blob_trailer(self) -> None:
+        self.seal(SUITE, HELLO)
+        self.flag.write_text("fail")
+        self.assertEqual(self.cli("seal-check"), (0, {"ok": True, "violations": [], "taint": [], "warnings": []}))
+        put(self.repo / SUITE, HELLO_AMENDED)
+        git(self.repo, "commit", "-q", "-a", "--amend", "--no-edit")
+        code, out = self.cli("seal-check")
+        self.assertEqual(code, 1, out)
+        self.assertIn({"reason": "bad-seal", "commit": self.head(), "path": None, "patch": "failed"}, out["violations"])

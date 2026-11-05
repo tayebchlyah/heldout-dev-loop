@@ -43,12 +43,16 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
         if not values:
             continue
         entries, outside = commit_entries(repo, sha)
-        # Two trailers fail too: a seal commit carries exactly the one value of its own diff.
-        # The patch value (D1): a clean rebase that merged an upstream change into a sealed file keeps the seal.
-        if outside or not entries or (values != [seal_value(entries)]
-                                       and PATCH.findall(last) != [commit_patch_value(repo, sha)]):
+        if outside or not entries:
             found.append(violation("bad-seal", commit=sha))
             continue
+        # Two trailers fail too: a seal commit carries exactly the one value of its own diff.
+        # The patch value (D1): a clean rebase that merged an upstream change into a sealed file keeps the seal.
+        if values != [seal_value(entries)]:
+            patch = commit_patch_value(repo, sha)
+            if patch is None or PATCH.findall(last) != [patch]:
+                found.append({**violation("bad-seal", commit=sha), **({"patch": "failed"} if patch is None else {})})
+                continue
         sealed.update(entries)
         seals.add(sha)
     pathspec = f":(top){ACCEPTANCE_DIR}/"
