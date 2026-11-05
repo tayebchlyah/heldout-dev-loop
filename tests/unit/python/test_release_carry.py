@@ -122,6 +122,13 @@ class ReleaseCarryTests(unittest.TestCase):
                 out, code, _, prints = self.case(**kw)
                 self.assertEqual((code, out["carried"], out["reopened"], "f-n1" in prints), (0, [], reopened, True))
 
+    def test_waived_and_rc_scoped_items_are_skipped_never_carried(self) -> None:
+        for sub in ("  - Ruling 2026-10-30: waive v3.0.0-rc.5 needs a live check", "  - Ruling 2026-10-30: accept for rc.4 only. Validate later."):
+            with self.subTest(sub=sub):
+                out, code, text, prints = self.case(deferred=[ITEM, sub])
+                self.assertEqual((code, out["skipped"], out["carried"], out["deferred"], "f-n1" in prints, text.count("accept carried")),
+                                 (0, ["f-n1"], [], [], True, 0))
+
     def test_carry_chain_compares_against_the_human_ruling(self) -> None:
         run4 = "- 2026-10-31 (security, needs-validation, Run 4): Again. Fingerprint `f-n1`."
         carried = "  - Ruling 2026-10-31: accept carried from the 2026-10-30 ruling (Run 3): fingerprint and trace files unchanged since aaaaaaa."
