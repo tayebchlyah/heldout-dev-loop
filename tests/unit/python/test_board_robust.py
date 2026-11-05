@@ -597,6 +597,7 @@ class BoardRobustTests(Board):
         """C3: two `board` runs started at the same moment: both exit 0, neither reports `error`, one server runs."""
         self.addCleanup(self.stop_port)
         self.worktree("tiny", prefix="fix")
+        self.ok()  # #215: board.lock exists first; two first creates at once can give ENOENT on macOS.
         results: list[tuple[int, dict]] = []
         runs = [threading.Thread(target=lambda: results.append(self.board(serve=True, timeout=90))) for _ in range(2)]
         for run in runs:
