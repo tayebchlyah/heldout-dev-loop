@@ -1,6 +1,6 @@
 """The `## Deferred` parser of the project note: item and ruling lines, sections.
 
-Public API: `release.py` and `release_carry.py` import it. Imports only `re`.
+Public API: `release.py` imports it and re-exports it, `release_carry.py` reaches it through `release`. Imports only `re`.
 """
 
 from __future__ import annotations
@@ -11,7 +11,8 @@ ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validat
 RULING_RE = re.compile(r"^(?: {2}|\t)- Ruling (\d{4}-\d{2}-\d{2}): (\w+) +\S")
 CLOSING_WORDS = ("accept", "close")
 LEGACY_RE = re.compile(r"(?i)\brc\.\d+ only\b|\bfor rc\.\d+\b|\bbefore the final\b|\bnot (?:a ruling )?for the final\b")
-SHAPE_RE = re.compile(r"(?i)^[ \t]+[-*+]\s*[*_]*ruling")
+SHAPE_RE = re.compile(r"(?i)^[ \t]+[-*+][\s*_+-]*ruling")
+FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 FINGERPRINT_RE = re.compile(r"Fingerprint `([^`]+)`")
 SECURITY_RE = re.compile(r"(?i)\bsecurity\b")
 TAG_RE = re.compile(r"v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-rc\.[1-9]\d*)?)")
@@ -42,7 +43,7 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
     `{date, word, carried, tag}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling; `tag`: the waive tag, else None), else None. An `accept` or `close` whose reason names a release candidate
     (`rc.N only`, `for rc.N`, `before the final`, `not for the final`) is no ruling. Unparsed: a top-level bullet that names security and does not match the item format; under an item, an indented bullet that starts
     with `ruling` and is not a valid ruling (a waive with no tag or reason included), whatever the item state; a rc-scoped `accept` or `close` line while the item is not closed for `tag`; the opening line of a fence
-    (three backticks or tildes) still open at the end of its item. A line inside a fence is never a ruling and never unparsed.
+    (three backticks or tildes) still open at the end of its item. A line (any indentation) whose stripped text starts with three backticks or tildes opens a fence under an item, an info string allowed. The fence closes only on a line of the same character, at least as long as the opener, with nothing after it but whitespace (CommonMark). A line inside a fence is never a ruling and never unparsed; only a top-level `- ` line ends the item then.
     """
     items: list[dict] = []
     unparsed: list[str] = []
@@ -50,6 +51,7 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
     newest = ""
     newest_closes = False
     fence = ""
+    mark = ""
     legacy: list[str] = []
 
     def flush() -> None:
@@ -59,6 +61,11 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
             unparsed.extend(legacy)
 
     for line in section(text, "Deferred"):
+        if current is not None and fence and not line.startswith("- "):
+            stripped = line.strip()
+            if stripped and stripped[0] == mark[0] and len(stripped) >= len(mark) and not stripped.strip(mark[0]):
+                fence = ""
+            continue
         if line.startswith("- "):
             flush()
             current = None
@@ -80,17 +87,15 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
                 items.append(current)
             elif SECURITY_RE.search(line):
                 unparsed.append(line.rstrip())
+        elif current is not None and FENCE_RE.match(line.strip()):
+            fence = line.rstrip()
+            mark = FENCE_RE.match(line.strip()).group(1)
         elif line.strip() and not line[0].isspace():
             flush()
             current = None
             fence = ""
             legacy = []
         elif current is not None:
-            if line.strip().startswith(("```", "~~~")):
-                fence = "" if fence else line.rstrip()
-                continue
-            if fence:
-                continue
             ruling = RULING_RE.match(line)
             word = ruling.group(2) if ruling else ""
             reason = line[ruling.end(2):].strip() if ruling else ""

@@ -88,6 +88,29 @@ class RulingParseTests(unittest.TestCase):
                 lines = ["  - Ruling 2026-11-02: fix #170 patch", opening, "  - Ruling 2026-11-04: accept old fixture", closing]
                 self.assertEqual(scan(lines, "v3.0.0"), (True, []))
 
+    def test_fence_closes_only_on_matching_bare_fence(self) -> None:
+        first = "  - Ruling 2026-01-10: accept r"
+        late = "  - Ruling 2026-02-01: fix #7 wrong"
+        self.assertEqual(scan([first, "  ```", "  ```text", late, "  ```"], "v3.0.0"), (False, []))
+        quoted = "  - Ruling 2026-10-27: accept quoted"
+        self.assertEqual(scan(["  ~~~", "  ```", quoted, "  ```", "  ~~~"], "v3.0.0"), (True, []))
+        self.assertEqual(scan(["  ````", "  ```", quoted, "  ````"], "v3.0.0"), (True, []))
+        self.assertEqual(scan(["  ```", quoted, "  `````  "], "v3.0.0"), (True, []))
+        self.assertEqual(scan(["  ```", "  - x", "  ```", quoted], "v3.0.0"), (False, []))
+
+    def test_column_zero_fence_keeps_the_item(self) -> None:
+        lines = [ACCEPT, "```", '{"ok": true}', "```", "  - Ruling 2026-11-05: fix #300 check shows it open"]
+        self.assertEqual(scan(lines, "v3.0.0"), (True, []))
+
+    def test_pasted_output_in_a_fence_is_content(self) -> None:
+        lines = ["  - Ruling 2026-11-02: fix #170 patch", "  ```", '{"ok": false}', "  - Ruling 2026-11-04: accept old", "  ```"]
+        self.assertEqual(scan(lines, "v3.0.0"), (True, []))
+        self.assertEqual(scan(["  ```", '{"ok": false}'], "v3.0.0"), (True, ["  ```"]))
+
+    def test_ruling_marks_may_be_spaced(self) -> None:
+        line = "  - * Ruling 2026-11-05: fix #1 x"
+        self.assertEqual(scan([ACCEPT, line], "v3.0.0"), (False, [line]))
+
     def test_unclosed_fence_ends_at_its_item(self) -> None:
         text = note(ITEM, ACCEPT, "  ```", "  - Ruling 2026-11-05: fix #1 x",
                     "- 2026-11-02 (security, confirmed, Run 9): y. Fingerprint `f-b`.", "  - Ruling 2026-11-03: close fixed by #2")
