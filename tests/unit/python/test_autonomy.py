@@ -360,6 +360,11 @@ class PauseStatusTests(PauseSandbox):
         found = self.status_in(self.repo, "--feature", "fresh")
         self.assertEqual((found["stage"], found["paused"]["feature"], found["paused"]["stage"]), (1, "fresh", 1))
 
+    def test_status_of_another_feature_keeps_the_worktree_note(self) -> None:
+        self.event(EVENT)
+        self.assertNotIn("paused", self.status_in(self.wt, "--feature", "third", CLAUDE_CODE_SESSION_ID="s-1"))
+        self.assertTrue(self.note.exists())
+
     def test_clear_with_feature_clears_only_its_note(self) -> None:
         self.cli("pause", "--feature", "other", cwd=self.repo)
         main_note = Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "pause.json"
