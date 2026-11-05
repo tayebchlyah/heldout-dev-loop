@@ -116,14 +116,12 @@ def git(cwd: Path, *args: str) -> str | None:
 
 
 def checked_out_branch(cwd: Path) -> str | None:
-    """The branch of HEAD; HEAD detached by a rebase: the branch the rebase rewrites, as `status` reads it."""
     from status import rebasing
     return git(cwd, "symbolic-ref", "--short", "-q", "HEAD") or rebasing(cwd)
 
 
 def is_feature_worktree(cwd: Path) -> bool:
-    """A linked worktree on a branch with a `/` (a rebase in progress: its branch), whose top level holds
-    `dev-loop.json`."""
+    """A linked worktree on a branch with a `/`, whose top level holds `dev-loop.json`."""
     git_dir = git(cwd, "rev-parse", "--absolute-git-dir")
     common = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
     branch = checked_out_branch(cwd)
