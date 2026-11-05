@@ -4,7 +4,8 @@
 # stop (SubagentStop): run `devloop.py audit`, then `seal-check`; block on a seal violation only.
 # turn (Stop): run `seal-check`; block on a seal violation or an open taint record.
 # stop_hook_active true: no block. Input that is not JSON, no dev-loop.json, or no CLI: exit 0, silent.
-# The CLI comes from the main worktree of the hook cwd. Never starts the board.
+# The CLI comes from KIT_ROOT (the trusted kit copy), else from KIT_MAIN, else from the first worktree of the hook
+# cwd (a direct run). Never starts the board.
 . "${0%/*}/git-pin.sh"
 mode=$1
 input=$(cat)
@@ -12,8 +13,9 @@ printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || exit 0
 dir=$(printf '%s' "$input" | jq -r '.cwd // empty')
 [ -n "$dir" ] || exit 0
 top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
-main=$(git -C "$top" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
-cli="$main/.agents/skills/dev-loop/scripts/devloop.py"
+main=$KIT_MAIN
+[ -n "$main" ] || main=$(git -C "$dir" worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')
+cli="${KIT_ROOT:-$main}/.agents/skills/dev-loop/scripts/devloop.py"
 [ -f "$top/dev-loop.json" ] && [ -f "$cli" ] || exit 0
 cd "$top" || exit 0
 git_pin_repo .

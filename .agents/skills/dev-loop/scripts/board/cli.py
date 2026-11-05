@@ -45,6 +45,7 @@ def cmd_board(args: argparse.Namespace) -> int:
         log = hook.get("transcript_path")
         hook_transcript = log if isinstance(log, str) and log else None
 
+    devloop.skip_note_links()
     try:
         code, payload = writer.run(devloop, repo, notes, Path.home(), event=args.event,
                                    hook_cwd=hook_cwd, hook_session=hook_session, hook_agent=hook_agent,

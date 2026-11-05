@@ -6,6 +6,8 @@ Shared by `devloop.py` (`ci-skip`) and `release.py` (`release-check`).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -18,6 +20,33 @@ from merge_check import read_config
 VERSION = re.compile(rb"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.[1-9]\d*)?")
 HEADING = re.compile(rb"^## \[v?([^\]]+)\]", re.M)
 MERGED = {".claude/settings.json", ".codex/hooks.json", ".codex/config.toml"}
+MERGE_SCRIPT = """
+import { pathToFileURL } from 'node:url'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+const [root, harnesses, inputs, hash] = process.argv.slice(1)
+const { buildKit, droppedHookCommands, projectFragments } = await import(pathToFileURL(root + '/lib/kit.mjs'))
+const { runPlan } = await import(pathToFileURL(root + '/lib/plan.mjs'))
+const list = JSON.parse(harnesses)
+const kit = buildKit({ packageRoot: root, harnesses: list })
+const kept = new Set([...kit.files.map((f) => f.path), ...kit.links.map((l) => l.path)])
+const project = join(root, 'project')
+if (!hash) throw new Error('no manifest hash')
+const fragments = projectFragments({ packageRoot: root, harnesses: list, manifestHash: hash })
+for (const [path, text] of Object.entries(JSON.parse(inputs))) {
+  mkdirSync(dirname(join(project, path)), { recursive: true })
+  writeFileSync(join(project, path), text)
+}
+runPlan(fragments.map((action) => ({
+  ...action,
+  target: join(project, action.target),
+  ...(action.kind === 'merge-json' ? { dropCommands: (text) => droppedHookCommands(text, kept) } : {}),
+})), { dryRun: false })
+console.log(JSON.stringify(Object.fromEntries(fragments.map((action) => {
+  const target = join(project, action.target)
+  return [action.target, existsSync(target) ? readFileSync(target, 'utf8') : null]
+}))))
+"""
 
 
 class ConfigError(Exception):
@@ -85,10 +114,48 @@ def kit_allowed(repo: Path, mb: str, head: str, paths: set[str], ref: dict) -> s
     return allowed | {p for p in paths if p not in present and p.startswith(release.KIT_ROOTS) and p in dropped and p not in ref}
 
 
+def tree_files(repo: Path, commit: str, paths: list[str]) -> dict[str, bytes | None]:
+    tree = release.run_git(repo, "ls-tree", "-z", "--full-tree", commit, "--", *paths)
+    found: dict[str, bytes | None] = {}
+    for line in tree.stdout.split("\0") if tree.returncode == 0 else []:
+        meta, _, path = line.partition("\t")
+        if path:
+            read = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", meta.split(" ")[2]], capture_output=True)
+            found[path] = read.stdout if meta.startswith("100644 blob ") and read.returncode == 0 else None
+    return found
+
+
+def merged_allowed(repo: Path, base: str, head: str, paths: set[str], ref: dict[str, tuple[str, str]]) -> set[str]:
+    """The merged config files of `paths` whose content at `head` equals what the `upgrade` of `base`'s own installer
+    merges into that file at `base` (#206), with the hash of the `head` MANIFEST in the Codex hook commands (#227). Each
+    must be a regular non-executable file at `head`, and at `base` unless absent there; none when the base has no kit
+    source (`release.kit_build`), or when the MANIFEST `files` at `head` differ from the kit `ref` the base builds."""
+    among = sorted(paths & MERGED)
+    before, after = tree_files(repo, base, among), tree_files(repo, head, among)
+    inputs = {}
+    for path, content in before.items():
+        try:
+            inputs[path] = content.decode() if content is not None else None
+        except UnicodeDecodeError:
+            inputs[path] = None
+    allowed = {p for p in among if after.get(p) is not None and (p not in before or inputs[p] is not None)}
+    if not allowed or release.MANIFEST not in release.kit_matches(repo, head, {release.MANIFEST}, ref):
+        return set()
+    manifest = tree_files(repo, head, [release.MANIFEST]).get(release.MANIFEST)
+    if manifest is None:
+        return set()
+    merged = release.kit_build(repo, base, MERGE_SCRIPT, json.dumps({p: t for p, t in inputs.items() if t is not None}),
+                               hashlib.sha256(manifest).hexdigest())
+    if not isinstance(merged, dict):
+        return set()
+    return {p for p in allowed if isinstance(merged.get(p), str) and after[p] == merged[p].encode()}
+
+
 def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = True) -> list[str]:
     """The sorted paths of `paths` that no rule allows: `CHANGELOG.md`, a version-only change of a `version_files`
     path, a `dev-loop.json` change of `version` only, a kit copy of a kit upgrade that equals the kit the merge
-    base's own installer builds (none in a repo without the kit source, or with `build` false). `base` and `head` are
+    base's own installer builds, and a merged config file of that upgrade equal to what that installer merges into
+    it (none in a repo without the kit source, or with `build` false). `base` and `head` are
     commit shas; contents compare from their merge base. Raises ConfigError."""
     listed = version_files(repo, head)
     merged = release.run_git(repo, "merge-base", base, head)
@@ -113,9 +180,12 @@ def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = T
             allowed.add("dev-loop.json")
     was, now = release.version_at(repo, mb), release.version_at(repo, head)
     ref = release.kit_reference(repo, mb) if build and was and now and was != now else None
+    remerged = set()
     if ref is not None:
         allowed |= kit_allowed(repo, mb, head, set(paths), ref)
-    return sorted(p for p in paths if p not in allowed or p in MERGED)
+        remerged = merged_allowed(repo, mb, head, set(paths), ref)
+        allowed |= remerged
+    return sorted(p for p in paths if p not in allowed or p in MERGED - remerged)
 
 
 def cmd_ci_skip(args: argparse.Namespace) -> int:

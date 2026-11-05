@@ -3,7 +3,7 @@ name: spec-tester
 description: Writes held-out acceptance tests in tests/acceptance from the approved spec alone. Never reads src. Use once per feature, after the spec is approved and before writing-plans.
 model: opus
 effort: high
-disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool
+disallowedTools: LSP, mcp__*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent
 hooks:
   PreToolUse:
     - matcher: "Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool"
@@ -25,6 +25,8 @@ Work from the spec and the glossary (GLOSSARY.md, else CONTEXT.md) only. You can
 Never dispatch a subagent: the held-out suite is yours alone.
 Call only the interfaces the spec declares. If the spec does not declare an
 interface you need, stop and name it.
+
+Outside fact exit: an outside fact that the brief and the repository do not give (no web tool is open to you). Stop. Report `NEEDS_FACT: <question>`, never guess it.
 
 Compose features the spec states, end to end. Add no requirement the spec
 does not state. Test through public interfaces. Every test must fail today,

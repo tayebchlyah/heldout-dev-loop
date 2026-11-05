@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 import devloop
@@ -20,8 +21,23 @@ from status import rebasing
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
 CONFIG_TYPES = (".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf")
 DOC_TYPES = (".md", ".rst", ".txt", ".adoc", ".png", ".jpg", ".jpeg", ".gif", ".svg")
-HARNESS_CONFIG = (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml", ".codex/hooks.json",
-                  ".mcp.json", ".claude", ".codex")
+HARNESS_NAMES = (".claude", ".codex", ".dev-loop", ".mcp.json")
+CI_FOLDERS = (".github/workflows", ".github/actions", ".github/rulesets")
+
+
+def apfs_fold(path: str) -> str:
+    return unicodedata.normalize("NFD", path).casefold()
+
+
+def is_harness_config(path: str) -> bool:
+    parts = apfs_fold(path).split("/")
+    return (any(p in HARNESS_NAMES for p in parts) or parts[-1] == ".agents"
+            or any(a == ".agents" and b == "skills" for a, b in zip(parts, parts[1:])))
+
+
+def is_ci_config(path: str) -> bool:
+    path = apfs_fold(path)
+    return any(path == f or path.startswith(f"{f}/") for f in CI_FOLDERS)
 
 
 def slug_branches(repo: Path, slug: str) -> list[str]:
@@ -193,7 +209,8 @@ def merge_check(args: argparse.Namespace) -> int:
                        branch_config.get("file_size_exempt", []), branch_config.get("commands")) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
-    reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if p.lower() in HARNESS_CONFIG)
+    reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if is_harness_config(p))
+    reasons.extend({"reason": "ci-config", "path": p} for p in landing_paths if is_ci_config(p))
 
     reviewed = reviewed_head(worktree, notes, spec)
     # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.

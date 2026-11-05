@@ -2,14 +2,17 @@
 """Run a feature gate with trusted policy and native Codex confinement."""
 from __future__ import annotations
 
+import base64
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 
 
@@ -18,6 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import macos
 from common import LineReader, METADATA, darwin_temp, require_started, start_marker, stop
+
+REQUIREMENTS = Path('/etc/codex/requirements.toml')
+MANAGED_PREFERENCES = Path('/Library/Managed Preferences')
 
 
 def merge(left, right):
@@ -122,6 +128,29 @@ def filesystem(profile, main, feature):
     return rules
 
 
+def requirement_denies():
+    """Requirements deny_read: app-server does not report it, so read each local source Codex loads."""
+    sources = []
+    if REQUIREMENTS.exists():
+        sources.append(REQUIREMENTS.read_text())
+    name = 'com.openai.codex.plist'
+    for preferences in sorted([MANAGED_PREFERENCES / name, *MANAGED_PREFERENCES.glob('*/' + name)]):
+        if preferences.exists():
+            encoded = plistlib.loads(preferences.read_bytes()).get('requirements_toml_base64')
+            if encoded is not None:
+                sources.append(base64.b64decode(encoded, validate=True).decode())
+    denies = []
+    for source in sources:
+        paths = (tomllib.loads(source).get('permissions') or {}).get('filesystem', {}).get('deny_read', [])
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise ValueError('invalid requirements deny_read')
+        paths = [os.path.expanduser(path) if path == '~' or path.startswith('~/') else path for path in paths]
+        if not all(Path(path).is_absolute() for path in paths):
+            raise ValueError('invalid requirements deny_read')
+        denies += [path if '*' in path else str(Path(path).resolve()) for path in paths]
+    return denies
+
+
 def neutralised(own, computed, roots):
     """Native table: Codex key-merges it over the trusted one, so no trusted grant survives."""
     demote = lambda value: 'read' if value == 'write' else value
@@ -175,6 +204,7 @@ def main():
         if (requirements.get('network') or {}).get('allowLocalBinding') is False:
             network['allow_local_binding'] = False
         rules = filesystem(profile, trusted, feature)
+        rules.update(dict.fromkeys(requirement_denies(), 'deny'))
         table, sockets = neutralised(own, rules, (trusted, feature))
         network |= {'unix_sockets': sockets, 'dangerously_allow_all_unix_sockets': False}
         overrides = {'features.network_proxy': True,

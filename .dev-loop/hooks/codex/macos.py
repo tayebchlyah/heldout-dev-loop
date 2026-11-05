@@ -31,6 +31,8 @@ _PROXY = {'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
 _PROTECTED = (*METADATA, '.aws')
 _CA = {'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
        'NODE_EXTRA_CA_CERTS', 'GIT_SSL_CAINFO'}
+_PLATFORM_DEFAULTS = SEATBELT_READ_ONLY_PLATFORM_DEFAULTS_SBPL.replace(
+    '(allow file-read* file-write* (regex "^/dev/ttys[0-9]+$"))\n', '')
 
 
 def _quote(value):
@@ -110,7 +112,7 @@ def _write_mask(normalized, runtime=None):
 
 
 def _policy(rules, ports, network_enabled, allow_local_binding, ceilings=(), broker_port=None, runtime=None):
-    parts = [SEATBELT_BASE_POLICY_SBPL, SEATBELT_READ_ONLY_PLATFORM_DEFAULTS_SBPL]
+    parts = [SEATBELT_BASE_POLICY_SBPL, _PLATFORM_DEFAULTS]
     if network_enabled:
         parts.append(SEATBELT_NETWORK_POLICY_SBPL)
     layers = [_normalized(layer) for layer in [*ceilings, rules]]

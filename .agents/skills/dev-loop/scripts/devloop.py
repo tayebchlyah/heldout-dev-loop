@@ -35,7 +35,7 @@
                                                       record the end of the fix wave of the current audit
   devloop.py audit-run <step> --run FOLDER [--repo PATH] ...
                                                       the parent-side steps of a release audit run (reference/cli/audit-run.md)
-  devloop.py release-check [--repo PATH] [--no-build] (--tag NAME | --sha REV)
+  devloop.py release-check [--repo PATH] [--no-build] (--tag NAME | --sha REV [--for TAG])
                                                       the release gate: a current audit record, no open security item
   devloop.py ci-skip --base REV [--head REV] [--repo PATH] [--github-output]
                                                       may CI skip this diff: only a release or a kit upgrade
@@ -57,6 +57,7 @@ Exit 0 on success, 1 on a failure the JSON describes, 2 on a usage error.
 from __future__ import annotations
 
 import argparse
+import errno
 import importlib
 import json
 import math
@@ -116,6 +117,7 @@ def slug_from_title(filename: str) -> str:
 
 FRONTMATTER_CACHE: dict[str, dict[str, str]] | None = None
 SPECS_CACHE: dict[str, list[tuple[str, Path]]] | None = None
+FOLLOW_NOTE_LINKS = True
 
 
 def cache_notes() -> None:
@@ -135,7 +137,11 @@ def frontmatter(path: Path) -> dict[str, str]:
 
 
 def read_frontmatter(path: Path) -> dict[str, str]:
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return parse_frontmatter(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
     fields: dict[str, str] = {}
@@ -176,13 +182,64 @@ def specs(notes: Path) -> list[tuple[str, Path]]:
     return found
 
 
+def skip_note_links() -> None:
+    """#239: from now on in this process, `specs` and `find_plan` skip a linked spec, plan or feature folder. For the
+    board hook, which runs on the host and copies spec text into the vault; `decide` keeps a linked spec (#51)."""
+    global FOLLOW_NOTE_LINKS
+    FOLLOW_NOTE_LINKS = False
+
+
+def linked(path: Path, *folders: Path) -> bool:
+    return not FOLLOW_NOTE_LINKS and any(p.is_symlink() for p in (path, *folders))
+
+
+def read_below(root: Path, *parts: str) -> bytes | None:
+    """#239: the bytes of `root/<parts>` read through descriptors, no link followed below `root` and no block on a
+    FIFO; None for a link, a file that is not a regular file or a missing part. Other errors are raised."""
+    from board import store
+
+    fds: list[int] = []
+    try:
+        fds.append(os.open(root, os.O_RDONLY | os.O_DIRECTORY))
+        for name in parts[:-1]:
+            fds.append(os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fds[-1]))
+        leaf = store.open_regular(fds[-1], parts[-1], os.O_RDONLY)
+        if leaf is None:
+            return None
+        with os.fdopen(leaf, "rb") as handle:
+            return handle.read()
+    except OSError as exc:
+        if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
+            return None
+        raise
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+def read_note(notes: Path, path: Path) -> bytes | None:
+    """The bytes of a spec or plan under `notes`; in the board process through no link (`read_below`), else plain."""
+    if FOLLOW_NOTE_LINKS:
+        return path.read_bytes()
+    return read_below(notes, *path.relative_to(notes).parts)
+
+
+def note_frontmatter(notes: Path, path: Path) -> dict[str, str]:
+    if FOLLOW_NOTE_LINKS:
+        return frontmatter(path)
+    return parse_frontmatter((read_note(notes, path) or b"").decode("utf-8", "replace"))
+
+
 def read_specs(notes: Path) -> list[tuple[str, Path]]:
     found = []
-    for path in sorted((notes / FEATURES).glob("*/Spec.md")):
-        found.append(((frontmatter(path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
-    if "specs" in old_layout(notes):
+    if not linked(notes / FEATURES):
+        for path in sorted((notes / FEATURES).glob("*/Spec.md")):
+            if not linked(path, path.parent):
+                found.append(((note_frontmatter(notes, path).get("feature") or slug_from_title(path.parent.name)).lower(), path))
+    if "specs" in old_layout(notes) and not linked(notes / "specs"):
         for path in sorted((notes / "specs").glob("*.md")):
-            found.append(((frontmatter(path).get("feature") or slug_from_title(path.name)).lower(), path))
+            if not linked(path):
+                found.append(((note_frontmatter(notes, path).get("feature") or slug_from_title(path.name)).lower(), path))
     return found
 
 
@@ -193,8 +250,11 @@ def is_spec(notes: Path, path: Path) -> bool:
 def find_plan(notes: Path, spec: Path) -> Path | None:
     if spec.name == "Spec.md" and spec.parent.parent == notes / FEATURES:
         plan = spec.parent / "Plan.md"
-        return plan if plan.is_file() else None
-    plans = [p for p in sorted((notes / "plans").glob("*.md")) if frontmatter(p).get("spec") in (spec.name, spec.stem)]
+        return plan if plan.is_file() and not linked(plan, spec.parent, notes / FEATURES) else None
+    if linked(notes / "plans"):
+        return None
+    plans = [p for p in sorted((notes / "plans").glob("*.md"))
+             if not linked(p) and note_frontmatter(notes, p).get("spec") in (spec.name, spec.stem)]
     return plans[-1] if plans else None
 
 
@@ -345,6 +405,7 @@ def main() -> int:
     target = release.add_mutually_exclusive_group(required=True)
     target.add_argument("--tag")
     target.add_argument("--sha")
+    release.add_argument("--for", dest="for_tag")
     release.add_argument("--no-build", action="store_true")
     release.set_defaults(run=("release", "cmd_release_check"))
 

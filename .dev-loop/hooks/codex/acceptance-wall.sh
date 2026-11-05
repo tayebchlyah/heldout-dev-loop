@@ -1,6 +1,7 @@
 #!/bin/sh
 # Codex PreToolUse wall (D9), matcher
-# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates. agent_id is present only in a subagent call.
+# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*.
+# agent_id is present only in a subagent call.
 # spec_tester: no path names src/, app/, backend/ or frontend/. Any other subagent: no path names
 # tests/acceptance. Main session: no apply_patch of a file under tests/acceptance/; its Bash stays open.
 # apply_patch (and its Edit, Write aliases): the paths are the patch file headers, never the body.
@@ -22,6 +23,9 @@
 # sets features.unified_exec_tty = false, so no tty shell stays open to type into (#140). Not walled:
 # for other subagents an MCP search tool, an MCP tool that runs code or reads a remote copy, a resource
 # listing; the audit reads their results.
+# Web tools (#240): a tool whose name starts with web is denied to implementer and spec_tester with
+# agent_id set, whatever its input; every other caller exits 0 with no path rule. The hosted web
+# search tool reaches no hook. The denial names the NEEDS_FACT exit.
 . "${0%/*}/git-pin.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
@@ -31,6 +35,18 @@ command -v jq >/dev/null 2>&1 || fail "jq is missing"
 printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
 field() { printf '%s' "$input" | jq -r "$1 // empty"; }
 agent_id=$(field .agent_id) agent_type=$(field .agent_type) tool=$(field .tool_name) cwd=$(field .cwd)
+
+case "$tool" in
+  web*)
+    if [ -n "$agent_id" ]; then
+      case "$agent_type" in
+        implementer|spec_tester)
+          echo "Blocked: $tool is closed to this agent: the web holds a public copy of the repository. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
+          exit 2 ;;
+      esac
+    fi
+    exit 0 ;;
+esac
 
 if [ -n "$agent_id" ] && [ "$agent_type" = spec_tester ]; then
   set -- src/ app/ backend/ frontend/
@@ -97,8 +113,9 @@ if [ -n "$verdict" ]; then
   exit 2
 fi
 word='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
-main=$(git -C "$top" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
-cli=$main/.agents/skills/dev-loop/scripts/devloop.py
+main=$KIT_MAIN
+[ -n "$main" ] || main=$(git -C "$cwd" worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')
+cli=${KIT_ROOT:-$main}/.agents/skills/dev-loop/scripts/devloop.py
 if [ "$tool" = Bash ] && [ -n "$agent_id" ] && [ "$agent_type" != spec_tester ] && [ -n "$top" ] && [ -f "$cli" ] \
   && field .tool_input.command | grep -Eq "$word"; then
   out=$(printf '%s' "$input" | python3 -I "$cli" search-wall 2>/dev/null) || fail "search check failed"

@@ -29,19 +29,13 @@ from autonomy import write_atomic
 from devloop import AUDITS, emit, old_layout, security_audit_dir
 from merge_check import is_test_or_doc, read_config
 from notes_path import NotesPathError, resolve
+from release_rulings import FINGERPRINT_RE, TAG_RE, deferred_items, section, security_items  # noqa: F401
 
-ITEM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) \(security, (confirmed|needs-validation), ([A-Za-z0-9._-]+(?: [0-9]+)?)\): (.+)$")
-RULING_RE = re.compile(r"^(?: {2,}|\t)\s*- Ruling (\d{4}-\d{2}-\d{2}): (\w+) +\S")
 RECORD_RE = re.compile(
     r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) at ([0-9a-f]{40}): confirmed \d+, needs validation \d+, hardening \d+, "
     r"profile \S+, scope (whole|[0-9a-f]{40}\.\.[0-9a-f]{40})$"
 )
 WAVE_RE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) (Run \d+) fix wave at ([0-9a-f]{40}): (#[1-9]\d*(?:, #[1-9]\d*)*)$")
-CLOSING_WORDS = ("accept", "close")
-FINGERPRINT_RE = re.compile(r"Fingerprint `([^`]+)`")
-SECURITY_RE = re.compile(r"(?i)\bsecurity\b")
-TAG_RE = re.compile(r"v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-rc\.[1-9]\d*)?)")
-CHECKBOX_RE = re.compile(r"^\[[ x]\] ")
 
 
 def project_note(notes: Path) -> Path | None:
@@ -50,66 +44,6 @@ def project_note(notes: Path) -> Path | None:
         if path.is_file():
             return path
     return None
-
-
-def section(text: str, heading: str) -> list[str]:
-    """The lines of the `## <heading>` section, up to the next `## ` heading. `###` subsections stay in."""
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    out: list[str] = []
-    inside = False
-    for line in lines:
-        if line.startswith("## "):
-            if inside:
-                break
-            inside = line[3:].strip() == heading
-        elif inside:
-            out.append(line)
-    return out
-
-
-def deferred_items(text: str) -> tuple[list[dict], list[str]]:
-    """(every item in file order, unparsed lines) of `## Deferred`.
-
-    An item is `{line, verdict, source, fingerprint, closed, ruling}`. `closed`: a ruling `accept` or `close` under
-    it. `ruling`: `{date, word, carried}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling), else None. A top-level bullet that names security and does
-    not match the item format is unparsed.
-    """
-    items: list[dict] = []
-    unparsed: list[str] = []
-    current: dict | None = None
-    for line in section(text, "Deferred"):
-        if line.startswith("- "):
-            current = None
-            body = CHECKBOX_RE.sub("", line[2:])
-            match = ITEM_RE.match(body)
-            if match:
-                fingerprint = FINGERPRINT_RE.search(match.group(4))
-                current = {
-                    "line": line.rstrip(),
-                    "verdict": match.group(2),
-                    "source": match.group(3),
-                    "fingerprint": fingerprint.group(1) if fingerprint else None,
-                    "closed": False,
-                    "ruling": None,
-                }
-                items.append(current)
-            elif SECURITY_RE.search(line):
-                unparsed.append(line.rstrip())
-        elif line.strip() and not line[0].isspace():
-            current = None
-        elif current is not None:
-            ruling = RULING_RE.match(line)
-            if ruling:
-                carried = line[ruling.start(2):].startswith("accept carried from the ")
-                current["ruling"] = {"date": ruling.group(1), "word": ruling.group(2), "carried": carried}
-                current["closed"] = current["closed"] or ruling.group(2) in CLOSING_WORDS
-    return items, unparsed
-
-
-def security_items(text: str) -> tuple[list[dict], list[str]]:
-    """(open items, unparsed lines) of `## Deferred`: the items of `deferred_items` that are not closed."""
-    items, unparsed = deferred_items(text)
-    return [i for i in items if not i["closed"]], unparsed
 
 
 def current_record(text: str) -> dict | None:
@@ -196,7 +130,8 @@ def stale_paths(repo: Path, record_sha: str, target: str, build: bool) -> list[s
     """Paths that make the audit stale: the code paths changed since the audited commit, all changed paths when it is
     not an ancestor (possibly none). None when the audit is current: only test or doc paths changed, or the
     code paths are all a release or kit upgrade that `ci-skip` allows, or kit copies equal to the kit the audited
-    commit's own installer builds or dropped by it, at any kit version (#185). `build` false: no kit build, kit copies
+    commit's own installer builds or dropped by it, at any kit version (#185), and merged config files equal to what
+    that installer's `upgrade` merges into them (#206). `build` false: no kit build, kit copies and merged config files
     stay code paths."""
     ancestor = run_git(repo, "merge-base", "--is-ancestor", record_sha, target).returncode == 0
     diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", record_sha, target)
@@ -213,8 +148,12 @@ def stale_paths(repo: Path, record_sha: str, target: str, build: bool) -> list[s
     except ci_skip.ConfigError:
         return code
     kit = {p for p in blocked if p.startswith(KIT_ROOTS) or p == MANIFEST}
-    if build and kit and kit.issuperset(p for p in blocked if not is_test_or_doc(p)) and (ref := kit_reference(repo, record_sha)) is not None:
-        blocked -= ci_skip.kit_allowed(repo, record_sha, target, kit, ref)
+    merged = blocked & ci_skip.MERGED
+    if build and (kit or merged) and (kit | merged).issuperset(p for p in blocked if not is_test_or_doc(p)):
+        if (ref := kit_reference(repo, record_sha)) is not None:
+            if kit:
+                blocked -= ci_skip.kit_allowed(repo, record_sha, target, kit, ref)
+            blocked -= ci_skip.merged_allowed(repo, record_sha, target, merged, ref)
     return code if blocked.intersection(code) else None
 
 
@@ -273,7 +212,7 @@ def check(repo: Path, notes: Path | None, target: str, tag: str | None, build: b
                 wave, base = found["line"], found["sha"]
         if base != sha and (paths := stale_paths(repo, base, sha, build)) is not None:
             reasons.append({"reason": "stale-audit", "paths": paths})
-    items, unparsed = security_items(text)
+    items, unparsed = security_items(text, tag)
     if items:
         reasons.append({"reason": "open-security", "items": [i["line"] for i in items]})
     if unparsed:
@@ -354,12 +293,12 @@ def check_archive(tar: tarfile.TarFile) -> None:
                 raise ValueError(member.name)
 
 
-def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
-    """The kit that `commit`'s own installer builds, as `{path: (MANIFEST entry, git mode)}`; None when the tree
-    at `commit` is not the kit source, its `dev-loop.json` has no `harnesses`, or `git` or `node` fails. The source
-    is extracted under `<git common dir>/dev-loop/`, which the Codex sandboxes keep read-only, so no confined process
-    swaps it before node imports it (#199); a caller denied a write there, a confined one, uses the temp root, and
-    any other error there gives None."""
+def kit_build(repo: Path, commit: str, script: str, *args: str) -> object:
+    """The JSON that the node `script` prints, run on `commit`'s own kit source with the source folder, the
+    `harnesses` and `args`; None when the tree at `commit` is not the kit source, its `dev-loop.json` has no
+    `harnesses`, or `git` or `node` fails. The source is extracted under `<git common dir>/dev-loop/`, which the Codex
+    sandboxes keep read-only, so no confined process swaps it before node imports it (#199); a caller denied a write
+    there, a confined one, uses the temp root, and any other error there gives None."""
     config = read_config(repo, commit)
     harnesses = config.get("harnesses") if config else None
     if not (isinstance(harnesses, list) and harnesses and all(isinstance(h, str) for h in harnesses)):
@@ -386,18 +325,24 @@ def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
         with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
             check_archive(tar)
             tar.extractall(tmp)
-        built = subprocess.run(["node", "--input-type=module", "-e", KIT_SCRIPT, tmp, json.dumps(harnesses)],
-                               capture_output=True, text=True, timeout=NODE_TIMEOUT)
-        if built.returncode != 0:
-            return None
-        data = json.loads(built.stdout)
-        executable, links = set(data["exec"]), set(data["links"])
-        return {path: (entry, "120000" if path in links else "100755" if path in executable else "100644")
-                for path, entry in data["files"].items()}
-    except (OSError, ValueError, KeyError, tarfile.TarError, subprocess.TimeoutExpired):
+        built = subprocess.run(["node", "--input-type=module", "-e", script, tmp, json.dumps(harnesses), *args],
+                               capture_output=True, text=True, encoding="utf-8", timeout=NODE_TIMEOUT)
+        return json.loads(built.stdout) if built.returncode == 0 else None
+    except (OSError, ValueError, tarfile.TarError, subprocess.TimeoutExpired):
         return None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def kit_reference(repo: Path, commit: str) -> dict[str, tuple[str, str]] | None:
+    """The kit that `commit`'s own installer builds, as `{path: (MANIFEST entry, git mode)}`; None as `kit_build`."""
+    data = kit_build(repo, commit, KIT_SCRIPT)
+    try:
+        executable, links = set(data["exec"]), set(data["links"])
+        return {path: (entry, "120000" if path in links else "100755" if path in executable else "100644")
+                for path, entry in data["files"].items()}
+    except (TypeError, KeyError, AttributeError):
+        return None
 
 
 def kit_matches(repo: Path, commit: str, among: set[str], ref: dict[str, tuple[str, str]]) -> set[str]:
@@ -762,6 +707,11 @@ def cmd_release_notes(args: argparse.Namespace) -> int:
 
 
 def cmd_release_check(args: argparse.Namespace) -> int:
+    if args.for_tag is not None:
+        if args.tag is not None:
+            return emit({"error": "--for needs --sha"}, 2)
+        if not TAG_RE.fullmatch(args.for_tag):
+            return emit({"error": f"--for {args.for_tag} is not vX.Y.Z or vX.Y.Z-rc.N"}, 2)
     repo = Path(args.repo).resolve()
     notes = None  # a non-release tag is skipped before any note read, so it needs no notes path
     if args.tag is None or is_release_tag(args.tag):
@@ -771,7 +721,7 @@ def cmd_release_check(args: argparse.Namespace) -> int:
             return emit({"error": str(exc)}, 1)
     if notes is not None and "security-audit" in old_layout(notes):
         return emit({"error": "old-notes-layout", "fix": "devloop.py notes-migrate"}, 1)
-    return emit(*check(repo, notes, args.tag or args.sha, args.tag, not args.no_build))
+    return emit(*check(repo, notes, args.tag or args.sha, args.tag or args.for_tag, not args.no_build))
 
 
 def cmd_release_plan(args: argparse.Namespace) -> int:

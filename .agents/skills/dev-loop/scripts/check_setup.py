@@ -557,7 +557,7 @@ def check_user_skill(home: Path, env: Mapping[str, str]) -> list[str]:
     found = [*removed_by_uninstall, claude_home(env, home) / "skills" / "dev-loop"]
     return [
         f"user-level dev-loop skill found: {path}. "
-        + ("Run npx github:tchlyah/dev-loop#<tag> uninstall-global" if path in removed_by_uninstall else "Remove that folder")
+        + ("Run npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global" if path in removed_by_uninstall else "Remove that folder")
         for index, path in enumerate(found)
         if path not in found[:index] and os.path.lexists(path)
     ]
@@ -784,7 +784,7 @@ def main() -> int:
 
     if not uses_dev_loop(args.repo):
         print(f"{args.harness}: FAIL")
-        print(f"- no dev-loop.json in {args.repo}. Run npx github:tchlyah/dev-loop#<tag> init")
+        print(f"- no dev-loop.json in {args.repo}. Run npx github:tayebchlyah/heldout-dev-loop#<tag> init")
         return 1
     failures, action_groups = check_project(args.home, args.repo, args.harness, os.environ)
     failures += check_version(args.harness)
