@@ -45,11 +45,11 @@ Verification budget, tiers T0 to T4: [references/tests.md](references/tests.md) 
 
 A usage limit, a switch of account or of harness stops the work. Two kit skills, both harnesses (Codex: `$pause`, `$continue`):
 
-- `/pause`: the user stops the work now, any stage. Stop each running subagent, leave background runs alive, write the note with `scripts/devloop.py pause`. User-invoked only.
+- `/pause`: the user stops the work now, any stage. Stop each running subagent, leave background runs alive, write the note with `scripts/devloop.py pause` (Shaping: `--feature <slug>`). User-invoked only.
 - `/continue`: the user calls it, or you run it after a plain "continue". It runs the procedure below.
 - Claude: a `StopFailure` `rate_limit` in a feature worktree writes the note itself (`pause.sh`). Codex: only `/pause` writes one.
 
-`status` reads the note (`<git-dir>/dev-loop/pause.json`). `paused` in the output, `next` `resume from the pause note`: another session left it; hand off: read the note, the last 20 assistant messages of its `transcript`, the decision log, the ledger, `git status`; log `decide --kind discovery --what "resumed from a pause note (<reason>)"` with the transcript as evidence; `scripts/devloop.py pause --clear`; give each note agent to a fresh agent with its full brief plus "the uncommitted work in the worktree is yours, continue it"; continue the stage. A session start, a session that names the feature (`status --feature <slug>`), and a bare "continue" on `main` (one `paused: true` feature: take it; more: ask which) all land here.
+`status` reads the note (`<git-dir>/dev-loop/pause.json`). `paused` in the output, `next` `resume from the pause note`: another session left it; hand off: read the note, the last 20 assistant messages of its `transcript`, the decision log, the ledger, `git status`; log the resume and clear the note as the `continue` skill says (`--feature <slug> --repo <checkout>`); give each note agent to a fresh agent with its full brief plus "the uncommitted work in the worktree is yours, continue it"; continue the stage. A session start, a session that names the feature (`status --feature <slug>`), and a bare "continue" on `main` (one `paused: true` feature: take it; more: ask which) all land here.
 No `paused`, same session: wake. Each subagent that stopped during its work gets a message to continue (Claude `SendMessage`; Codex `send_input` or `followup_task`). Never dispatch a new agent on unfinished work. Re-attach to each background run still alive; never start it again. A finished agent gets no new work: a fresh agent does.
 
 ## Detect the stage

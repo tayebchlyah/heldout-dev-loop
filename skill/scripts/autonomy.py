@@ -234,8 +234,9 @@ def cmd_pause(args: argparse.Namespace) -> int:
     if git_dir is None:
         return emit({"error": f"not a git repository: {repo}"}, 1)
     path = note_path(Path(git_dir))
+    named = (args.feature or "").lower() or None
     if args.clear:
-        found = path.is_file()
+        found = path.is_file() and (named is None or (read_note(Path(git_dir)) or {}).get("feature") == named)
         if found:
             path.unlink()
         return emit({"cleared": found}, 0)
@@ -249,7 +250,7 @@ def cmd_pause(args: argparse.Namespace) -> int:
         session, harness = session_id(os.environ)
         transcript = find_transcript(session, harness, os.environ, Path.home()) if session and harness else None
         reason, message = "manual", None
-    slug = branch_slug(repo)
+    slug = named or branch_slug(repo)
     stage = ledger_last = last_decision = None
     try:
         notes = resolve(repo, os.environ, Path.home())
@@ -257,7 +258,7 @@ def cmd_pause(args: argparse.Namespace) -> int:
         notes = None
     try:  # An unreadable spec, plan or ledger (an iCloud placeholder) must not cost the note.
         if notes is not None:
-            stage = detect(repo, None, notes)["stage"]
+            stage = detect(repo, named, notes)["stage"]
             target = log_target(repo, slug, notes) if slug else None
             if target is not None and target.is_file():
                 rows = log_rows(target.read_text())

@@ -340,6 +340,34 @@ class PauseStatusTests(PauseSandbox):
         self.cli("pause", "--intent", "x", cwd=self.repo)
         self.assertEqual(self.status_in(self.repo)["paused"]["intent"], "x")
 
+    def test_shaping_pause_on_main_is_found_again(self) -> None:
+        put(self.notes / "specs" / "20261002 Other.md", frontmatter(feature="other", track="M", review_status="draft"))
+        code, out = self.cli("pause", "--feature", "Other", "--intent", "x", cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["note"]["feature"], out["note"]["stage"]), ("other", 2))
+        for args in [(), ("--feature", "other")]:
+            with self.subTest(args=args):
+                found = self.status_in(self.repo, *args)
+                self.assertEqual((found["paused"]["intent"], found["next"]), ("x", "resume from the pause note"))
+        features = {f["feature"]: f for f in self.status_in(self.repo)["features"]}
+        self.assertIs(features["other"].get("paused"), True)
+        self.assertNotIn("paused", features["demo"])
+        self.assertNotIn("paused", self.status_in(self.repo, "--feature", "demo"))
+        self.assertNotIn("paused", self.status_in(self.repo, "--feature", "third"))
+
+    def test_shaping_pause_of_a_new_feature(self) -> None:
+        self.cli("pause", "--feature", "fresh", cwd=self.repo)
+        found = self.status_in(self.repo, "--feature", "fresh")
+        self.assertEqual((found["stage"], found["paused"]["feature"], found["paused"]["stage"]), (1, "fresh", 1))
+
+    def test_clear_with_feature_clears_only_its_note(self) -> None:
+        self.cli("pause", "--feature", "other", cwd=self.repo)
+        main_note = Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "pause.json"
+        self.assertEqual(self.cli("pause", "--clear", "--feature", "demo", cwd=self.repo), (0, {"cleared": False}))
+        self.assertTrue(main_note.exists())
+        self.assertEqual(self.cli("pause", "--clear", "--feature", "other", cwd=self.repo), (0, {"cleared": True}))
+        self.assertFalse(main_note.exists())
+
     def test_unreadable_note(self) -> None:
         put(self.note, "{")
         out = self.status_in(self.wt)
@@ -485,6 +513,19 @@ class AutonomyContractTests(unittest.TestCase):
             for value in values:
                 with self.subTest(path=path.name, value=value):
                     self.assertIn(value.lower(), path.read_text().lower())
+
+    def test_handoff_commands_target_the_paused_checkout(self) -> None:
+        cases = [(ROOT / "skills" / "continue" / "SKILL.md", ["pause --clear --feature <slug> --repo <checkout>",
+                                                             "decide --kind discovery --feature <slug> --repo <checkout>"]),
+                 (ROOT / "skill" / "SKILL.md", ["as the `continue` skill says (`--feature <slug> --repo <checkout>`)",
+                                                "`scripts/devloop.py pause` (Shaping: `--feature <slug>`)"])]
+        for path, values in cases:
+            text = path.read_text()
+            for value in values:
+                with self.subTest(path=path.name, value=value):
+                    self.assertIn(value, text)
+            with self.subTest(path=path.name):
+                self.assertNotRegex(text, r"pause --clear`")
 
     def test_old_sections_are_gone(self) -> None:
         cases = [(ROOT / "skill" / "SKILL.md", ["## Assumptions", "## Discoveries"]),

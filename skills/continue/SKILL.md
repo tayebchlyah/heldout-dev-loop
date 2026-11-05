@@ -11,8 +11,9 @@ description: Continue stopped dev-loop work after a usage limit, a pause, or a s
 
 Run `CLI status` (`--feature <slug>` when the user named one).
 
-- On `main`, no `--feature`: exactly one `features` item with `paused: true`: take it, rerun with `--feature <slug>`. More than one: ask which. The only question allowed here.
-- Work in that feature's worktree (Claude Code: `EnterWorktree` with its `path`).
+- On `main`, no `--feature`: exactly one `features` item with `paused: true`: take it, rerun with `--feature <slug>`. More than one: ask which. The only question allowed here. None, but `paused` in the output: a Shaping pause of the main checkout, `feature` of the note is the slug.
+- Work in that feature's worktree (Claude Code: `EnterWorktree` with its `path`). No worktree (a Shaping pause): stay in the main checkout.
+- `<checkout>` below: that worktree, else the main checkout. `<slug>`: `feature` of the note.
 
 Then one of three cases.
 
@@ -22,8 +23,8 @@ The note comes from another session (another account, another harness, a new cha
 
 1. Read the note: `intent`, `verified`, `open`, `next`, `agents`, `runs`, `dirty`, `ledger_last`, `last_decision`.
 2. Read the last 20 assistant messages of `transcript` (when not null), the spec `## Decision log`, the ledger, `git status`.
-3. Log it: `CLI decide --kind discovery --what "resumed from a pause note (<reason>)" --why "<one line>" --evidence "<transcript path, or the note path>"`.
-4. `CLI pause --clear`.
+3. Log it: `CLI decide --kind discovery --feature <slug> --repo <checkout> --what "resumed from a pause note (<reason>)" --why "<one line>" --evidence "<transcript path, or the note path>"`. No log yet (`feature` null, or Stage 1 with no spec: `decide` exits 1): skip this step.
+4. `CLI pause --clear --feature <slug> --repo <checkout>` (`feature` null: no `--feature`).
 5. Each agent in `agents`: dispatch a fresh one, same role, its full brief, plus this line: "The uncommitted work in the worktree is yours, continue it." Never a second agent on the same task.
 6. Each log in `runs`: its process alive (the log still grows): wait on it, never start it again. Dead: read its tail, run it again.
 7. Continue the stage: `CLI status`, then its `next`.
