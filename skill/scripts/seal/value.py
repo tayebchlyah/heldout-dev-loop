@@ -36,10 +36,10 @@ class PatchIdFailed(Exception):
 
 
 def patch_id(repo: Path, *against: str) -> str:
-    # Plumbing (`diff-index`, `diff-tree`): the `git diff -U0 --no-color --no-renames` text with no user diff
+    # allow-comment: dependency: plumbing (`diff-index`, `diff-tree`): the `git diff -U1 --no-color --no-renames` text with no user diff
     # config (noprefix, textconv, external diff); `--full-index`: a binary change hashes full blob ids.
     git = ["git", "-C", str(repo), "-c", "core.quotepath=off"]
-    patch = subprocess.run([*git, *against, "-p", "-U0", "--no-renames", "--full-index", "--",
+    patch = subprocess.run([*git, *against, "-p", "-U1", "--no-renames", "--full-index", "--",
                             f":(top){ACCEPTANCE_DIR}/"], capture_output=True).stdout
     result = subprocess.run([*git, "patch-id", "--verbatim"], input=patch, capture_output=True)
     first = result.stdout.decode().split(" ", 1)[0].strip()
