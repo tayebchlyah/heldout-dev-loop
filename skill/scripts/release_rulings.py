@@ -43,7 +43,8 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
     `{date, word, carried, tag}` of its last ruling line (`carried`: an automatic `accept carried from the` ruling; `tag`: the waive tag, else None), else None. An `accept` or `close` whose reason names a release candidate
     (`rc.N only`, `for rc.N`, `before the final`, `not for the final`) is no ruling. Unparsed: a top-level bullet that names security and does not match the item format; under an item, an indented bullet that starts
     with `ruling` and is not a valid ruling (a waive with no tag or reason included), whatever the item state; a rc-scoped `accept` or `close` line while the item is not closed for `tag`; the opening line of a fence
-    (three backticks or tildes) still open at the end of its item. A line (any indentation) whose stripped text starts with three backticks or tildes opens a fence under an item, an info string allowed. The fence closes only on a line of the same character, at least as long as the opener, with nothing after it but whitespace (CommonMark). A line inside a fence is never a ruling and never unparsed; only a top-level `- ` line ends the item then.
+    (three backticks or tildes) still open at the end of its item; after a column 0 line of an item that is not a bullet or a fence, every indented bullet that starts with `ruling`, valid or not, outside a fence (#262: Markdown
+    shows it under the item, so it fails closed). Only a top-level `- ` line ends an item. A line (any indentation) whose stripped text starts with three backticks or tildes opens a fence under an item, an info string allowed. The fence closes only on a line of the same character, at least as long as the opener, with nothing after it but whitespace (CommonMark). A line inside a fence is never a ruling and never unparsed; only a top-level `- ` line ends the item then.
     """
     items: list[dict] = []
     unparsed: list[str] = []
@@ -52,6 +53,7 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
     newest_closes = False
     fence = ""
     mark = ""
+    detached = False
     legacy: list[str] = []
 
     def flush() -> None:
@@ -71,6 +73,7 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
             current = None
             newest = ""
             fence = ""
+            detached = False
             legacy = []
             body = CHECKBOX_RE.sub("", line[2:])
             match = ITEM_RE.match(body)
@@ -91,10 +94,10 @@ def deferred_items(text: str, tag: str | None = None) -> tuple[list[dict], list[
             fence = line.rstrip()
             mark = FENCE_RE.match(line.strip()).group(1)
         elif line.strip() and not line[0].isspace():
-            flush()
-            current = None
-            fence = ""
-            legacy = []
+            detached = current is not None
+        elif detached:
+            if SHAPE_RE.match(line):
+                unparsed.append(line.rstrip())
         elif current is not None:
             ruling = RULING_RE.match(line)
             word = ruling.group(2) if ruling else ""
