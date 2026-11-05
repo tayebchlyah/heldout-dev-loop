@@ -214,6 +214,108 @@ class SealCheckTests(SealRepo):
         self.assertEqual(self.violations("--uncommitted"), [("uncommitted", None, path)])
 
 
+TWELVE = "".join(f"line {n}\n" for n in range(12))
+PLAIN = TWELVE.replace("line 1\n", "line 1 planted\n")
+SEALED = TWELVE.replace("line 8\n", "line 8\nadded\n")
+BOTH = PLAIN.replace("line 8\n", "line 8\nadded\n")
+OK = {"ok": True, "violations": [], "taint": [], "warnings": []}
+
+
+class ChangedBeforeSealTests(SealRepo):
+    def setUp(self) -> None:
+        super().setUp()
+        self.on_base(SUITE)
+
+    def on_base(self, path: str) -> None:
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(path, TWELVE)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+
+    def head(self) -> str:
+        return git(self.repo, "rev-parse", "HEAD").strip()
+
+    def before_seal(self, path: str, commit: str, plain: list[str]) -> dict:
+        return {"reason": "changed-before-seal", "commit": commit, "path": path, "commits": plain}
+
+    def test_non_seal_commit_before_the_seal(self) -> None:
+        plain = self.commit(SUITE, PLAIN)
+        sealed = self.seal(SUITE, BOTH)
+        code, out = self.check()
+        self.assertEqual((code, out["violations"]), (1, [self.before_seal(SUITE, sealed, [plain])]), out)
+
+    def test_cherry_picked_seal_on_a_rebuilt_history(self) -> None:
+        sealed = self.seal(SUITE, SEALED)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        plain = self.commit(SUITE, PLAIN)
+        git(self.repo, "cherry-pick", sealed)
+        self.assertEqual(git(self.repo, "show", f"HEAD:{SUITE}"), BOTH)
+        self.assertEqual(self.check()[1]["violations"], [self.before_seal(SUITE, self.head(), [plain])])
+
+    def test_new_file_from_a_non_seal_commit(self) -> None:
+        new = f"{ACCEPTANCE_DIR}/x/test_new.py"
+        plain = self.commit(new, "def test_new():\n    pass\n")
+        sealed = self.seal(new, "def test_new():\n    assert True\n")
+        self.assertEqual(self.check()[1]["violations"], [self.before_seal(new, sealed, [plain])])
+
+    def test_revert_pair_before_the_seal_is_ok(self) -> None:
+        plain = self.commit(SUITE, PLAIN)
+        git(self.repo, "revert", "--no-edit", plain)
+        self.seal(SUITE, SEALED)
+        self.assertEqual(self.check(), (0, OK))
+
+    def test_two_seals_of_one_file_are_ok(self) -> None:
+        self.seal(SUITE, SEALED)
+        self.seal(SUITE, SEALED.replace("line 10\n", "line 10\nmore\n"))
+        self.assertEqual(self.check(), (0, OK))
+
+    def test_drop_clears_and_revert_does_not(self) -> None:
+        plain = self.commit(SUITE, PLAIN)
+        sealed = self.seal(SUITE, BOTH)
+        with self.subTest("revert"):
+            git(self.repo, "revert", "--no-edit", plain)
+            code, out = self.check()
+            self.assertEqual(code, 1, out)
+            self.assertIn(self.before_seal(SUITE, sealed, [plain, self.head()]), out["violations"])
+            git(self.repo, "reset", "-q", "--hard", sealed)
+        with self.subTest("drop"):
+            git(self.repo, "rebase", "-q", "--onto", f"{plain}^", plain)
+            self.assertEqual(self.check(), (0, OK))
+
+    def test_change_between_two_seals(self) -> None:
+        self.seal(SUITE, SEALED)
+        plain = self.commit(SUITE, BOTH)
+        second = self.seal(SUITE, BOTH.replace("line 10\n", "line 10\nmore\n"))
+        self.assertEqual(self.check()[1]["violations"], [self.before_seal(SUITE, second, [plain])])
+
+    def test_change_to_another_path_is_not_changed_before_seal(self) -> None:
+        self.commit("src/a.py", "a = 1\n")
+        other = f"{ACCEPTANCE_DIR}/x/test_other.py"
+        self.commit(other, "def test_other():\n    pass\n")
+        self.seal(SUITE, SEALED)
+        self.assertEqual([v["reason"] for v in self.check()[1]["violations"]], ["unsealed"])
+
+    def test_bad_seal_does_not_move_the_expected_blob(self) -> None:
+        self.seal(SUITE, PLAIN)
+        put(self.repo / SUITE, PLAIN.replace("planted", "amended"))
+        git(self.repo, "commit", "-q", "-a", "--amend", "--no-edit")
+        amended = self.head()
+        sealed = self.seal(SUITE, PLAIN.replace("planted", "amended").replace("line 8\n", "line 8\nadded\n"))
+        violations = self.check()[1]["violations"]
+        self.assertIn(violation_of("bad-seal", amended), violations)
+        self.assertIn(self.before_seal(SUITE, sealed, [amended]), violations)
+
+    def test_changed_before_seal_unicode_path(self) -> None:
+        path = f"{ACCEPTANCE_DIR}/x/test café.py"
+        self.on_base(path)
+        plain = self.commit(path, PLAIN)
+        sealed = self.seal(path, BOTH)
+        self.assertEqual(self.check()[1]["violations"], [self.before_seal(path, sealed, [plain])])
+
+
+def violation_of(reason: str, commit: str) -> dict:
+    return {"reason": reason, "commit": commit, "path": None}
+
+
 PASSING_GATE = "#!/bin/sh\necho all good\n"
 
 
@@ -230,6 +332,16 @@ class GateSealTests(GateSealRepo):
         code, out = self.gate()
         self.assertEqual((code, out["exit"], out["seal"]["ok"]), (1, 0, False), out)
         self.assertEqual([v["reason"] for v in out["seal"]["violations"]], ["unsealed"])
+
+    def test_changed_before_seal_fails_a_passing_gate(self) -> None:
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, TWELVE)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        self.commit(SUITE, PLAIN)
+        self.seal(SUITE, BOTH)
+        code, out = self.gate()
+        self.assertEqual((code, out["exit"], out["seal"]["ok"]), (1, 0, False), out)
+        self.assertIn("changed-before-seal", [v["reason"] for v in out["seal"]["violations"]])
 
     def test_sealed_passing_gate_is_ok(self) -> None:
         self.seal(SUITE, "a\n")
