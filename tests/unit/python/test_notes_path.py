@@ -184,6 +184,16 @@ class NotesPathTests(unittest.TestCase):
             self.resolve()
         self.assertTrue(str(ctx.exception).startswith(f"no notes path for {self.repo}."))
 
+    def test_local_file_without_notes_falls_through_to_main_ref(self) -> None:
+        self.commit_shared(self.repo, "n")
+        (self.repo / "n").mkdir()
+        for text in (json.dumps({"second_review": {"codex": {}}}), json.dumps({"notes": ""}), "{}"):
+            with self.subTest(text):
+                write(self.repo / "dev-loop.local.json", text)
+                self.assertEqual(self.resolve(), self.repo / "n")
+                result = self.run_main(None)
+                self.assertEqual((result.returncode, result.stdout), (0, f"{self.repo / 'n'}\n"), result.stderr)
+
     def test_no_git_on_path_is_no_main_ref(self) -> None:
         with mock.patch.object(notes_path.subprocess, "run", side_effect=FileNotFoundError("git")):
             with self.assertRaises(notes_path.NotesPathError) as ctx:
@@ -246,7 +256,7 @@ class NotesPathTests(unittest.TestCase):
 
     def test_main_local_file_errors(self) -> None:
         target = self.repo / "dev-loop.local.json"
-        for row in ("tracked", "tracked with env", "not JSON", "no notes key"):
+        for row in ("tracked", "tracked with env", "not JSON", "not an object"):
             with self.subTest(row):
                 git_in(self.repo, "rm", "-q", "--cached", "--ignore-unmatch", "dev-loop.local.json")
                 if row.startswith("tracked"):
@@ -254,7 +264,7 @@ class NotesPathTests(unittest.TestCase):
                     git_in(self.repo, "add", "-f", "dev-loop.local.json")
                     git_in(self.repo, "commit", "-q", "--allow-empty", "-m", "local")
                 else:
-                    write(target, "{not json" if row == "not JSON" else json.dumps({"other": 1}))
+                    write(target, "{not json" if row == "not JSON" else "[]")
                 result = self.run_main(str(self.folder("env")) if row == "tracked with env" else None)
                 if row == "tracked with env":
                     self.assertEqual((result.returncode, result.stdout), (0, f"{self.folder('env')}\n"))

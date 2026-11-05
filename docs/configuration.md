@@ -13,7 +13,7 @@
 Feature folders (`Features/<YYYYMMDD> <Title>/` with `Framing.md`, `Spec.md`, `Plan.md`) live in a notes folder, any local folder. `skill/scripts/notes_path.py` finds it, first match wins:
 
 1. `DEV_LOOP_NOTES` environment variable.
-2. `notes` in `dev-loop.local.json` in the main worktree only; a feature worktree's own copy is never read. This file is gitignored: each person and each machine sets its own path.
+2. `notes` in `dev-loop.local.json` in the main worktree only; a feature worktree's own copy is never read. A file with no `notes` key (only `second_review`, for example) goes on to 3. This file is gitignored: each person and each machine sets its own path.
 3. `notes` in the committed `dev-loop.json`, read from `main` (`origin/main`, else `main`): a key committed only on a branch is ignored. For a team that keeps its notes in the repository (for example `docs/dev-loop`).
 
 A path is absolute, starts with `~`, or is relative to the repository root. The folder must exist. `init --notes=<path>` writes the local file.
