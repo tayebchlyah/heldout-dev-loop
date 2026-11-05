@@ -120,6 +120,15 @@ class RulingParseTests(unittest.TestCase):
         text = note("- 2026-11-01 (perf, Run 9): z", "Output:", reopen)
         self.assertEqual(release.security_items(text, "v3.0.0"), ([], []))
 
+    def test_other_bullet_that_names_security_is_unparsed(self) -> None:
+        for bullet in ("* 2026-11-02 (security, confirmed, Run 9): y", "+ 2026-11-02 (security, confirmed, Run 9): y",
+                       " - 2026-11-02 (security, confirmed, Run 9): y", " * a security note"):
+            with self.subTest(bullet=bullet):
+                self.assertEqual(release.security_items(note(bullet), "v3.0.0"), ([], [bullet]))
+                self.assertEqual(scan([ACCEPT, bullet, "  - Ruling 2026-11-05: accept x"], "v3.0.0"),
+                                 (False, [bullet, "  - Ruling 2026-11-05: accept x"]))
+        self.assertEqual(scan([ACCEPT, "* a note", " - a note", "  - Verdict: security of x"], "v3.0.0"), (False, []))
+
     def test_pasted_output_in_a_fence_is_content(self) -> None:
         lines = ["  - Ruling 2026-11-02: fix #170 patch", "  ```", '{"ok": false}', "  - Ruling 2026-11-04: accept old", "  ```"]
         self.assertEqual(scan(lines, "v3.0.0"), (True, []))
@@ -203,6 +212,9 @@ class RulingCheckTests(unittest.TestCase):
         self.set_note(ITEM, bad)
         self.assertEqual(self.reasons("--tag", "v3.0.0-rc.5"), [{"reason": "open-security", "items": [ITEM]},
                                                                 {"reason": "unparsed-security", "lines": [bad]}])
+        reopen = "  - Ruling 2026-11-05: fix #300 check shows it open"
+        self.set_note(ITEM, ACCEPT, "Output:", reopen)
+        self.assertEqual(self.reasons("--tag", "v3.0.0"), [{"reason": "unparsed-security", "lines": [reopen]}])
 
     def test_contract_text(self) -> None:
         text = (ROOT / "reference" / "cli" / "release-check.md").read_text()
