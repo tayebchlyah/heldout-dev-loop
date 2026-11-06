@@ -134,7 +134,6 @@ def setup_lines(repo: Path) -> list[str]:
 
 
 def decide(hook: object, env: Mapping[str, str]) -> dict:
-    """The skill rule on one `Skill` hook call: `{"deny": bool, "reason": str | None}`; the first failed condition names the reason."""
     tool_input = hook.get("tool_input") if isinstance(hook, dict) else None
     name = tool_input.get("skill") if isinstance(tool_input, dict) else None
     places = (hook.get("cwd"), env.get("CLAUDE_PROJECT_DIR")) if isinstance(hook, dict) else ()
