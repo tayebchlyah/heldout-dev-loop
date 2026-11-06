@@ -178,7 +178,9 @@ class RepoDocsTests(unittest.TestCase):
             (gaps, ".codex/hooks.json"),
             (gaps, "turn a hook off"),
             (gaps, "stale `trusted_hash`"),
-            (gaps, "the kit profile denies an agent write to `.codex/hooks.json`"),
+            (gaps, "only at the top of an outermost write root"),
+            (gaps, "`features.hooks = false`"),
+            (gaps, "`merge-check` `harness-config`"),
         ):
             with self.subTest(value=value):
                 self.assertIn(value, text)
