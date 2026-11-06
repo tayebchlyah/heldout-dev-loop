@@ -279,7 +279,7 @@ class DenyWallScopeTests(unittest.TestCase):
 
     def test_the_spec_tester_keeps_its_exemption(self) -> None:
         payload = self.subagent({"file_path": f"{self.HELD_OUT}/login_test.py"})
-        payload["agent_type"] = "spec-tester"
+        payload.update(agent_type="spec-tester", tool_name="Write")
         result = self.run_claude("deny-acceptance-to-subagents.sh", payload)
         self.assertEqual(result.returncode, 0)
 

@@ -48,6 +48,16 @@
 # do not give is reported, never guessed. Other subagents keep them, with the name rule on url. A
 # project agent's frontmatter hooks are skipped in an untrusted folder or a -p or SDK session; this
 # hook holds every rule of the implementer and spec-tester walls (#139).
+# Nested routes (#273): implementer and spec-tester get a closed tool list: the tools key of their agent
+# file (Read, Edit, Write, NotebookEdit, Grep, Glob, Bash, Monitor, Skill, ToolSearch; spec-tester: no Skill)
+# plus SubagentHandback. Any other tool is denied, SendMessage, RemoteTrigger and a future tool included,
+# so the settings entry has matcher .*. The LSP, MCP, web and Agent denials stay and come first.
+# Skill: implementer may name exactly mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs or
+# mattpocock-skills:codebase-design (tdd calls it); a bare name can resolve to a project skill, so it is a
+# deny. spec-tester: every Skill call is denied. A skill denial is no stop. The main session and every other
+# subagent keep these tools. Not walled: a general-purpose subagent can still start a spec-tester fork; a
+# Bash edit of the plugin cache copy of an allowed skill; a project skill folder whose name imitates an
+# allowed name.
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
@@ -121,6 +131,20 @@ case "$TOOL" in
   WebFetch|WebSearch|Agent)
     case "$(echo "$IN" | jq -r '.agent_type // empty')" in
       implementer|spec-tester) echo "Blocked: $TOOL is closed to this agent: the web holds a public copy of the repository, a nested agent has no wall. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2; exit 2 ;;
+    esac ;;
+esac
+AGENT=$(echo "$IN" | jq -r '.agent_type // empty')
+case "$AGENT:$TOOL" in
+  implementer:Skill)
+    if ! printf '%s' "$IN" | jq -e '.tool_input.skill? | IN("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", "mattpocock-skills:codebase-design")' >/dev/null 2>&1; then
+      SKILL=$(printf '%s' "$IN" | jq -r '.tool_input.skill? // "" | tostring | gsub("[\r\n]+"; " ")')
+      echo "Blocked: skill ${SKILL:-(none)} is closed to this agent: the open skills are mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs and mattpocock-skills:codebase-design. Use an allowed name, or go on without the skill." >&2
+      exit 2
+    fi ;;
+  implementer:*|spec-tester:*)
+    case "$TOOL" in
+      Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|ToolSearch|SubagentHandback) ;;
+      *) echo "Blocked: $TOOL is closed to this agent: only the tools of its agent file are open. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2; exit 2 ;;
     esac ;;
 esac
 TESTER=
