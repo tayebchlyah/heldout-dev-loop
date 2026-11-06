@@ -17,7 +17,8 @@ import unittest
 from pathlib import Path
 
 from tool_walls_support import (AGENT_MATCHER, CLAUDE_AGENTS, CLAUDE_FRAGMENT, CLAUDE_MATCHER, CODEX_FRAGMENT,
-                                CODEX_MATCHER, CODEX_WALL, DENY_PATH, DISALLOWED, INSTALLER, KIT_REFERENCE, NET, git)
+                                CODEX_MATCHER, CODEX_WALL, DENY_PATH, DISALLOWED, IMPLEMENTER_TOOLS, INSTALLER,
+                                KIT_REFERENCE, NET, SPEC_TESTER_TOOLS, git)
 
 OLD_CLAUDE_MATCHER = "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash"
 OLD_CODEX_MATCHER = "Bash|apply_patch"
@@ -64,9 +65,9 @@ def entry_matcher(entry: str) -> str:
     return re.search(r"matcher\s*:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", entry, re.MULTILINE).group(1)
 
 
-def disallowed_tools(text: str) -> list[str] | None:
-    """The `disallowedTools` names of a frontmatter: an inline list or string, or a block list."""
-    match = re.search(r"^disallowedTools\s*:[ \t]*(.*)$", text, re.MULTILINE)
+def frontmatter_names(text: str, key: str) -> list[str] | None:
+    """The names of a frontmatter list key: an inline list or string, or a block list."""
+    match = re.search(rf"^{key}\s*:[ \t]*(.*)$", text, re.MULTILINE)
     if not match:
         return None
     inline = match.group(1).strip()
@@ -107,16 +108,16 @@ class InstallUpgradeTests(unittest.TestCase):
         self.install("init", project, "--yes", "--harness=both", f"--notes={self.notes}")
         return project
 
-    def assert_agent(self, path: Path) -> None:
-        """D8, D9 in an agent file: the `deny-path.sh` entry matcher, `onFailure` block, `disallowedTools`."""
+    def assert_agent(self, path: Path, tools: list[str]) -> None:
+        """D8, D9 in an agent file: the `deny-path.sh` entry matcher, `onFailure` block, `disallowedTools`, `tools`."""
         text = frontmatter(path)
         entries = [e for e in frontmatter_entries(text) if DENY_PATH in e]
         self.assertTrue(entries, f"no {DENY_PATH} entry in {path}")
         for entry in entries:
             self.assertEqual(entry_matcher(entry), AGENT_MATCHER, path)
             self.assertTrue(re.search(r"onFailure\s*:\s*[\"']?block[\"']?", entry), f"no onFailure block in {path}")
-        self.assertEqual(sorted(disallowed_tools(text) or []), sorted(DISALLOWED), path)
-        self.assertIsNone(re.search(r"^tools\s*:", text, re.MULTILINE), f"a tools key in {path}")
+        self.assertEqual(sorted(frontmatter_names(text, "disallowedTools") or []), sorted(DISALLOWED), path)
+        self.assertEqual(sorted(frontmatter_names(text, "tools") or []), sorted(tools), path)
 
     def assert_one_entry(self, config: dict, script: str, matcher: str) -> None:
         found = groups_running(config, script)
@@ -127,7 +128,9 @@ class InstallUpgradeTests(unittest.TestCase):
         """O14 to O18: the kit source matchers and agent keys; `init` writes them; `upgrade` replaces the earlier
         wall entries and keeps a user entry; `reference/kit.md` names the Codex hook trust step. O14 to O17 as
         amended by Walled Agents No Web O7 to O10: the web tools and `Agent` in the matchers and
-        `disallowedTools`, no `web_search` key after `init`, a project `web_search` kept by `upgrade`."""
+        `disallowedTools`, no `web_search` key after `init`, a project `web_search` kept by `upgrade`. As amended
+        by Walled Agents Nested Routes O11 to O14: the settings matcher `.*`, the Codex collaboration names and
+        the `tools` key."""
         # O14, O15: the kit source.
         claude_fragment = json.loads(CLAUDE_FRAGMENT.read_text())
         self.assert_one_entry(claude_fragment, NET, CLAUDE_MATCHER)
@@ -137,17 +140,17 @@ class InstallUpgradeTests(unittest.TestCase):
                     with self.subTest(oracle="O14", script=script, hook=hook.get("command")):
                         self.assertEqual(hook.get("onFailure"), "block", script)
         self.assert_one_entry(json.loads(CODEX_FRAGMENT.read_text()), CODEX_WALL, CODEX_MATCHER)
-        for name in ("implementer.md", "spec-tester.md"):
+        for name, tools in (("implementer.md", IMPLEMENTER_TOOLS), ("spec-tester.md", SPEC_TESTER_TOOLS)):
             with self.subTest(oracle="O14, O15", agent=f"claude/agents/{name}"):
-                self.assert_agent(CLAUDE_AGENTS / name)
+                self.assert_agent(CLAUDE_AGENTS / name, tools)
 
         # O16: init.
         fresh = self.project("fresh-gizmos")
         self.assert_one_entry(json.loads((fresh / ".claude" / "settings.json").read_text()), NET, CLAUDE_MATCHER)
         self.assert_one_entry(json.loads((fresh / ".codex" / "hooks.json").read_text()), CODEX_WALL, CODEX_MATCHER)
-        for name in ("implementer.md", "spec-tester.md"):
+        for name, tools in (("implementer.md", IMPLEMENTER_TOOLS), ("spec-tester.md", SPEC_TESTER_TOOLS)):
             with self.subTest(oracle="O16", agent=f".claude/agents/{name}"):
-                self.assert_agent(fresh / ".claude" / "agents" / name)
+                self.assert_agent(fresh / ".claude" / "agents" / name, tools)
         with self.subTest(oracle="O16", file=".codex/config.toml"):
             config = tomllib.loads((fresh / ".codex" / "config.toml").read_text())
             self.assertNotIn("web_search", toml_keys(config))
