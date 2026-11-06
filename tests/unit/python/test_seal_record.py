@@ -155,3 +155,85 @@ class SealWritesTests(SealRepo):
         git(self.repo, "checkout", "-q", "--detach")
         self.seal(SUITE, "a\n")
         self.assertIsNone(read_record(self.repo))
+
+
+TWELVE = "".join(f"line {i}\n" for i in range(12))
+OTHER = f"{ACCEPTANCE_DIR}/other/test_other.py"
+
+
+def seal_conflict(case: SealRepo, paths: tuple[str, ...] = (SUITE,)) -> list[str]:
+    git(case.repo, "checkout", "-q", "main")
+    for path in paths:
+        case.commit(path, TWELVE)
+    git(case.repo, "checkout", "-q", "-B", "feat/x", "main")
+    old = []
+    for path in paths:
+        case.seal(path, TWELVE.replace("line 8\n", "line 8\nadded\n"))
+        old.append(trailer(case.repo, PATCH_TRAILER))
+    git(case.repo, "checkout", "-q", "main")
+    for path in paths:
+        case.commit(path, TWELVE.replace("line 8\n", "line 8 upstream\n"))
+    git(case.repo, "checkout", "-q", "feat/x")
+    stop(case.repo, "rebase", "main")
+    return old
+
+
+def resolve(case: SealRepo, path: str = SUITE) -> tuple[int, dict]:
+    put(case.repo / path, TWELVE.replace("line 8\n", "line 8 upstream\nadded\n"))
+    git(case.repo, "add", "--", path)
+    return run_cli("seal", "--rebase-continue", cwd=case.repo)
+
+
+class RebaseContinueTests(SealRepo):
+    def test_rebase_continue_appends_the_new_value(self) -> None:
+        [old] = seal_conflict(self)
+        code, out = resolve(self)
+        self.assertEqual((code, out.get("rebase")), (0, "continued"), out)
+        [entry] = read_record(self.repo) or []
+        new = trailer(self.repo, PATCH_TRAILER)
+        self.assertNotEqual(old, new)
+        self.assertEqual((entry["patches"], entry["commit"], entry["seal"]),
+                         ([old, new], git(self.repo, "rev-parse", "HEAD").strip(), out["seal"]))
+
+    def test_no_record_stays_no_record(self) -> None:
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, TWELVE)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        self.seal(SUITE, TWELVE.replace("line 8\n", "line 8\nadded\n"))
+        record_file(self.repo).unlink()
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, TWELVE.replace("line 8\n", "line 8 upstream\n"))
+        git(self.repo, "checkout", "-q", "feat/x")
+        stop(self.repo, "rebase", "main")
+        self.assertEqual(resolve(self)[1].get("rebase"), "continued")
+        self.assertFalse(record_file(self.repo).exists())
+
+    def test_no_matching_entry_adds_one(self) -> None:
+        [old] = seal_conflict(self)
+        record_file(self.repo).write_text(json.dumps({"seals": [{**ENTRY, "branch": "refs/heads/other"}]}),
+                                          encoding="utf-8")
+        self.assertEqual(resolve(self)[0], 0)
+        record = read_record(self.repo) or []
+        self.assertEqual(len(record), 2)
+        self.assertEqual((record[1]["branch"], record[1]["patches"], record[1]["feature"]),
+                         ("refs/heads/feat/x", [old, trailer(self.repo, PATCH_TRAILER)], "x"))
+
+    def test_two_stops_update_two_entries(self) -> None:
+        old = seal_conflict(self, (SUITE, OTHER))
+        self.assertEqual(resolve(self, SUITE)[1].get("rebase"), "stopped")
+        self.assertEqual(resolve(self, OTHER)[1].get("rebase"), "continued")
+        record = read_record(self.repo) or []
+        heads = [git(self.repo, "rev-parse", rev).strip() for rev in ("HEAD~1", "HEAD")]
+        news = [trailer(self.repo, PATCH_TRAILER, rev) for rev in ("HEAD~1", "HEAD")]
+        self.assertEqual([(e["patches"], e["commit"]) for e in record],
+                         [([old[0], news[0]], heads[0]), ([old[1], news[1]], heads[1])])
+
+    def test_failed_run_changes_nothing(self) -> None:
+        seal_conflict(self)
+        before = record_file(self.repo).read_bytes()
+        put(self.repo / SUITE, TWELVE.replace("line 8\n", "line 8 upstream\nadded\n"))
+        put(self.repo / "README.md", "outside\n")
+        git(self.repo, "add", "-A")
+        code, out = run_cli("seal", "--rebase-continue", cwd=self.repo)
+        self.assertEqual(code, 1, out)
+        self.assertEqual(record_file(self.repo).read_bytes(), before)
