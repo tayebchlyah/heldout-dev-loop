@@ -13,6 +13,7 @@ One file per subject. A new test file adds its line here.
 - `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, `gate` and `seal` size; seal hooks, guard, spec-tester, Codex walls.
 - `test_kit_walls.py`, `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: path, kit, `cd` walls, canary script, Codex trust warning; deny walls, Codex hooks, git and gh guard.
 - `test_frontmatter_walls.py`: the settings twin of each agent frontmatter wall.
+- `test_canary_nested.py`: `scripts/canary.sh` nested route verdict and run, the #273 upgrade note.
 - `test_board_robust.py`, `test_notes_migrate.py`, `test_notes_migrate_apply.py`: board robustness; `notes-migrate`.
 - `test_board_shipped.py`: board shipped notes kept, `board.shipped_kept`.
 - `test_board_links.py`: board no-follow: state files, server log, linked specs and plans.
