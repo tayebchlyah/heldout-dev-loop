@@ -35,6 +35,12 @@ CODE_CALL = ("exec", "await tools.spawn_agent({})", "input", "custom_tool_call")
 CLAUDE_BLOCKED = [skill("t1"), skill_result("t1", DENIAL)]
 CODEX_BLOCKED = [spawn("c1"), spawn_result("c1", CODEX_DENIAL)]
 
+FORK = {"type": "session_meta", "payload": {"forked_from_id": "parent"}}
+PARENT_META = {"type": "session_meta", "payload": {"id": "parent"}}
+ABORTED = {"type": "event_msg", "payload": {"type": "turn_aborted"}}
+BOUNDARY = {"type": "event_msg", "payload": {"type": "thread_settings_applied"}}
+INHERITED = [FORK, PARENT_META, spawn("c0"), ABORTED]
+
 CLAUDE_ROWS = [
     ("blocked", CLAUDE_BLOCKED, 0, 0, "blocked"),
     ("no-denial", [skill("t1"), skill_result("t1", "forked")], 0, 1, "LEAK"),
@@ -73,6 +79,10 @@ CODEX_ROWS = [
     ("harness-failed", CODEX_BLOCKED, 1, 1, "ERROR"),
     ("no-transcript", None, 0, 1, "ERROR"),
     ("crash", [{"call_id": [1], "output": "x"}], 0, 1, "ERROR"),
+    ("forked-blocked", INHERITED + [BOUNDARY, spawn("c1"), spawn_result("c1", CODEX_DENIAL)], 0, 0, "blocked"),
+    ("forked-own-leak", INHERITED + [BOUNDARY, spawn("c1"), spawn_result("c1", "started")], 0, 1, "LEAK"),
+    ("forked-no-boundary", INHERITED, 0, 1, "LEAK"),
+    ("forked-refused", INHERITED + [BOUNDARY], 0, 0, "refused"),
 ]
 
 
