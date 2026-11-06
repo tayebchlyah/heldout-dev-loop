@@ -177,6 +177,8 @@ class RepoDocsTests(unittest.TestCase):
             (paragraph, "1 MB"),
             (gaps, ".codex/hooks.json"),
             (gaps, "turn a hook off"),
+            (gaps, "stale `trusted_hash`"),
+            (gaps, "the kit profile denies an agent write to `.codex/hooks.json`"),
         ):
             with self.subTest(value=value):
                 self.assertIn(value, text)
