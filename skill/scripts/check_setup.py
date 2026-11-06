@@ -24,6 +24,7 @@ from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout, security
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
+from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
 
@@ -282,6 +283,8 @@ def check_project_config(repo: Path) -> list[str]:
         failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
     if "file_size_exempt" in config and not exempt_ok(config["file_size_exempt"]):
         failures.append(EXEMPT_ERROR)
+    if "walled_skills" in config and not names_ok(config["walled_skills"]):
+        failures.append(NAMES_ERROR)
     if "security_audit" in config and audit_images(config) is None:
         failures.append(AUDIT_SHAPE)
     if config.get("release_notes", "cliff") not in ("cliff", "written"):
@@ -802,18 +805,17 @@ def main() -> int:
     action_groups += [(line, []) for line in check_agent_shell(args.harness, os.environ)]
     action_groups += [(line, []) for line in ci.check_github(args.repo)]
 
-    if failures or action_groups:
-        print(f"{args.harness}: FAIL")
-        for failure in failures:
-            print(f"- {failure}")
-        if action_groups:
-            print()
-            print("User actions required (expected manual steps, not install defects):")
-            for heading, items in action_groups:
-                print(f"- {heading} ({'; '.join(items)})" if items else f"- {heading}")
-        return 1
-    print(f"{args.harness}: PASS")
-    return 0
+    notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
+    blocked = failures or action_groups
+    print(f"{args.harness}: {'FAIL' if blocked else 'PASS'}")
+    for failure in failures:
+        print(f"- {failure}")
+    if action_groups or notices:
+        print()
+        print("User actions required (expected manual steps, not install defects):")
+        for heading, items in action_groups + notices:
+            print(f"- {heading} ({'; '.join(items)})" if items else f"- {heading}")
+    return 1 if blocked else 0
 
 
 if __name__ == "__main__":

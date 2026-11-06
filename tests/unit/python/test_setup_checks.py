@@ -13,6 +13,24 @@ from unittest import mock
 
 from support import CHECKER, check_setup, checker_env, write
 
+from seal.skills import NAMES_ERROR  # noqa: E402
+
+ROOT = CHECKER.parents[2]
+
+
+class WalledSkillsConfigTests(unittest.TestCase):
+    def test_shape(self) -> None:
+        rows = [("pg-guide", False), ([""], False), (["a:b"], False), (["A"], False), ([1], False),
+                (["pg-guide"], True), ([], True)]
+        for value, good in rows:
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
+                write(Path(tmp) / "dev-loop.json", json.dumps({"walled_skills": value}))
+                self.assertEqual(check_setup.check_project_config(Path(tmp)), [] if good else [NAMES_ERROR])
+
+    def test_the_docs_name_the_key(self) -> None:
+        for doc in ("reference/kit.md", "docs/configuration.md"):
+            self.assertIn("walled_skills", (ROOT / doc).read_text())
+
 
 class BoardVaultCheckTests(unittest.TestCase):
     GITIGNORE_LINE = "add Dev Loop Board/ to the vault .gitignore, unless a partner receives the notes by git"

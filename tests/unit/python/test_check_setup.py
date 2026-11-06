@@ -239,7 +239,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         for name in check_setup.CODEX_SKILLS:
             write(self.home / ".agents" / "skills" / name / "SKILL.md", f"name: {name}\n")
 
-    def test_claude_project_passes(self) -> None:
+    def claude_ready(self) -> None:
         self.init("claude")
         self.install_security_audit()
         # Stage 0 writes the repo walls; init does not.
@@ -252,9 +252,23 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         ]
         settings.setdefault("env", {}).update({"ENABLE_STOP_REVIEW": "0", "ENABLE_COMMIT_REVIEW": "0", "SG_PUSH_SWEEP": "0", "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"})
         path.write_text(json.dumps(settings))
+
+    def test_claude_project_passes(self) -> None:
+        self.claude_ready()
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("claude: PASS", result.stdout)
+
+    def test_an_unusable_walled_skill_is_no_failure(self) -> None:
+        self.claude_ready()
+        path = self.repo / "dev-loop.json"
+        path.write_text(json.dumps({**json.loads(path.read_text()), "walled_skills": ["pg-guide"]}))
+        subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "x"], cwd=self.repo, check=True)
+        result = self.run_checker("claude")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("claude: PASS", result.stdout)
+        self.assertGreater(result.stdout.index("pg-guide"), result.stdout.index("User actions required"))
 
     def test_a_disabled_rebase_merge_is_a_user_action(self) -> None:
         self.init()
