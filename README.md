@@ -1,4 +1,9 @@
-# heldout-dev-loop
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="heldout-dev-loop" width="520">
+  </picture>
+</h1>
 
 [![CI](https://github.com/tayebchlyah/heldout-dev-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/tayebchlyah/heldout-dev-loop/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -16,18 +21,10 @@ The rest of the loop keeps the agent honest in the same way: three reviewers and
 
 ## The loop
 
-```mermaid
-flowchart LR
-  S0[0 Bootstrap] --> S1
-  subgraph Shaping
-    S1[1 Frame] --> S2[2 Spec]
-  end
-  S2 -->|you approve the spec| S3
-  subgraph Delivery
-    S3[3 Acceptance tests] --> S4[4 Plan] --> S5[5 Build] --> S6[6 Feature gate] --> S7[7 Ship]
-  end
-  S1 -.->|"Track S: no spec, no plan"| S5
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/the-loop-dark.png">
+  <img src="assets/the-loop.png" alt="Stage 0 Bootstrap once per repo. Shaping: 1 Frame, 2 Spec. You approve the spec. Delivery: 3 Acceptance tests, 4 Plan, 5 Build, 6 Feature gate, 7 Ship. Track S goes from 1 Frame to 5 Build, no spec, no plan.">
+</picture>
 
 - **0 Bootstrap**: once per repository: the gate script, the stacks, the notes folder.
 - **1 Frame**: a grilling session sizes the work as Track S, M or L.

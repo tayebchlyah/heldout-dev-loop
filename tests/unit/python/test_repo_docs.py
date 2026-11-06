@@ -42,10 +42,11 @@ class RepoDocsTests(unittest.TestCase):
 
     def test_readme_sections_in_order(self) -> None:
         readme = (ROOT / "README.md").read_text()
-        self.assertEqual(readme.splitlines()[0], "# heldout-dev-loop")
+        self.assertEqual(readme.splitlines()[0], '<h1 align="center">')
+        self.assertIn("assets/logo.svg", readme)
         self.assertEqual(re.findall(r"^## (.+)$", readme, re.M), README_SECTIONS)
         self.assertEqual(re.findall(r"^### (.+)$", readme_section(readme, "How it works"), re.M), HOW_IT_WORKS)
-        self.assertIn("```mermaid", readme_section(readme, "The loop"))
+        self.assertIn("assets/the-loop.png", readme_section(readme, "The loop"))
         self.assertIn("actions/workflows/ci.yml/badge.svg", readme)
         self.assertIn("license-MIT", readme)
 

@@ -1,0 +1,154 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "The dev-loop stages",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "output": "the-loop.html",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "setup",
+      "label": "Once per repo"
+    },
+    {
+      "id": "shaping",
+      "label": "Shaping"
+    },
+    {
+      "id": "delivery",
+      "label": "Delivery"
+    }
+  ],
+  "mainPath": [
+    "s3",
+    "s4",
+    "s5",
+    "s6",
+    "s7"
+  ],
+  "nodes": [
+    {
+      "id": "s0",
+      "lane": "setup",
+      "col": 0,
+      "type": "external",
+      "label": "0 Bootstrap",
+      "sublabel": "gate, stacks, notes"
+    },
+    {
+      "id": "s1",
+      "lane": "shaping",
+      "col": 1,
+      "type": "frontend",
+      "label": "1 Frame",
+      "sublabel": "size: Track S, M, L"
+    },
+    {
+      "id": "s2",
+      "lane": "shaping",
+      "col": 2,
+      "type": "frontend",
+      "label": "2 Spec",
+      "sublabel": "spec and oracle"
+    },
+    {
+      "id": "s3",
+      "lane": "delivery",
+      "col": 1,
+      "type": "security",
+      "label": "3 Acceptance tests",
+      "sublabel": "held out, sealed"
+    },
+    {
+      "id": "s4",
+      "lane": "delivery",
+      "col": 2,
+      "type": "backend",
+      "label": "4 Plan",
+      "sublabel": "small tasks"
+    },
+    {
+      "id": "s5",
+      "lane": "delivery",
+      "col": 3,
+      "type": "backend",
+      "label": "5 Build",
+      "sublabel": "test-first"
+    },
+    {
+      "id": "s6",
+      "lane": "delivery",
+      "col": 4,
+      "type": "security",
+      "label": "6 Feature gate",
+      "sublabel": "review, drive, acceptance"
+    },
+    {
+      "id": "s7",
+      "lane": "delivery",
+      "col": 5,
+      "type": "cloud",
+      "label": "7 Ship",
+      "sublabel": "PR, CI, merge"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e01",
+      "from": "s0",
+      "to": "s1",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "e12",
+      "from": "s1",
+      "to": "s2"
+    },
+    {
+      "id": "e23",
+      "from": "s2",
+      "to": "s3",
+      "label": "you approve the spec",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e34",
+      "from": "s3",
+      "to": "s4"
+    },
+    {
+      "id": "e45",
+      "from": "s4",
+      "to": "s5"
+    },
+    {
+      "id": "e56",
+      "from": "s5",
+      "to": "s6"
+    },
+    {
+      "id": "e67",
+      "from": "s6",
+      "to": "s7"
+    },
+    {
+      "id": "track-s",
+      "from": "s1",
+      "to": "s5",
+      "label": "Track S: no spec, no plan",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "up-channel"
+    }
+  ]
+}
