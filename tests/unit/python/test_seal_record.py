@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from test_seal import SUITE
-from test_seal_check import SealRepo
+from test_seal_check import PASSING_GATE, SealRepo
 
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER  # noqa: E402
 from seal.record import (  # noqa: E402
@@ -237,3 +237,126 @@ class RebaseContinueTests(SealRepo):
         code, out = run_cli("seal", "--rebase-continue", cwd=self.repo)
         self.assertEqual(code, 1, out)
         self.assertEqual(record_file(self.repo).read_bytes(), before)
+
+
+THIRTY = "".join(f"line {i}\n" for i in range(30))
+OK = (0, {"ok": True, "violations": [], "taint": [], "warnings": []})
+
+
+class SealDroppedTests(SealRepo):
+    def two_seals(self) -> tuple[str, str, str]:
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, THIRTY)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        base = git(self.repo, "rev-parse", "HEAD").strip()
+        s1 = self.seal(SUITE, THIRTY.replace("line 1\n", "line 1\nfirst\n"))
+        s2 = self.seal(SUITE, THIRTY.replace("line 1\n", "line 1\nfirst\n").replace("line 25\n", "line 25\nsecond\n"))
+        return base, s1, s2
+
+    def dropped(self, out: dict) -> list[dict]:
+        return [v for v in out["violations"] if v["reason"] == "seal-dropped"]
+
+    def entry(self, sha: str) -> dict:
+        return next(e for e in read_record(self.repo) or [] if e["commit"] == sha)
+
+    def test_rebase_onto_drops_the_first_seal(self) -> None:
+        base, s1, _ = self.two_seals()
+        git(self.repo, "rebase", "-q", "--onto", base, s1)
+        code, out = self.check()
+        self.assertEqual(code, 1, out)
+        self.assertEqual(out["violations"], [{"reason": "seal-dropped", "commit": s1, "path": None, "paths": [SUITE],
+                                              "patch": self.entry(s1)["patches"][-1]}])
+
+    def test_reset_drops_the_last_seal(self) -> None:
+        _, s1, s2 = self.two_seals()
+        git(self.repo, "reset", "-q", "--hard", s1)
+        self.assertEqual([v["commit"] for v in self.dropped(self.check()[1])], [s2])
+
+    def test_reset_to_base_drops_both(self) -> None:
+        base, s1, s2 = self.two_seals()
+        git(self.repo, "reset", "-q", "--hard", base)
+        code, out = self.check()
+        self.assertEqual((code, [v["commit"] for v in self.dropped(out)]), (1, [s1, s2]))
+
+    def test_clean_rebase_keeps_both(self) -> None:
+        self.two_seals()
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, THIRTY.replace("line 15\n", "line 15 upstream\n"))
+        git(self.repo, "checkout", "-q", "feat/x")
+        git(self.repo, "rebase", "-q", "main")
+        self.assertEqual(self.check(), OK)
+
+    def test_rebase_continue_then_undo(self) -> None:
+        seal_conflict(self)
+        self.assertEqual(resolve(self)[1].get("rebase"), "continued")
+        self.assertEqual(self.check(), OK)
+        git(self.repo, "reset", "-q", "--hard", "ORIG_HEAD")
+        self.assertEqual(self.check(), OK)
+
+    def test_amend_is_bad_seal_only(self) -> None:
+        self.seal(SUITE, "a\n")
+        put(self.repo / SUITE, "b\n")
+        git(self.repo, "commit", "-q", "-a", "--amend", "--no-edit")
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        self.assertIn(("bad-seal", head, None), self.violations())
+        self.assertEqual(self.dropped(self.check()[1]), [])
+
+    def test_cherry_pick_puts_it_back(self) -> None:
+        base, s1, _ = self.two_seals()
+        git(self.repo, "rebase", "-q", "--onto", base, s1)
+        git(self.repo, "cherry-pick", s1)
+        self.assertEqual(self.check(), OK)
+
+    def test_removed_record_is_no_check(self) -> None:
+        base, s1, _ = self.two_seals()
+        git(self.repo, "rebase", "-q", "--onto", base, s1)
+        record_file(self.repo).unlink()
+        self.assertEqual(self.dropped(self.check()[1]), [])
+
+    def test_unreadable_record(self) -> None:
+        self.seal(SUITE, "a\n")
+        for text in ("not json", '{"seals": {}}'):
+            with self.subTest(text=text):
+                record_file(self.repo).write_text(text, encoding="utf-8")
+                code, out = self.check()
+                self.assertEqual(code, 1, out)
+                self.assertIn({"reason": "seal-record-unreadable", "commit": None, "path": str(record_file(self.repo))},
+                              out["violations"])
+
+    def test_merged_branch_is_ok(self) -> None:
+        self.two_seals()
+        git(self.repo, "branch", "-f", "main", "HEAD")
+        self.assertEqual(self.check(), OK)
+
+    def test_gate_fails_on_a_dropped_seal(self) -> None:
+        base, s1, _ = self.two_seals()
+        git(self.repo, "rebase", "-q", "--onto", base, s1)
+        put(self.repo / "scripts" / "gate.sh", PASSING_GATE)
+        (self.repo / "scripts" / "gate.sh").chmod(0o755)
+        code, out = run_cli("gate", "--summary", cwd=self.repo)
+        self.assertEqual((code, out["seal"]["ok"]), (1, False), out)
+        self.assertIn("seal-dropped", [v["reason"] for v in out["seal"]["violations"]])
+
+    def test_other_branch_is_not_checked(self) -> None:
+        base, _, _ = self.two_seals()
+        git(self.repo, "switch", "-q", "-c", "other", base)
+        self.assertEqual(self.dropped(self.check()[1]), [])
+        git(self.repo, "switch", "-q", "main")
+        self.seal(OTHER, "o\n")
+        git(self.repo, "switch", "-q", "feat/x")
+        self.assertEqual(self.dropped(self.check()[1]), [])
+
+    def test_stopped_rebase_skips_the_check(self) -> None:
+        git(self.repo, "checkout", "-q", "main")
+        self.commit(SUITE, THIRTY)
+        git(self.repo, "checkout", "-q", "-B", "feat/x", "main")
+        self.seal(SUITE, THIRTY.replace("line 1\n", "line 1\nfirst\n"))
+        self.commit("README.md", "branch side\n")
+        self.seal(SUITE, THIRTY.replace("line 1\n", "line 1\nfirst\n").replace("line 25\n", "line 25\nsecond\n"))
+        git(self.repo, "checkout", "-q", "main")
+        self.commit("README.md", "main side\n")
+        git(self.repo, "checkout", "-q", "feat/x")
+        stop(self.repo, "rebase", "main")
+        _, out = self.check()
+        self.assertEqual(self.dropped(out), [])
+        self.assertIn({"reason": "seal-record-skipped", "why": "rebase"}, out["warnings"])
