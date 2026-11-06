@@ -575,12 +575,26 @@ def walk(o):
         for v in o.values():
             walk(v)
 
-for name in sys.argv[2:]:
+def records(name):
+    out = []
     for line in open(name, errors="replace"):
         try:
-            walk(json.loads(line))
+            out.append(json.loads(line))
         except ValueError:
             pass
+    return out
+
+def own_part(recs):
+    forked = any(r.get("type") == "session_meta" and "forked_from_id" in r.get("payload", {}) for r in recs)
+    for i, r in enumerate(recs):
+        if forked and r.get("payload", {}).get("type") == "thread_settings_applied":
+            return recs[i + 1:]
+    return recs
+
+for name in sys.argv[2:]:
+    recs = records(name)
+    for r in own_part(recs) if harness == "codex" else recs:
+        walk(r)
 if any(not any("closed to this agent" in r for r in results.get(c, [])) for c in calls):
     print("LEAK")
 else:
