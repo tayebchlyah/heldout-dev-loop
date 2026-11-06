@@ -199,7 +199,8 @@ def rebase_continue(repo: Path) -> dict:
         unmerged = run_git(repo, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")
         out = {"seal": value, "files": files, "rebase": "stopped", "conflicts": [p for p in unmerged if p]}
     if branch is not None:
-        commit = patch_carriers(repo).get(patch) or run_git(repo, "rev-parse", "HEAD").stdout.strip()
+        head = run_git(repo, "rev-parse", "HEAD").stdout.strip()
+        commit = patch_carriers(repo).get(patch, [head])[0]
         try:
             replace_patch(repo, old_patch, {"branch": branch, "commit": commit,
                                             "patches": [old_patch, patch] if old_patch else [patch],

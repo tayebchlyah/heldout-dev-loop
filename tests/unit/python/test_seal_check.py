@@ -74,7 +74,8 @@ class SealCheckTests(SealRepo):
         git(self.repo, "reset", "-q", "--hard", "HEAD~1")
         self.seal(SUITE, "a\n")
         self.commit(SUITE, "b\n")
-        self.assertEqual(self.violations(), [("changed-after-seal", None, SUITE)])
+        found = [v for v in self.violations() if v[0] != "seal-dropped"]
+        self.assertEqual(found, [("changed-after-seal", None, SUITE)])
 
     def test_seal_with_a_path_outside_is_bad(self) -> None:
         self.seal(SUITE, "a\n")

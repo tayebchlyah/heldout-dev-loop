@@ -168,8 +168,16 @@ def record_violations(repo: Path) -> tuple[list[dict], list[dict]]:
         return [violation("seal-record-unreadable", path=str(record_file(repo)))], []
     branch = run_git(repo, "symbolic-ref", "-q", "HEAD").stdout.strip()
     carried = patch_carriers(repo)
-    return [{**violation("seal-dropped", commit=seal["commit"]), "paths": seal["paths"], "patch": seal["patches"][-1]}
-            for seal in seals if seal["branch"] == branch and not any(p in carried for p in seal["patches"])], []
+    used: set[str] = set()
+    dropped = []
+    for seal in (seal for seal in seals if seal["branch"] == branch):
+        free = [sha for value in seal["patches"] for sha in carried.get(value, []) if sha not in used]
+        if free:
+            used.add(free[0])
+        else:
+            dropped.append({**violation("seal-dropped", commit=seal["commit"]), "paths": seal["paths"],
+                            "patch": seal["patches"][-1]})
+    return dropped, []
 
 
 def check(repo: Path, uncommitted: bool) -> dict:
