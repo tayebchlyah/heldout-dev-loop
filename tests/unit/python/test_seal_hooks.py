@@ -136,6 +136,35 @@ class SealHookTests(unittest.TestCase):
                 self.assertIn(f"changed-before-seal {plain} {SUITE}", reason)
                 self.assertIn("git rebase --onto", reason)
                 self.assertIn("git revert does not clear changed-before-seal", reason)
+                self.assertIn("<sha from commits>", reason)
+                self.assertNotIn("<commit>^", reason)
+
+    def sealed(self, path: str, text: str) -> str:
+        put(self.repo / path, text)
+        git(self.repo, "add", "--", path)
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        return out["commit"]
+
+    def test_seal_dropped_names_the_cherry_pick_remedy(self) -> None:
+        self.sealed(SUITE, "a\n")
+        second = self.sealed(SUITE.replace("test_flow", "test_other"), "b\n")
+        git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn(f"seal-dropped {second}", reason)
+                self.assertIn("git cherry-pick", reason)
+
+    def test_unreadable_record_names_the_user(self) -> None:
+        self.sealed(SUITE, "a\n")
+        record = Path(git(self.repo, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "seals.json"
+        record.write_text("not json", encoding="utf-8")
+        for harness in SHELL:
+            with self.subTest(harness=harness):
+                reason = self.reason(harness)
+                self.assertIn("seal-record-unreadable", reason)
+                self.assertIn("report to the user", reason)
 
     def test_unsealed_alone_has_no_drop_remedy(self) -> None:
         self.commit(SUITE, "def test_flow():\n    pass\n")
