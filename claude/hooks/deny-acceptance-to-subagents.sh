@@ -58,6 +58,9 @@
 # subagent keep these tools. Not walled: a general-purpose subagent can still start a spec-tester fork; a
 # Bash edit of the plugin cache copy of an allowed skill; a project skill folder whose name imitates an
 # allowed name.
+# No wall on a nested harness started from the shell (claude -p, codex exec, another agent CLI): the
+# child has no agent_id, so it gets the main session rules, reads open. The audit does not read its
+# transcript, only what it prints to the parent. A deny by name does not close the route.
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
@@ -138,7 +141,7 @@ case "$AGENT:$TOOL" in
   implementer:Skill)
     if ! printf '%s' "$IN" | jq -e '.tool_input.skill? | IN("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", "mattpocock-skills:codebase-design")' >/dev/null 2>&1; then
       SKILL=$(printf '%s' "$IN" | jq -r '.tool_input.skill? // "" | tostring | gsub("[\r\n]+"; " ")')
-      echo "Blocked: skill ${SKILL:-(none)} is closed to this agent: the open skills are mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs and mattpocock-skills:codebase-design. Use an allowed name, or go on without the skill." >&2
+      echo "Blocked: skill ${SKILL:-(none)} is closed to this agent: the open skills are mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs and mattpocock-skills:codebase-design. Use an allowed name, or go on without the skill. A project skill: read its SKILL.md with Read." >&2
       exit 2
     fi ;;
   implementer:*|spec-tester:*)

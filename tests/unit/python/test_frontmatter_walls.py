@@ -263,7 +263,7 @@ class NestedRouteWallTests(unittest.TestCase):
             with self.subTest(tool_input=tool_input):
                 done = call("implementer", "Skill", tool_input)
                 self.assertEqual((done.returncode, done.stderr.count("\n")), (2, 1), done.stderr)
-                for value in ("is closed to this agent", *ALLOWED_SKILLS, "go on without the skill"):
+                for value in ("is closed to this agent", *ALLOWED_SKILLS, "go on without the skill", "SKILL.md"):
                     self.assertIn(value, done.stderr)
                 self.assertNotIn("NEEDS_FACT", done.stderr)
 
@@ -324,13 +324,17 @@ class NestedRouteWallTests(unittest.TestCase):
         for value in ("`SendMessage`", "`Skill`", "`mattpocock-skills:diagnosing-bugs`", "`tools`",
                       "A `general-purpose` subagent can still start a `spec-tester` fork",
                       "a `Bash` edit of the plugin cache copy of an allowed skill",
-                      "a project skill folder whose name imitates an allowed name"):
+                      "a project skill folder whose name imitates an allowed name",
+                      "nested harness", "SKILL.md", "#274"):
             self.assertIn(value, route)
         self.assertIn("after a skill denial, use a name the denial gives, or go on without the skill",
+                      (ROOT / "claude/agents/implementer.md").read_text())
+        self.assertIn("You can read the SKILL.md of a project skill with Read.",
                       (ROOT / "claude/agents/implementer.md").read_text())
         header = (CLAUDE_HOOKS / TWIN).read_text().split('. "${0%/*}/git-pin.sh"')[0]
         self.assertIn("SendMessage", header)
         self.assertIn("Skill", header)
+        self.assertIn("nested harness", header)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,6 @@ Contradictory test exit: a failing test you were given contradicts the spec. Sto
 
 Outside fact exit: an outside fact that the brief and the repository do not give (no web tool is open to you). Stop. Report `NEEDS_FACT: <question>`, never guess it.
 
-A guard block or a taint report means stop and report; never rephrase the call. One exception: after a search-scope block, search again on named source folders or with the suite excluded. Second exception: after a skill denial, use a name the denial gives, or go on without the skill.
+A guard block or a taint report means stop and report; never rephrase the call. One exception: after a search-scope block, search again on named source folders or with the suite excluded. Second exception: after a skill denial, use a name the denial gives, or go on without the skill. You can read the SKILL.md of a project skill with Read.
 
 Final report ends with a `Discoveries` list: one line per surprise (a fact about the code, a tool or a test the brief did not say), `none` when none. The controller logs them.
