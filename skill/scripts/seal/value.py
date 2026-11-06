@@ -10,16 +10,14 @@ import subprocess
 from pathlib import Path
 
 from devloop import emit
-from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
+from seal import ACCEPTANCE_DIR, PARAGRAPH_BREAK, PATCH, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
 from seal.record import add_seal, patch_carriers, record_branch, replace_patch
 import size
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
 TRAILERS = re.compile(rf"^({SEAL_TRAILER}|{PATCH_TRAILER}):")
-PATCH_LINE = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
 ACCEPTANCE_LINE = re.compile(r"^Acceptance:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
-PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 
 
 def split_last(message: str) -> tuple[str, str]:
@@ -183,7 +181,7 @@ def rebase_continue(repo: Path) -> dict:
         patch = patch_id(repo, *staged_diff(repo))
     except PatchIdFailed as error:
         return {"error": str(error)}
-    old_patch = next(iter(PATCH_LINE.findall(last)), "")
+    old_patch = next((value for value in PATCH.findall(last) if value), "")
     feature = next(iter(ACCEPTANCE_LINE.findall(last)), "")
     branch = record_branch(repo)
     kept = "\n".join(line for line in last.splitlines() if not TRAILERS.match(line))

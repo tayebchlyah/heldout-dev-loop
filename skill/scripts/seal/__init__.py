@@ -9,7 +9,13 @@ from pathlib import Path
 ACCEPTANCE_DIR = "tests/acceptance"
 SEAL_TRAILER = "Dev-Loop-Seal"
 PATCH_TRAILER = "Dev-Loop-Seal-Patch"
+PATCH = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
+PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 SEARCH_WORD = re.compile(r"(?<![\w.-])(?:[efr]?grep|rg|find)(?![\w.-])")
+
+
+def last_paragraph(body: str) -> str:
+    return PARAGRAPH_BREAK.split(body.strip())[-1]
 
 
 def run_git(repo: Path, *args: str, stdin: str | None = None,
