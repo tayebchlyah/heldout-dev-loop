@@ -13,7 +13,8 @@ from test_skill_wall import PLAIN, SKILL, skill_repo, write
 
 WALL = ("bash", "claude/hooks/deny-acceptance-to-subagents.sh")
 FIXED = ("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", "mattpocock-skills:codebase-design")
-CLOSED = "is closed to this agent"
+HELD = "tests/" + "acceptance/x.py"
+CLOSED ="is closed to this agent"
 HOOK_HEADER = (ROOT / WALL[1]).read_text().split('. "${0%/*}/git-pin.sh"')[0]
 
 
@@ -85,12 +86,25 @@ class SkillHookTests(unittest.TestCase):
 
     def test_fails_closed(self) -> None:
         rows = [self.repo(cli=None), self.repo(cli="stub-exit"), self.repo(cli="stub-text"), self.stubbed("print('{}')\n"),
-                self.stubbed("""print('{"deny": "no"}')\n"""), self.stubbed("print('[]')\n")]
+                self.stubbed("""print('{"deny": "no"}')\n"""), self.stubbed("print('[]')\n"),
+                self.stubbed("pass\n"), self.stubbed("""print('{"deny": true, "reason": ""}')\n"""),
+                self.stubbed("""print('{"reason": ""}')\n"""),
+                self.stubbed("""print('{"deny": false}')\nprint('{"deny": false}')\n""")]
         for top in rows:
             with self.subTest(top=top.name):
                 self.denied(call(top, {"skill": "pg-guide"}), CLOSED)
         open_stub = self.stubbed("""print('{"deny": false, "reason": null}')\n""")
         self.assertEqual(call(open_stub, {"skill": "pg-guide"}).returncode, 0)
+
+    def test_args_with_an_at_are_denied(self) -> None:
+        top = self.repo(cli="link")
+        for name in ("pg-guide", "mattpocock-skills:tdd"):
+            with self.subTest(name=name):
+                self.denied(call(top, {"skill": name, "args": "@x.txt"}), "Skill args")
+                self.assertEqual(call(top, {"skill": name, "args": "plain"}).returncode, 0)
+        other = {"agent_id": "a", "agent_type": "general-purpose"}
+        self.assertEqual(call(top, {"skill": "other", "args": "@" + HELD}, other).returncode, 2)
+        self.assertEqual(call(top, {"skill": "other", "args": "@x.txt"}, other).returncode, 0)
 
     def test_the_texts_name_the_route(self) -> None:
         route = (ROOT / "skill" / "references" / "claude.md").read_text()

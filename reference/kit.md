@@ -32,7 +32,7 @@ python3 .agents/skills/dev-loop/scripts/check_setup.py --harness claude --repo .
 python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
 ```
 
-Ruling R10: right after a correct install, `check_setup.py` still fails things no installer can fix, printed under "User actions required" (items 1 and 2: `--harness codex`; items 3 and 4: both harnesses):
+Ruling R10: right after a correct install, `check_setup.py` still fails things no installer can fix, printed under "User actions required" (items 1 and 2: `--harness codex`; items 3 and 4: both harnesses). A `walled_skills` line under that heading is no failure: `check_setup.py` still prints PASS:
 1. Trusted project and trusted-hook-hash entries: Codex writes those only after the user trusts the project and runs `/hooks` to trust the dev-loop hook definitions.
 2. Ten Pocock skills dev-loop does not ship: `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr`, `prototype`, `wayfinder`, `retro`.
 3. The Cloudflare `security-audit` skill (the Stage 6 security verifier's prompt), pinned at tree `ccbc33ed119b28c3ef7b44a7e2081ab191ad63af` in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/security-audit` (Claude) or `~/.agents/skills/security-audit` (Codex): `npx skills add https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 --skill security-audit --global --agent claude-code codex`.
@@ -41,6 +41,8 @@ Ruling R10: right after a correct install, `check_setup.py` still fails things n
    - `~/.zshrc`, after the Prezto `source`: `[[ ! -t 0 && ! -t 1 ]] && setopt CLOBBER`
 
    Other frameworks: the same test around their own option.
+
+A `walled_skills` line under that heading is no failure: `check_setup.py` still prints PASS.
 
 These are expected manual steps, not install defects.
 

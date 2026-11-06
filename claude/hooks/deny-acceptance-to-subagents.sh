@@ -57,12 +57,17 @@
 # skill-wall of the kit (#274): the walled_skills list of dev-loop.json at the main ref must hold it. No kit
 # CLI, a CLI error or output that is not a JSON object: a deny. Checked in Claude Code 2.1.310: a shell line
 # of a skill runs outside the Bash wall, and Skill loads the main checkout copy in an EnterWorktree session,
-# the worktree copy in a session that starts there. So both checkouts must equal the main ref, and the scan
-# denies context: fork, a shell line and a hooks key. spec-tester: every Skill call is denied. A skill denial
+# the worktree copy in a session that starts there. So every checkout Skill can load from must equal the main
+# ref: the worktree of cwd, the session start folder ($CLAUDE_PROJECT_DIR) and the main checkout. The scan
+# denies context: fork, a shell line, a hooks key, an @ and an odd frontmatter shape. An @ in Skill args
+# expands to a file attachment past every hook and the audit, through a symlink too, so any @ in the args
+# of an implementer Skill call is denied before the name test; other subagents get the name rule on args. spec-tester: every Skill call is denied. A skill denial
 # is no stop. The main session and every other subagent keep these tools. Not walled: a general-purpose
 # subagent can still start a spec-tester fork; a Bash edit of the plugin cache copy of an allowed skill; a
 # project skill folder whose name imitates an allowed name; a personal skill with a listed name; a change of
-# the file between the check and the load; a local move of the main ref; a branch edit of the kit devloop.py.
+# the file between the check and the load; a local move of the main ref; a branch edit of the kit devloop.py; a cached skill body, until the skill watcher reloads it, passes the check
+# after the file is restored; a skills: field of an agent file preloads text with no Skill call; a session
+# started in a subfolder loads no root settings, so it has no wall.
 # No wall on a nested harness started from the shell (claude -p, codex exec, another agent CLI): the
 # child has no agent_id, so it gets the main session rules, reads open. The audit does not read its
 # transcript, only what it prints to the parent. A deny by name does not close the route.
@@ -94,12 +99,13 @@ search_wall() {
   exit 2
 }
 skill_reason() {
-  local cli out
+  local cli out reason
   cli=$(kit_cli "$1")
   [ -n "$cli" ] || { echo "no kit CLI"; return; }
   out=$(printf '%s' "$1" | python3 "$cli" skill-wall 2>/dev/null) || { echo "skill check failed"; return; }
-  printf '%s' "$out" | jq -e 'type == "object" and .deny == false' >/dev/null 2>&1 && return
-  printf '%s' "$out" | jq -r 'if type == "object" and (.reason | type) == "string" then .reason else "skill check failed" end' 2>/dev/null || echo "skill check failed"
+  printf '%s' "$out" | jq -se 'length == 1 and (.[0] | type == "object" and .deny == false)' >/dev/null 2>&1 && return
+  reason=$(printf '%s' "$out" | jq -sr 'if length == 1 and (.[0] | type == "object" and (.reason | type) == "string") then .[0].reason else "" end' 2>/dev/null)
+  echo "${reason:-skill check failed}"
 }
 
 # Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs),
@@ -156,6 +162,10 @@ esac
 AGENT=$(echo "$IN" | jq -r '.agent_type // empty')
 case "$AGENT:$TOOL" in
   implementer:Skill)
+    if printf '%s' "$IN" | jq -e '.tool_input.args? | strings | contains("@")' >/dev/null 2>&1; then
+      echo "Blocked: an @ in Skill args attaches a file past every hook. Drop the @, or use Read." >&2
+      exit 2
+    fi
     if ! printf '%s' "$IN" | jq -e '.tool_input.skill? | IN("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", "mattpocock-skills:codebase-design")' >/dev/null 2>&1; then
       REASON=$(skill_reason "$IN")
       if [ -n "$REASON" ]; then
@@ -207,7 +217,7 @@ CANDIDATES=$(echo "$IN" | jq -r '
       .tool_input.pattern?, (.tool_input.command? | strings | clean), (.tool_input.glob? | unless_excluded),
       .tool_input.paths?, .tool_input.files?, .tool_input.url?,
       .tool_input.source?, .tool_input.destination?, .tool_input.directory?,
-      .tool_input.filePath?, .tool_input.uri? ]
+      .tool_input.filePath?, .tool_input.uri?, .tool_input.args? ]
     | [ .[] | .. | strings | ., (select(startswith("file://")) | ltrimstr("file://") | sub("^localhost(?=/)"; "")) ];
   def joins:
     [ (.tool_input.path? | .. | strings) as $p
