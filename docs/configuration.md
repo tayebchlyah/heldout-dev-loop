@@ -6,6 +6,7 @@
 
 - `commands`: the project's own command for a step. Keys: `gate`, `stack_up`, `stack_reset`, `acceptance`, `acceptance_failed`, `release_prepare`, `release_check`, `release_verify` (the last three are read by `/release`, see `reference/release.md`). Each value is a non-empty string. A missing key falls back to `scripts/gate.sh`, `docker compose` and the stack's test runner. `check_setup.py` fails on any other key.
 - `merge`: `auto` (the default) or `human`. With `auto`, Stage 7 merges a Track S or M pull request after green CI and the review wave, when it is a two-way door with a small blast radius. A one-way door or a Track L pull request waits for you. With `human`, every pull request waits for you. Stage 7 runs `devloop.py merge-check` to decide, and `merge_human_paths` in `dev-loop.json` lists path patterns whose changes always wait for you.
+- `walled_skills`: the project skills `implementer` can call: a list of names under `.claude/skills/`, read from `main`. The skill must have no `context: fork`, shell line or `hooks` key, and the feature worktree and the main checkout must equal `main`: a stale checkout gives a denial until it is rebased or pulled. No effect on Codex.
 - `security_audit`: `{"images": {"<name>": "<image>"}}`, the container images the release audit sandbox may start (name: lower case letters, digits, `_` and `-`). Pull each image first; `check_setup.py` reports a stopped Docker engine or a missing image. No key: the audit runs source-only. Add `security-audit/` to the vault `.gitignore`.
 
 ## Notes folder
