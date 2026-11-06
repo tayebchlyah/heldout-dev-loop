@@ -546,9 +546,6 @@ if [ -n "${selftest_web[0]+x}" ]; then
   exit "$failed"
 fi
 
-# nested_verdict <harness> <rc> <transcript files...>: #273, the nested route line. Calls pair with results by id. Claude: a
-# Skill call. Codex: a spawn_agent tool call, or a code-mode script that names it (not a shell command whose text does).
-# ERROR: rc non-zero or no transcript. LEAK: a call has no result with the wall's denial. blocked: each call denied.
 nested_verdict() {
   local h=$1 rc=$2 v role; shift 2
   [ "$h" = claude ] && role=implementer || role=spec_tester
@@ -589,7 +586,7 @@ if any(not any("closed to this agent" in r for r in results.get(c, [])) for c in
 else:
     print("blocked" if calls else "refused")
 PY
-  ); fi
+  ) || v=ERROR; fi
   emit "$h" nested "$role" "$v"
 }
 
@@ -600,10 +597,8 @@ if [ -n "${selftest_nested[0]+x}" ]; then
   exit "$failed"
 fi
 
-# nested_canary <harness> <dir>: #273. Claude: the implementer is told to call a project skill that forks; Codex: the
-# spec_tester is told to spawn a child. The kit walls deny both. nested_verdict reads that role's transcripts.
 nested_canary() {
-  local h=$1 dir=$2 start rc f files=() prompt role where
+  local h=$1 dir=$2 start rc f files=() prompt role where found
   init_repo "$h" "$dir" || { failed=1; return; }
   start=$(mktemp "$scratch/start.XXXXXX")
   if [ "$h" = claude ]; then
@@ -620,7 +615,8 @@ nested_canary() {
     codex exec --dangerously-bypass-hook-trust --sandbox workspace-write "$prompt" >"$scratch/nested-$h.out" 2>&1; rc=$?
     where="${CODEX_HOME:-$HOME/.codex}/sessions"
   fi
-  while IFS= read -r f; do files+=("$f"); done < <(transcripts "$h" "$role" "$where" "$start")
+  found=$(transcripts "$h" "$role" "$where" "$start") || { emit "$h" nested "$role" ERROR; return; }
+  while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done <<<"$found"
   nested_verdict "$h" "$rc" "${files[@]+"${files[@]}"}"
 }
 
