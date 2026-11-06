@@ -12,6 +12,7 @@ from test_seal import SUITE
 from test_seal_check import SealRepo
 
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER  # noqa: E402
+from seal.record import record_file  # noqa: E402
 from test_devloop import git, put, run_cli  # noqa: E402
 
 HELLO = 'def test_a():\n    assert f("hello world")\n'
@@ -84,6 +85,7 @@ class PatchIdTests(SealRepo):
             with self.subTest(backend=backend):
                 git(self.repo, "checkout", "-q", "main")
                 git(self.repo, "reset", "-q", "--hard", start)
+                record_file(self.repo).unlink(missing_ok=True)
                 self.on_base(TEN)
                 self.seal(SUITE, TEN.replace("line 5\n", "line 5\nadded\n"))
                 git(self.repo, "checkout", "-q", "main")

@@ -103,9 +103,9 @@ class RecordTests(SealRepo):
     def test_carriers_read_the_last_paragraph_only(self) -> None:
         a = self.commit("a", "a\n", f"a\n\n{PATCH_TRAILER}: v1")
         self.commit("b", "b\n", f"b\n\n{PATCH_TRAILER}: v2\n\nCo-Authored-By: t <t@example.invalid>")
-        self.assertEqual(patch_carriers(self.repo), {"v1": a})
+        self.assertEqual(patch_carriers(self.repo), {"v1": [a]})
         c = self.commit("c", "c\n", f"c\n\n{PATCH_TRAILER}: v1")
-        self.assertEqual(patch_carriers(self.repo), {"v1": c})
+        self.assertEqual(patch_carriers(self.repo), {"v1": [c, a]})
 
 
 def trailer(repo: Path, key: str, rev: str = "HEAD") -> str:
@@ -345,6 +345,22 @@ class SealDroppedTests(SealRepo):
         self.seal(OTHER, "o\n")
         git(self.repo, "switch", "-q", "feat/x")
         self.assertEqual(self.dropped(self.check()[1]), [])
+
+    def readded(self) -> tuple[str, str, str]:
+        s1 = self.seal(SUITE, "a\n")
+        git(self.repo, "rm", "-q", "--", SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "revert", "--reverts", s1, cwd=self.repo)
+        self.assertEqual(code, 0, out)
+        return s1, out["commit"], self.seal(SUITE, "a\n")
+
+    def test_readded_seal_is_not_carried_by_the_first(self) -> None:
+        s1, s2, s3 = self.readded()
+        self.assertEqual(self.entry(s1)["patches"], self.entry(s3)["patches"])
+        self.assertEqual(self.check(), OK)
+        git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        code, out = self.check()
+        self.assertEqual(code, 1, out)
+        self.assertEqual([(v["commit"], v["paths"]) for v in self.dropped(out)], [(s3, [SUITE])])
 
     def test_stopped_rebase_skips_the_check(self) -> None:
         git(self.repo, "checkout", "-q", "main")

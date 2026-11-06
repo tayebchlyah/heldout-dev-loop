@@ -100,11 +100,11 @@ def skip_reason(repo: Path) -> str | None:
     return None if run_git(repo, "symbolic-ref", "-q", "HEAD").returncode == 0 else "detached"
 
 
-def patch_carriers(repo: Path) -> dict[str, str]:
+def patch_carriers(repo: Path) -> dict[str, list[str]]:
     log = run_git(repo, "log", "-z", "--format=%H%n%B", "--fixed-strings", f"--grep={PATCH_TRAILER}:", "HEAD")
-    carriers: dict[str, str] = {}
+    carriers: dict[str, list[str]] = {}
     for item in (part for part in log.stdout.split("\0") if part):
         sha, _, body = item.partition("\n")
         for value in PATCH.findall(re.split(r"\n[ \t]*\n", body.strip())[-1]):
-            carriers.setdefault(value, sha)
+            carriers.setdefault(value, []).append(sha)
     return carriers
