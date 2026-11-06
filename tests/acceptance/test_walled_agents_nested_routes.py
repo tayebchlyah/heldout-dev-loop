@@ -49,9 +49,15 @@ ALLOWED_SKILLS = ("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", 
 DENIED_SKILL_INPUTS = ({"skill": "probe-fork"}, {"skill": "tdd"}, {"skill": "codebase-design"}, {})
 # O8, D5.
 BARE_NAMES = ("spawn_agent", "send_input", "send_message", "followup_task", "wait_agent", "close_agent",
-              "interrupt_agent", "list_agents")
-COLLABORATION_TOOLS = ("collaborationspawn_agent", "collaborationsend_message", "collaboration.future", *BARE_NAMES)
+              "interrupt_agent", "list_agents", "resume_agent")
+COLLABORATION_TOOLS = ("collaborationspawn_agent", "collaborationsend_message", "collaboration.future",
+                       "multi_agent_v1send_input", "multi_agent_v1wait_agent", "multi_agent_v1close_agent",
+                       "multi_agent_v1resume_agent", "teamspawn_agent", *BARE_NAMES)
 COLLABORATION_INPUT = {"message": "x"}
+# O10.
+MCP_LIST_AGENTS = "mcp__x__list_agents"
+# O15, non-goal 4.
+NESTED_HARNESS_GAP = re.compile(r"nested\s+harness|claude -p|codex exec", re.IGNORECASE)
 # O14: the matchers of Walled Agents No Web, as a project holds them before this upgrade.
 OLD_CLAUDE_MATCHER = ("Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|"
                       "ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent")
@@ -130,6 +136,7 @@ class ClaudeNestedWallTests(NestedWallHooks):
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertIn(CLOSED, result.stderr)
                 self.assertIn("mattpocock-skills:tdd", result.stderr)
+                self.assertIn("SKILL.md", result.stderr)
         # O4.
         with self.subTest(oracle="O4"):
             result = self.claude("spec-tester", "Skill", {"skill": "mattpocock-skills:tdd"})
@@ -173,9 +180,11 @@ class ClaudeNestedWallTests(NestedWallHooks):
                          re.compile(r"`tools\b"),
                          near(r"general-purpose", r"\bfork"),
                          near(r"plugin\s+cache", r"\bBash\b"),
-                         near(r"project\s+skill", r"\bnames?\b"))
-        self.assert_text(CLAUDE_AGENTS / "implementer.md", near(r"skill denial|denied skill|skill is denied",
-                                                                r"(go on|continue|proceed) without the skill"))
+                         near(r"project\s+skill", r"\bnames?\b"),
+                         NESTED_HARNESS_GAP)
+        denial = r"skill denial|denied skill|skill is denied"
+        self.assert_text(CLAUDE_AGENTS / "implementer.md", near(denial, r"(go on|continue|proceed) without the skill"),
+                         near(denial, r"SKILL\.md"))
         # O16, Claude hook header.
         script = CLAUDE_HOOKS / NET
         self.assert_text(script, "SendMessage", re.compile(r"\bSkill\b"), text=header(script))
@@ -202,9 +211,15 @@ class CodexNestedWallTests(NestedWallHooks):
                 with self.subTest(oracle="O10" if agent_type else "O9", caller=agent_type or "main session", tool=tool):
                     result = self.codex(agent_type, tool)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # O10, the MCP rule comes first.
+        with self.subTest(oracle="O10", caller="task_reviewer", tool=MCP_LIST_AGENTS):
+            result = self.codex("task_reviewer", MCP_LIST_AGENTS)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with self.subTest(oracle="O10", caller="implementer", tool=MCP_LIST_AGENTS):
+            self.assert_denied(self.codex("implementer", MCP_LIST_AGENTS), MCP_LINE)
 
         # O15, Codex route.
-        self.assert_text(CODEX_ROUTE, "collaboration.*")
+        self.assert_text(CODEX_ROUTE, "collaboration.*", "multi_agent", NESTED_HARNESS_GAP)
         # O16, Codex hook header.
         script = CODEX_HOOKS / CODEX_WALL
         self.assert_text(script, "collaboration", text=header(script))

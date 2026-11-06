@@ -88,7 +88,7 @@ AGENT_MATCHER = ("Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpReso
                  "ReadMcpResourceDirTool")
 CODEX_MATCHER = ("Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|"
                  "web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|"
-                 "interrupt_agent|list_agents")
+                 "interrupt_agent|list_agents|resume_agent")
 DISALLOWED = ["LSP", "mcp__*", "ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool", "WebFetch",
               "WebSearch", "Agent"]
 IMPLEMENTER_TOOLS = ["Read", "Edit", "Write", "NotebookEdit", "Grep", "Glob", "Bash", "Monitor", "Skill", "ToolSearch"]
