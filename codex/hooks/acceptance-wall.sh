@@ -1,6 +1,6 @@
 #!/bin/sh
 # Codex PreToolUse wall (D9), matcher
-# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents.
+# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent.
 # agent_id is present only in a subagent call.
 # spec_tester: no path names src/, app/, backend/ or frontend/. Any other subagent: no path names
 # tests/acceptance. Main session: no apply_patch of a file under tests/acceptance/; its Bash stays open.
@@ -26,12 +26,18 @@
 # Web tools (#240): a tool whose name starts with web is denied to implementer and spec_tester with
 # agent_id set, whatever its input; every other caller exits 0 with no path rule. The hosted web
 # search tool reaches no hook. The denial names the NEEDS_FACT exit.
-# Collaboration tools (#273): a tool whose name starts with collaboration, or spawn_agent, send_input,
-# send_message, followup_task, wait_agent, close_agent, interrupt_agent or list_agents, is denied to
-# implementer and spec_tester with agent_id set, whatever its input; every other caller exits 0 with no
-# path rule. The denial names the NEEDS_FACT exit. No tools key or skill list in the Codex agent files:
-# Codex has no Skill tool that starts a fork. Written gap: a subagent other than these 2 keeps the tools,
-# and can still start a spec_tester child.
+# Collaboration tools (#273): a tool whose name starts with collaboration or multi_agent, or ends with
+# spawn_agent, send_input, send_message, followup_task, wait_agent, close_agent, interrupt_agent,
+# list_agents or resume_agent, is denied to implementer and spec_tester with agent_id set, whatever its
+# input; every other caller exits 0 with no path rule. An mcp__ tool keeps the MCP rule, whatever its
+# name ends with. The denial names the NEEDS_FACT exit. Codex 0.166.0: the v1 spawn arrives bare, every
+# other v1 tool as multi_agent_v1<name>; the suffix rule also closes a renamed namespace; no role setting
+# closes these tools. No tools key or skill list in the Codex agent files: Codex has no Skill tool that
+# starts a fork. Written gap: a subagent other than these 2 keeps the tools, and can still start a
+# spec_tester child.
+# No wall on a nested harness started from the shell (claude -p, codex exec, another agent CLI): the
+# child has no agent_id, so it gets the main session rules, reads open. The audit does not read its
+# transcript, only what it prints to the parent. A deny by name does not close the route.
 . "${0%/*}/git-pin.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
@@ -52,7 +58,8 @@ case "$tool" in
       esac
     fi
     exit 0 ;;
-  collaboration*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents)
+  mcp__*) ;;
+  collaboration*|multi_agent*|*spawn_agent|*send_input|*send_message|*followup_task|*wait_agent|*close_agent|*interrupt_agent|*list_agents|*resume_agent)
     if [ -n "$agent_id" ]; then
       case "$agent_type" in
         implementer|spec_tester)
