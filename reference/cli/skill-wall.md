@@ -1,0 +1,14 @@
+# skill-wall
+
+- `skill-wall`: stdin one Claude PreToolUse hook JSON object (`tool_input.skill`, `cwd`). JSON `{"deny": bool, "reason": string|null}`; `reason` is one of the reasons below when `deny` is true. Exit 0 for allow and deny, 2 on a usage error. Input that is not a JSON object: `deny` true, `reason` `not in walled_skills`. Claude only: Codex has no `Skill` tool.
+- Who: the caller checks the agent. Only the arm `implementer:Skill` of `deny-acceptance-to-subagents.sh` runs it, and only for a name that is not one of its 3 fixed names.
+- Folder: hook `cwd`, else `$CLAUDE_PROJECT_DIR`. Checkouts: the worktree of the folder and the main worktree. Main ref: `refs/remotes/origin/main`, else `refs/heads/main`.
+- Conditions, in order; the first that fails names the reason:
+  1. The `walled_skills` list of `dev-loop.json` at the main ref holds the name, and the name fits `^[a-z0-9][a-z0-9-]{0,63}$`. Else `not in walled_skills`. No folder, no main ref, a file that is not JSON or a value that is not a list: the same.
+  2. `.claude/skills/<name>/SKILL.md` exists at the main ref. Else `no copy at the main ref`.
+  3. Each checkout holds the same `SKILL.md` bytes and the same link text. Else `differs from the main ref`. `Skill` loads the main checkout copy in an `EnterWorktree` session and the worktree copy in a session that starts there, and the hook cannot see which, so both must be equal.
+  4. The scan of the main ref copy is clean. Else `context: fork`, `shell line` or `hooks key`.
+- Link: when `.claude/skills/<name>` has mode `120000` at the main ref, follow it one level, relative to `.claude/skills/`. The target must stay in the repository and not be the repository top, and the `SKILL.md` under it must be a regular file. A link inside the target, an absolute link or a target outside: `no copy at the main ref`. Each checkout must have the same link.
+- Scan: frontmatter (between the first two `---` lines) key `context`: `context: fork`; `` !` `` or ` ```! ` anywhere in the file: `shell line`; frontmatter key `hooks`: `hooks key`. In that order. A key counts plain or quoted, at a line start or after `{` or `,`, with any value. The rule is wide on purpose: a false match denies the skill, and the agent reads the `SKILL.md`.
+- Gaps: a personal skill with a listed name, a change of the file between the check and the load, a local move of the main ref, a branch edit of the kit `devloop.py`. Under a git attribute or `core.autocrlf` that changes line ends, the checkout differs from the blob: a deny.
+- Callers: `deny-acceptance-to-subagents.sh`. CLI `.agents/skills/dev-loop/scripts/devloop.py` under the git top of `cwd`, else `$CLAUDE_PROJECT_DIR`; none, a non-zero exit or output that is not a JSON object: the wall denies. `check_setup.py` and `merge_check.py` import the module.

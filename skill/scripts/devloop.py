@@ -14,6 +14,7 @@
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
+  devloop.py skill-wall                               PreToolUse hook JSON on stdin: may implementer load this project skill
   devloop.py size-check [--uncommitted | --all]       file-size ratchet: a new or grown file over 40,000 bytes fails
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
@@ -356,6 +357,9 @@ def main() -> int:
 
     search_wall = commands.add_parser("search-wall")
     search_wall.set_defaults(run=("seal.search", "cmd_search_wall"))
+
+    skill_wall = commands.add_parser("skill-wall")
+    skill_wall.set_defaults(run=("seal.skills", "cmd_skill_wall"))
 
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()
