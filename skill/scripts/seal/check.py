@@ -12,14 +12,13 @@ from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
 from devloop import emit, git
-from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, merge_base, run_git
+from seal import ACCEPTANCE_DIR, PATCH, SEAL_TRAILER, last_paragraph, merge_base, run_git
 from seal.audit import taint_file, taint_state
 from seal.record import patch_carriers, read_record, record_file, skip_reason
 from seal.value import commit_entries, commit_patch_value, seal_value
 from seal.weakened import TEST_FILES
 
 TRAILER = re.compile(rf"^{SEAL_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
-PATCH = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 
 
 def violation(reason: str, commit: str | None = None, path: str | None = None, commits: list[str] | None = None) -> dict:
@@ -49,7 +48,7 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
         # The last paragraph only: `seal` writes the trailers there; a quote earlier in the body is no seal.
-        last = re.split(r"\n[ \t]*\n", body.strip())[-1]
+        last = last_paragraph(body)
         values = TRAILER.findall(last)
         if not values:
             continue

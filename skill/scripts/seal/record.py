@@ -9,9 +9,8 @@ import re
 import tempfile
 from pathlib import Path
 
-from seal import PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
+from seal import PATCH, PATCH_TRAILER, SEAL_TRAILER, git_dir, last_paragraph, run_git
 
-PATCH = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 SEAL_LINE = re.compile(rf"^{SEAL_TRAILER}:", re.MULTILINE)
 TEXT_KEYS = ("branch", "commit", "seal", "feature")
 
@@ -106,7 +105,7 @@ def patch_carriers(repo: Path) -> dict[str, list[str]]:
     carriers: dict[str, list[str]] = {}
     for item in (part for part in log.stdout.split("\0") if part):
         sha, _, body = item.partition("\n")
-        last = re.split(r"\n[ \t]*\n", body.strip())[-1]
+        last = last_paragraph(body)
         for value in PATCH.findall(last) if SEAL_LINE.search(last) else []:
             carriers.setdefault(value, []).append(sha)
     return carriers
