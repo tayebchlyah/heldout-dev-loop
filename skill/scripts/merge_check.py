@@ -15,6 +15,7 @@ from pathlib import Path
 import devloop
 from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, main_ref, resolve
+from seal.skills import listed_names, skill_roots
 from status import rebasing
 
 
@@ -200,15 +201,19 @@ def merge_check(args: argparse.Namespace) -> int:
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
         trusted = (config.get("merge"), config.get("merge_human_paths"), config.get("file_size_exempt", []),
-                   config.get("commands"))
+                   config.get("commands"), config.get("walled_skills", []))
         branch_config = read_config(repo, head)
         if branch_config is None:
-            changed = trusted != (None, None, [], None)
+            changed = trusted != (None, None, [], None, [])
         else:
             changed = (branch_config.get("merge"), branch_config.get("merge_human_paths"),
-                       branch_config.get("file_size_exempt", []), branch_config.get("commands")) != trusted
+                       branch_config.get("file_size_exempt", []), branch_config.get("commands"),
+                       branch_config.get("walled_skills", [])) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
+        roots = [apfs_fold(root) for name in listed_names(config) for root in skill_roots(repo, ref, name)]
+        reasons.extend({"reason": "walled-skill", "path": p} for p in landing_paths
+                       if any(apfs_fold(p) == root or apfs_fold(p).startswith(f"{root}/") for root in roots))
     reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if is_harness_config(p))
     reasons.extend({"reason": "ci-config", "path": p} for p in landing_paths if is_ci_config(p))
 

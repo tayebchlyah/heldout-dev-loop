@@ -576,6 +576,79 @@ class MergeCheckTests(MergeCheckCase):
                 out = self.ok(wt)
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
 
+    def test_walled_skills_change(self) -> None:
+        rows = [
+            ("branch adds a name", {"version": "2.1.0"}, {"version": "2.1.0", "walled_skills": ["pg-guide"]}, True),
+            ("branch adds an empty list", {"version": "2.1.0"}, {"version": "2.1.0", "walled_skills": []}, False),
+            ("bad value on both sides", {"walled_skills": "x"}, {"walled_skills": "x", "version": "9"}, False),
+            ("branch drops the file", {"walled_skills": ["pg-guide"]}, None, True),
+        ]
+        for name, main, branch, changed in rows:
+            with self.subTest(name):
+                self.tearDown()
+                self.setUp()
+                self.main_config(main)
+                wt = self.feature()
+                if branch is None:
+                    git(wt, "rm", "-q", "dev-loop.json")
+                    git(wt, "commit", "-q", "-m", "drop")
+                else:
+                    self.commit(wt, "dev-loop.json", json.dumps(branch))
+                self.gate_green(wt, self.head(wt))
+                self.assertEqual(self.reasons(self.ok(wt), "config-changed"), [{"reason": "config-changed"}] if changed else [])
+
+    def link_skill(self, cwd: Path, target: str) -> None:
+        link = cwd / ".claude" / "skills" / "pg-guide"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.unlink(missing_ok=True)
+        link.symlink_to(target)
+        git(cwd, "add", "-A")
+        git(cwd, "commit", "-q", "-m", "link")
+
+    def test_walled_skill_paths(self) -> None:
+        skill, target = ".claude/skills/pg-guide/SKILL.md", "docs/skills/pg-guide/SKILL.md"
+        link = "../../docs/skills/pg-guide"
+        folded = ".claude/skills/PG-Guide/SKILL.md"
+
+        def plain(cwd: Path) -> None:
+            self.commit(cwd, skill, "x\n", "skill")
+
+        def linked(cwd: Path) -> None:
+            self.commit(cwd, target, "x\n", "skill")
+            self.link_skill(cwd, link)
+
+        def add_folded(cwd: Path) -> None:
+            sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=cwd, input="y\n", text=True,
+                                 capture_output=True, check=True).stdout.strip()
+            git(cwd, "update-index", "--add", "--cacheinfo", f"100644,{sha},{folded}")
+            git(cwd, "commit", "-q", "-m", "folded")
+
+        rows = [("change the file", plain, lambda wt: self.commit(wt, skill, "y\n"), [skill]),
+                ("change the target", linked, lambda wt: self.commit(wt, target, "y\n"), [target]),
+                ("move the link", linked, lambda wt: self.link_skill(wt, "../../docs/skills/other"), [".claude/skills/pg-guide"]),
+                ("add under the target", lambda cwd: self.link_skill(cwd, link), lambda wt: self.commit(wt, target, "y\n"), [target]),
+                ("other case", plain, add_folded, [folded]),
+                ("another skill", plain, lambda wt: self.commit(wt, ".claude/skills/other/SKILL.md", "y\n"), [])]
+        for name, on_main, change, paths in rows:
+            with self.subTest(name):
+                self.tearDown()
+                self.setUp()
+                on_main(self.repo)
+                self.main_config({"version": "2.1.0", "walled_skills": ["pg-guide"]})
+                wt = self.feature()
+                change(wt)
+                self.gate_green(wt, self.head(wt))
+                self.assertEqual([r["path"] for r in self.reasons(self.ok(wt), "walled-skill")], paths)
+        with self.subTest("no key"):
+            self.tearDown()
+            self.setUp()
+            plain(self.repo)
+            self.main_config({"version": "2.1.0"})
+            wt = self.feature()
+            self.commit(wt, skill, "y\n")
+            self.gate_green(wt, self.head(wt))
+            self.assertEqual(self.reasons(self.ok(wt), "walled-skill"), [])
+
     def test_commands_change(self) -> None:
         m = {"version": "2.1.0", "commands": {"acceptance": "sh run.sh"}}
         rows = [
