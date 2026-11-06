@@ -190,11 +190,15 @@ class MoveGapRepo(unittest.TestCase):
         return git(self.repo, "rev-parse", "HEAD")
 
     def restart(self) -> None:
-        """Back to the base commit, branch feat/widget kept."""
+        """Back to the base commit, branch feat/widget kept, with no seal record: the phase starts over."""
         git(self.repo, "reset", "-q", "--hard", self.base)
+        (self.git_dir() / "dev-loop" / "seals.json").unlink(missing_ok=True)
+
+    def git_dir(self) -> Path:
+        return (self.repo / git(self.repo, "rev-parse", "--git-dir")).resolve()
 
     def rebase_in_progress(self) -> bool:
-        git_dir = (self.repo / git(self.repo, "rev-parse", "--git-dir")).resolve()
+        git_dir = self.git_dir()
         return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
 
     def u1_value(self, *diff_args: str) -> str:
