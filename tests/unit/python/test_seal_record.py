@@ -101,11 +101,19 @@ class RecordTests(SealRepo):
         self.assertEqual(skip_reason(self.repo), "cherry-pick")
 
     def test_carriers_read_the_last_paragraph_only(self) -> None:
-        a = self.commit("a", "a\n", f"a\n\n{PATCH_TRAILER}: v1")
-        self.commit("b", "b\n", f"b\n\n{PATCH_TRAILER}: v2\n\nCo-Authored-By: t <t@example.invalid>")
+        a = self.commit("a", "a\n", f"a\n\n{SEAL_TRAILER}: s\n{PATCH_TRAILER}: v1")
+        self.commit("b", "b\n", f"b\n\n{SEAL_TRAILER}: s\n{PATCH_TRAILER}: v2\n\nCo-Authored-By: t <t@example.invalid>")
         self.assertEqual(patch_carriers(self.repo), {"v1": [a]})
-        c = self.commit("c", "c\n", f"c\n\n{PATCH_TRAILER}: v1")
+        c = self.commit("c", "c\n", f"c\n\n{SEAL_TRAILER}: s\n{PATCH_TRAILER}: v1")
         self.assertEqual(patch_carriers(self.repo), {"v1": [c, a]})
+
+    def test_carrier_needs_the_seal_trailer_too(self) -> None:
+        self.commit("a", "a\n", f"a\n\n{PATCH_TRAILER}: v1")
+        self.assertEqual(patch_carriers(self.repo), {})
+        b = self.commit("b", "b\n", f"b\n\n{SEAL_TRAILER}: s2\n{PATCH_TRAILER}: v2")
+        self.assertEqual(patch_carriers(self.repo), {"v2": [b]})
+        self.commit("c", "c\n", f"c\n\n{SEAL_TRAILER}: s3\n\n{PATCH_TRAILER}: v3")
+        self.assertEqual(patch_carriers(self.repo), {"v2": [b]})
 
 
 def trailer(repo: Path, key: str, rev: str = "HEAD") -> str:
