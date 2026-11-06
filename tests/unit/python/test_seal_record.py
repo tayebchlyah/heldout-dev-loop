@@ -7,12 +7,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from test_seal import SUITE
 from test_seal_check import SealRepo
 
-from seal import PATCH_TRAILER  # noqa: E402
+from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER  # noqa: E402
 from seal.record import (  # noqa: E402
     add_seal, patch_carriers, read_record, record_branch, record_file, replace_patch, skip_reason)
-from test_devloop import git, put  # noqa: E402
+from test_devloop import git, put, run_cli  # noqa: E402
 
 ENTRY = {"branch": "refs/heads/feat/x", "commit": "c1", "patches": ["p1"], "seal": "s1", "feature": "x", "paths": ["a"]}
 
@@ -105,3 +106,52 @@ class RecordTests(SealRepo):
         self.assertEqual(patch_carriers(self.repo), {"v1": a})
         c = self.commit("c", "c\n", f"c\n\n{PATCH_TRAILER}: v1")
         self.assertEqual(patch_carriers(self.repo), {"v1": c})
+
+
+def trailer(repo: Path, key: str, rev: str = "HEAD") -> str:
+    body = git(repo, "log", "-1", "--format=%B", rev)
+    return next(line.split(": ", 1)[1].strip() for line in body.splitlines() if line.startswith(f"{key}: "))
+
+
+class SealWritesTests(SealRepo):
+    def test_seal_adds_one_entry_per_seal(self) -> None:
+        first = self.seal(SUITE, "a\n")
+        entry = {"branch": "refs/heads/feat/x", "commit": first, "patches": [trailer(self.repo, PATCH_TRAILER)],
+                 "seal": trailer(self.repo, SEAL_TRAILER), "feature": "x", "paths": [SUITE]}
+        self.assertEqual(read_record(self.repo), [entry])
+        other = f"{ACCEPTANCE_DIR}/other/test_other.py"
+        second = self.seal(other, "o\n")
+        record = read_record(self.repo) or []
+        self.assertEqual([record[0], record[1]["commit"], record[1]["paths"]], [entry, second, [other]])
+
+    def test_seal_in_a_linked_worktree(self) -> None:
+        tree = self.repo.parent / "wt"
+        git(self.repo, "worktree", "add", "-q", "-b", "feat/w", str(tree), "main")
+        put(tree / SUITE, "w\n")
+        git(tree, "add", "--", SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=tree)
+        self.assertEqual(code, 0, out)
+        own = Path(git(tree, "rev-parse", "--absolute-git-dir").strip()) / "dev-loop" / "seals.json"
+        self.assertTrue(own.is_file())
+        self.assertEqual([e["branch"] for e in read_record(tree) or []], ["refs/heads/feat/w"])
+        self.assertIsNone(read_record(self.repo))
+
+    def test_record_folder_fails_seal(self) -> None:
+        record_file(self.repo).mkdir(parents=True)
+        put(self.repo / SUITE, "a\n")
+        git(self.repo, "add", "--", SUITE)
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 1, out)
+        self.assertTrue(out["error"].startswith("seal record not written"), out)
+        self.assertEqual(out["commit"], git(self.repo, "rev-parse", "HEAD").strip())
+        self.assertIn("Acceptance: x", git(self.repo, "log", "-1", "--format=%B"))
+
+    def test_failed_seal_writes_nothing(self) -> None:
+        code, out = run_cli("seal", "--feature", "x", "--message", "acceptance", cwd=self.repo)
+        self.assertEqual(code, 1, out)
+        self.assertFalse(record_file(self.repo).exists())
+
+    def test_detached_seal_writes_no_entry(self) -> None:
+        git(self.repo, "checkout", "-q", "--detach")
+        self.seal(SUITE, "a\n")
+        self.assertIsNone(read_record(self.repo))
