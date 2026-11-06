@@ -11,6 +11,7 @@ from pathlib import Path
 
 from devloop import emit
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
+from seal.record import add_seal, record_branch
 import size
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
@@ -139,15 +140,24 @@ def seal(repo: Path, slug: str, message: str, reverts: list[str]) -> dict:
     # D3: a pre-commit hook can rewrite the staged blobs, a commit-msg hook can add a paragraph after the trailers.
     entries, _ = commit_entries(repo, "HEAD")
     try:
-        final = text(seal_value(entries), patch_id(repo, *commit_diff(repo, "HEAD")))
+        patch = patch_id(repo, *commit_diff(repo, "HEAD"))
     except PatchIdFailed as error:
         return {"error": str(error), "commit": run_git(repo, "rev-parse", "HEAD").stdout.strip()}
+    final = text(seal_value(entries), patch)
     if run_git(repo, "log", "-1", "--format=%B", "HEAD").stdout.rstrip("\n") != final.rstrip("\n"):
         result = run_git(repo, "commit", "-q", "--amend", "--no-verify", "--cleanup=verbatim", "-F", "-", stdin=final)
         if result.returncode != 0:
             return {"error": f"git commit --amend failed: {(result.stderr or result.stdout).strip()}"}
     commit = run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    return {"commit": commit, "seal": seal_value(entries), "files": sorted(path for path, _ in entries)}
+    files = sorted(path for path, _ in entries)
+    branch = record_branch(repo)
+    if branch is not None:
+        try:
+            add_seal(repo, {"branch": branch, "commit": commit, "patches": [patch], "seal": seal_value(entries),
+                            "feature": slug, "paths": files})
+        except (OSError, ValueError) as error:
+            return {"error": f"seal record not written: {error}", "commit": commit}
+    return {"commit": commit, "seal": seal_value(entries), "files": files}
 
 
 def rebase_continue(repo: Path) -> dict:
