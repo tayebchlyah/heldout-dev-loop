@@ -11,11 +11,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from support import CHECKER, check_setup, checker_env, write
+from support import CHECKER, ROOT, check_setup, checker_env, write
 
 from seal.skills import NAMES_ERROR  # noqa: E402
-
-ROOT = CHECKER.parents[2]
 
 
 class WalledSkillsConfigTests(unittest.TestCase):
