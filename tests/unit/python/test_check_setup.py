@@ -265,6 +265,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         path.write_text(json.dumps({**json.loads(path.read_text()), "walled_skills": ["pg-guide"]}))
         subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
         subprocess.run(["git", "commit", "-qm", "x"], cwd=self.repo, check=True)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=self.repo, check=True)
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("claude: PASS", result.stdout)
