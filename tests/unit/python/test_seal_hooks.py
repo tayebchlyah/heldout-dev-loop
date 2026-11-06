@@ -506,6 +506,51 @@ class CodexWallTests(unittest.TestCase):
                 else:
                     self.assertEqual((result.returncode, result.stderr), (0, ""))
 
+    NESTED = ("collaborationspawn_agent", "collaborationsend_message", "collaboration.future", "spawn_agent", "send_input",
+              "send_message", "followup_task", "wait_agent", "close_agent", "interrupt_agent", "list_agents")
+    MATCHER = ("Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*"
+               "|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents")
+
+    def test_collaboration_tools_by_agent_type(self) -> None:
+        """Collaboration tools are denied to implementer and spec_tester only, with agent_id set (#273)."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        top = Path(tmp.name).resolve() / "repo"
+        put(top / "README.md")
+        git(top, "init", "-q")
+        walled = [{"agent_id": "a", "agent_type": "implementer"}, {"agent_id": "b", "agent_type": "spec_tester"}]
+        open_callers = [{}, {"agent_type": "implementer"}]
+        open_callers += [{"agent_id": "d", "agent_type": role}
+                         for role in ("default", "planner", "task_reviewer", "final_reviewer", "security_reviewer")]
+        inputs = ({"tool_input": {"message": "x"}}, {})
+        rows = [(c, t, e, True) for c in walled for t in self.NESTED for e in inputs]
+        rows += [(c, t, e, False) for c in open_callers for t in self.NESTED for e in inputs]
+        for caller, tool, extra, deny in rows:
+            with self.subTest(caller=caller, tool=tool, extra=extra):
+                result = self.wall({**caller, "cwd": str(top), "tool_name": tool, **extra})
+                if deny:
+                    self.assertEqual((result.returncode, result.stderr.count("\n")), (2, 1), result.stderr)
+                    self.assertIn(f"{tool} is closed to this agent", result.stderr)
+                    self.assertIn("NEEDS_FACT", result.stderr)
+                else:
+                    self.assertEqual((result.returncode, result.stderr), (0, ""))
+
+    def test_an_mcp_tool_with_a_nested_name_keeps_the_mcp_rule(self) -> None:
+        payload = {"cwd": "/repo", "tool_name": "mcp__x__spawn_agent", "tool_input": {"q": "x"}}
+        walled = self.wall({**payload, "agent_id": "a", "agent_type": "implementer"})
+        self.assertEqual(walled.returncode, 2, walled.stderr)
+        self.assertIn("MCP tools are closed to this agent", walled.stderr)
+        reviewer = self.wall({**payload, "agent_id": "c", "agent_type": "task_reviewer"})
+        self.assertEqual((reviewer.returncode, reviewer.stderr), (0, ""))
+
+    def test_the_matcher_and_the_texts_name_the_collaboration_tools(self) -> None:
+        fragment = json.loads((ROOT / "codex/hooks.fragment.json").read_text())
+        group = next(g for g in fragment["hooks"]["PreToolUse"] if any("acceptance-wall.sh" in h["command"] for h in g["hooks"]))
+        self.assertEqual(group["matcher"], self.MATCHER)
+        header = (ROOT / "codex/hooks/acceptance-wall.sh").read_text().split('. "${0%/*}/git-pin.sh"')[0]
+        self.assertIn("collaboration", header)
+        self.assertIn("`collaboration.*`", (ROOT / "skill/references/codex.md").read_text())
+
     def test_a_real_repo_root_and_a_repo_under_a_source_folder_name(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
