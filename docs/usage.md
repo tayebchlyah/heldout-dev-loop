@@ -24,7 +24,7 @@ npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global  # remove the 1.4
 
 ## After installing
 
-`check_setup.py` can report three things under "User actions required" that no installer can fix. All are expected, not a broken install:
+`check_setup.py` can report three things under "User actions required" that no installer can fix. All are expected, not a broken install. A `walled_skills` line under that heading is no failure: `check_setup.py` still prints PASS.
 
 1. **Trusted Codex hooks.** Codex only trusts hook definitions after you run `/hooks` inside Codex and approve the dev-loop hooks. Until you trust the project and its hooks, the trusted-project and trusted-hook-hash checks fail.
 2. **Third-party skills.** dev-loop does not ship the Codex skills `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr` and `prototype` (Matt Pocock's skills). Install them separately from their own source.
