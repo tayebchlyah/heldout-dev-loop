@@ -108,11 +108,18 @@ def agent_tools() -> dict[str, list[str]]:
     return tools
 
 
+def frontmatter(text: str) -> str:
+    lines = text.splitlines()
+    if not lines or lines[0] != "---" or "---" not in lines[1:]:
+        return ""
+    return "\n".join(lines[1:lines.index("---", 1)])
+
+
 def fork_skills(root: Path) -> tuple[list[Path], list[Path]]:
     found = [path for skill in ALLOWED_SKILLS
              for path in root.glob(f"plugins/cache/*/mattpocock-skills/*/skills/**/{skill.split(':')[1]}/SKILL.md")]
     forked = [path for path in found
-              if re.search(r"(?m)^context:\s*[\"']?fork[\"']?\s*$", path.read_text().split("---")[1])]
+              if re.search(r"(?m)^context:\s*[\"']?fork[\"']?\s*$", frontmatter(path.read_text()))]
     return found, forked
 
 
@@ -233,10 +240,6 @@ class DisallowedToolsTwinTests(unittest.TestCase):
         self.assertTrue(done.stderr.startswith("Blocked: held-out suite."), done.stderr)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class NestedRouteWallTests(unittest.TestCase):
     def test_walled_agents_lose_every_unlisted_tool(self) -> None:
         for agent in ("implementer", "spec-tester"):
@@ -304,15 +307,17 @@ class NestedRouteWallTests(unittest.TestCase):
         self.assertEqual(forked, [])
 
     def test_the_fork_guard_reads_the_frontmatter_only(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp) / "plugins/cache/m/mattpocock-skills/1.0.0/skills/engineering"
-            for name, text in (("tdd", "---\nname: tdd\ncontext: fork\n---\n"),
-                               ("codebase-design", "---\nname: c\n---\ncontext: fork\n")):
-                (base / name).mkdir(parents=True)
-                (base / name / "SKILL.md").write_text(text)
-            found, forked = fork_skills(Path(tmp))
-        self.assertEqual(len(found), 2)
-        self.assertEqual([path.parent.name for path in forked], ["tdd"])
+        rows = (("---\nname: tdd\ncontext: fork\n---\n", True),
+                ("---\nname: tdd\n---\ncontext: fork\n", False),
+                ("---\ndescription: red --- green\ncontext: fork\n---\n", True),
+                ("name: tdd\ncontext: fork\n", False))
+        for text, forks in rows:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp) / "plugins/cache/m/mattpocock-skills/1.0.0/skills/engineering/tdd"
+                folder.mkdir(parents=True)
+                (folder / "SKILL.md").write_text(text)
+                found, forked = fork_skills(Path(tmp))
+                self.assertEqual((len(found), len(forked)), (1, int(forks)))
 
     def test_the_route_agent_and_hook_texts_name_the_nested_routes(self) -> None:
         route = (ROOT / "skill/references/claude.md").read_text()
@@ -326,3 +331,7 @@ class NestedRouteWallTests(unittest.TestCase):
         header = (CLAUDE_HOOKS / TWIN).read_text().split('. "${0%/*}/git-pin.sh"')[0]
         self.assertIn("SendMessage", header)
         self.assertIn("Skill", header)
+
+
+if __name__ == "__main__":
+    unittest.main()
