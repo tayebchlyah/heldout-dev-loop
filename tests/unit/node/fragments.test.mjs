@@ -5,7 +5,7 @@ import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'n
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
-import { packageRoot } from './helpers.mjs'
+import { CLAUDE_WALL_MATCHER, CODEX_WALL_MATCHER, packageRoot } from './helpers.mjs'
 
 const readJson = (relative) => JSON.parse(readFileSync(join(packageRoot, relative), 'utf8'))
 
@@ -50,7 +50,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
       ],
     },
     {
-      matcher: 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent',
+      matcher: CLAUDE_WALL_MATCHER,
       hooks: [
         {
           type: 'command',
@@ -213,7 +213,7 @@ test('the Codex fragment carries the exact hook commands, matchers and timeouts'
       ],
     },
     {
-      matcher: 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*',
+      matcher: CODEX_WALL_MATCHER,
       hooks: [
         {
           type: 'command',

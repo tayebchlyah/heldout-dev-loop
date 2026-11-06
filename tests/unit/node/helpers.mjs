@@ -25,6 +25,10 @@ delete process.env.KIT_MAIN
 
 export const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 export const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
+const wallMatcher = (fragment, script) => JSON.parse(readFileSync(join(packageRoot, fragment), 'utf8')).hooks.PreToolUse
+  .find((entry) => entry.hooks.some((hook) => hook.command.includes(script))).matcher
+export const CLAUDE_WALL_MATCHER = wallMatcher('claude/settings.fragment.json', 'deny-acceptance-to-subagents.sh')
+export const CODEX_WALL_MATCHER = wallMatcher('codex/hooks.fragment.json', 'acceptance-wall.sh')
 
 const temps = []
 after(() => temps.forEach((dir) => rmSync(dir, { recursive: true, force: true })))
