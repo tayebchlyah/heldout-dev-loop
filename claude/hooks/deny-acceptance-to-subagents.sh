@@ -52,12 +52,17 @@
 # file (Read, Edit, Write, NotebookEdit, Grep, Glob, Bash, Monitor, Skill, ToolSearch; spec-tester: no Skill)
 # plus SubagentHandback. Any other tool is denied, SendMessage, RemoteTrigger and a future tool included,
 # so the settings entry has matcher .*. The LSP, MCP, web and Agent denials stay and come first.
-# Skill: implementer may name exactly mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs or
-# mattpocock-skills:codebase-design (tdd calls it); a bare name can resolve to a project skill, so it is a
-# deny. spec-tester: every Skill call is denied. A skill denial is no stop. The main session and every other
-# subagent keep these tools. Not walled: a general-purpose subagent can still start a spec-tester fork; a
-# Bash edit of the plugin cache copy of an allowed skill; a project skill folder whose name imitates an
-# allowed name.
+# Skill: implementer may name mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs or
+# mattpocock-skills:codebase-design (tdd calls it) with no check. Any other name goes to devloop.py
+# skill-wall of the kit (#274): the walled_skills list of dev-loop.json at the main ref must hold it. No kit
+# CLI, a CLI error or output that is not a JSON object: a deny. Checked in Claude Code 2.1.310: a shell line
+# of a skill runs outside the Bash wall, and Skill loads the main checkout copy in an EnterWorktree session,
+# the worktree copy in a session that starts there. So both checkouts must equal the main ref, and the scan
+# denies context: fork, a shell line and a hooks key. spec-tester: every Skill call is denied. A skill denial
+# is no stop. The main session and every other subagent keep these tools. Not walled: a general-purpose
+# subagent can still start a spec-tester fork; a Bash edit of the plugin cache copy of an allowed skill; a
+# project skill folder whose name imitates an allowed name; a personal skill with a listed name; a change of
+# the file between the check and the load; a local move of the main ref; a branch edit of the kit devloop.py.
 # No wall on a nested harness started from the shell (claude -p, codex exec, another agent CLI): the
 # child has no agent_id, so it gets the main session rules, reads open. The audit does not read its
 # transcript, only what it prints to the parent. A deny by name does not close the route.
@@ -70,19 +75,31 @@ command -v jq >/dev/null 2>&1 || fail "jq is missing"
 printf '%s' "$IN" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "hook input is not a JSON object"
 normalize() { tr 'A-Z' 'a-z' | sed -e 's|//*|/|g' -e 's|/\./|/|g' -e ':a' -e 's|[^/][^/]*/\.\./||g' -e 'ta'; }
 WORD='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
-search_wall() {
-  local dir top cli= out
+kit_cli() {
+  local dir top
   for dir in "$(printf '%s' "$1" | jq -r '.cwd // empty')" "$CLAUDE_PROJECT_DIR"; do
     [ -n "$dir" ] || continue
     top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || continue
-    [ -f "$top/.agents/skills/dev-loop/scripts/devloop.py" ] && { cli=$top/.agents/skills/dev-loop/scripts/devloop.py; break; }
+    [ -f "$top/.agents/skills/dev-loop/scripts/devloop.py" ] && { printf '%s' "$top/.agents/skills/dev-loop/scripts/devloop.py"; return; }
   done
+}
+search_wall() {
+  local cli out
+  cli=$(kit_cli "$1")
   [ -n "$cli" ] || return 0
   out=$(printf '%s' "$1" | python3 "$cli" search-wall 2>/dev/null) || fail "search check failed"
   printf '%s' "$out" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "search check failed"
   [ "$(printf '%s' "$out" | jq -r '.deny')" = true ] || return 0
   printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason')" >&2
   exit 2
+}
+skill_reason() {
+  local cli out
+  cli=$(kit_cli "$1")
+  [ -n "$cli" ] || { echo "no kit CLI"; return; }
+  out=$(printf '%s' "$1" | python3 "$cli" skill-wall 2>/dev/null) || { echo "skill check failed"; return; }
+  printf '%s' "$out" | jq -e 'type == "object" and .deny == false' >/dev/null 2>&1 && return
+  printf '%s' "$out" | jq -r 'if type == "object" and (.reason | type) == "string" then .reason else "skill check failed" end' 2>/dev/null || echo "skill check failed"
 }
 
 # Installed kit files: the folders, the rules file and the agents init writes (kit list in lib/kit.mjs),
@@ -140,9 +157,12 @@ AGENT=$(echo "$IN" | jq -r '.agent_type // empty')
 case "$AGENT:$TOOL" in
   implementer:Skill)
     if ! printf '%s' "$IN" | jq -e '.tool_input.skill? | IN("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", "mattpocock-skills:codebase-design")' >/dev/null 2>&1; then
-      SKILL=$(printf '%s' "$IN" | jq -r '.tool_input.skill? // "" | tostring | gsub("[\r\n]+"; " ")')
-      echo "Blocked: skill ${SKILL:-(none)} is closed to this agent: the open skills are mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs and mattpocock-skills:codebase-design. Use an allowed name, or go on without the skill. A project skill: read its SKILL.md with Read." >&2
-      exit 2
+      REASON=$(skill_reason "$IN")
+      if [ -n "$REASON" ]; then
+        SKILL=$(printf '%s' "$IN" | jq -r '.tool_input.skill? // "" | tostring | gsub("[\r\n]+"; " ")')
+        echo "Blocked: skill ${SKILL:-(none)} is closed to this agent: the open skills are mattpocock-skills:tdd, mattpocock-skills:diagnosing-bugs and mattpocock-skills:codebase-design. Use an allowed name, or go on without the skill. A project skill: read its SKILL.md with Read. Reason: $REASON." >&2
+        exit 2
+      fi
     fi ;;
   implementer:*|spec-tester:*)
     case "$TOOL" in
