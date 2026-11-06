@@ -374,7 +374,9 @@ test('the Claude agents wall LSP, MCP and Monitor (#97)', () => {
     const head = readFileSync(join(packageRoot, 'claude/agents', name), 'utf8').split('\n---')[0]
     assert.match(head, /^ {4}- matcher: "Read\|Edit\|Write\|Grep\|Glob\|Bash\|Monitor\|LSP\|mcp__\.\*\|ListMcpResourcesTool\|ReadMcpResourceTool\|ReadMcpResourceDirTool"$/m, name)
     assert.match(head, /^disallowedTools: LSP, mcp__\*, ListMcpResourcesTool, ReadMcpResourceTool, ReadMcpResourceDirTool, WebFetch, WebSearch, Agent$/m, name)
-    assert.doesNotMatch(head, /^tools:/m, name)
+    assert.match(head, name === 'implementer.md'
+      ? /^tools: Read, Edit, Write, NotebookEdit, Grep, Glob, Bash, Monitor, Skill, ToolSearch$/m
+      : /^tools: Read, Edit, Write, NotebookEdit, Grep, Glob, Bash, Monitor, ToolSearch$/m, name)
     assert.match(head, /^ {10}onFailure: block$/m, name)
   }
 })

@@ -7,8 +7,10 @@ session; the hooks of the project settings still run there.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from typing import NamedTuple
@@ -36,6 +38,16 @@ WEB_AND_AGENT_TOOLS = {
     "WebSearch": {"query": "x"},
     "Agent": {"description": "x", "prompt": "x", "subagent_type": "general-purpose"},
 }
+
+TOOLS = ["Read", "Edit", "Write", "NotebookEdit", "Grep", "Glob", "Bash", "Monitor", "Skill", "ToolSearch"]
+CLOSED_TOOLS = ("SendMessage", "RemoteTrigger", "CronCreate", "ListAgents", "EnterWorktree", "TaskStop",
+                "PushNotification", "FutureTool")
+ALLOWED_SKILLS = ("mattpocock-skills:tdd", "mattpocock-skills:diagnosing-bugs", "mattpocock-skills:codebase-design")
+LISTED_INPUT = {"Read": {"file_path": "docs/probe.py"}, "Edit": {"file_path": "docs/probe.py"},
+                "Write": {"file_path": "docs/probe.py"}, "NotebookEdit": {"notebook_path": "docs/probe.ipynb"},
+                "Grep": {"pattern": "x", "path": "docs"}, "Glob": {"pattern": "*.py", "path": "docs"},
+                "Bash": {"command": "echo ok"}, "Monitor": {"command": "echo ok"},
+                "Skill": {"skill": ALLOWED_SKILLS[0]}, "ToolSearch": {"query": "Monitor"}, "SubagentHandback": {}}
 
 
 class Hook(NamedTuple):
@@ -86,6 +98,24 @@ def disallowed_tools() -> dict[str, list[str]]:
     return policy
 
 
+def agent_tools() -> dict[str, list[str]]:
+    tools = {}
+    for path in sorted((ROOT / "claude" / "agents").glob("*.md")):
+        name, head = agent_head(path)
+        found = [line.split(": ", 1)[1].split(", ") for line in head if line.startswith("tools: ")]
+        if found:
+            tools[name] = found[0]
+    return tools
+
+
+def fork_skills(root: Path) -> tuple[list[Path], list[Path]]:
+    found = [path for skill in ALLOWED_SKILLS
+             for path in root.glob(f"plugins/cache/*/mattpocock-skills/*/skills/**/{skill.split(':')[1]}/SKILL.md")]
+    forked = [path for path in found
+              if re.search(r"(?m)^context:\s*[\"']?fork[\"']?\s*$", path.read_text().split("---")[1])]
+    return found, forked
+
+
 def twin_matcher() -> str:
     settings = json.loads((ROOT / "claude" / "settings.fragment.json").read_text())
     return next(group["matcher"] for group in settings["hooks"]["PreToolUse"]
@@ -100,6 +130,10 @@ def walls() -> list[Wall]:
 def twin(payload: dict) -> subprocess.CompletedProcess:
     return subprocess.run(["bash", str(CLAUDE_HOOKS / TWIN)], input=json.dumps(payload), text=True,
                           capture_output=True, check=False)
+
+
+def call(agent: str, tool: str, tool_input: dict) -> subprocess.CompletedProcess:
+    return twin({"agent_id": "sub-1", "agent_type": agent, "tool_name": tool, "tool_input": tool_input})
 
 
 def block_message(wall: Wall, tool: str, folder: str) -> str:
@@ -130,7 +164,8 @@ class FrontmatterWallTwinTests(unittest.TestCase):
         self.assertEqual(len(matchers), 1)
         for wall in walls():
             with self.subTest(wall=wall.name):
-                self.assertLessEqual(wall.tools, set(matchers[0].split("|")))
+                for tool in wall.tools:
+                    self.assertRegex(tool, f"^(?:{matchers[0]})$")
 
     def test_the_settings_twin_denies_every_tool_of_the_agent_wall(self) -> None:
         for wall in walls():
@@ -200,3 +235,94 @@ class DisallowedToolsTwinTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NestedRouteWallTests(unittest.TestCase):
+    def test_walled_agents_lose_every_unlisted_tool(self) -> None:
+        for agent in ("implementer", "spec-tester"):
+            for tool in (*CLOSED_TOOLS, ""):
+                with self.subTest(agent=agent, tool=tool):
+                    done = call(agent, tool, {})
+                    self.assertEqual((done.returncode, done.stderr.count("\n")), (2, 1), done.stderr)
+                    self.assertIn(f"{tool} is closed to this agent", done.stderr)
+                    self.assertIn("NEEDS_FACT", done.stderr)
+
+    def test_implementer_calls_only_the_allowed_skills(self) -> None:
+        for skill in ALLOWED_SKILLS:
+            with self.subTest(skill=skill):
+                done = call("implementer", "Skill", {"skill": skill})
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    def test_any_other_skill_value_is_denied_and_the_agent_goes_on(self) -> None:
+        for tool_input in ({"skill": "probe-fork"}, {"skill": "tdd"}, {"skill": "codebase-design"}, {},
+                           {"skill": "mattpocock-skills:tdd\n"}, {"skill": ["mattpocock-skills:tdd"]},
+                           {"skill": "Mattpocock-Skills:tdd"}):
+            with self.subTest(tool_input=tool_input):
+                done = call("implementer", "Skill", tool_input)
+                self.assertEqual((done.returncode, done.stderr.count("\n")), (2, 1), done.stderr)
+                for value in ("is closed to this agent", *ALLOWED_SKILLS, "go on without the skill"):
+                    self.assertIn(value, done.stderr)
+                self.assertNotIn("NEEDS_FACT", done.stderr)
+
+    def test_spec_tester_calls_no_skill(self) -> None:
+        done = call("spec-tester", "Skill", {"skill": ALLOWED_SKILLS[0]})
+        self.assertEqual((done.returncode, done.stderr.count("\n")), (2, 1), done.stderr)
+        self.assertIn("Skill is closed to this agent", done.stderr)
+        self.assertIn("NEEDS_FACT", done.stderr)
+
+    def test_every_listed_tool_passes_the_hook(self) -> None:
+        self.assertEqual(sorted(agent_tools()), ["implementer", "spec-tester"])
+        for agent, tools in agent_tools().items():
+            for tool in (*tools, "SubagentHandback"):
+                with self.subTest(agent=agent, tool=tool):
+                    done = call(agent, tool, LISTED_INPUT[tool])
+                    self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    def test_other_callers_keep_the_nested_tools(self) -> None:
+        calls = [(tool, {}) for tool in CLOSED_TOOLS]
+        calls += [("Skill", {"skill": name}) for name in ("probe-fork", "tdd", "codebase-design")] + [("Skill", {})]
+        for caller in ({}, {"agent_id": "sub-1", "agent_type": "general-purpose"}):
+            for tool, tool_input in calls:
+                with self.subTest(caller=caller, tool=tool, tool_input=tool_input):
+                    done = twin({**caller, "tool_name": tool, "tool_input": tool_input})
+                    self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    def test_each_walled_agent_has_the_closed_tool_list(self) -> None:
+        self.assertEqual(agent_tools(), {"implementer": TOOLS, "spec-tester": [t for t in TOOLS if t != "Skill"]})
+
+    def test_the_settings_twin_runs_on_every_tool(self) -> None:
+        settings = json.loads((ROOT / "claude" / "settings.fragment.json").read_text())
+        group = next(g for g in settings["hooks"]["PreToolUse"] if any(TWIN in h["command"] for h in g["hooks"]))
+        self.assertEqual(group["matcher"], ".*")
+        self.assertEqual([(h["timeout"], h["onFailure"]) for h in group["hooks"]], [(5, "block")])
+
+    def test_no_allowed_skill_forks(self) -> None:
+        root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+        found, forked = fork_skills(root)
+        if not found:
+            self.skipTest("no mattpocock-skills copy in the plugin cache")
+        self.assertEqual(forked, [])
+
+    def test_the_fork_guard_reads_the_frontmatter_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "plugins/cache/m/mattpocock-skills/1.0.0/skills/engineering"
+            for name, text in (("tdd", "---\nname: tdd\ncontext: fork\n---\n"),
+                               ("codebase-design", "---\nname: c\n---\ncontext: fork\n")):
+                (base / name).mkdir(parents=True)
+                (base / name / "SKILL.md").write_text(text)
+            found, forked = fork_skills(Path(tmp))
+        self.assertEqual(len(found), 2)
+        self.assertEqual([path.parent.name for path in forked], ["tdd"])
+
+    def test_the_route_agent_and_hook_texts_name_the_nested_routes(self) -> None:
+        route = (ROOT / "skill/references/claude.md").read_text()
+        for value in ("`SendMessage`", "`Skill`", "`mattpocock-skills:diagnosing-bugs`", "`tools`",
+                      "A `general-purpose` subagent can still start a `spec-tester` fork",
+                      "a `Bash` edit of the plugin cache copy of an allowed skill",
+                      "a project skill folder whose name imitates an allowed name"):
+            self.assertIn(value, route)
+        self.assertIn("after a skill denial, use a name the denial gives, or go on without the skill",
+                      (ROOT / "claude/agents/implementer.md").read_text())
+        header = (CLAUDE_HOOKS / TWIN).read_text().split('. "${0%/*}/git-pin.sh"')[0]
+        self.assertIn("SendMessage", header)
+        self.assertIn("Skill", header)
