@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { entries, fakePackage, git, hookCommands, init, readJson, run, setup, snapshot, upgrade } from './helpers.mjs'
+import { CLAUDE_WALL_MATCHER, CODEX_WALL_MATCHER, entries, fakePackage, git, hookCommands, init, readJson, run, setup, snapshot, upgrade } from './helpers.mjs'
 
 // A package whose kit renames the Claude gate.sh to stop-gate.sh and the
 // Codex session-start.sh to repo-start.sh, with the fragments following.
@@ -153,7 +153,7 @@ for (const old of ['Read|Edit|Write|Grep|Glob|Bash', 'Read|Edit|Write|NotebookEd
   const groups = readJson(settings).hooks.PreToolUse
   const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('deny-acceptance-to-subagents.sh'))
   assert.equal(own.length, 1)
-  assert.equal(own[0].matcher, 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent')
+  assert.equal(own[0].matcher, CLAUDE_WALL_MATCHER)
   assert.equal(own[0].hook.onFailure, 'block')
   assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
@@ -194,8 +194,8 @@ test('upgrade of a 2.1.1 Claude project keeps user groups in order and the empty
 
   upgrade(repo, home, [], fakePackage('99.0.0'))
   const matchers = readJson(settings).hooks.PreToolUse.map((entry) => entry.matcher)
-  const at = matchers.indexOf('Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent')
-  assert.deepEqual(matchers.slice(at - 1, at + 3), ['MineBefore', 'Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool|WebFetch|WebSearch|Agent', 'X', 'MineAfter'])
+  const at = matchers.indexOf(CLAUDE_WALL_MATCHER)
+  assert.deepEqual(matchers.slice(at - 1, at + 3), ['MineBefore', CLAUDE_WALL_MATCHER, 'X', 'MineAfter'])
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
 
@@ -236,7 +236,7 @@ test('upgrade of a Codex project replaces the old acceptance-wall entry with one
   const groups = readJson(hooks).hooks.PreToolUse
   const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('acceptance-wall.sh'))
   assert.equal(own.length, 1)
-  assert.equal(own[0].matcher, 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*')
+  assert.equal(own[0].matcher, CODEX_WALL_MATCHER)
   assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
