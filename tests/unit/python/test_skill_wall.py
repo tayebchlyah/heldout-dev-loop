@@ -201,6 +201,13 @@ class SkillWallTests(unittest.TestCase):
         self.assertEqual(verdict(linked), denied("differs from the main ref"), "main checkout copy")
         (top / SKILL).unlink()
         self.assertEqual(verdict(linked), denied("differs from the main ref"), "no main checkout copy")
+        write(top / SKILL, PLAIN)
+        start = self.tmp / "start"
+        git(top, "worktree", "add", "-q", "-b", "feat/y", str(start), "main")
+        env = {"CLAUDE_PROJECT_DIR": str(start.resolve())}
+        self.assertEqual(verdict(linked, env=env), ALLOW, "session folder equal")
+        write(start / SKILL, PLAIN + "x")
+        self.assertEqual(verdict(linked, env=env), denied("differs from the main ref"), "session folder copy")
 
     def test_cwd_falls_back_to_the_project_dir(self) -> None:
         top = self.repo()
@@ -218,6 +225,17 @@ class SkillWallTests(unittest.TestCase):
             (front("hooks:"), "hooks key"), (front('"hooks": x'), "hooks key"), (front("{hooks: x}"), "hooks key"),
             ("Body !`date`\n", "shell line"), ("Body\n```!\ndate\n```\n", "shell line"), ("Body ```! date\n", "shell line"),
             (front("description: !`date`"), "shell line"), (b"\xff\xfe Body !`date`\n", "shell line"),
+            ("---\ncontext: fork\n---x\nBody\n", "context: fork"), ("---\ncontext: fork\n--- end\n", "context: fork"),
+            ("---\ncontext: fork\na: b---\n", "context: fork"), ("---\ncontext: fork\n----\n", "context: fork"),
+            ("---\ncontext: fork\n  ---\n", "context: fork"), ("---\nhooks: x\n---x\n", "hooks key"),
+            ("---﻿\ncontext: fork\n---\n", "context: fork"),
+            (front("!!str context: fork"), "frontmatter shape"), (front("&a context: fork"), "frontmatter shape"),
+            (front("? context\n: fork"), "frontmatter shape"), (front('"\\x63ontext": fork'), "frontmatter shape"),
+            (front("<<: {context: fork}"), "context: fork"), (front("[context]: fork"), "frontmatter shape"),
+            ("---\n  a: 1\n---\nBody\n", "frontmatter shape"),
+            (front("# note\ndescription: a\n  more"), None),
+            ("Body see @notes.md\n", "at mention"), (front("description: see @notes.md"), "at mention"),
+            ("\n---\ncontext: fork\n---\nBody\n", None),
             ("Body\ncontext: fork\n", None), (front("name2: y") + "hooks: x\n", None), (b"Plain \xff text\n", None)]
         for text, reason in rows:
             with self.subTest(text=text):
