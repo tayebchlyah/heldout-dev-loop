@@ -55,8 +55,8 @@ class SkillContractTests(unittest.TestCase):
                       "decide --kind discovery",
                       "the shell route (`curl`, `gh api`): a walled agent can still reach the web and the network through the shell"):
             self.assertIn(value, claude)
-        for value in ("`Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*`",
-                      "`view_image` is walled by `path`", "no hook fires on `exec`, one fires on each inner tool call",
+        for value in ("`Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents`",
+                      "`collaboration.*`", "`view_image` is walled by `path`", "no hook fires on `exec`, one fires on each inner tool call",
                       "`write_stdin`", "#140", "`custom_tool_call_output`, output only",
                       "`webrun`", "hosted web search tool", "`*.githubusercontent.com`", "`NEEDS_FACT: <question>`",
                       "`NEEDS_FACT` comes before the seal commit", "`work from the spec`", "decide --kind discovery"):

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Codex PreToolUse wall (D9), matcher
-# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*.
+# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents.
 # agent_id is present only in a subagent call.
 # spec_tester: no path names src/, app/, backend/ or frontend/. Any other subagent: no path names
 # tests/acceptance. Main session: no apply_patch of a file under tests/acceptance/; its Bash stays open.
@@ -26,6 +26,12 @@
 # Web tools (#240): a tool whose name starts with web is denied to implementer and spec_tester with
 # agent_id set, whatever its input; every other caller exits 0 with no path rule. The hosted web
 # search tool reaches no hook. The denial names the NEEDS_FACT exit.
+# Collaboration tools (#273): a tool whose name starts with collaboration, or spawn_agent, send_input,
+# send_message, followup_task, wait_agent, close_agent, interrupt_agent or list_agents, is denied to
+# implementer and spec_tester with agent_id set, whatever its input; every other caller exits 0 with no
+# path rule. The denial names the NEEDS_FACT exit. No tools key or skill list in the Codex agent files:
+# Codex has no Skill tool that starts a fork. Written gap: a subagent other than these 2 keeps the tools,
+# and can still start a spec_tester child.
 . "${0%/*}/git-pin.sh"
 input=$(cat)
 # Fail closed (D8): no jq, or input that is not a JSON object, blocks the call.
@@ -42,6 +48,15 @@ case "$tool" in
       case "$agent_type" in
         implementer|spec_tester)
           echo "Blocked: $tool is closed to this agent: the web holds a public copy of the repository. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
+          exit 2 ;;
+      esac
+    fi
+    exit 0 ;;
+  collaboration*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents)
+    if [ -n "$agent_id" ]; then
+      case "$agent_type" in
+        implementer|spec_tester)
+          echo "Blocked: $tool is closed to this agent: a nested agent has no wall. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
           exit 2 ;;
       esac
     fi
