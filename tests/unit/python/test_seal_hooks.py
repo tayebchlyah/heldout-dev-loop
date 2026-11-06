@@ -507,12 +507,13 @@ class CodexWallTests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stderr), (0, ""))
 
     NESTED = ("collaborationspawn_agent", "collaborationsend_message", "collaboration.future", "spawn_agent", "send_input",
-              "send_message", "followup_task", "wait_agent", "close_agent", "interrupt_agent", "list_agents")
+              "send_message", "followup_task", "wait_agent", "close_agent", "interrupt_agent", "list_agents",
+              "multi_agent_v1send_input", "multi_agent_v1wait_agent", "multi_agent_v1close_agent",
+              "multi_agent_v1resume_agent", "teamspawn_agent", "resume_agent")
     MATCHER = ("Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*"
-               "|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents")
+               "|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent")
 
     def test_collaboration_tools_by_agent_type(self) -> None:
-        """Collaboration tools are denied to implementer and spec_tester only, with agent_id set (#273)."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         top = Path(tmp.name).resolve() / "repo"
@@ -536,12 +537,14 @@ class CodexWallTests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stderr), (0, ""))
 
     def test_an_mcp_tool_with_a_nested_name_keeps_the_mcp_rule(self) -> None:
-        payload = {"cwd": "/repo", "tool_name": "mcp__x__spawn_agent", "tool_input": {"q": "x"}}
-        walled = self.wall({**payload, "agent_id": "a", "agent_type": "implementer"})
-        self.assertEqual(walled.returncode, 2, walled.stderr)
-        self.assertIn("MCP tools are closed to this agent", walled.stderr)
-        reviewer = self.wall({**payload, "agent_id": "c", "agent_type": "task_reviewer"})
-        self.assertEqual((reviewer.returncode, reviewer.stderr), (0, ""))
+        for name in ("mcp__x__spawn_agent", "mcp__x__list_agents"):
+            with self.subTest(tool=name):
+                payload = {"cwd": "/repo", "tool_name": name, "tool_input": {"q": "x"}}
+                walled = self.wall({**payload, "agent_id": "a", "agent_type": "implementer"})
+                self.assertEqual(walled.returncode, 2, walled.stderr)
+                self.assertIn("MCP tools are closed to this agent", walled.stderr)
+                reviewer = self.wall({**payload, "agent_id": "c", "agent_type": "task_reviewer"})
+                self.assertEqual((reviewer.returncode, reviewer.stderr), (0, ""))
 
     def test_the_matcher_and_the_texts_name_the_collaboration_tools(self) -> None:
         fragment = json.loads((ROOT / "codex/hooks.fragment.json").read_text())
@@ -549,7 +552,11 @@ class CodexWallTests(unittest.TestCase):
         self.assertEqual(group["matcher"], self.MATCHER)
         header = (ROOT / "codex/hooks/acceptance-wall.sh").read_text().split('. "${0%/*}/git-pin.sh"')[0]
         self.assertIn("collaboration", header)
-        self.assertIn("`collaboration.*`", (ROOT / "skill/references/codex.md").read_text())
+        codex = (ROOT / "skill/references/codex.md").read_text()
+        self.assertIn("`collaboration.*`", codex)
+        for text in (header, codex):
+            self.assertIn("multi_agent", text)
+            self.assertIn("nested harness", text)
 
     def test_a_real_repo_root_and_a_repo_under_a_source_folder_name(self) -> None:
         tmp = tempfile.TemporaryDirectory()
