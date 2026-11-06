@@ -11,12 +11,14 @@ from pathlib import Path
 
 from devloop import emit
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
-from seal.record import add_seal, record_branch
+from seal.record import add_seal, patch_carriers, record_branch, replace_patch
 import size
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
 TRAILERS = re.compile(rf"^({SEAL_TRAILER}|{PATCH_TRAILER}):")
+PATCH_LINE = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
+ACCEPTANCE_LINE = re.compile(r"^Acceptance:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
 PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 
 
@@ -178,19 +180,33 @@ def rebase_continue(repo: Path) -> dict:
         return {"error": f"no staged change under {ACCEPTANCE_DIR}/"}
     value = seal_value(entries)
     try:
-        trailers = f"{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {patch_id(repo, *staged_diff(repo))}"
+        patch = patch_id(repo, *staged_diff(repo))
     except PatchIdFailed as error:
         return {"error": str(error)}
+    old_patch = next(iter(PATCH_LINE.findall(last)), "")
+    feature = next(iter(ACCEPTANCE_LINE.findall(last)), "")
+    branch = record_branch(repo)
     kept = "\n".join(line for line in last.splitlines() if not TRAILERS.match(line))
-    message_file.write_text(f"{head}{kept}\n{trailers}\n".lstrip("\n"), encoding="utf-8")
+    message_file.write_text(f"{head}{kept}\n{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {patch}\n".lstrip("\n"),
+                            encoding="utf-8")
     result = run_git(repo, "-c", "core.editor=true", "rebase", "--continue", env={**os.environ, "GIT_EDITOR": "true"})
     files = sorted(path for path, _ in entries)
     if result.returncode == 0:
-        return {"seal": value, "files": files, "rebase": "continued"}
-    if not state.is_dir():
+        out = {"seal": value, "files": files, "rebase": "continued"}
+    elif not state.is_dir():
         return {"error": f"git rebase --continue failed: {(result.stderr or result.stdout).strip()}"}
-    unmerged = run_git(repo, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")
-    return {"seal": value, "files": files, "rebase": "stopped", "conflicts": [p for p in unmerged if p]}
+    else:
+        unmerged = run_git(repo, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")
+        out = {"seal": value, "files": files, "rebase": "stopped", "conflicts": [p for p in unmerged if p]}
+    if branch is not None:
+        commit = patch_carriers(repo).get(patch) or run_git(repo, "rev-parse", "HEAD").stdout.strip()
+        try:
+            replace_patch(repo, old_patch, {"branch": branch, "commit": commit,
+                                            "patches": [old_patch, patch] if old_patch else [patch],
+                                            "seal": value, "feature": feature, "paths": files})
+        except (OSError, ValueError) as error:
+            return {"error": f"seal record not written: {error}", "commit": commit}
+    return out
 
 
 def cmd_seal(args: argparse.Namespace) -> int:
