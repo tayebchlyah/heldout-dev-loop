@@ -72,6 +72,7 @@ CODEX_ROWS = [
     ),
     ("harness-failed", CODEX_BLOCKED, 1, 1, "ERROR"),
     ("no-transcript", None, 0, 1, "ERROR"),
+    ("crash", [{"call_id": [1], "output": "x"}], 0, 1, "ERROR"),
 ]
 
 
