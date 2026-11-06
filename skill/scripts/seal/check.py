@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from devloop import emit, git
 from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, merge_base, run_git
 from seal.audit import taint_file, taint_state
+from seal.record import patch_carriers, read_record, record_file, skip_reason
 from seal.value import commit_entries, commit_patch_value, seal_value
 from seal.weakened import TEST_FILES
 
@@ -155,11 +156,28 @@ def kit_violations(repo: Path, base: str, uncommitted: bool) -> list[dict]:
     return found
 
 
+def record_violations(repo: Path) -> tuple[list[dict], list[dict]]:
+    if not record_file(repo).exists():
+        return [], []
+    skip = skip_reason(repo)
+    if skip:
+        return [], [{"reason": "seal-record-skipped", "why": skip}]
+    try:
+        seals = read_record(repo) or []
+    except ValueError:
+        return [violation("seal-record-unreadable", path=str(record_file(repo)))], []
+    branch = run_git(repo, "symbolic-ref", "-q", "HEAD").stdout.strip()
+    carried = patch_carriers(repo)
+    return [{**violation("seal-dropped", commit=seal["commit"]), "paths": seal["paths"], "patch": seal["patches"][-1]}
+            for seal in seals if seal["branch"] == branch and not any(p in carried for p in seal["patches"])], []
+
+
 def check(repo: Path, uncommitted: bool) -> dict:
     base = merge_base(repo)
     violations = commit_violations(repo, base) if base else []
+    found, record_warnings = record_violations(repo) if base else ([], [])
     if base:
-        violations += kit_violations(repo, base, uncommitted)
+        violations += kit_violations(repo, base, uncommitted) + found
     if uncommitted:
         violations += uncommitted_violations(repo)
     try:
@@ -171,7 +189,8 @@ def check(repo: Path, uncommitted: bool) -> dict:
     except (ValueError, AttributeError, TypeError, KeyError):  # taint.json does not parse or has the wrong shape
         violations.append(violation("taint-unreadable", path=str(taint_file(repo))))
         taint, warnings = [], []
-    return {"ok": not violations and not taint, "violations": violations, "taint": taint, "warnings": warnings}
+    return {"ok": not violations and not taint, "violations": violations, "taint": taint,
+            "warnings": warnings + record_warnings}
 
 
 def cmd_seal_check(args: argparse.Namespace) -> int:
