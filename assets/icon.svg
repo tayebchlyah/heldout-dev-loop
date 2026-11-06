@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="-35 0 640 640" role="img" aria-labelledby="logo-title">
+  <title id="logo-title">Heldout Dev Loop icon</title>
+  <defs>
+    <linearGradient id="upper-arrow" x1="33" y1="275" x2="351" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00c6e9"/>
+      <stop offset=".42" stop-color="#008ff4"/>
+      <stop offset=".77" stop-color="#343ef5"/>
+      <stop offset="1" stop-color="#5723ea"/>
+    </linearGradient>
+    <linearGradient id="right-arrow" x1="430" y1="102" x2="449" y2="503" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#983cf2"/>
+      <stop offset=".43" stop-color="#642bf3"/>
+      <stop offset=".67" stop-color="#144cf4"/>
+      <stop offset="1" stop-color="#00c6eb"/>
+    </linearGradient>
+    <linearGradient id="lower-arrow" x1="82" y1="342" x2="146" y2="509" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0057ff"/>
+      <stop offset="1" stop-color="#0034d8"/>
+    </linearGradient>
+    <linearGradient id="code-color" x1="178" y1="231" x2="382" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2b0adb"/>
+      <stop offset="1" stop-color="#3015e8"/>
+    </linearGradient>
+    <linearGradient id="shield-edge" x1="241" y1="401" x2="330" y2="584" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1bf2b7"/>
+      <stop offset=".58" stop-color="#09c798"/>
+      <stop offset="1" stop-color="#02a57e"/>
+    </linearGradient>
+    <linearGradient id="shield-face" x1="231" y1="410" x2="334" y2="580" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00dc9c"/>
+      <stop offset=".56" stop-color="#009879"/>
+      <stop offset="1" stop-color="#007963"/>
+    </linearGradient>
+    <linearGradient id="check-color" x1="278" y1="449" x2="294" y2="529" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f9ffff"/>
+      <stop offset="1" stop-color="#c5e9eb"/>
+    </linearGradient>
+    <linearGradient id="ink" x2="0" y2="1">
+      <stop stop-color="#080b2b"/>
+      <stop offset="1" stop-color="#040821"/>
+    </linearGradient>
+    <linearGradient id="violet" x2="0" y2="1">
+      <stop stop-color="#4010e5"/>
+      <stop offset="1" stop-color="#3505d1"/>
+    </linearGradient>
+
+    <filter id="halo" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <filter id="rim-glow" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <filter id="check-shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <path id="arrow-top" d="M33 316C30 248 54 185 101 137C149 89 214 62 286 66L286 44C286 32 295 27 303 33C306 35 309 38 312 42L361 98C367 105 367 112 360 118L296 166C287 173 277 169 278 159L282 126C231 122 183 142 148 177C113 213 96 258 98 310C98 317 91 319 85 314L76 306C70 301 63 301 57 306L45 321C40 327 33 324 33 316Z"/>
+    <path id="arrow-right" d="M402 102C468 146 510 206 517 277C529 373 483 451 403 505C397 509 389 515 390 504L392 430C392 426 395 424 399 421C440 385 458 333 452 280C447 230 419 184 373 158C364 153 365 148 371 144L383 137C393 131 395 122 392 111C389 102 394 96 402 102Z"/>
+    <path id="arrow-bottom" d="M27 409L56 345C60 337 66 335 74 338L146 363C157 367 157 379 147 382L125 390C141 412 161 431 184 445L184 478C184 494 185 505 188 514C190 519 187 521 181 519C132 499 90 460 65 412L39 422C29 426 23 419 27 409Z"/>
+    <path id="code" d="M215 249L165 294L215 340M306 219L253 368M344 249L393 294L344 340"/>
+    <path id="shield" d="M280 392C285 389 291 389 297 392C319 406 337 412 366 418C374 420 378 426 378 433V479C378 533 346 573 291 594C289 595 286 595 283 594C229 573 198 533 198 479V433C198 425 203 420 211 418C237 413 258 405 280 392Z"/>
+    <path id="shield-inset" d="M284 401C287 399 290 399 293 401C316 415 338 423 364 428C368 429 369 431 369 435V479C369 528 339 565 288 585C237 565 207 528 207 479V435C207 431 209 429 213 428C238 423 262 414 284 401Z"/>
+    <path id="check" d="M252 492L275 516L329 461"/>
+  </defs>
+
+  <g filter="url(#halo)" opacity=".44">
+    <use href="#arrow-top" fill="#498cff" stroke="#80a1ff" stroke-width="12"/>
+    <use href="#arrow-right" fill="#7b62ff" stroke="#95a3ff" stroke-width="12"/>
+    <use href="#arrow-bottom" fill="#5285ff" stroke="#7b9cff" stroke-width="12"/>
+    <use href="#code" fill="none" stroke="#9681ff" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/>
+    <use href="#shield" fill="#63efd4" stroke="#69f9dd" stroke-width="15"/>
+  </g>
+  <g fill="none" stroke="#fff" stroke-width="5" opacity=".84" filter="url(#rim-glow)">
+    <use href="#arrow-top"/>
+    <use href="#arrow-right"/>
+    <use href="#arrow-bottom"/>
+    <use href="#shield"/>
+  </g>
+  <use href="#arrow-top" fill="url(#upper-arrow)"/>
+  <use href="#arrow-right" fill="url(#right-arrow)"/>
+  <use href="#arrow-bottom" fill="url(#lower-arrow)"/>
+  <use href="#code" fill="none" stroke="url(#code-color)" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
+  <use href="#shield" fill="url(#shield-edge)"/>
+  <use href="#shield-inset" fill="url(#shield-face)"/>
+  <use href="#check" transform="translate(0 4)" fill="none" stroke="#003c40" stroke-opacity=".42" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" filter="url(#check-shadow)"/>
+  <use href="#check" fill="none" stroke="url(#check-color)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
