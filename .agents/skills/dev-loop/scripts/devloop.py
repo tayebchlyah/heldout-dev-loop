@@ -14,6 +14,7 @@
   devloop.py audit                                    SubagentStop hook JSON on stdin: record a read of a protected file
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
+  devloop.py skill-wall                               PreToolUse hook JSON on stdin: may implementer load this project skill
   devloop.py size-check [--uncommitted | --all]       file-size ratchet: a new or grown file over 40,000 bytes fails
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
@@ -46,8 +47,9 @@
   devloop.py sessions --since DAYS [--repo PATH]       the Claude Code and Codex sessions of the repo, for retro
   devloop.py decide --kind decision|discovery --what T --why T --evidence T [--result T] [--risk] [--feature SLUG] [--repo PATH]
                                                       append one row to the decision log
-  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...] [--repo PATH]
-  devloop.py pause --clear [--repo PATH]              write or delete the pause note of the worktree
+  devloop.py pause [--event] [--intent T] [--verified T] [--open T] [--next T] [--agent ID=TASK ...] [--run LOG ...] [--feature SLUG] [--repo PATH]
+  devloop.py pause --clear [--feature SLUG] [--repo PATH]
+                                                      write or delete the pause note of the worktree
   devloop.py notes-migrate [--repo PATH] [--apply [--plan HASH]]
                                                       move the notes to the feature folder layout, rewrite the links
 
@@ -356,6 +358,9 @@ def main() -> int:
     search_wall = commands.add_parser("search-wall")
     search_wall.set_defaults(run=("seal.search", "cmd_search_wall"))
 
+    skill_wall = commands.add_parser("skill-wall")
+    skill_wall.set_defaults(run=("seal.skills", "cmd_skill_wall"))
+
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()
     size_mode.add_argument("--uncommitted", action="store_true")
@@ -495,6 +500,7 @@ def main() -> int:
         pause.add_argument(f"--{name}")
     pause.add_argument("--agent", action="append")
     pause.add_argument("--run", action="append", dest="runs")
+    pause.add_argument("--feature")
     pause.add_argument("--repo", default=".")
     pause.set_defaults(run=("autonomy", "cmd_pause"))
 

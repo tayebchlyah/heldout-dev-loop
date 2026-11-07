@@ -115,11 +115,16 @@ def git(cwd: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def checked_out_branch(cwd: Path) -> str | None:
+    from status import rebasing
+    return git(cwd, "symbolic-ref", "--short", "-q", "HEAD") or rebasing(cwd)
+
+
 def is_feature_worktree(cwd: Path) -> bool:
     """A linked worktree on a branch with a `/`, whose top level holds `dev-loop.json`."""
     git_dir = git(cwd, "rev-parse", "--absolute-git-dir")
     common = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    branch = git(cwd, "symbolic-ref", "--short", "-q", "HEAD")
+    branch = checked_out_branch(cwd)
     top = git(cwd, "rev-parse", "--show-toplevel")
     return (git_dir is not None and common is not None and Path(git_dir) != Path(common)
             and bool(branch) and "/" in branch and top is not None and (Path(top) / "dev-loop.json").is_file())
@@ -151,8 +156,8 @@ def find_transcript(session: str, harness: str, env: Mapping[str, str], home: Pa
 
 
 def branch_slug(repo: Path) -> str | None:
-    """The slug of the checked-out branch `<prefix>/<slug>`, or None."""
-    branch = devloop.git(repo, "symbolic-ref", "--short", "-q", "HEAD")
+    """The slug of the checked-out branch `<prefix>/<slug>` (a rebase in progress: its branch), or None."""
+    branch = checked_out_branch(repo)
     return branch.rsplit("/", 1)[1].lower() if branch and "/" in branch else None
 
 
@@ -229,8 +234,9 @@ def cmd_pause(args: argparse.Namespace) -> int:
     if git_dir is None:
         return emit({"error": f"not a git repository: {repo}"}, 1)
     path = note_path(Path(git_dir))
+    named = (args.feature or "").lower() or None
     if args.clear:
-        found = path.is_file()
+        found = path.is_file() and (named is None or (read_note(Path(git_dir)) or {}).get("feature") == named)
         if found:
             path.unlink()
         return emit({"cleared": found}, 0)
@@ -244,7 +250,7 @@ def cmd_pause(args: argparse.Namespace) -> int:
         session, harness = session_id(os.environ)
         transcript = find_transcript(session, harness, os.environ, Path.home()) if session and harness else None
         reason, message = "manual", None
-    slug = branch_slug(repo)
+    slug = named or branch_slug(repo)
     stage = ledger_last = last_decision = None
     try:
         notes = resolve(repo, os.environ, Path.home())
@@ -252,7 +258,7 @@ def cmd_pause(args: argparse.Namespace) -> int:
         notes = None
     try:  # An unreadable spec, plan or ledger (an iCloud placeholder) must not cost the note.
         if notes is not None:
-            stage = detect(repo, None, notes)["stage"]
+            stage = detect(repo, named, notes)["stage"]
             target = log_target(repo, slug, notes) if slug else None
             if target is not None and target.is_file():
                 rows = log_rows(target.read_text())

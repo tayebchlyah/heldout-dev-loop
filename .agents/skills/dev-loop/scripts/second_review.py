@@ -22,6 +22,7 @@ from pathlib import Path
 import devloop
 from devloop import emit, git
 import merge_check
+import metrics
 from seal import audit, merge_base
 
 REVIEWER = {"claude": "codex", "codex": "claude"}
@@ -34,7 +35,10 @@ LOCAL = "dev-loop.local.json"
 NAMES = {"agents.md", "agents.override.md", "claude.md", "claude.local.md", ".mcp.json"}
 FOLDERS = {".claude", ".codex", ".agents"}
 PROMPT = Path(__file__).resolve().parent.parent / "references" / "second-review.md"
-ENV_KEYS = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "CLAUDE_CONFIG_DIR", "CODEX_HOME")
+PROXY_KEYS = tuple(k for name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY") for k in (name, name.lower()))
+CA_KEYS = ("SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "CODEX_CA_CERTIFICATE")
+ENV_KEYS = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "CLAUDE_CONFIG_DIR", "CODEX_HOME",
+            *PROXY_KEYS, *CA_KEYS)
 SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 CODEX_FILESYSTEM = ('permissions.devloop-review.filesystem={":minimal"="read", ":project_roots"="read", '
                     '":tmpdir"="none", ":slash_tmp"="none"}')
@@ -258,7 +262,6 @@ def record_dir(repo: Path, reviewer: str, now: datetime) -> Path:
 
 
 def tokens(reviewer: str, stdout: str, stderr: str) -> int | None:
-    """Claude: `usage` input plus output tokens. Codex: the last `tokens used` number in stderr."""
     if reviewer == "codex":
         found = re.findall(r"tokens used[:\s]*(\d[\d,]*)", stderr)
         return int(found[-1].replace(",", "")) if found else None
@@ -267,7 +270,9 @@ def tokens(reviewer: str, stdout: str, stderr: str) -> int | None:
     if not isinstance(usage, dict):
         return None
     counts = [usage.get("input_tokens"), usage.get("output_tokens")]
-    return sum(counts) if all(isinstance(c, int) and not isinstance(c, bool) for c in counts) else None  # type: ignore[arg-type]
+    if not all(isinstance(c, int) and not isinstance(c, bool) for c in counts):
+        return None
+    return round(metrics.weigh(metrics.raw_usage(reply)))
 
 
 def _reply(stdout: str) -> dict | None:
