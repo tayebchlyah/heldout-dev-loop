@@ -228,11 +228,13 @@ class SealHookTests(unittest.TestCase):
                 agent = f"w-{harness}"
                 start = {"hook_event_name": "SubagentStart", "agent_id": agent, "agent_type": "implementer"}
                 self.hook(harness, script, start, *args)
-                git(self.repo, "commit", "-q", "--allow-empty", "-m", f"work of {agent}")
-                result = self.hook(harness, script, start, *args)
-                self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
-                self.assertEqual(self.head_file(agent).read_text().strip(), first)
-                git(self.repo, "reset", "-q", "--hard", first)
+                try:
+                    git(self.repo, "commit", "-q", "--allow-empty", "-m", f"work of {agent}")
+                    result = self.hook(harness, script, start, *args)
+                    self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+                    self.assertEqual(self.head_file(agent).read_text().strip(), first)
+                finally:
+                    git(self.repo, "reset", "-q", "--hard", first)
 
     def test_claude_hooks_use_the_input_cwd_not_the_project_dir(self) -> None:
         other = self.tmp / "other"
