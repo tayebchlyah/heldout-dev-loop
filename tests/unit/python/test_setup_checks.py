@@ -291,3 +291,20 @@ class AgentShellCheckTests(unittest.TestCase):
             self.assertIn("- Turn off in the codex shell snapshot", actions)
             self.assertIn("-ic, no terminal): noclobber (", actions)
             self.assertNotIn("noclobber", head)
+
+
+class GitLazyFetchVersionTests(unittest.TestCase):
+    def test_versions_that_honour_no_lazy_fetch(self) -> None:
+        rows = [("2.45.0", True), ("2.56.0", True), ("3.0.0", True), ("2.39.4", True), ("2.39.5", True), ("2.40.2", True), ("2.41.1", True),
+                ("2.42.2", True), ("2.43.4", True), ("2.44.1", True), ("2.44.0", False), ("2.43.3", False), ("2.42.1", False),
+                ("2.41.0", False), ("2.40.1", False), ("2.39.3", False), ("2.31.0", False), ("1.9.9", False)]
+        for found, ok in rows:
+            for form in ("git version {}", "git version {} (Apple Git-157)", "git version {}.windows.1"):
+                with self.subTest(found=found, form=form), tempfile.TemporaryDirectory() as tmp:
+                    script = Path(tmp) / "git"
+                    write(script, f"#!/bin/sh\necho '{form.format(found)}'\n")
+                    script.chmod(0o755)
+                    with mock.patch.dict(os.environ, {"PATH": tmp}):
+                        failures = check_setup.check_version("git")
+                    self.assertEqual(failures == [], ok, failures)
+                    self.assertTrue(ok or f"git {found} does not honour GIT_NO_LAZY_FETCH" in failures[0], failures)
