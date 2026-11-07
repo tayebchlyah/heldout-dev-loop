@@ -303,6 +303,7 @@ class HookPlantedProgramTests(unittest.TestCase):
                 self.assertIn("gate ran", json.loads(self.stop(harness).stdout)["reason"])
 
     def test_the_pin_stops_a_promisor_lazy_fetch(self) -> None:
+        self.env.pop("GIT_NO_LAZY_FETCH", None)
         sub = self.root / "sub"
         self.git("init", "-q", "--bare", str(sub))
         for key, value in [("extensions.partialClone", "origin"), ("remote.origin.promisor", "true"),
