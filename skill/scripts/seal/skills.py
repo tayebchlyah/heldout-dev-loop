@@ -115,7 +115,7 @@ def scan(text: bytes) -> str | None:
     keys = {found.group(1) for found in FRONT_KEY.finditer(front)}
     if "context" in keys:
         return "context: fork"
-    if b"!`" in text or b"```!" in text:
+    if b"!`" in text or b"```!" in text or b"!$" in text:
         return "shell line"
     if "hooks" in keys:
         return "hooks key"

@@ -302,6 +302,29 @@ class HookPlantedProgramTests(unittest.TestCase):
             with self.subTest(harness=harness):
                 self.assertIn("gate ran", json.loads(self.stop(harness).stdout)["reason"])
 
+    def test_the_pin_stops_a_promisor_lazy_fetch(self) -> None:
+        sub = self.root / "sub"
+        self.git("init", "-q", "--bare", str(sub))
+        for key, value in [("extensions.partialClone", "origin"), ("remote.origin.promisor", "true"),
+                           ("remote.origin.url", str(self.root / "nowhere")),
+                           ("remote.origin.uploadpack", f"sh -c 'echo x >> {self.marker}; exit 1'")]:
+            self.git("-C", str(sub), "config", key, value)
+        tree = subprocess.run(["git", "-C", str(sub), "mktree"], env=self.env, check=True, capture_output=True,
+                              text=True, input="").stdout.strip()
+        commit = subprocess.run(["git", "-C", str(sub), "-c", "user.name=T", "-c", "user.email=t@example.com",
+                                 "commit-tree", "-m", "x", tree], env=self.env, check=True, capture_output=True,
+                                text=True, input="").stdout.strip()
+        (sub / "objects" / commit[:2] / commit[2:]).unlink()
+        read = f'git -C "{sub}" rev-parse -q --verify {commit}^{{commit}}'
+        subprocess.run(["sh", "-c", read], env=self.env, check=False, capture_output=True)
+        self.assertTrue(self.marker.exists(), "control: the unpinned read of a missing object runs the lazy fetch")
+        self.marker.unlink()
+        for harness, hooks in HookGitPinTests.HOOKS.items():
+            with self.subTest(harness=harness):
+                subprocess.run(["sh", "-c", f'. "{hooks}/git-pin.sh"; {read}'], env=self.env, check=False,
+                               capture_output=True)
+                self.assertFalse(self.marker.exists())
+
     def test_the_pin_stops_signature_verification_in_log(self) -> None:
         gpg = self.root / "gpg.sh"
         write(gpg, f'#!/bin/sh\ncat >/dev/null\ncase "$*" in *--verify*) echo x >> {self.marker} ;; esac\n'
