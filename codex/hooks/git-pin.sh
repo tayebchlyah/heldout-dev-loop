@@ -3,8 +3,9 @@
 # because each of them starts a program. Appends to any GIT_CONFIG_COUNT pin already in the environment.
 # git_pin_repo <dir> adds the filter drivers of that repo; sourcing it pins the repo of the current directory.
 # The index refresh of git status (GIT_OPTIONAL_LOCKS=0) and of porcelain git diff (diff.autoRefreshIndex) is off: the
-# index write runs the post-index-change hook, and core.hooksPath may point into the worktree (#238).
-export GIT_OPTIONAL_LOCKS=0
+# index write runs the post-index-change hook, and core.hooksPath may point into the worktree (#238). No lazy fetch
+# (GIT_NO_LAZY_FETCH=1): a promisor remote's uploadpack is a program the repo names (#281).
+export GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1
 __gp_add() {
   export "GIT_CONFIG_KEY_$__gp_n=$1" "GIT_CONFIG_VALUE_$__gp_n=$2" "GIT_CONFIG_COUNT=$((__gp_n + 1))"
   __gp_n=$((__gp_n + 1))

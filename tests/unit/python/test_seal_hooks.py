@@ -221,6 +221,19 @@ class SealHookTests(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
                 self.assertEqual(self.head_file(agent).read_text().strip(), head)
 
+    def test_a_wake_keeps_the_first_head_file(self) -> None:
+        first = git(self.repo, "rev-parse", "HEAD").strip()
+        for harness, script, args in [("claude", "gate-snapshot.sh", []), ("codex", "seal.sh", ["start"])]:
+            with self.subTest(harness=harness):
+                agent = f"w-{harness}"
+                start = {"hook_event_name": "SubagentStart", "agent_id": agent, "agent_type": "implementer"}
+                self.hook(harness, script, start, *args)
+                git(self.repo, "commit", "-q", "--allow-empty", "-m", f"work of {agent}")
+                result = self.hook(harness, script, start, *args)
+                self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+                self.assertEqual(self.head_file(agent).read_text().strip(), first)
+                git(self.repo, "reset", "-q", "--hard", first)
+
     def test_claude_hooks_use_the_input_cwd_not_the_project_dir(self) -> None:
         other = self.tmp / "other"
         other.mkdir()

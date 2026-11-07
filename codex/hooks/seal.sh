@@ -1,6 +1,7 @@
 #!/bin/sh
 # Held-out seal. Usage: seal.sh start|stop|turn, hook JSON on stdin.
-# start (SubagentStart): write <git-dir>/dev-loop-subagents/<agent_id>.head, the HEAD the audit starts from.
+# start (SubagentStart): write <git-dir>/dev-loop-subagents/<agent_id>.head, the HEAD the audit starts from,
+# only once: a wake fires SubagentStart again with the same agent id (#281).
 # stop (SubagentStop): run `devloop.py audit`, then `seal-check`; block on a seal violation only.
 # turn (Stop): run `seal-check`; block on a seal violation or an open taint record.
 # stop_hook_active true: no block. Input that is not JSON, no dev-loop.json, or no CLI: exit 0, silent.
@@ -25,6 +26,7 @@ case "$mode" in
     [ -n "$id" ] || exit 0
     head=$(git rev-parse HEAD 2>/dev/null) || exit 0
     subagents="$(git rev-parse --absolute-git-dir)/dev-loop-subagents"
+    [ -e "$subagents/$id.head" ] && exit 0
     mkdir -p "$subagents" && printf '%s\n' "$head" >"$subagents/$id.head"
     exit 0 ;;
   stop) printf '%s' "$input" | python3 -I "$cli" audit >/dev/null 2>&1 ;;

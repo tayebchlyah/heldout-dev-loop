@@ -225,6 +225,8 @@ class SkillWallTests(unittest.TestCase):
             (front("hooks:"), "hooks key"), (front('"hooks": x'), "hooks key"), (front("{hooks: x}"), "hooks key"),
             ("Body !`date`\n", "shell line"), ("Body\n```!\ndate\n```\n", "shell line"), ("Body ```! date\n", "shell line"),
             (front("description: !`date`"), "shell line"), (b"\xff\xfe Body !`date`\n", "shell line"),
+            ("Body !$ARGUMENTS\n", "shell line"), ("Body !$0\n", "shell line"), ("Body !${1}\n", "shell line"),
+            ("Body ! $ARGUMENTS\n", None),
             ("---\ncontext: fork\n---x\nBody\n", "context: fork"), ("---\ncontext: fork\n--- end\n", "context: fork"),
             ("---\ncontext: fork\na: b---\n", "context: fork"), ("---\ncontext: fork\n----\n", "context: fork"),
             ("---\ncontext: fork\n  ---\n", "context: fork"), ("---\nhooks: x\n---x\n", "hooks key"),
