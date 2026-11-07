@@ -282,12 +282,19 @@ def cmd_status(args: argparse.Namespace) -> int:
     out = detect(repo, args.feature, notes)
     # Only `status` deletes a note: `board`, `decide` and `pause` run in the same session and must keep it.
     top = git(repo, "rev-parse", "--show-toplevel")
-    where = out["worktree"] or (top if args.feature is None else None)
-    note = pause_state(Path(where), os.environ, delete=True) if where else None
+    where = out["worktree"] or top
+    named = args.feature is not None and out["worktree"] is None
+    note = pause_state(Path(where), os.environ, delete=not named) if where else None
+    if named and note is not None and note.get("feature") != out["feature"]:
+        note = None
     if note is not None:
         out["paused"], out["next"] = note, PAUSED_NEXT
     for item in out.get("features", []):
-        if item["worktree"] and pause_state(Path(item["worktree"]), os.environ, delete=True) is not None:
+        if item["worktree"]:
+            paused = pause_state(Path(item["worktree"]), os.environ, delete=True) is not None
+        else:
+            paused = note is not None and note.get("feature") == item["feature"]
+        if paused:
             item["paused"] = True
     if "features" in out:
         import retro
@@ -322,4 +329,6 @@ def cmd_status(args: argparse.Namespace) -> int:
             if isinstance(remote, str) and store.version_key(remote) > store.version_key(have):
                 out["kit_drift"] = {"worktree": have, "main": remote, "direction": "main-newer"}
     out["effort"] = effort(out["stage"], is_linked(out["worktree"] or top), os.environ)
+    if out["stage"] == 1 and out["feature"]:
+        out["effort"]["want"] = None
     return emit(out, 0)

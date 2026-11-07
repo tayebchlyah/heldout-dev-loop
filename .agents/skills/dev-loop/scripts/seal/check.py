@@ -12,13 +12,13 @@ from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
 from devloop import emit, git
-from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, merge_base, run_git
+from seal import ACCEPTANCE_DIR, PATCH, SEAL_TRAILER, last_paragraph, merge_base, run_git
 from seal.audit import taint_file, taint_state
+from seal.record import patch_carriers, read_record, record_file, skip_reason
 from seal.value import commit_entries, commit_patch_value, seal_value
 from seal.weakened import TEST_FILES
 
 TRAILER = re.compile(rf"^{SEAL_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
-PATCH = re.compile(rf"^{PATCH_TRAILER}:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 
 
 def violation(reason: str, commit: str | None = None, path: str | None = None, commits: list[str] | None = None) -> dict:
@@ -30,33 +30,47 @@ def z_paths(text: str) -> list[str]:
     return [path for path in text.split("\0") if path]
 
 
+def tree_blobs(repo: Path, rev: str) -> dict[str, str]:
+    blobs = {}
+    for line in z_paths(run_git(repo, "ls-tree", "-r", "-z", rev, "--", f":(top){ACCEPTANCE_DIR}/").stdout):
+        meta, path = line.split("\t", 1)
+        blobs[path] = meta.split()[2]
+    return blobs
+
+
 def commit_violations(repo: Path, base: str) -> list[dict]:
     found = []
     sealed: dict[str, str] = {}  # path -> its blob (or `deleted`) in the newest valid seal commit
     seals: set[str] = set()  # the valid seal commits
+    expected = tree_blobs(repo, base)
+    changed_before: list[tuple[str, str]] = []
     # The body, not `%(trailers)`: git sees no trailer block once `This reverts commit` lines share its paragraph.
     for entry in z_paths(run_git(repo, "log", "--reverse", "-z", "--format=%H%n%B", f"{base}..HEAD").stdout):
         sha, _, body = entry.partition("\n")
         # The last paragraph only: `seal` writes the trailers there; a quote earlier in the body is no seal.
-        last = re.split(r"\n[ \t]*\n", body.strip())[-1]
+        last = last_paragraph(body)
         values = TRAILER.findall(last)
         if not values:
             continue
         entries, outside = commit_entries(repo, sha)
-        # Two trailers fail too: a seal commit carries exactly the one value of its own diff.
-        # The patch value (D1): a clean rebase that merged an upstream change into a sealed file keeps the seal.
-        if outside or not entries or (values != [seal_value(entries)]
-                                       and PATCH.findall(last) != [commit_patch_value(repo, sha)]):
+        if outside or not entries:
             found.append(violation("bad-seal", commit=sha))
             continue
+        # Two trailers fail too: a seal commit carries exactly the one value of its own diff.
+        # The patch value (D1): a clean rebase that merged an upstream change into a sealed file keeps the seal.
+        if values != [seal_value(entries)]:
+            patch = commit_patch_value(repo, sha)
+            if patch is None or PATCH.findall(last) != [patch]:
+                found.append({**violation("bad-seal", commit=sha), **({"patch": "failed"} if patch is None else {})})
+                continue
+        parent = tree_blobs(repo, f"{sha}^1")
+        changed_before += [(sha, path) for path, _ in entries if parent.get(path, "deleted") != expected.get(path, "deleted")]
+        expected.update(entries)
         sealed.update(entries)
         seals.add(sha)
-    pathspec = f":(top){ACCEPTANCE_DIR}/"
-    changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, "HEAD", "--", pathspec).stdout)
-    at_head = {}
-    for line in z_paths(run_git(repo, "ls-tree", "-r", "-z", "HEAD", "--", pathspec).stdout):
-        meta, path = line.split("\t", 1)
-        at_head[path] = meta.split()[2]
+    changed = z_paths(run_git(repo, "diff", "--name-only", "-z", "--no-renames", base, "HEAD", "--",
+                              f":(top){ACCEPTANCE_DIR}/").stdout)
+    at_head = tree_blobs(repo, "HEAD")
 
     def commits(path: str) -> list[str]:
         """D6: the commits that touched the path, valid seal commits left out."""
@@ -67,6 +81,7 @@ def commit_violations(repo: Path, base: str) -> list[dict]:
     found += [violation("unsealed", path=path, commits=commits(path)) for path in changed if path not in sealed]
     found += [violation("changed-after-seal", path=path, commits=commits(path)) for path, blob in sorted(sealed.items())
               if at_head.get(path, "deleted") != blob]
+    found += [violation("changed-before-seal", commit=sha, path=path, commits=commits(path)) for sha, path in changed_before]
     return found
 
 
@@ -140,11 +155,36 @@ def kit_violations(repo: Path, base: str, uncommitted: bool) -> list[dict]:
     return found
 
 
+def record_violations(repo: Path) -> tuple[list[dict], list[dict]]:
+    if not record_file(repo).exists():
+        return [], []
+    skip = skip_reason(repo)
+    if skip:
+        return [], [{"reason": "seal-record-skipped", "why": skip}]
+    try:
+        seals = read_record(repo) or []
+    except ValueError:
+        return [violation("seal-record-unreadable", path=str(record_file(repo)))], []
+    branch = run_git(repo, "symbolic-ref", "-q", "HEAD").stdout.strip()
+    carried = patch_carriers(repo)
+    used: set[str] = set()
+    dropped = []
+    for seal in (seal for seal in seals if seal["branch"] == branch):
+        free = [sha for value in seal["patches"] for sha in carried.get(value, []) if sha not in used]
+        if free:
+            used.add(free[0])
+        else:
+            dropped.append({**violation("seal-dropped", commit=seal["commit"]), "paths": seal["paths"],
+                            "patch": seal["patches"][-1]})
+    return dropped, []
+
+
 def check(repo: Path, uncommitted: bool) -> dict:
     base = merge_base(repo)
     violations = commit_violations(repo, base) if base else []
+    found, record_warnings = record_violations(repo) if base else ([], [])
     if base:
-        violations += kit_violations(repo, base, uncommitted)
+        violations += kit_violations(repo, base, uncommitted) + found
     if uncommitted:
         violations += uncommitted_violations(repo)
     try:
@@ -156,7 +196,8 @@ def check(repo: Path, uncommitted: bool) -> dict:
     except (ValueError, AttributeError, TypeError, KeyError):  # taint.json does not parse or has the wrong shape
         violations.append(violation("taint-unreadable", path=str(taint_file(repo))))
         taint, warnings = [], []
-    return {"ok": not violations and not taint, "violations": violations, "taint": taint, "warnings": warnings}
+    return {"ok": not violations and not taint, "violations": violations, "taint": taint,
+            "warnings": warnings + record_warnings}
 
 
 def cmd_seal_check(args: argparse.Namespace) -> int:

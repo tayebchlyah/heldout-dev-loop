@@ -1,6 +1,6 @@
 {
   "name": "dev-loop",
-  "version": "3.0.0-rc.5",
+  "version": "3.0.0-rc.6",
   "private": true,
   "description": "Stage-driven development loop skill for Claude Code and Codex, with its installer.",
   "license": "MIT",

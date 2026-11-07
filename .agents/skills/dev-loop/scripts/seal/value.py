@@ -10,13 +10,14 @@ import subprocess
 from pathlib import Path
 
 from devloop import emit
-from seal import ACCEPTANCE_DIR, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
+from seal import ACCEPTANCE_DIR, PARAGRAPH_BREAK, PATCH, PATCH_TRAILER, SEAL_TRAILER, git_dir, run_git
+from seal.record import add_seal, patch_carriers, record_branch, replace_patch
 import size
 
 SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 TRAILER_LINE = re.compile(rf"^{SEAL_TRAILER}:.*$", re.MULTILINE)
 TRAILERS = re.compile(rf"^({SEAL_TRAILER}|{PATCH_TRAILER}):")
-PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+ACCEPTANCE_LINE = re.compile(r"^Acceptance:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
 
 
 def split_last(message: str) -> tuple[str, str]:
@@ -31,29 +32,46 @@ def seal_value(entries: list[tuple[str, str]]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def patch_value(repo: Path, *against: str) -> str:
-    """sha256 of the `git patch-id --stable` of the `-U0` diff under ACCEPTANCE_DIR: survives a clean rebase (D1)."""
-    # Plumbing (`diff-index`, `diff-tree`): the `git diff -U0 --no-color --no-renames` text with no user diff
+class PatchIdFailed(Exception):
+    pass
+
+
+def patch_id(repo: Path, *against: str) -> str:
+    # allow-comment: dependency: plumbing (`diff-index`, `diff-tree`): the `git diff -U1 --no-color --no-renames` text with no user diff
     # config (noprefix, textconv, external diff); `--full-index`: a binary change hashes full blob ids.
     git = ["git", "-C", str(repo), "-c", "core.quotepath=off"]
-    patch = subprocess.run([*git, *against, "-p", "-U0", "--no-renames", "--full-index", "--",
+    patch = subprocess.run([*git, *against, "-p", "-U1", "--no-renames", "--full-index", "--",
                             f":(top){ACCEPTANCE_DIR}/"], capture_output=True).stdout
-    out = subprocess.run([*git, "patch-id", "--stable"], input=patch, capture_output=True).stdout.decode()
-    return hashlib.sha256(out.split(" ", 1)[0].strip().encode()).hexdigest()
+    result = subprocess.run([*git, "patch-id", "--verbatim"], input=patch, capture_output=True)
+    first = result.stdout.decode().split(" ", 1)[0].strip()
+    if result.returncode != 0 or not first:
+        raise PatchIdFailed(f"git patch-id failed: {result.stderr.decode(errors='replace').strip() or 'no output'}")
+    return hashlib.sha256(first.encode()).hexdigest()
+
+
+def patch_value(repo: Path, *against: str) -> str | None:
+    try:
+        return patch_id(repo, *against)
+    except PatchIdFailed:
+        return None
 
 
 def empty_tree(repo: Path) -> str:
     return run_git(repo, "hash-object", "-t", "tree", "--stdin", stdin="").stdout.strip()
 
 
-def staged_patch_value(repo: Path) -> str:
+def staged_diff(repo: Path) -> list[str]:
     head = run_git(repo, "rev-parse", "--verify", "-q", "HEAD").stdout.strip()
-    return patch_value(repo, "diff-index", "--cached", head or empty_tree(repo))
+    return ["diff-index", "--cached", head or empty_tree(repo)]
 
 
-def commit_patch_value(repo: Path, sha: str) -> str:
+def commit_diff(repo: Path, sha: str) -> list[str]:
     parent = run_git(repo, "rev-parse", "--verify", "-q", f"{sha}^1").stdout.strip()
-    return patch_value(repo, "diff-tree", "-r", "--no-commit-id", parent or empty_tree(repo), sha)
+    return ["diff-tree", "-r", "--no-commit-id", parent or empty_tree(repo), sha]
+
+
+def commit_patch_value(repo: Path, sha: str) -> str | None:
+    return patch_value(repo, *commit_diff(repo, sha))
 
 
 def split_raw(raw: str) -> tuple[list[tuple[str, str]], list[str]]:
@@ -112,19 +130,34 @@ def seal(repo: Path, slug: str, message: str, reverts: list[str]) -> dict:
     def text(value: str, patch: str) -> str:
         return f"{message}\n\n{body}Acceptance: {slug}\n{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {patch}\n"
 
-    expected = text(seal_value(entries), staged_patch_value(repo))
+    try:
+        expected = text(seal_value(entries), patch_id(repo, *staged_diff(repo)))
+    except PatchIdFailed as error:
+        return {"error": str(error)}
     result = run_git(repo, "commit", "-q", "--cleanup=verbatim", "-F", "-", stdin=expected)
     if result.returncode != 0:
         return {"error": f"git commit failed: {(result.stderr or result.stdout).strip()}"}
     # D3: a pre-commit hook can rewrite the staged blobs, a commit-msg hook can add a paragraph after the trailers.
     entries, _ = commit_entries(repo, "HEAD")
-    final = text(seal_value(entries), commit_patch_value(repo, "HEAD"))
+    try:
+        patch = patch_id(repo, *commit_diff(repo, "HEAD"))
+    except PatchIdFailed as error:
+        return {"error": str(error), "commit": run_git(repo, "rev-parse", "HEAD").stdout.strip()}
+    final = text(seal_value(entries), patch)
     if run_git(repo, "log", "-1", "--format=%B", "HEAD").stdout.rstrip("\n") != final.rstrip("\n"):
         result = run_git(repo, "commit", "-q", "--amend", "--no-verify", "--cleanup=verbatim", "-F", "-", stdin=final)
         if result.returncode != 0:
             return {"error": f"git commit --amend failed: {(result.stderr or result.stdout).strip()}"}
     commit = run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    return {"commit": commit, "seal": seal_value(entries), "files": sorted(path for path, _ in entries)}
+    files = sorted(path for path, _ in entries)
+    branch = record_branch(repo)
+    if branch is not None:
+        try:
+            add_seal(repo, {"branch": branch, "commit": commit, "patches": [patch], "seal": seal_value(entries),
+                            "feature": slug, "paths": files})
+        except (OSError, ValueError) as error:
+            return {"error": f"seal record not written: {error}", "commit": commit}
+    return {"commit": commit, "seal": seal_value(entries), "files": files}
 
 
 def rebase_continue(repo: Path) -> dict:
@@ -144,17 +177,35 @@ def rebase_continue(repo: Path) -> dict:
     if not entries:
         return {"error": f"no staged change under {ACCEPTANCE_DIR}/"}
     value = seal_value(entries)
-    trailers = f"{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {staged_patch_value(repo)}"
+    try:
+        patch = patch_id(repo, *staged_diff(repo))
+    except PatchIdFailed as error:
+        return {"error": str(error)}
+    old_patch = next((value for value in PATCH.findall(last) if value), "")
+    feature = next(iter(ACCEPTANCE_LINE.findall(last)), "")
+    branch = record_branch(repo)
     kept = "\n".join(line for line in last.splitlines() if not TRAILERS.match(line))
-    message_file.write_text(f"{head}{kept}\n{trailers}\n".lstrip("\n"), encoding="utf-8")
+    message_file.write_text(f"{head}{kept}\n{SEAL_TRAILER}: {value}\n{PATCH_TRAILER}: {patch}\n".lstrip("\n"),
+                            encoding="utf-8")
     result = run_git(repo, "-c", "core.editor=true", "rebase", "--continue", env={**os.environ, "GIT_EDITOR": "true"})
     files = sorted(path for path, _ in entries)
     if result.returncode == 0:
-        return {"seal": value, "files": files, "rebase": "continued"}
-    if not state.is_dir():
+        out = {"seal": value, "files": files, "rebase": "continued"}
+    elif not state.is_dir():
         return {"error": f"git rebase --continue failed: {(result.stderr or result.stdout).strip()}"}
-    unmerged = run_git(repo, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")
-    return {"seal": value, "files": files, "rebase": "stopped", "conflicts": [p for p in unmerged if p]}
+    else:
+        unmerged = run_git(repo, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0")
+        out = {"seal": value, "files": files, "rebase": "stopped", "conflicts": [p for p in unmerged if p]}
+    if branch is not None:
+        head = run_git(repo, "rev-parse", "HEAD").stdout.strip()
+        commit = patch_carriers(repo).get(patch, [head])[0]
+        try:
+            replace_patch(repo, old_patch, {"branch": branch, "commit": commit,
+                                            "patches": [old_patch, patch] if old_patch else [patch],
+                                            "seal": value, "feature": feature, "paths": files})
+        except (OSError, ValueError) as error:
+            return {"error": f"seal record not written: {error}", "commit": commit}
+    return out
 
 
 def cmd_seal(args: argparse.Namespace) -> int:

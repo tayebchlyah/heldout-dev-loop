@@ -24,6 +24,7 @@ from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout, security
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
+from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
 
@@ -282,6 +283,8 @@ def check_project_config(repo: Path) -> list[str]:
         failures.append("merge_human_paths in dev-loop.json must be a list of non-empty strings")
     if "file_size_exempt" in config and not exempt_ok(config["file_size_exempt"]):
         failures.append(EXEMPT_ERROR)
+    if "walled_skills" in config and not names_ok(config["walled_skills"]):
+        failures.append(NAMES_ERROR)
     if "security_audit" in config and audit_images(config) is None:
         failures.append(AUDIT_SHAPE)
     if config.get("release_notes", "cliff") not in ("cliff", "written"):
@@ -336,23 +339,31 @@ def check_gate_guard(repo: Path) -> list[str]:
 MIN_VERSIONS = {
     "claude": ((2, 1, 295), "Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code."),
     "codex": ((0, 166, 0), "codex-cli {found} is older than 0.166.0 (native hook sandbox needs it). Update Codex."),
+    "git": ((2, 45, 0), "git {found} does not honour GIT_NO_LAZY_FETCH (needs 2.45.0, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1 or later on its line). Update git."),
 }
+BACKPORT = {39: 4, 40: 2, 41: 1, 42: 2, 43: 4, 44: 1}
 KIT_GUARDS = (".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/hooks/claude/deny-acceptance-to-subagents.sh")
 WALLED_AGENTS = ("implementer", "spec-tester")
 
 
-def check_version(harness: str) -> list[str]:
-    """D11: the harness binary on PATH must be new enough for the seal hooks."""
+def read_version(exe: str) -> tuple:
     try:
-        out = subprocess.run([harness, "--version"], capture_output=True, text=True, check=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError) as exc:
-        return [f"cannot read the {harness} version: {exc}"]
-    match = re.search(r"\d+(?:\.\d+)+", out)
-    if not match:
-        return [f"cannot read the {harness} version: no version in {out.strip()!r}"]
-    found = match.group()
-    minimum, message = MIN_VERSIONS[harness]
-    return [message.format(found=found)] if tuple(map(int, found.split("."))) < minimum else []
+        out = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True, timeout=30).stdout
+        match = re.search(r"\d+(?:\.\d+)+", out)
+        if not match:
+            raise ValueError(f"no version in {out.strip()!r}")
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        return (), [f"cannot read the {exe} version: {exc}"]
+    return tuple(map(int, match.group().split("."))), []
+
+
+def check_version(exe: str) -> list[str]:
+    """D11: the harness binary on PATH must be new enough for the seal hooks."""
+    found, bad = read_version(exe)
+    minimum, message = MIN_VERSIONS[exe]
+    major, minor, patch = (found + (0,) * 3)[:3]
+    backported = exe == "git" and major == 2 and patch >= BACKPORT.get(minor, 99)
+    return bad or ([message.format(found=".".join(map(str, found)))] if found < minimum and not backported else [])
 
 
 def check_on_failure(repo: Path) -> list[str]:
@@ -787,7 +798,7 @@ def main() -> int:
         print(f"- no dev-loop.json in {args.repo}. Run npx github:tayebchlyah/heldout-dev-loop#<tag> init")
         return 1
     failures, action_groups = check_project(args.home, args.repo, args.harness, os.environ)
-    failures += check_version(args.harness)
+    failures += check_version(args.harness) + check_version("git")
     failures += check_notes(args.home, args.repo)
     failures += check_notes_layout(args.home, args.repo)
     failures += check_project_config(args.repo)
@@ -802,18 +813,17 @@ def main() -> int:
     action_groups += [(line, []) for line in check_agent_shell(args.harness, os.environ)]
     action_groups += [(line, []) for line in ci.check_github(args.repo)]
 
-    if failures or action_groups:
-        print(f"{args.harness}: FAIL")
-        for failure in failures:
-            print(f"- {failure}")
-        if action_groups:
-            print()
-            print("User actions required (expected manual steps, not install defects):")
-            for heading, items in action_groups:
-                print(f"- {heading} ({'; '.join(items)})" if items else f"- {heading}")
-        return 1
-    print(f"{args.harness}: PASS")
-    return 0
+    notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
+    blocked = failures or action_groups
+    print(f"{args.harness}: {'FAIL' if blocked else 'PASS'}")
+    for failure in failures:
+        print(f"- {failure}")
+    if action_groups or notices:
+        print()
+        print("User actions required (expected manual steps, not install defects):")
+        for heading, items in action_groups + notices:
+            print(f"- {heading} ({'; '.join(items)})" if items else f"- {heading}")
+    return 1 if blocked else 0
 
 
 if __name__ == "__main__":
