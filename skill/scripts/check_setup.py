@@ -339,23 +339,31 @@ def check_gate_guard(repo: Path) -> list[str]:
 MIN_VERSIONS = {
     "claude": ((2, 1, 295), "Claude Code {found} is older than 2.1.295 (onFailure needs it). Update Claude Code."),
     "codex": ((0, 166, 0), "codex-cli {found} is older than 0.166.0 (native hook sandbox needs it). Update Codex."),
+    "git": ((2, 45, 0), "git {found} does not honour GIT_NO_LAZY_FETCH (needs 2.45.0, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1 or later on its line). Update git."),
 }
+BACKPORT = {39: 4, 40: 2, 41: 1, 42: 2, 43: 4, 44: 1}
 KIT_GUARDS = (".dev-loop/hooks/claude/git-guard.sh", ".dev-loop/hooks/claude/deny-acceptance-to-subagents.sh")
 WALLED_AGENTS = ("implementer", "spec-tester")
 
 
-def check_version(harness: str) -> list[str]:
-    """D11: the harness binary on PATH must be new enough for the seal hooks."""
+def read_version(exe: str) -> tuple:
     try:
-        out = subprocess.run([harness, "--version"], capture_output=True, text=True, check=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError) as exc:
-        return [f"cannot read the {harness} version: {exc}"]
-    match = re.search(r"\d+(?:\.\d+)+", out)
-    if not match:
-        return [f"cannot read the {harness} version: no version in {out.strip()!r}"]
-    found = match.group()
-    minimum, message = MIN_VERSIONS[harness]
-    return [message.format(found=found)] if tuple(map(int, found.split("."))) < minimum else []
+        out = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True, timeout=30).stdout
+        match = re.search(r"\d+(?:\.\d+)+", out)
+        if not match:
+            raise ValueError(f"no version in {out.strip()!r}")
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        return (), [f"cannot read the {exe} version: {exc}"]
+    return tuple(map(int, match.group().split("."))), []
+
+
+def check_version(exe: str) -> list[str]:
+    """D11: the harness binary on PATH must be new enough for the seal hooks."""
+    found, bad = read_version(exe)
+    minimum, message = MIN_VERSIONS[exe]
+    major, minor, patch = (found + (0,) * 3)[:3]
+    backported = exe == "git" and major == 2 and patch >= BACKPORT.get(minor, 99)
+    return bad or ([message.format(found=".".join(map(str, found)))] if found < minimum and not backported else [])
 
 
 def check_on_failure(repo: Path) -> list[str]:
@@ -790,7 +798,7 @@ def main() -> int:
         print(f"- no dev-loop.json in {args.repo}. Run npx github:tayebchlyah/heldout-dev-loop#<tag> init")
         return 1
     failures, action_groups = check_project(args.home, args.repo, args.harness, os.environ)
-    failures += check_version(args.harness)
+    failures += check_version(args.harness) + check_version("git")
     failures += check_notes(args.home, args.repo)
     failures += check_notes_layout(args.home, args.repo)
     failures += check_project_config(args.repo)

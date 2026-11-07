@@ -595,6 +595,16 @@ class ProjectSetupCheckerTests(unittest.TestCase):
                 line = f"- codex-cli {found} is older than 0.166.0 (native hook sandbox needs it). Update Codex.\n"
                 self.assertEqual(line in result.stdout, not ok, result.stdout)
 
+    def test_old_git_fails_for_both_harnesses(self) -> None:
+        self.init("both")
+        bin_dir = Path(self._tmp.name) / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text(f"#!/bin/sh\n[ \"$1\" = --version ] && echo 'git version 2.44.0' || exec {shutil.which('git')} \"$@\"\n")
+        (bin_dir / "git").chmod(0o755)
+        for harness in ("claude", "codex"):
+            self.assertIn("- git 2.44.0 does not honour GIT_NO_LAZY_FETCH (needs 2.45.0, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1 or later on its line). Update git.\n",
+                          self.run_checker(harness).stdout)
+
     def test_codex_kit_network_config_has_no_network_failure(self) -> None:
         self.init("codex")
         self.assertNotIn("Codex network", self.run_checker("codex").stdout)
