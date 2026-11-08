@@ -50,5 +50,5 @@ The release audit runs target code only in the image `dev-loop-audit:1` (`dev-lo
 ## Final release
 
 1. `/release` (Codex `$release`) in the main session, on `main` of the main checkout.
-2. Steps as for a release candidate, version `X.Y.Z`. `commands.release_check` also runs `promoted --sha`: a failure means a kit source change after the last rc; cut a new rc.
+2. Steps as for a release candidate, version `X.Y.Z`. `commands.release_check` also runs `promoted --sha`: a failure means a kit source change after the last rc (`package.json` counts beyond its `version` key); cut a new rc.
 3. The tag push: `stale-audit` comes as for a release candidate, with the same rule (step 5 above). One tag per push, GitHub sends no push event for more than three tags. The workflow checks the version, runs `promoted` again, writes the notes from the `## [X.Y.Z]` section and makes the GitHub Release.
