@@ -265,10 +265,13 @@ class CodexWallTests(unittest.TestCase):
                 result = self.wall({**self.IMPL, "cwd": cwd, "tool_name": tool,
                                     "tool_input": {"command": patch(f"*** Update File: {H}/test_x.py")}})
                 self.assertEqual(result.returncode, 2, result.stderr)
-        for tool_input in ({"path": f"{H}/test_x.py"}, {"name": "tdd", "path": f"{top}/{H}/test_x.py"}):
+        for tool_input in ({"path": f"{H}/test_x.py"}, {"name": "tdd", "path": f"{top}/{H}/test_x.py"},
+                           {"name": f"{top}/{H}/test_x.py"}, {"name": "tdd", "nested": {"file": f"{H}/test_x.py"}}):
             with self.subTest(tool_input=tool_input):
                 result = self.wall({**self.IMPL, "cwd": cwd, "tool_name": "skillsread", "tool_input": tool_input})
                 self.assertEqual((result.returncode, result.stderr), (2, held.stderr))
+        for caller in (self.IMPL, self.TESTER):
+            self.check({**caller, "cwd": cwd, "tool_name": "skillsread", "tool_input": {"name": "tdd", "path": "SKILL.md"}}, False)
         for tool, tool_input in (("view_image", {"path": "src/logo.png"}), ("skillsread", {"path": "src/app.py"})):
             with self.subTest(tool=tool):
                 result = self.wall({**self.TESTER, "cwd": cwd, "tool_name": tool, "tool_input": tool_input})
