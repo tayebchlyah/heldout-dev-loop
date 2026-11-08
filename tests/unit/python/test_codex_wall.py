@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,9 +15,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from test_devloop import git, put  # noqa: E402  (also sets the core.fsmonitor override)
 from test_seal import SUITE  # noqa: E402
-from test_seal_hooks import patch  # noqa: E402
 
 from support import ROOT  # noqa: E402
+
+
+def patch(*headers: str, body: str = "+x") -> str:
+    return "\n".join(["*** Begin Patch", *headers, body, "*** End Patch"])
 
 
 class CodexWallTests(unittest.TestCase):
@@ -27,9 +31,6 @@ class CodexWallTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=60)
 
     def test_o3_o4_walls_by_agent_type(self) -> None:
-        def patch(*headers: str, body: str = "+x") -> str:
-            return "\n".join(["*** Begin Patch", *headers, body, "*** End Patch"])
-
         main: dict = {}
         implementer = {"agent_id": "a", "agent_type": "implementer"}
         tester = {"agent_id": "b", "agent_type": "spec_tester"}
@@ -127,7 +128,13 @@ class CodexWallTests(unittest.TestCase):
     NESTED = ("collaborationspawn_agent", "collaborationsend_message", "collaboration.future", "spawn_agent", "send_input",
               "send_message", "followup_task", "wait_agent", "close_agent", "interrupt_agent", "list_agents",
               "multi_agent_v1send_input", "multi_agent_v1wait_agent", "multi_agent_v1close_agent",
-              "multi_agent_v1resume_agent", "teamspawn_agent", "resume_agent")
+              "multi_agent_v1resume_agent", "teamspawn_agent", "resume_agent", "codex_tuicreate_thread",
+              "codex_tuifork_thread", "codex_tuisend_message_to_thread", "collaborationread_thread")
+    LISTED = ("Bash", "apply_patch", "Edit", "Write", "view_image", "update_plan", "clockcurr_time", "clocksleep",
+              "get_context_remaining", "skillslist", "skillsread", "skillsinstallations")
+    UNLISTED = ("codex_tuicreate_thread", "codex_tuifork_thread", "codex_tuisend_message_to_thread", "codex_tuiread_thread",
+                "codex_tuiwait_threads", "codex_tuilist_threads", "collaborationread_thread", "request_user_input",
+                "request_permissions", "multi_env_copy_file", "noteswrite_file", "new_context", "future_tool")
     MATCHER = ("Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*"
                "|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent")
 
@@ -175,6 +182,107 @@ class CodexWallTests(unittest.TestCase):
         for text in (header, codex):
             self.assertIn("multi_agent", text)
             self.assertIn("nested harness", text)
+
+    IMPL, TESTER = {"agent_id": "a", "agent_type": "implementer"}, {"agent_id": "b", "agent_type": "spec_tester"}
+
+    def repo(self) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        top = Path(tmp.name).resolve() / "repo"
+        put(top / "README.md")
+        put(top / "tests" / "README.md")
+        git(top, "init", "-q")
+        return top
+
+    def check(self, payload: dict, deny: bool) -> subprocess.CompletedProcess[str]:
+        result = self.wall(payload)
+        if deny:
+            self.assertEqual((result.returncode, result.stderr.count("\n")), (2, 1), result.stderr)
+            self.assertIn("is closed to this agent", result.stderr)
+            self.assertIn("NEEDS_FACT", result.stderr)
+        else:
+            self.assertEqual((result.returncode, result.stderr), (0, ""))
+        return result
+
+    def test_the_role_tool_list_by_agent_type(self) -> None:
+        cwd = str(self.repo())
+        message = {"tool_input": {"message": "x"}}
+        allowed = [(t, {}) for t in ("update_plan", "clockcurr_time", "clocksleep", "get_context_remaining", "skillslist",
+                                     "skillsinstallations")]
+        allowed += [("skillsread", {"name": "tdd", "path": "SKILL.md"}), ("Bash", {"command": "echo ok"}),
+                    ("view_image", {"path": "shots/home.png"})]
+        open_callers = [{}, {"agent_type": "implementer"}]
+        open_callers += [{"agent_id": "d", "agent_type": role}
+                         for role in ("default", "planner", "task_reviewer", "final_reviewer", "security_reviewer")]
+        for caller in (self.IMPL, self.TESTER):
+            for tool in self.UNLISTED:
+                with self.subTest(caller=caller, tool=tool):
+                    result = self.check({**caller, "cwd": cwd, "tool_name": tool, **message}, True)
+                    self.assertIn(f"Blocked: {tool} is closed to this agent: it is not on the tool list of this role.",
+                                  result.stderr)
+            for extra in ({}, {"tool_name": ""}):
+                with self.subTest(caller=caller, extra=extra):
+                    self.check({**caller, "cwd": cwd, **extra, **message}, True)
+            for tool, tool_input in allowed:
+                with self.subTest(caller=caller, tool=tool):
+                    self.check({**caller, "cwd": cwd, "tool_name": tool, "tool_input": tool_input}, False)
+        for tool in ("apply_patch", "Edit", "Write"):
+            with self.subTest(tool=tool):
+                self.check({**self.IMPL, "cwd": cwd, "tool_name": tool,
+                            "tool_input": {"command": patch("*** Update File: src/app.py")}}, False)
+        for caller in open_callers:
+            for tool in self.UNLISTED:
+                with self.subTest(caller=caller, tool=tool):
+                    self.check({**caller, "cwd": cwd, "tool_name": tool, **message}, False)
+
+    def test_the_role_tool_list_is_exact(self) -> None:
+        cwd = str(self.repo())
+        for caller in (self.IMPL, self.TESTER):
+            for tool in ("bash", "Bash ", "apply_patchx", "skillsread2", "skills_read", "codex_tui"):
+                with self.subTest(caller=caller, tool=tool):
+                    self.check({**caller, "cwd": cwd, "tool_name": tool, "tool_input": {"command": "echo ok"}}, True)
+
+    def test_listed_tools_keep_their_walls(self) -> None:
+        top = self.repo()
+        cwd, H = str(top), "tests/" + "acceptance"
+        M = "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell.\n"
+        held = self.wall({**self.IMPL, "cwd": cwd, "tool_name": "Bash", "tool_input": {"command": f"cat {H}/test_x.py"}})
+        self.assertEqual(held.returncode, 2, held.stderr)
+        for tool in ("apply_patch", "Edit", "Write"):
+            with self.subTest(tool=tool):
+                result = self.wall({**self.IMPL, "cwd": cwd, "tool_name": tool,
+                                    "tool_input": {"command": patch(f"*** Update File: {H}/test_x.py")}})
+                self.assertEqual(result.returncode, 2, result.stderr)
+        for tool_input in ({"path": f"{H}/test_x.py"}, {"name": "tdd", "path": f"{top}/{H}/test_x.py"}):
+            with self.subTest(tool_input=tool_input):
+                result = self.wall({**self.IMPL, "cwd": cwd, "tool_name": "skillsread", "tool_input": tool_input})
+                self.assertEqual((result.returncode, result.stderr), (2, held.stderr))
+        for tool, tool_input in (("view_image", {"path": "src/logo.png"}), ("skillsread", {"path": "src/app.py"})):
+            with self.subTest(tool=tool):
+                result = self.wall({**self.TESTER, "cwd": cwd, "tool_name": tool, "tool_input": tool_input})
+                self.assertEqual((result.returncode, result.stderr), (2, "Blocked: this agent cannot access src/\n"))
+        for caller in (self.IMPL, self.TESTER):
+            with self.subTest(caller=caller):
+                result = self.wall({**caller, "cwd": cwd, "tool_name": "mcp__fs__read_file", "tool_input": {"path": "README.md"}})
+                self.assertEqual((result.returncode, result.stderr), (2, M))
+                self.check({**caller, "cwd": cwd, "tool_name": "webrun", "tool_input": {"search_query": [{"q": "x"}]}}, True)
+
+    def test_an_unlisted_name_has_no_path_rule(self) -> None:
+        cwd, H = str(self.repo()), "tests/" + "acceptance"
+        reviewer = {"agent_id": "c", "agent_type": "task_reviewer"}
+        self.check({**reviewer, "cwd": cwd, "tool_name": "codex_tuiread_thread", "tool_input": {"path": f"{H}/test_x.py"}}, False)
+        tool_input = {"command": patch(f"*** Update File: {H}/x.py")}
+        self.check({"cwd": cwd, "tool_name": "codex_tuicreate_thread", "tool_input": tool_input}, False)
+        result = self.wall({"cwd": cwd, "tool_name": "Write", "tool_input": tool_input})
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_the_header_names_the_role_tool_list(self) -> None:
+        header = (ROOT / "codex/hooks/acceptance-wall.sh").read_text().split('. "${0%/*}/git-pin.sh"')[0]
+        self.assertRegex(header, re.compile(r"(^|[\s`])\.\*([\s`.,;:]|$)", re.M))
+        for name in ("codex_tui", *self.LISTED, "web.*", "collaboration", "multi_agent", "nested harness", "write_stdin",
+                     "tool_search", "agent_id"):
+            with self.subTest(name=name):
+                self.assertIn(name, header)
 
     def test_a_real_repo_root_and_a_repo_under_a_source_folder_name(self) -> None:
         tmp = tempfile.TemporaryDirectory()
