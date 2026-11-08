@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -486,22 +487,44 @@ class SecondReviewRunTests(unittest.TestCase):
         self.assertEqual((out["state"], out["reason"], out["record"], code), ("failed", "export", None, 1), out)
         self.assertEqual(seen, {})
 
+    CHILD_SECONDS = 120
+
     def test_every_run_kills_the_group(self) -> None:
-        for tail, timeout, state, reason, code in [("time.sleep(120)", 0.05, "failed", "timeout", 1),
-                                                   ("out('t')", 60, "done", None, 0)]:
+        sleeper = f"time.sleep({self.CHILD_SECONDS})"
+        for tail, timeout, state, reason, code in [(sleeper, 15, "failed", "timeout", 1), ("out('t')", 15, "done", None, 0)]:
             with self.subTest(state=state):
                 self.setUp()
                 self.group_dies(tail, timeout, state, reason, code)
 
+    def fire_timeout_after_pids(self, pids: Path):
+        real = subprocess.Popen.communicate
+
+        def communicate(proc, input=None, timeout=None):
+            if Path(str(proc.args[0])).name != "codex":
+                return real(proc, input, timeout)
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                try:
+                    return real(proc, input, 0.1)
+                except subprocess.TimeoutExpired:
+                    input = None
+                    if len(pids.read_text().split() if pids.exists() else []) == 2:
+                        raise
+            self.fail("stub never wrote its pids")
+
+        return mock.patch.object(subprocess.Popen, "communicate", communicate)
+
     def group_dies(self, tail: str, timeout: float, state: str, reason: str | None, code: int) -> None:
         pids = self.tmp / "pids"
-        self.stub("codex", f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+        self.stub("codex", f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep({self.CHILD_SECONDS})'])\n"
                            f"open({str(pids)!r}, 'w').write(f'{{os.getpid()}} {{child.pid}}')\n{tail}")
         tree = self.tree()
         started = time.monotonic()
-        out, got, _ = self.review(tree, timeout=timeout)
-        # #289: a run that waits for the 120 s child instead of killing the group never returns sooner.
-        self.assertLess(time.monotonic() - started, 120)
+        # #289: the timeout fires once the stub child exists, so a slow start cannot beat it.
+        with self.fire_timeout_after_pids(pids) if reason == "timeout" else contextlib.nullcontext():
+            out, got, _ = self.review(tree, timeout=timeout)
+        # #289: a run that waits for the child instead of killing the group never returns sooner.
+        self.assertLess(time.monotonic() - started, self.CHILD_SECONDS)
         self.assertEqual((out["state"], out["reason"], got), (state, reason, code), out)
         for pid in map(int, pids.read_text().split()):
             deadline = time.monotonic() + 30
