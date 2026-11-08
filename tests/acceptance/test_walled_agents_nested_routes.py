@@ -271,7 +271,8 @@ class InstallAndUpgradeTests(unittest.TestCase):
 
     def test_f3_init_and_upgrade_write_the_nested_route_matchers_and_agent_files(self) -> None:
         """O11 to O14, with Walled Agents No Web: the kit source; `init`; `upgrade` of the No Web matchers, a user
-        entry beside each, and a project `web_search` kept. O15, kit part: the `/hooks` note of `reference/kit.md`."""
+        entry beside each, and a project `web_search` kept. O15, kit part: the `/hooks` note of `reference/kit.md`.
+        O11, O13, O14 as superseded by Codex TUI Task Tools O6 to O8: the Codex matcher `.*`."""
         # O11, O12.
         self.assert_one_entry(CLAUDE_FRAGMENT, NET, CLAUDE_MATCHER)
         for _, group in groups_running(json.loads(CLAUDE_FRAGMENT.read_text()), NET):

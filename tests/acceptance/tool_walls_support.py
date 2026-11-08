@@ -83,12 +83,12 @@ SEARCH_LINE = ("Blocked: this search reaches the held-out suite tests/acceptance
 # D8, D9, as amended by Walled Agents No Web (its O7, O8, D4): the Codex matcher and `disallowedTools` add the web
 # tools and `Agent`; the agent frontmatter matcher keeps D8. Amended again by Walled Agents Nested Routes (its O11,
 # O12, D1, D6): the settings net is `.*`, the Codex matcher adds the collaboration tools, the agents get `tools`.
+# Amended again by Codex TUI Task Tools (its O6 to O8, D1, superseding Walled Agents Nested Routes O11, O13, O14):
+# the Codex matcher is `.*`.
 CLAUDE_MATCHER = ".*"
 AGENT_MATCHER = ("Read|Edit|Write|Grep|Glob|Bash|Monitor|LSP|mcp__.*|ListMcpResourcesTool|ReadMcpResourceTool|"
                  "ReadMcpResourceDirTool")
-CODEX_MATCHER = ("Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|"
-                 "web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|"
-                 "interrupt_agent|list_agents|resume_agent")
+CODEX_MATCHER = ".*"
 DISALLOWED = ["LSP", "mcp__*", "ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool", "WebFetch",
               "WebSearch", "Agent"]
 IMPLEMENTER_TOOLS = ["Read", "Edit", "Write", "NotebookEdit", "Grep", "Glob", "Bash", "Monitor", "Skill", "ToolSearch"]
