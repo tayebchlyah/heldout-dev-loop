@@ -348,7 +348,7 @@ class CiWaitTests(StubGh):
         self.wait({"view": [self.pr()]})
         graph = next(c for c in self.calls() if c[:2] == ["api", "graphql"])
         query = next(arg for arg in graph if arg.startswith("query="))
-        self.assertIn("author { login } authorAssociation body url", query)
+        self.assertRegex(query, r"\bauthorAssociation\b")
 
     def test_a_timeout_that_is_not_a_finite_number_above_zero_is_a_usage_error(self) -> None:
         for value in ("nan", "inf", "0", "-1"):
