@@ -16,7 +16,8 @@ Fixture choices the spec leaves open:
   value as JSON), so `api repos/o/r --jq .allow_rebase_merge` prints `false` or `true`.
 - The `gh api graphql` answer has the standard GitHub shape:
   `data.repository.pullRequest.reviewThreads.nodes[]`, each thread with `isResolved`, `isOutdated`,
-  `path`, `line` and `comments.nodes[0]` (`author.login`, `body`, `url`).
+  `path`, `line` and `comments.nodes[0]` (`author.login`, `body`, `url`, and `authorAssociation` when
+  the case gives one).
 - `first_error` is read as text (a list of lines is joined with line breaks).
 - Every `ci wait` run passes `--timeout 1`, so a wrong poll loop ends within a minute.
 - `check_setup.py` passes for Claude after `init` once the home holds a `security-audit` skill whose
@@ -170,9 +171,13 @@ def view(head: str, **changes: object) -> dict:
     return answer
 
 
-def thread(resolved: bool, path: str, line: int, author: str, body: str, url: str, outdated: bool = False) -> dict:
+def thread(resolved: bool, path: str, line: int, author: str, body: str, url: str, outdated: bool = False,
+           association: str | None = None) -> dict:
+    comment = {"author": {"login": author}, "body": body, "url": url}
+    if association is not None:
+        comment["authorAssociation"] = association
     return {"isResolved": resolved, "isOutdated": outdated, "path": path, "line": line,
-            "comments": {"nodes": [{"author": {"login": author}, "body": body, "url": url}]}}
+            "comments": {"nodes": [comment]}}
 
 
 def threads_doc(*nodes: dict) -> dict:
@@ -435,10 +440,13 @@ class MainMovedTests(CiCase):
 class ReviewThreadTests(CiCase):
     def test_f3_review_thread_stops_without_reply(self) -> None:
         """F3: `ci wait` gives `threads` with the thread list; the agent stops and does not reply.
-        O4 (spec line 75), O44 (spec line 124), O45 (spec line 125)."""
+        O4 (spec line 75, as amended by ci-thread-text: first comment `authorAssociation` `MEMBER`),
+        O44 (spec line 124), O45 (spec line 125)."""
         self.defaults(api_graphql=[ok(threads_doc(
-            thread(True, "skill/old.py", 3, "carol", "Fixed already", "https://github.com/o/r/pull/7#r0"),
-            thread(False, "skill/x.py", 12, "bot", "Line one\nLine two", "https://github.com/o/r/pull/7#r1")))])
+            thread(True, "skill/old.py", 3, "carol", "Fixed already", "https://github.com/o/r/pull/7#r0",
+                   association="MEMBER"),
+            thread(False, "skill/x.py", 12, "bot", "Line one\nLine two", "https://github.com/o/r/pull/7#r1",
+                   association="MEMBER")))])
         code, payload = self.ci_wait()
         with self.subTest(oracle=4):
             self.assertEqual(code, 1, payload)
