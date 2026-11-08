@@ -4,7 +4,7 @@
 comments: each comment line, trailing .sh comment and private docstring added against <base> is of an allowed kind (CODING_STANDARDS.md); a docstring is private unless a .py file outside tests/ imports its name.
 subjects: the subject of each commit in <base>..HEAD follows the gitmoji convention of cliff.toml.
 <base>: git merge-base HEAD origin/main, else main, else none (skipped no-base).
-promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base). With --sha <rev>: the commit <rev> stands for the final tag, before it exists.
+promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base; package.json counts beyond its version key). With --sha <rev>: the commit <rev> stands for the final tag, before it exists.
 """
 
 from __future__ import annotations
@@ -383,7 +383,7 @@ CANDIDATE_TAG = re.compile(r"(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-r
 def package_json_changed(repo: Path, old: str, new: str) -> bool:
     sides = []
     for rev in (old, new):
-        shown = run_git(repo, "show", f"{rev}:package.json")
+        shown = subprocess.run(["git", "show", f"{rev}:package.json"], cwd=repo, capture_output=True)
         try:
             data = json.loads(shown.stdout) if shown.returncode == 0 else None
         except ValueError:
@@ -391,7 +391,7 @@ def package_json_changed(repo: Path, old: str, new: str) -> bool:
         if not isinstance(data, dict):
             return True
         data.pop("version", None)
-        sides.append(data)
+        sides.append(json.dumps(data))
     return sides[0] != sides[1]
 
 
@@ -416,14 +416,16 @@ def promoted(repo: Path, tag: str, sha: str | None = None) -> tuple[dict, int]:
     if not numbers:
         return {"ok": False, "tag": tag, "candidate": None, "violations": [], "reason": "no-release-candidate"}, 1
     candidate = numbers[max(numbers)]
-    diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames",
-                   f"refs/tags/{candidate}^{{commit}}", final.stdout.strip())
+    candidate_ref = f"refs/tags/{candidate}^{{commit}}"
+    final_sha = final.stdout.strip()
+    diff = run_git(repo, "diff", "--name-only", "-z", "--no-renames", candidate_ref, final_sha)
     if diff.returncode != 0:
         return {"ok": False, "tag": tag, "candidate": candidate, "error": "git diff failed"}, 1
     changed = [p for p in diff.stdout.split("\0") if p]
-    violations = sorted(p for p in changed if p.startswith(KIT_SOURCE))
-    if "package.json" in changed and package_json_changed(repo, f"refs/tags/{candidate}^{{commit}}", final.stdout.strip()):
-        violations = sorted([*violations, "package.json"])
+    violations = [p for p in changed if p.startswith(KIT_SOURCE)]
+    if "package.json" in changed and package_json_changed(repo, candidate_ref, final_sha):
+        violations.append("package.json")
+    violations.sort()
     return {"ok": not violations, "tag": tag, "candidate": candidate, "violations": violations}, int(bool(violations))
 
 

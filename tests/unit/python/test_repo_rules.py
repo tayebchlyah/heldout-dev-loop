@@ -161,9 +161,10 @@ FINAL_PACKAGE = '{"version": "3.0.0", "files": ["skill"]}\n'
 
 
 class PromotedCommandTests(RulesRepo):
-    def release(self, tag: str, files: dict[str, str], annotated: bool = False) -> None:
+    def release(self, tag: str, files: dict[str, str | bytes], annotated: bool = False) -> None:
         for path, text in files.items():
-            put(self.repo / path, text)
+            put(self.repo / path)
+            (self.repo / path).write_bytes(text if isinstance(text, bytes) else text.encode())
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", f"🔖(release) {tag}")
         if annotated:
@@ -271,26 +272,35 @@ class PromotedCommandTests(RulesRepo):
         code, out = self.sha_run({"skill/SKILL.md": "b\n"}, "--sha", "HEAD")
         self.assertEqual((code, out["violations"]), (1, ["skill/SKILL.md"]))
 
+    def fail_closed(self, run):
+        try:
+            code, out = run()
+            self.assertEqual((code, out["violations"]), (1, ["package.json"]))
+        finally:
+            self.tearDown()
+            self.setUp()
+
+    def two(self, rc, final):
+        self.release("v3.0.0-rc.1", rc)
+        self.release("v3.0.0", {"package.json": final})
+        return self.promoted("v3.0.0")
+
     def test_package_json_beyond_version_fails(self) -> None:
-        other = '{"version": "3.0.0", "files": ["skill", "lib"]}\n'
-        code, out = self.final_after_rc({"package.json": other})
-        self.assertEqual((code, out["violations"]), (1, ["package.json"]))
+        other = {"package.json": '{"version": "3", "files": []}\n'}
+        for route, run in [("tag", lambda: self.final_after_rc(other)),
+                           ("sha", lambda: self.sha_run(other, "--sha", "HEAD"))]:
+            with self.subTest(route):
+                self.fail_closed(run)
 
-    def test_package_json_beyond_version_fails_for_sha(self) -> None:
-        other = '{"version": "3.0.0", "files": ["skill", "lib"]}\n'
-        code, out = self.sha_run({"package.json": other}, "--sha", "HEAD")
-        self.assertEqual((code, out["violations"]), (1, ["package.json"]))
-
-    def test_package_json_unreadable_sides_fail_closed(self) -> None:
-        for rc, final in [(RC_PACKAGE, "{not json\n"), (None, FINAL_PACKAGE), (RC_PACKAGE, "[1]\n")]:
+    def test_package_json_unreadable_or_loose_sides_fail_closed(self) -> None:
+        s = '{"version": "1", "%s"}\n'
+        for rc, final in [
+            (RC_PACKAGE, "{not json\n"), ("", FINAL_PACKAGE), (RC_PACKAGE, "[1]\n"),
+            (s % 'a": "x"', s.encode() % b'a": "\xff"'), (s % 'a": true', s % 'a": 1'),
+            (s % 'a": 1, "b": 2', s % 'b": 2, "a": 1'),
+        ]:
             with self.subTest(rc=rc, final=final):
-                files = {"skill/a": "1\n", "x": "1\n"} if rc is None else {"package.json": rc}
-                self.release("v3.0.0-rc.1", files)
-                self.release("v3.0.0", {"package.json": final})
-                code, out = self.promoted("v3.0.0")
-                self.assertEqual((code, out["violations"]), (1, ["package.json"]))
-                git(self.repo, "tag", "-d", "v3.0.0", "v3.0.0-rc.1")
-                git(self.repo, "reset", "-q", "--hard", "HEAD~2")
+                self.fail_closed(lambda: self.two({"package.json": rc} if rc else {"skill/a": "1\n"}, final))
 
     def test_promoted_sha_unresolved(self) -> None:
         code, out = self.sha_run({}, "--sha", "nope")
