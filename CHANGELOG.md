@@ -1,13 +1,13 @@
 # Changelog
 
-## [3.0.0-rc.6] - 2026-11-07
+## [3.0.0-rc.7] - 2026-11-08
 
 ### ⬆️ Upgrade
 
 1. From 2.1.x, ship each in-flight feature first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
 2. Update the CLIs to the minimums `check_setup.py` checks: Claude Code 2.1.295 and codex-cli 0.166.0 (the native hook sandbox), and git 2.45.0 (or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1 or later on its line). Older CLIs cannot run the new hooks, and an older git ignores the hook pin that stops a lazy fetch.
-3. Run `npx github:tayebchlyah/heldout-dev-loop#v3.0.0-rc.6 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
-4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1 to rc.5: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
+3. Run `npx github:tayebchlyah/heldout-dev-loop#v3.0.0-rc.7 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
+4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1 to rc.6: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line: Codex: the trust line stays until you trust the project in Codex and do step 4 (`/hooks`) on that machine; a UI project: `devloop.py verify-init --base-url <url>`, then let an agent fill the skill, seed the feature map and prove it once (Stage 0, `.agents/skills/dev-loop/references/verify.md`), or `"verify": false` in `dev-loop.json` (`check_setup.py` fails on the fill markers and the empty map until then); `old-notes-layout`: step 7; Codex: install the Pocock skills `wayfinder` and `retro`; GitHub: turn on "allow rebase merging" (`ci wait`); `security_audit` set: pull its images and keep Docker running; the vault `.gitignore` lines for `Dev Loop Board/` (skipped with `"board_vault_git": "shared"` in `dev-loop.local.json`) and `Security Audit/`, and the Cloudflare `security-audit` skill; Codex network without the managed proxy: `upgrade` adds `features.network_proxy`, the domain list and `dev-docker`, and a profile you changed by hand may need the same keys; `scripts/gate.sh` lacks the `core.fsmonitor` guard: export `core.fsmonitor=false` through `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` before its first git call.
 6. End each open session and start a new one. Codex reads `unified_exec_tty = false` only at session start. A feature in Delivery resumes with `/continue`. The 2.1.x kit has no `kit_drift` `main-newer`, so an old session never stops by itself.
 7. Move the notes to the new layout. Every machine that shares the notes folder upgrades the kit first. Then one machine runs `devloop.py notes-migrate` (a dry run), checks the moves, and runs `devloop.py notes-migrate --apply --plan <hash>`. Until then `check_setup.py` fails `old-notes-layout`, the kit reads both layouts and writes only the new one, and `release-plan`, `release-record` and `release-check` stop while `security-audit/` exists. Delivery never migrates. There is no automatic undo: the log note lists each move.
@@ -65,12 +65,13 @@
 - To change `commands.acceptance`, merge that change to `main` first: `acceptance` refuses a branch whose command differs from the one on `main`.
 - Codex hooks run their scripts from a kit copy under `~/.codex/dev-loop/kit/<hash>/`, keyed by the hash of `.dev-loop/MANIFEST.json`. Every upgrade changes each Codex hook entry, so run `/hooks` in Codex after each upgrade. A copy takes about 1 MB per kit version and is not cleaned up; `uninstall-global` removes them all.
 - `release-check` reads an `accept` or `close` ruling with rc-scoped text (`rc.N only`, `before the final`) as no ruling, and fails closed (`unparsed-security`) on a ruling line it cannot read. An item that passed an rc check can block the final tag: rule it again.
-- Claude `implementer` and `spec-tester` get only the tools their agent file lists. `implementer` can call a project skill only when `walled_skills` lists it; any other skill call is denied.
+- Claude `implementer` and `spec-tester` get only the tools their agent file lists. `implementer` can call a project skill only when `walled_skills` lists it; any other skill call is denied. Codex `implementer` and `spec_tester` may call only `Bash`, `apply_patch` (and its `Edit`, `Write` aliases), `view_image`, `update_plan`, the clock tools, `get_context_remaining` and the skill read tools; every other tool is denied.
 - `upgrade` removes the unused Codex profile tables `dev-implementer`, `dev-spec-tester` and `dev-read-only` from `.codex/config.toml` when unchanged. It refreshes dev-loop's own hook entries in place, so a field you added to a dev-loop hook is lost.
 
 ### 🔒 Security
 
-- Walled agents can no longer leave their wall through a nested agent. Claude walled agents are closed to every tool their agent file does not list, and the Codex walls deny the collaboration tools (spawn, send, wait, resume and the renamed v1 forms) to `implementer` and `spec_tester`. A live canary run proves both routes closed.
+- Walled agents can no longer leave their wall through a nested agent. Claude walled agents are closed to every tool their agent file does not list. The Codex wall now runs on every tool call and denies `implementer` and `spec_tester` every tool off their role list: the collaboration tools, the Codex TUI task tools (`create_thread`, `fork_thread`, ...) and any tool a later Codex adds. A live canary run proves the routes closed.
+- `ci wait` passes the text of a PR review thread only from the repository owner, members and collaborators, so a comment from any GitHub user on a public repository no longer reaches the agent's context.
 - A seal now breaks when a sealed test changes in white space or moves to other neighbour lines, and `seal-check` reports a sealed file changed before its seal commit (`changed-before-seal`). A failed `git patch-id` fails closed.
 - `seal` records each seal commit in the git dir, and `seal-check` reports a seal commit dropped from the branch (`seal-dropped`), with the cherry-pick remedy.
 - Kit hooks set `GIT_NO_LAZY_FETCH=1`, so a planted promisor remote cannot run its program when a hook git call reads a missing object. `check_setup.py` fails on a git that ignores the variable.
@@ -111,6 +112,7 @@
 - The repository has a contributing guide, a code of conduct, a security policy, and issue and PR templates.
 - The README has a logo and a diagram of the loop.
 - The upgrade guide names the verify skill fill and the Codex trust line in step 5, and the Codex route states which `.codex/` files an agent can write.
+- The docs now state correctly what the second review sends, what the audit sandbox allows and which tag pushes the guard checks.
 
 ### 🐛 Bug Fixes
 
@@ -153,7 +155,7 @@
 - The project kit no longer holds the skill test files.
 - The `decide` and `pause` usage text names `--repo`.
 
-Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.1...v3.0.0-rc.6
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.1...v3.0.0-rc.7
 
 ## [2.1.1] - 2026-10-16
 
