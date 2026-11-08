@@ -380,6 +380,21 @@ FINAL_TAG = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 CANDIDATE_TAG = re.compile(r"(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-rc\.([1-9]\d*)")
 
 
+def package_json_changed(repo: Path, old: str, new: str) -> bool:
+    sides = []
+    for rev in (old, new):
+        shown = run_git(repo, "show", f"{rev}:package.json")
+        try:
+            data = json.loads(shown.stdout) if shown.returncode == 0 else None
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return True
+        data.pop("version", None)
+        sides.append(data)
+    return sides[0] != sides[1]
+
+
 def promoted(repo: Path, tag: str, sha: str | None = None) -> tuple[dict, int]:
     candidate_form = CANDIDATE_TAG.fullmatch(tag)
     if not FINAL_TAG.fullmatch(tag) and not candidate_form:
@@ -405,7 +420,10 @@ def promoted(repo: Path, tag: str, sha: str | None = None) -> tuple[dict, int]:
                    f"refs/tags/{candidate}^{{commit}}", final.stdout.strip())
     if diff.returncode != 0:
         return {"ok": False, "tag": tag, "candidate": candidate, "error": "git diff failed"}, 1
-    violations = sorted(p for p in diff.stdout.split("\0") if p.startswith(KIT_SOURCE))
+    changed = [p for p in diff.stdout.split("\0") if p]
+    violations = sorted(p for p in changed if p.startswith(KIT_SOURCE))
+    if "package.json" in changed and package_json_changed(repo, f"refs/tags/{candidate}^{{commit}}", final.stdout.strip()):
+        violations = sorted([*violations, "package.json"])
     return {"ok": not violations, "tag": tag, "candidate": candidate, "violations": violations}, int(bool(violations))
 
 

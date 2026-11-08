@@ -156,6 +156,10 @@ class SubjectCommandTests(RulesRepo):
             self.assertIn("error", out)
 
 
+RC_PACKAGE = '{"version": "3.0.0-rc.2", "files": ["skill"]}\n'
+FINAL_PACKAGE = '{"version": "3.0.0", "files": ["skill"]}\n'
+
+
 class PromotedCommandTests(RulesRepo):
     def release(self, tag: str, files: dict[str, str], annotated: bool = False) -> None:
         for path, text in files.items():
@@ -171,8 +175,8 @@ class PromotedCommandTests(RulesRepo):
         return run_rules(self.repo, "promoted", "--tag", tag)
 
     def final_after_rc(self, extra: dict[str, str], annotated: bool = False) -> tuple[int, dict]:
-        self.release("v3.0.0-rc.2", {"skill/SKILL.md": "a\n"}, annotated)
-        self.release("v3.0.0", {"package.json": "{}\n", "CHANGELOG.md": "c\n", "README.md": "r2\n",
+        self.release("v3.0.0-rc.2", {"skill/SKILL.md": "a\n", "package.json": RC_PACKAGE}, annotated)
+        self.release("v3.0.0", {"package.json": FINAL_PACKAGE, "CHANGELOG.md": "c\n", "README.md": "r2\n",
                                 ".agents/skills/x.md": "x\n", **extra}, annotated)
         return self.promoted("v3.0.0")
 
@@ -202,9 +206,9 @@ class PromotedCommandTests(RulesRepo):
         self.assertEqual((code, out["violations"]), (1, ["skill/SKILL.md"]))
 
     def test_highest_candidate_by_number(self) -> None:
-        self.release("v3.0.0-rc.9", {"skill/a": "1\n"})
-        self.release("v3.0.0-rc.10", {"skill/a": "2\n"})
-        self.release("v3.0.0", {"package.json": "{}\n"})
+        self.release("v3.0.0-rc.9", {"skill/a": "1\n", "package.json": '{"version": "3.0.0-rc.9"}\n'})
+        self.release("v3.0.0-rc.10", {"skill/a": "2\n", "package.json": '{"version": "3.0.0-rc.10"}\n'})
+        self.release("v3.0.0", {"package.json": '{"version": "3.0.0"}\n'})
         code, out = self.promoted("v3.0.0")
         self.assertEqual((code, out["candidate"]), (0, "v3.0.0-rc.10"))
 
@@ -251,8 +255,8 @@ class PromotedCommandTests(RulesRepo):
                                         capture_output=True).returncode, 2)
 
     def sha_run(self, extra: dict[str, str], *args: str) -> tuple[int, dict]:
-        self.release("v3.0.0-rc.2", {"skill/SKILL.md": "a\n"})
-        for path, text in {"package.json": "{}\n", "CHANGELOG.md": "c\n",
+        self.release("v3.0.0-rc.2", {"skill/SKILL.md": "a\n", "package.json": RC_PACKAGE})
+        for path, text in {"package.json": FINAL_PACKAGE, "CHANGELOG.md": "c\n",
                            ".agents/skills/x/SKILL.md": "x\n", **extra}.items():
             put(self.repo / path, text)
         git(self.repo, "add", "-A")
@@ -266,6 +270,27 @@ class PromotedCommandTests(RulesRepo):
     def test_promoted_sha_kit_source_change(self) -> None:
         code, out = self.sha_run({"skill/SKILL.md": "b\n"}, "--sha", "HEAD")
         self.assertEqual((code, out["violations"]), (1, ["skill/SKILL.md"]))
+
+    def test_package_json_beyond_version_fails(self) -> None:
+        other = '{"version": "3.0.0", "files": ["skill", "lib"]}\n'
+        code, out = self.final_after_rc({"package.json": other})
+        self.assertEqual((code, out["violations"]), (1, ["package.json"]))
+
+    def test_package_json_beyond_version_fails_for_sha(self) -> None:
+        other = '{"version": "3.0.0", "files": ["skill", "lib"]}\n'
+        code, out = self.sha_run({"package.json": other}, "--sha", "HEAD")
+        self.assertEqual((code, out["violations"]), (1, ["package.json"]))
+
+    def test_package_json_unreadable_sides_fail_closed(self) -> None:
+        for rc, final in [(RC_PACKAGE, "{not json\n"), (None, FINAL_PACKAGE), (RC_PACKAGE, "[1]\n")]:
+            with self.subTest(rc=rc, final=final):
+                files = {"skill/a": "1\n", "x": "1\n"} if rc is None else {"package.json": rc}
+                self.release("v3.0.0-rc.1", files)
+                self.release("v3.0.0", {"package.json": final})
+                code, out = self.promoted("v3.0.0")
+                self.assertEqual((code, out["violations"]), (1, ["package.json"]))
+                git(self.repo, "tag", "-d", "v3.0.0", "v3.0.0-rc.1")
+                git(self.repo, "reset", "-q", "--hard", "HEAD~2")
 
     def test_promoted_sha_unresolved(self) -> None:
         code, out = self.sha_run({}, "--sha", "nope")
