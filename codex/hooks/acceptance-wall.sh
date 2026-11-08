@@ -73,7 +73,7 @@ case "$tool" in
           case "$tool" in
             Bash|apply_patch|Edit|Write|view_image|update_plan|clockcurr_time|clocksleep|get_context_remaining|skillslist|skillsread|skillsinstallations) ;;
             *)
-              echo "Blocked: $tool is closed to this agent: it is not on the tool list of this role. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
+              echo "Blocked: ${tool:-(no tool name)} is closed to this agent: it is not on the tool list of this role. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
               exit 2 ;;
           esac ;;
       esac

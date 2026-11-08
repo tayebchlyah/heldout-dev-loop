@@ -232,7 +232,9 @@ class CodexWallTests(unittest.TestCase):
                                   result.stderr)
             for extra in ({}, {"tool_name": ""}):
                 with self.subTest(caller=caller, extra=extra):
-                    self.check({**caller, "cwd": cwd, **extra, **message}, True)
+                    result = self.check({**caller, "cwd": cwd, **extra, **message}, True)
+                    self.assertIn("Blocked: (no tool name) is closed to this agent: it is not on the tool list of this role.",
+                                  result.stderr)
             for tool, tool_input in allowed:
                 with self.subTest(caller=caller, tool=tool):
                     self.check({**caller, "cwd": cwd, "tool_name": tool, "tool_input": tool_input}, False)
