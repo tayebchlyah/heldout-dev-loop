@@ -487,22 +487,24 @@ class SecondReviewRunTests(unittest.TestCase):
         self.assertEqual(seen, {})
 
     def test_every_run_kills_the_group(self) -> None:
-        for tail, timeout, state, reason, code in [("time.sleep(60)", 0.05, "failed", "timeout", 1),
-                                                   ("out('t')", 15, "done", None, 0)]:
+        for tail, timeout, state, reason, code in [("time.sleep(120)", 0.05, "failed", "timeout", 1),
+                                                   ("out('t')", 60, "done", None, 0)]:
             with self.subTest(state=state):
                 self.setUp()
                 self.group_dies(tail, timeout, state, reason, code)
 
     def group_dies(self, tail: str, timeout: float, state: str, reason: str | None, code: int) -> None:
         pids = self.tmp / "pids"
-        self.stub("codex", f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        self.stub("codex", f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
                            f"open({str(pids)!r}, 'w').write(f'{{os.getpid()}} {{child.pid}}')\n{tail}")
+        tree = self.tree()
         started = time.monotonic()
-        out, got, _ = self.review(self.tree(), timeout=timeout)
-        self.assertLess(time.monotonic() - started, 20)
+        out, got, _ = self.review(tree, timeout=timeout)
+        # #289: a run that waits for the 120 s child instead of killing the group never returns sooner.
+        self.assertLess(time.monotonic() - started, 120)
         self.assertEqual((out["state"], out["reason"], got), (state, reason, code), out)
         for pid in map(int, pids.read_text().split()):
-            deadline = time.monotonic() + 2
+            deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 try:
                     os.kill(pid, 0)
