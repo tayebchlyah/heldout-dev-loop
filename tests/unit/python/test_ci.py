@@ -177,6 +177,8 @@ class CiVerdictTests(unittest.TestCase):
         ghost = node()
         ghost["comments"]["nodes"][0]["author"] = None
         long = "x" * 300
+        bare = node()
+        del bare["comments"]["nodes"][0]["authorAssociation"]
         rows = [
             ("resolved", answer(node(resolved=True)), []),
             ("open", answer(node()), [THREAD]),
@@ -189,6 +191,17 @@ class CiVerdictTests(unittest.TestCase):
             ("contributor: no text", answer(node(association="CONTRIBUTOR")), [{**THREAD, "text": None}]),
             ("outside user: no text", answer(node(association="NONE")), [{**THREAD, "text": None}]),
             ("no association: no text", answer(node(association=None)), [{**THREAD, "text": None}]),
+            ("first timer: no text", answer(node(association="FIRST_TIMER")), [{**THREAD, "text": None}]),
+            ("first time contributor: no text", answer(node(association="FIRST_TIME_CONTRIBUTOR")),
+             [{**THREAD, "text": None}]),
+            ("mannequin: no text", answer(node(association="MANNEQUIN")), [{**THREAD, "text": None}]),
+            ("association key missing: no text", answer(bare), [{**THREAD, "text": None}]),
+            ("outside user, long line: no text", answer(node(association="NONE", body=long + "\nmore")),
+             [{**THREAD, "text": None}]),
+            ("member then outside user", answer(node(association="MEMBER"), node(association="NONE")),
+             [THREAD, {**THREAD, "text": None}]),
+            ("no comment: no text", answer(node(comments={"nodes": []})),
+             [{**THREAD, "author": None, "url": None, "text": None}]),
         ]
         for name, data, want in rows:
             with self.subTest(name):
@@ -228,6 +241,8 @@ class CiWaitTests(StubGh):
 
     def test_verdicts(self) -> None:
         failed = run("FAILURE", name="acceptance", link=FAIL_LINK)
+        outsider = {**THREAD_NODE, "comments": {"nodes": [{**THREAD_NODE["comments"]["nodes"][0],
+                                                           "authorAssociation": "NONE"}]}}
         rows = [
             ("green", {"view": [self.pr()]}, (),
              {"state": "pass", "reason": None, "head": self.head, "threads": [], "stale_base": None,
@@ -237,6 +252,10 @@ class CiWaitTests(StubGh):
             ("open thread", {"view": [self.pr()], "graphql": [graphql(THREAD_NODE)]}, (),
              {"state": "threads", "threads": [{"path": "skill/x.py", "line": 12, "author": "bot",
                                                "url": "https://github.com/o/r/pull/7#r1", "text": "Line one"}]}, {}),
+            ("outsider thread beats a failed check",
+             {"view": [self.pr(statusCheckRollup=[failed])], "graphql": [graphql(outsider)]}, (),
+             {"state": "threads", "threads": [{"path": "skill/x.py", "line": 12, "author": "bot",
+                                               "url": "https://github.com/o/r/pull/7#r1", "text": None}]}, {}),
             ("failed check at once", {"view": [self.pr(statusCheckRollup=[failed, PENDING])], "run": [out(LOG)],
                                       "compare": [out("0")]}, (),
              {"state": "fail", "failed_job": "acceptance", "url": FAIL_LINK, "stale_base": False},
@@ -324,6 +343,12 @@ class CiWaitTests(StubGh):
         self.assertIn(("-f", "name=tool"), pairs)
         self.assertIn(("-F", "number=7"), pairs)
         self.assertTrue(any(c[1].startswith("repos/acme/tool/compare/") for c in self.calls() if c[:1] == ["api"]))
+
+    def test_thread_query_names_author_association(self) -> None:
+        self.wait({"view": [self.pr()]})
+        graph = next(c for c in self.calls() if c[:2] == ["api", "graphql"])
+        query = next(arg for arg in graph if arg.startswith("query="))
+        self.assertIn("author { login } authorAssociation body url", query)
 
     def test_a_timeout_that_is_not_a_finite_number_above_zero_is_a_usage_error(self) -> None:
         for value in ("nan", "inf", "0", "-1"):
