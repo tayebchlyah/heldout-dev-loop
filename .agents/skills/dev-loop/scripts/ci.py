@@ -18,7 +18,8 @@ VIEW_FIELDS = ("number,url,headRefOid,baseRefName,isDraft,mergeable,mergeStateSt
                "statusCheckRollup")
 THREADS_QUERY = ("query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {"
                  " pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path line"
-                 " comments(first: 1) { nodes { author { login } body url } } } } } } }")
+                 " comments(first: 1) { nodes { author { login } authorAssociation body url } } } } } } }")
+TEXT_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 FAILED_CHECK_STATES = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 BLOCKED_REASONS = {"REVIEW_REQUIRED": "review-required", "CHANGES_REQUESTED": "changes-requested"}
 
@@ -60,9 +61,9 @@ def open_threads(data: dict) -> list[dict]:
         comments = (node.get("comments") or {}).get("nodes") or [{}]
         first = comments[0] or {}
         body = first.get("body") or ""
+        text = (body.splitlines() or [""])[0][:200] if first.get("authorAssociation") in TEXT_ASSOCIATIONS else None
         threads.append({"path": node.get("path"), "line": node.get("line"),
-                        "author": (first.get("author") or {}).get("login"), "url": first.get("url"),
-                        "text": (body.splitlines() or [""])[0][:200]})
+                        "author": (first.get("author") or {}).get("login"), "url": first.get("url"), "text": text})
     return threads
 
 

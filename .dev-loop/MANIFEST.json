@@ -1,5 +1,5 @@
 {
-  "version": "3.0.0-rc.6",
+  "version": "3.0.0-rc.7",
   "files": {
     ".agents/skills/continue/SKILL.md": "sha256:4079d7ab0245a205f4dcce5d84449f2de4ca48b979f535ed5579a44ea7c0da80",
     ".agents/skills/dev-loop/LICENSE.txt": "sha256:8b21830e665a5bcb047540699534ef81066d9b6874e29d33fc8b2a290dcb8cc6",
@@ -7,7 +7,7 @@
     ".agents/skills/dev-loop/references/benchmark.md": "sha256:ec543882e37dcea1bb89d1d930354156cc5408aeb215940b2bdd2ad756a44e31",
     ".agents/skills/dev-loop/references/building.md": "sha256:e34628b7fefaca0900152903b84ed0763fe5bcdebbe154c7b93d9457267273b4",
     ".agents/skills/dev-loop/references/claude.md": "sha256:dd5e3b7e6049cb373347f85fb3113e70c9d75f106cf4378e89701a3e9b53224b",
-    ".agents/skills/dev-loop/references/codex.md": "sha256:dc7f54dc00663cca04ce2e756ff558b784cc4c56a14a3f0914ce40ca5da4e63d",
+    ".agents/skills/dev-loop/references/codex.md": "sha256:83db3df939ff8b8d5c3123b71ca3dfff5979782155d96c2e9a74906a4811822c",
     ".agents/skills/dev-loop/references/coding-standards.md": "sha256:bf496560e784f90336b1057a39939c0c94613624d85b26008b506c2eafb5e0a4",
     ".agents/skills/dev-loop/references/deferred.md": "sha256:f76f77bd743c7119d3efc3136efbf0c3f7e33b4bd5f91f21405a73b7fca89fb7",
     ".agents/skills/dev-loop/references/licenses/Codex Sandbox.txt": "sha256:12a3e8d5ad3126e9af60d5a78679f9d7db95f238023d4cfa8f7c7e8bd011323b",
@@ -44,7 +44,7 @@
     ".agents/skills/dev-loop/scripts/board/writer.py": "sha256:74f534f5da15ea5ce218317b2668e6ea6e5566c9ee8d5986075ebf8abd5b0fd5",
     ".agents/skills/dev-loop/scripts/capture.py": "sha256:73277c4283abf95aaff8f6c935ebc171ad9f103df590250268889a6ee599bd86",
     ".agents/skills/dev-loop/scripts/check_setup.py": "sha256:02f06c5e5040f7009897a9268b49bfe437f47a4a86623c4e0af90c5ad93b28dc",
-    ".agents/skills/dev-loop/scripts/ci.py": "sha256:d38fd352ef231d5493de0241d8d50a1c86b2ab31f0d4c7f7d739a24d9e529704",
+    ".agents/skills/dev-loop/scripts/ci.py": "sha256:350bddcf54a24c982369c50dd4f8fa19ee67d61ae66b527861dd35cf12075d84",
     ".agents/skills/dev-loop/scripts/ci_skip.py": "sha256:e646752d5b2316bbe7d69947922a8927c18fe8763a85bb4c8d2f38b2a49fae2c",
     ".agents/skills/dev-loop/scripts/devloop.py": "sha256:9e201969762cd7509737d9c0caf6ecd5cd32d32555875522fc20eaacdeb1af0c",
     ".agents/skills/dev-loop/scripts/drive.mjs": "sha256:b1ed3597a65d1562182690f19579a990fcd36ae13e7a1a8d1b72ee218aa1f5e2",
@@ -115,7 +115,7 @@
     ".dev-loop/hooks/claude/seal.sh": "sha256:69035fe73ee5027a74b96b584f76f7ff4a3b42d9f0e9da3c782281f26f12c590",
     ".dev-loop/hooks/claude/tree-hash.sh": "sha256:fc5525f4220d12a0448c6c7f79c33f70d6aa9f4cf0cc61c80bd4c04752b04380",
     ".dev-loop/hooks/claude/worktree-wall.sh": "sha256:1a9ac3e401ab1d37218e6d0fb5da7f9ae71319a1daf7cd3ff2f943a02da96781",
-    ".dev-loop/hooks/codex/acceptance-wall.sh": "sha256:127b6c33afac719f54e5980f5e211cb1e6248e817c88dd8eda02791eb6cd485f",
+    ".dev-loop/hooks/codex/acceptance-wall.sh": "sha256:3c759391b7bb44c95d16845e237b9f7b36f7e9cd57d65fa915698f7c15852c1f",
     ".dev-loop/hooks/codex/board.sh": "sha256:b8ebd3364b84907480d830a601f84f2eebaba2991c552f9018508a26d808d84b",
     ".dev-loop/hooks/codex/common.py": "sha256:e503948aeaf6b3ab60d48238f9ccdb63bb96af9bc56c6c8ac3fc0393da6f83f3",
     ".dev-loop/hooks/codex/deny-path.sh": "sha256:af263811ea120681f1e4ae0aef969d70e3863ca2223221cf077b2ac6cee7b980",
