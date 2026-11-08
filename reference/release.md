@@ -44,11 +44,11 @@ The release audit runs target code only in the image `dev-loop-audit:1` (`dev-lo
 2. It runs `release-check`, and the `/release-audit` steps when no current audit record covers `HEAD`. A confirmed finding gets a fix slice, then `/release --rc` again.
 3. It opens the release PR: `package.json` and `package-lock.json` at `X.Y.Z-rc.N`, the rc section, the dogfood upgrade. CI may skip it (job `changes`).
 4. The user approves the version and the notes; `/release` rebase merges the PR.
-5. The user confirms the tag; `/release` runs `git tag -a vX.Y.Z-rc.N` and `git push origin vX.Y.Z-rc.N`. The git guard runs `release-check` on the tag push. The workflow makes a GitHub pre-release.
+5. The user confirms the tag; `/release` runs `git tag -a vX.Y.Z-rc.N` and `git push origin vX.Y.Z-rc.N`. The git guard runs `release-check --no-build` on the tag push. A dogfood release commit holds the kit upgrade, so the guard may report `stale-audit` and ask you to confirm, while `/release` step 7 gave `ok`: expect it, confirm when step 7 gave `ok` at the same commit. The workflow makes a GitHub pre-release.
 6. `/release` checks the release body and runs `commands.release_verify`. The next feature starts in a new session.
 
 ## Final release
 
 1. `/release` (Codex `$release`) in the main session, on `main` of the main checkout.
 2. Steps as for a release candidate, version `X.Y.Z`. `commands.release_check` also runs `promoted --sha`: a failure means a kit source change after the last rc; cut a new rc.
-3. The tag push: one tag per push, GitHub sends no push event for more than three tags. The workflow checks the version, runs `promoted` again, writes the notes from the `## [X.Y.Z]` section and makes the GitHub Release.
+3. The tag push: the same `stale-audit` confirmation may come as for a release candidate. One tag per push, GitHub sends no push event for more than three tags. The workflow checks the version, runs `promoted` again, writes the notes from the `## [X.Y.Z]` section and makes the GitHub Release.
