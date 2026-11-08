@@ -130,7 +130,7 @@ class InstallUpgradeTests(unittest.TestCase):
         amended by Walled Agents No Web O7 to O10: the web tools and `Agent` in the matchers and
         `disallowedTools`, no `web_search` key after `init`, a project `web_search` kept by `upgrade`. As amended
         by Walled Agents Nested Routes O11 to O14: the settings matcher `.*`, the Codex collaboration names and
-        the `tools` key."""
+        the `tools` key. As amended by Codex TUI Task Tools O6 to O8: the Codex matcher `.*`."""
         # O14, O15: the kit source.
         claude_fragment = json.loads(CLAUDE_FRAGMENT.read_text())
         self.assert_one_entry(claude_fragment, NET, CLAUDE_MATCHER)
