@@ -17,7 +17,7 @@ dev-loop is a skill, a set of subagents and hooks, and an installer. It takes a 
 
 An agent that writes both the code and its tests grades its own work: when a test fails, it can change the test instead of the code. dev-loop splits the two. A separate agent writes the acceptance tests from the approved spec alone, before any code exists. The agents that write the code never read those tests, and hooks enforce it. The tests are a held-out set, as in machine learning: the code passes them only if it does what the spec says.
 
-The rest of the loop keeps the agent honest in the same way: three reviewers and a reviewer from the other model family read the whole branch, a decision log records each choice the agent made alone, and a fixed list of events stops the agent and waits for you.
+The rest of the loop keeps the agent honest in the same way: three reviewers read the whole branch (a reviewer from the other model family too, when you turn it on), a decision log records each choice the agent made alone, and a fixed list of events stops the agent and waits for you.
 
 ## The loop
 
@@ -78,7 +78,7 @@ Hooks deny, per agent role: a read, an edit or a search of the held-out suite by
 
 Stage 6 runs once per feature, at one commit:
 
-1. **Review wave**: three reviewers (correctness, spec, standards) whole branch, one table each. A second reviewer of the other model family (Codex for Claude Code, Claude for Codex) is optional and off by default: it runs when the project and the user both turn it on (see [configuration](docs/configuration.md)).
+1. **Review wave**: three reviewers (correctness, spec, standards), plus a security reviewer, read the whole branch, one table each. A second reviewer of the other model family (Codex for Claude Code, Claude for Codex) is optional and off by default: it runs when the project and the user both turn it on (see [docs/configuration.md](docs/configuration.md)).
 2. **Triage**: the tables merge by file and line. Each security finding goes to a verifier. Only a confirmed defect must be fixed; the rest goes to a weekly review list.
 3. **Fix wave**: one fresh implementer per group of files.
 4. **Drive**: in a project with a UI, the verify skill drives the changed routes in Chromium and keeps screenshots.
