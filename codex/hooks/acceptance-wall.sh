@@ -1,6 +1,6 @@
 #!/bin/sh
-# Codex PreToolUse wall (D9), matcher
-# Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent.
+# Codex PreToolUse wall (D9), matcher .* : every tool call that fires a hook, because a future tool
+# name cannot be listed.
 # agent_id is present only in a subagent call.
 # spec_tester: no path names src/, app/, backend/ or frontend/. Any other subagent: no path names
 # tests/acceptance. Main session: no apply_patch of a file under tests/acceptance/; its Bash stays open.
@@ -23,18 +23,25 @@
 # sets features.unified_exec_tty = false, so no tty shell stays open to type into (#140). Not walled:
 # for other subagents an MCP search tool, an MCP tool that runs code or reads a remote copy, a resource
 # listing; the audit reads their results.
-# Web tools (#240): a tool whose name starts with web is denied to implementer and spec_tester with
+# Web tools (#240): a tool whose name starts with web (web.*) is denied to implementer and spec_tester with
 # agent_id set, whatever its input; every other caller exits 0 with no path rule. The hosted web
 # search tool reaches no hook. The denial names the NEEDS_FACT exit.
-# Collaboration tools (#273): a tool whose name starts with collaboration or multi_agent, or ends with
-# spawn_agent, send_input, send_message, followup_task, wait_agent, close_agent, interrupt_agent,
-# list_agents or resume_agent, is denied to implementer and spec_tester with agent_id set, whatever its
-# input; every other caller exits 0 with no path rule. An mcp__ tool keeps the MCP rule, whatever its
-# name ends with. The denial names the NEEDS_FACT exit. Codex 0.166.0: the v1 spawn arrives bare, every
-# other v1 tool as multi_agent_v1<name>; the suffix rule also closes a renamed namespace; no role setting
-# closes these tools. No tools key or skill list in the Codex agent files: Codex has no Skill tool that
-# starts a fork. Written gap: a subagent other than these 2 keeps the tools, and can still start a
-# spec_tester child.
+# Role tool list (#283): implementer and spec_tester with agent_id set may call only Bash, apply_patch,
+# Edit, Write, view_image, update_plan, clockcurr_time, clocksleep, get_context_remaining, skillslist,
+# skillsread and skillsinstallations, after the web and MCP rules above. Edit and Write are matcher
+# aliases of apply_patch and take its patch rule; skillsread gets the path rule on its path fields,
+# as view_image. Every other name, a missing one included, is denied to them, whatever its input: the
+# codex_tui task tools (codex_tuicreate_thread, codex_tuifork_thread, ...), the collaboration and
+# multi_agent tools, a future tool. The denial names the NEEDS_FACT exit. Every other caller exits 0 on
+# an unlisted name, with no path rule. Written gaps: no hook fires on write_stdin, the outer exec and
+# wait of code mode, tool_search, the hosted web search tool or a freeform extension tool; a subagent
+# other than these 2 keeps the TUI task tools, and a TUI thread has no agent_id, so it gets the main
+# session rules.
+# Collaboration tools (#273): Codex 0.166.0 gives the v1 spawn bare, every other v1 tool as
+# multi_agent_v1<name>; no role setting closes these tools; the role tool list denies them. An mcp__ tool
+# keeps the MCP rule, whatever its name ends with. No tools key or skill list in the Codex agent files:
+# Codex has no Skill tool that starts a fork. Written gap: a subagent other than these 2 keeps the
+# tools, and can still start a spec_tester child.
 # No wall on a nested harness started from the shell (claude -p, codex exec, another agent CLI): the
 # child has no agent_id, so it gets the main session rules, reads open. The audit does not read its
 # transcript, only what it prints to the parent. A deny by name does not close the route.
@@ -58,16 +65,19 @@ case "$tool" in
       esac
     fi
     exit 0 ;;
-  mcp__*) ;;
-  collaboration*|multi_agent*|*spawn_agent|*send_input|*send_message|*followup_task|*wait_agent|*close_agent|*interrupt_agent|*list_agents|*resume_agent)
+  mcp__*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates) ;;
+  *)
     if [ -n "$agent_id" ]; then
       case "$agent_type" in
         implementer|spec_tester)
-          echo "Blocked: $tool is closed to this agent: a nested agent has no wall. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
-          exit 2 ;;
+          case "$tool" in
+            Bash|apply_patch|Edit|Write|view_image|update_plan|clockcurr_time|clocksleep|get_context_remaining|skillslist|skillsread|skillsinstallations) ;;
+            *)
+              echo "Blocked: $tool is closed to this agent: it is not on the tool list of this role. For an outside fact the brief and the repository do not give, stop and report NEEDS_FACT: <question>." >&2
+              exit 2 ;;
+          esac ;;
       esac
-    fi
-    exit 0 ;;
+    fi ;;
 esac
 
 if [ -n "$agent_id" ] && [ "$agent_type" = spec_tester ]; then
@@ -92,10 +102,11 @@ rel='($t | if . == "" then [] else [., (if startswith("/private/") then .[8:] el
 
 case "$tool" in
   Bash) route=shell ;;
-  view_image|mcp__*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates) route=fields ;;
-  *) route=patch ;;
+  view_image|skillsread|mcp__*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates) route=fields ;;
+  apply_patch|Edit|Write) route=patch ;;
+  *) exit 0 ;;
 esac
-if [ "$route" = fields ] && [ -n "$agent_id" ] && [ "$tool" != view_image ]; then
+if [ "$route" = fields ] && [ -n "$agent_id" ] && [ "$tool" != view_image ] && [ "$tool" != skillsread ]; then
   case "$agent_type" in implementer|spec_tester) echo "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell." >&2; exit 2 ;; esac
 fi
 if [ "$route" != patch ]; then
