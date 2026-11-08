@@ -10,7 +10,8 @@ One file per subject. A new test file adds its line here.
 - `test_seal_check.py`, `test_search_wall.py`, `test_search_hooks.py`, `test_skill_wall.py`, `test_skill_hooks.py`: `seal-check`, `kit-changed`, `weakened`; `search-wall`: direct, via walls; `skill-wall`: direct, via the wall.
 - `test_seal_patch.py`: the seal patch value (`patch-id --verbatim`), a failed `patch-id` in `seal`, `seal --rebase-continue`, `seal-check`.
 - `test_seal_record.py`: the seal record `seals.json`: write, update, `seal-dropped`, `seal-record-unreadable`.
-- `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, `gate` and `seal` size; seal hooks, guard, spec-tester, Codex walls.
+- `test_size.py`, `test_seal_hooks.py`: `size-check`, seams, `gate` and `seal` size; seal hooks, guard, spec-tester.
+- `test_codex_wall.py`: Codex `acceptance-wall.sh`: walls by agent type, tool walls, web tools, the role tool list, the matcher and its texts.
 - `test_kit_walls.py`, `test_walls.py`, `test_git_guard.py`, `test_push_spellings.py`, `test_gh_guard.py`: path, kit, `cd` walls, canary script, Codex trust warning; deny walls, Codex hooks, git and gh guard.
 - `test_frontmatter_walls.py`: the settings twin of each agent frontmatter wall.
 - `test_canary_nested.py`: `scripts/canary.sh` nested route verdict and run, the #273 upgrade note.
