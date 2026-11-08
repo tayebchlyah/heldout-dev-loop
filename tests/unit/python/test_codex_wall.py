@@ -15,12 +15,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from test_devloop import git, put  # noqa: E402  (also sets the core.fsmonitor override)
 from test_seal import SUITE  # noqa: E402
+from test_seal_hooks import patch  # noqa: E402
 
 from support import ROOT  # noqa: E402
-
-
-def patch(*headers: str, body: str = "+x") -> str:
-    return "\n".join(["*** Begin Patch", *headers, body, "*** End Patch"])
 
 
 class CodexWallTests(unittest.TestCase):
