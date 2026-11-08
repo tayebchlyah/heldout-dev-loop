@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -14,13 +15,37 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import GuardRepo, ROOT, budget_report  # noqa: E402
+from support import GuardRepo, ROOT, SLOW_STUB_SECONDS, budget_report  # noqa: E402
 
 import check_setup  # noqa: E402
 
 
 class ReleaseGuardTests(GuardRepo, unittest.TestCase):
     """Both git-guard.sh copies, fed hook JSON on stdin, with a stub release-check CLI in the main worktree."""
+
+    @staticmethod
+    def guard_timeout(harness: str) -> int:
+        tree = ast.parse((ROOT / harness / "hooks" / "git-guard.py").read_text())
+        func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "release_suffix")
+        runs = [n for n in ast.walk(func) if isinstance(n, ast.Call) and ast.unparse(n.func) == "subprocess.run"]
+        return next(k.value.value for run in runs for k in run.keywords if k.arg == "timeout")
+
+    @staticmethod
+    def hook_timeout(harness: str, fragment: str) -> int:
+        found = []
+
+        def walk(node: object) -> None:
+            if isinstance(node, dict):
+                if str(node.get("command", "")).endswith("git-guard.sh"):
+                    found.append(node["timeout"])
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(json.loads((ROOT / harness / fragment).read_text()))
+        return found[0]
 
     def test_a_release_tag_push_carries_the_release_check_verdict(self) -> None:
         # Oracle 46, 47, 49, 50, 51, 52.
@@ -54,12 +79,12 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
         self.assertIn(f"release-check --no-build --repo {self.repo} --sha {self.c} --for v2.0.0", self.calls.read_text())
         # #199: both guards build no kit reference, so no commit's lib/kit.mjs runs on the host.
         self.assertEqual({line.split(" --repo ")[0] for line in self.calls.read_text().splitlines()}, {"release-check --no-build"})
-        # #289: a subagent is denied before the CLI runs: no call, and no wait for the 30 s slow stub.
+        # #289: a subagent is denied before the CLI runs: no call, and no wait for the slow stub.
         self.calls.unlink()
         self.stub("slow")
         got, reason, seconds = self.guard("claude", "git push origin v1.0.0", agent_id="a1")
         self.assertEqual((got, self.calls.exists()), ("deny", False), reason)
-        self.assertLess(seconds, 30)
+        self.assertLess(seconds, SLOW_STUB_SECONDS)
 
     def test_gh_release_create_checks_the_commit_it_tags(self) -> None:
         # Oracle 48: a local tag, else --target, else refs/remotes/origin/main; any tag name asks.
@@ -97,12 +122,15 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
                     self.assertIn(part, reason)
 
     def test_a_slow_or_broken_release_check_still_asks(self) -> None:
-        # Oracle 48a, Review Focus 3 and #289: the guard times out, no wait for the 30 s slow stub, a stderr line with a quote stays valid JSON.
+        # Oracle 48a, Review Focus 3 and #289: the guard times out, no wait for the slow stub, its timeout is shorter than the hook timeout, a stderr line with a quote stays valid JSON.
         self.stub("slow")
         got, reason, seconds = self.guard("claude", "git push origin v1.0.0")
         self.assertEqual(got, "ask", reason)
         self.assertIn("release-check failed: timeout", reason)
-        self.assertLess(seconds, 30)
+        self.assertLess(seconds, SLOW_STUB_SECONDS)
+        for harness, fragment in [("claude", "settings.fragment.json"), ("codex", "hooks.fragment.json")]:
+            with self.subTest(harness=harness):
+                self.assertLess(self.guard_timeout(harness), self.hook_timeout(harness, fragment))
         self.stub("quote")
         for harness, decision in [("claude", "ask"), ("codex", "deny")]:
             got, reason, _ = self.guard(harness, "gh release create v1.0.0")
