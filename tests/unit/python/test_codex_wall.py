@@ -291,7 +291,7 @@ class CodexWallTests(unittest.TestCase):
     def test_the_header_names_the_role_tool_list(self) -> None:
         header = (ROOT / "codex/hooks/acceptance-wall.sh").read_text().split('. "${0%/*}/git-pin.sh"')[0]
         self.assertRegex(header, re.compile(r"(^|[\s`])\.\*([\s`.,;:]|$)", re.M))
-        for name in ("codex_tui", *self.LISTED, "web.*", "collaboration", "multi_agent", "nested harness", "write_stdin",
+        for name in ("codex_tui", *self.LISTED, "web.*", "collaboration", "collaboration.*", "multi_agent", "nested harness", "write_stdin",
                      "tool_search", "agent_id"):
             with self.subTest(name=name):
                 self.assertIn(name, header)

@@ -38,7 +38,8 @@
 # other than these 2 keeps the TUI task tools, and a TUI thread has no agent_id, so it gets the main
 # session rules.
 # Collaboration tools (#273): Codex 0.166.0 gives the v1 spawn bare, every other v1 tool as
-# multi_agent_v1<name>; no role setting closes these tools; the role tool list denies them. An mcp__ tool
+# multi_agent_v1<name>; no role setting closes these tools; collaboration.*, the multi_agent names and
+# the bare v1 names fall under the role tool list, which denies them. An mcp__ tool
 # keeps the MCP rule, whatever its name ends with. No tools key or skill list in the Codex agent files:
 # Codex has no Skill tool that starts a fork. Written gap: a subagent other than these 2 keeps the
 # tools, and can still start a spec_tester child.
