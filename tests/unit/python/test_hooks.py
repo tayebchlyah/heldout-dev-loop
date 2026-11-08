@@ -351,7 +351,8 @@ class BoardHookLaunchTests(unittest.TestCase):
 
     FAKE = (
         "#!/usr/bin/env python3\nimport json, os, sys, time\ndata = sys.stdin.read()\n"
-        "while os.environ.get('BOARD_HOLD') and not os.path.exists(os.environ['BOARD_HOLD']):\n    time.sleep(0.05)\n"
+        "while os.environ.get('BOARD_HOLD') and not os.path.exists(os.environ['BOARD_HOLD']):\n"
+        "    if not os.path.isdir(os.path.dirname(os.environ['BOARD_HOLD'])):\n        sys.exit()\n    time.sleep(0.05)\n"
         "with open(os.environ['BOARD_TEST_LOG'], 'a') as log:\n"
         "    log.write(json.dumps({'label': %r, 'cwd': os.getcwd(), 'stdin': data}) + '\\n')\n"
     )
