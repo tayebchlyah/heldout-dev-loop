@@ -135,8 +135,6 @@ class CodexWallTests(unittest.TestCase):
     UNLISTED = ("codex_tuicreate_thread", "codex_tuifork_thread", "codex_tuisend_message_to_thread", "codex_tuiread_thread",
                 "codex_tuiwait_threads", "codex_tuilist_threads", "collaborationread_thread", "request_user_input",
                 "request_permissions", "multi_env_copy_file", "noteswrite_file", "new_context", "future_tool")
-    MATCHER = ("Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*"
-               "|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent")
 
     def test_collaboration_tools_by_agent_type(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -171,17 +169,29 @@ class CodexWallTests(unittest.TestCase):
                 reviewer = self.wall({**payload, "agent_id": "c", "agent_type": "task_reviewer"})
                 self.assertEqual((reviewer.returncode, reviewer.stderr), (0, ""))
 
-    def test_the_matcher_and_the_texts_name_the_collaboration_tools(self) -> None:
+    def test_the_matcher_and_the_texts(self) -> None:
         fragment = json.loads((ROOT / "codex/hooks.fragment.json").read_text())
-        group = next(g for g in fragment["hooks"]["PreToolUse"] if any("acceptance-wall.sh" in h["command"] for h in g["hooks"]))
-        self.assertEqual(group["matcher"], self.MATCHER)
+        walls = [g for g in fragment["hooks"]["PreToolUse"] if any("acceptance-wall.sh" in h["command"] for h in g["hooks"])]
+        self.assertEqual([g["matcher"] for g in walls], [".*"])
+        guard = next(g for g in fragment["hooks"]["PreToolUse"] if any("git-guard.sh" in h["command"] for h in g["hooks"]))
+        self.assertEqual(guard["matcher"], "Bash")
         header = (ROOT / "codex/hooks/acceptance-wall.sh").read_text().split('. "${0%/*}/git-pin.sh"')[0]
         self.assertIn("collaboration", header)
         codex = (ROOT / "skill/references/codex.md").read_text()
-        self.assertIn("`collaboration.*`", codex)
+        for value in ("(PreToolUse `.*`)", "`codex_tui`", *(f"`{name}`" for name in self.LISTED), "`write_stdin`",
+                      "`tool_search`", "a TUI thread has no `agent_id`", "`collaboration.*`"):
+            with self.subTest(value=value):
+                self.assertIn(value, codex)
         for text in (header, codex):
             self.assertIn("multi_agent", text)
             self.assertIn("nested harness", text)
+        kit = (ROOT / "reference/kit.md").read_text()
+        start = kit.find("Codex TUI task tools upgrade (#283)")
+        self.assertNotEqual(start, -1)
+        note = kit[start:kit.find("\n\n", start)]
+        for value in ("/hooks", "`.*`", "codex_tui", "#283"):
+            with self.subTest(value=value):
+                self.assertIn(value, note)
 
     IMPL, TESTER = {"agent_id": "a", "agent_type": "implementer"}, {"agent_id": "b", "agent_type": "spec_tester"}
 
