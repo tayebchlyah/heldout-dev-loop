@@ -1,13 +1,13 @@
 # Changelog
 
-## [3.0.0-rc.7] - 2026-11-08
+## [3.0.0] - 2026-11-08
 
 ### ⬆️ Upgrade
 
 1. From 2.1.x, ship each in-flight feature first. A Stage 3 commit made before the upgrade has no seal trailer, and `seal-check` reports it `unsealed`.
 2. Update the CLIs to the minimums `check_setup.py` checks: Claude Code 2.1.295 and codex-cli 0.166.0 (the native hook sandbox), and git 2.45.0 (or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1 or later on its line). Older CLIs cannot run the new hooks, and an older git ignores the hook pin that stops a lazy fetch.
-3. Run `npx github:tayebchlyah/heldout-dev-loop#v3.0.0-rc.7 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
-4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1 to rc.6: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
+3. Run `npx github:tayebchlyah/heldout-dev-loop#v3.0.0 upgrade` on a branch, in one PR, merged to `main`. The output lists each `CHANGELOG.md` section after your installed version. Make the branch, commit, PR and merge from Claude Code or by hand, not from Codex: after `upgrade` writes `.codex/hooks.json`, Codex skips the changed `git-guard.sh` and the new walls until `/hooks`, so a Codex agent would run with no guard.
+4. After the merge, on each machine that runs Codex on the repo: run `/hooks` and trust the new and changed dev-loop hooks (`seal.sh`, `acceptance-wall.sh`, `git-guard.sh`; for a project still on 2.1.0, also the PostToolUse `board.sh`). From rc.1 to rc.7: trust every dev-loop hook `/hooks` lists as changed. `upgrade` prints this line.
 5. Run `check_setup.py --harness claude|codex --repo .` and act on each line: Codex: the trust line stays until you trust the project in Codex and do step 4 (`/hooks`) on that machine; a UI project: `devloop.py verify-init --base-url <url>`, then let an agent fill the skill, seed the feature map and prove it once (Stage 0, `.agents/skills/dev-loop/references/verify.md`), or `"verify": false` in `dev-loop.json` (`check_setup.py` fails on the fill markers and the empty map until then); `old-notes-layout`: step 7; Codex: install the Pocock skills `wayfinder` and `retro`; GitHub: turn on "allow rebase merging" (`ci wait`); `security_audit` set: pull its images and keep Docker running; the vault `.gitignore` lines for `Dev Loop Board/` (skipped with `"board_vault_git": "shared"` in `dev-loop.local.json`) and `Security Audit/`, and the Cloudflare `security-audit` skill; Codex network without the managed proxy: `upgrade` adds `features.network_proxy`, the domain list and `dev-docker`, and a profile you changed by hand may need the same keys; `scripts/gate.sh` lacks the `core.fsmonitor` guard: export `core.fsmonitor=false` through `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` before its first git call.
 6. End each open session and start a new one. Codex reads `unified_exec_tty = false` only at session start. A feature in Delivery resumes with `/continue`. The 2.1.x kit has no `kit_drift` `main-newer`, so an old session never stops by itself.
 7. Move the notes to the new layout. Every machine that shares the notes folder upgrades the kit first. Then one machine runs `devloop.py notes-migrate` (a dry run), checks the moves, and runs `devloop.py notes-migrate --apply --plan <hash>`. Until then `check_setup.py` fails `old-notes-layout`, the kit reads both layouts and writes only the new one, and `release-plan`, `release-record` and `release-check` stop while `security-audit/` exists. Delivery never migrates. There is no automatic undo: the log note lists each move.
@@ -155,7 +155,7 @@
 - The project kit no longer holds the skill test files.
 - The `decide` and `pause` usage text names `--repo`.
 
-Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.1...v3.0.0-rc.7
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.1...v3.0.0
 
 ## [2.1.1] - 2026-10-16
 

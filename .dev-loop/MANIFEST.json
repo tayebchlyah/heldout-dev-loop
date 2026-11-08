@@ -1,5 +1,5 @@
 {
-  "version": "3.0.0-rc.7",
+  "version": "3.0.0",
   "files": {
     ".agents/skills/continue/SKILL.md": "sha256:4079d7ab0245a205f4dcce5d84449f2de4ca48b979f535ed5579a44ea7c0da80",
     ".agents/skills/dev-loop/LICENSE.txt": "sha256:8b21830e665a5bcb047540699534ef81066d9b6874e29d33fc8b2a290dcb8cc6",
