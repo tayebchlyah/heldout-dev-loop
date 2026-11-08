@@ -125,6 +125,8 @@ Walled agents web upgrade (#240): `upgrade` refreshes the `deny-acceptance-to-su
 
 Walled agents nested routes upgrade (#273): `upgrade` refreshes the `deny-acceptance-to-subagents.sh` entry in place (matcher `.*`) and writes the new `tools` key into `.claude/agents/implementer.md` and `spec-tester.md`. Codex: the nested-route matcher of `acceptance-wall.sh` adds `collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent`. That changes the hook `trusted_hash`, so Codex skips `acceptance-wall.sh` until `/hooks` trusts the hooks again; until then `check_setup.py --harness codex` reports `pre_tool_use` untrusted.
 
+Codex TUI task tools upgrade (#283): the matcher of `acceptance-wall.sh` becomes `.*`, so the wall sees every tool: `implementer` and `spec_tester` get a closed tool list, and the `codex_tui` task tools and any future tool are denied to them. That changes the hook `trusted_hash`, so Codex skips `acceptance-wall.sh` until `/hooks` trusts the hooks again; until then `check_setup.py --harness codex` reports `pre_tool_use` untrusted. No config key changes.
+
 Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fails below it). `upgrade` merges `[features]`, `[permissions.dev-workspace.network]` and `[permissions.dev-workspace.network.domains]` key by key: each missing kit key is added, each project value is kept and named in a `kept your own <table> <key>` line. It adds `network_proxy`, `mode`, `allow_local_binding`, the domains and the `dev-docker` tables. Other tables keep the table-level merge.
 
 3.0.0 upgrade (breaking): from 2.1.x, in this order.

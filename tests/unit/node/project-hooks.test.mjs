@@ -219,13 +219,13 @@ for (const name of ['release-audit', 'garden', 'release', 'release-notes']) {
   })
 }
 
-test('upgrade of a Codex project replaces the old acceptance-wall entry with one new entry', () => {
+for (const old of ['Bash|apply_patch', 'Bash|apply_patch|view_image|mcp__.*|read_mcp_resource|list_mcp_resources|list_mcp_resource_templates|web.*|collaboration.*|spawn_agent|send_input|send_message|followup_task|wait_agent|close_agent|interrupt_agent|list_agents|resume_agent']) test(`upgrade of a Codex project replaces the old acceptance-wall entry with one new entry (${old})`, () => {
   const { home, repo } = setup()
   run(fakePackage('98.0.0'), 'init', repo, home, ['--yes', '--harness=codex'])
   const hooks = join(repo, '.codex/hooks.json')
   const custom = readJson(hooks)
   const group = custom.hooks.PreToolUse.find((entry) => entry.hooks.some((hook) => hook.command.includes('acceptance-wall.sh')))
-  group.matcher = 'Bash|apply_patch'
+  group.matcher = old
   custom.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] })
   writeFileSync(hooks, JSON.stringify(custom, null, 2))
   const config = join(repo, '.codex/config.toml')
@@ -237,6 +237,7 @@ test('upgrade of a Codex project replaces the old acceptance-wall entry with one
   const own = groups.flatMap((entry) => entry.hooks.map((hook) => ({ matcher: entry.matcher, hook }))).filter(({ hook }) => hook.command.includes('acceptance-wall.sh'))
   assert.equal(own.length, 1)
   assert.equal(own[0].matcher, CODEX_WALL_MATCHER)
+  assert.equal(own[0].matcher, '.*')
   assert.ok(groups.some((entry) => entry.hooks.some((hook) => hook.command === 'echo mine')))
   assert.doesNotMatch(upgrade(repo, home, [], fakePackage('99.0.0')), /updated|\+ PreToolUse/)
 })
