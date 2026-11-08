@@ -150,7 +150,7 @@ def make_git_repo(root: Path, files: dict[str, str]) -> Path:
 STUBS = {
     "ok": 'print(json.dumps({"ok": True, "reasons": []}))',
     "fail": 'print(json.dumps({"ok": False, "reasons": [{"reason": "no-audit"}, {"reason": "open-security", "items": []}]})); sys.exit(1)',
-    "slow": "time.sleep(10)",
+    "slow": "time.sleep(30)",
     "quote": 'sys.stderr.write("bad \\"quote\\" and \\\\ here\\nsecond line\\n"); sys.exit(1)',
 }
 

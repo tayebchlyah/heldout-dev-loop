@@ -347,11 +347,11 @@ class HookPlantedProgramTests(unittest.TestCase):
 
 class BoardHookLaunchTests(unittest.TestCase):
     """D1, D12, O1: how board.sh and gate.sh start `devloop.py board`. Hooks run from a kit layout copy;
-    each repo holds a fake devloop.py that sleeps BOARD_SLEEP seconds, then logs its label, cwd and stdin."""
+    each repo holds a fake devloop.py that waits until the BOARD_HOLD file exists (#289), then logs its label, cwd and stdin."""
 
     FAKE = (
         "#!/usr/bin/env python3\nimport json, os, sys, time\ndata = sys.stdin.read()\n"
-        "time.sleep(float(os.environ.get('BOARD_SLEEP', '0')))\n"
+        "while os.environ.get('BOARD_HOLD') and not os.path.exists(os.environ['BOARD_HOLD']):\n    time.sleep(0.05)\n"
         "with open(os.environ['BOARD_TEST_LOG'], 'a') as log:\n"
         "    log.write(json.dumps({'label': %r, 'cwd': os.getcwd(), 'stdin': data}) + '\\n')\n"
     )
@@ -373,10 +373,10 @@ class BoardHookLaunchTests(unittest.TestCase):
                 shutil.copy2(script, target / script.name)
         return path
 
-    def start(self, repo: Path, harness: str, script: str, args: list[str], cwd: Path, sleep: str,
+    def start(self, repo: Path, harness: str, script: str, args: list[str], cwd: Path, hold: Path | None = None,
               log: Path | None = None):
         payload = {"cwd": str(cwd), "hook_event_name": "Stop", "stop_hook_active": False}
-        env = {**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "BOARD_TEST_LOG": str(log or self.log), "BOARD_SLEEP": sleep}
+        env = {**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "BOARD_TEST_LOG": str(log or self.log), "BOARD_HOLD": str(hold or "")}
         shell = "bash" if harness == "claude" else "sh"
         return subprocess.Popen([shell, str(repo / ".dev-loop" / "hooks" / harness / script), *args], cwd=repo,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True), payload
@@ -394,19 +394,21 @@ class BoardHookLaunchTests(unittest.TestCase):
 
     def test_d1_o1_hook_returns_while_board_runs(self) -> None:
         repo = self.repo(self.root / "project", "A")
-        # The four boards sleep at the same time, each with its own log.
+        hold = self.root / "hold"
+        self.addCleanup(hold.touch)
+        # #289: the four boards wait on the hold file, each with its own log: a hook that waits for its board never returns.
         runs = []
         for harness, script, args in [("claude", "board.sh", ["prompt"]), ("claude", "gate.sh", []),
                                       ("codex", "board.sh", ["prompt"]), ("codex", "gate.sh", [])]:
             log = self.root / f"board-{harness}-{script}.jsonl"
-            began = time.monotonic()
-            proc, payload = self.start(repo, harness, script, args, repo, "3", log)
+            proc, payload = self.start(repo, harness, script, args, repo, hold, log)
             out, _ = proc.communicate(json.dumps(payload), timeout=30)
-            runs.append((harness, script, proc, out, time.monotonic() - began, log))
-        for harness, script, proc, out, elapsed, log in runs:
+            runs.append((harness, script, proc, out, log.exists(), log))
+        hold.touch()
+        for harness, script, proc, out, logged, log in runs:
             with self.subTest(harness=harness, script=script):
-                calls = self.calls(1, 6, log)
-                self.assertLess(elapsed, 1.5)
+                calls = self.calls(1, 30, log)
+                self.assertFalse(logged)
                 self.assertEqual((proc.returncode, out), (0, ""))
                 self.assertEqual([c["label"] for c in calls], ["A"])
 
@@ -416,7 +418,7 @@ class BoardHookLaunchTests(unittest.TestCase):
         for script, args in [("board.sh", ["prompt"]), ("gate.sh", [])]:
             with self.subTest(script=script):
                 self.log.unlink(missing_ok=True)
-                proc, payload = self.start(repo, "claude", script, args, nested, "0")
+                proc, payload = self.start(repo, "claude", script, args, nested)
                 proc.communicate(json.dumps(payload), timeout=30)
                 calls = self.calls(1, 6)
                 self.assertEqual([c["label"] for c in calls], ["A"])

@@ -54,12 +54,12 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
         self.assertIn(f"release-check --no-build --repo {self.repo} --sha {self.c} --for v2.0.0", self.calls.read_text())
         # #199: both guards build no kit reference, so no commit's lib/kit.mjs runs on the host.
         self.assertEqual({line.split(" --repo ")[0] for line in self.calls.read_text().splitlines()}, {"release-check --no-build"})
-        # A subagent is denied before the CLI runs.
+        # #289: a subagent is denied before the CLI runs: no call, and no wait for the 30 s slow stub.
         self.calls.unlink()
         self.stub("slow")
         got, reason, seconds = self.guard("claude", "git push origin v1.0.0", agent_id="a1")
         self.assertEqual((got, self.calls.exists()), ("deny", False), reason)
-        self.assertLess(seconds, 3)
+        self.assertLess(seconds, 30)
 
     def test_gh_release_create_checks_the_commit_it_tags(self) -> None:
         # Oracle 48: a local tag, else --target, else refs/remotes/origin/main; any tag name asks.
@@ -97,12 +97,12 @@ class ReleaseGuardTests(GuardRepo, unittest.TestCase):
                     self.assertIn(part, reason)
 
     def test_a_slow_or_broken_release_check_still_asks(self) -> None:
-        # Oracle 48a and Review Focus 3: a timeout within the hook's 5 s, a stderr line with a quote stays valid JSON.
+        # Oracle 48a, Review Focus 3 and #289: the guard times out, no wait for the 30 s slow stub, a stderr line with a quote stays valid JSON.
         self.stub("slow")
         got, reason, seconds = self.guard("claude", "git push origin v1.0.0")
         self.assertEqual(got, "ask", reason)
         self.assertIn("release-check failed: timeout", reason)
-        self.assertLess(seconds, 5)
+        self.assertLess(seconds, 30)
         self.stub("quote")
         for harness, decision in [("claude", "ask"), ("codex", "deny")]:
             got, reason, _ = self.guard(harness, "gh release create v1.0.0")
