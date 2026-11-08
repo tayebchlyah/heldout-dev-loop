@@ -78,7 +78,7 @@ Hooks deny, per agent role: a read, an edit or a search of the held-out suite by
 
 Stage 6 runs once per feature, at one commit:
 
-1. **Review wave**: three reviewers (correctness, spec, standards) and a second reviewer of the other model family (Codex for Claude Code, Claude for Codex), whole branch, one table each.
+1. **Review wave**: three reviewers (correctness, spec, standards) whole branch, one table each. A second reviewer of the other model family (Codex for Claude Code, Claude for Codex) is optional and off by default: it runs when the project and the user both turn it on (see [configuration](docs/configuration.md)).
 2. **Triage**: the tables merge by file and line. Each security finding goes to a verifier. Only a confirmed defect must be fixed; the rest goes to a weekly review list.
 3. **Fix wave**: one fresh implementer per group of files.
 4. **Drive**: in a project with a UI, the verify skill drives the changed routes in Chromium and keeps screenshots.
