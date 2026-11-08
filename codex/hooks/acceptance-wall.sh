@@ -29,8 +29,8 @@
 # Role tool list (#283): implementer and spec_tester with agent_id set may call only Bash, apply_patch,
 # Edit, Write, view_image, update_plan, clockcurr_time, clocksleep, get_context_remaining, skillslist,
 # skillsread and skillsinstallations, after the web and MCP rules above. Edit and Write are matcher
-# aliases of apply_patch and take its patch rule; skillsread gets the path rule on its path fields,
-# as view_image. Every other name, a missing one included, is denied to them, whatever its input: the
+# aliases of apply_patch and take its patch rule; skillsread gets the path rule on every input string,
+# at any depth. Every other name, a missing one included, is denied to them, whatever its input: the
 # codex_tui task tools (codex_tuicreate_thread, codex_tuifork_thread, ...), the collaboration and
 # multi_agent tools, a future tool. The denial names the NEEDS_FACT exit. Every other caller exits 0 on
 # an unlisted name, with no path rule. Written gaps: no hook fires on write_stdin, the outer exec and
@@ -112,8 +112,9 @@ if [ "$route" = fields ] && [ -n "$agent_id" ] && [ "$tool" != view_image ] && [
 fi
 if [ "$route" != patch ]; then
   [ -n "$agent_id" ] || exit 0
-  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" "$rel"'
-  .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)' 2>/dev/null) || fail "cannot rewrite cwd"
+  call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" --arg n "$tool" "$rel"'
+  .cwd = $b | .tool_input |= walk(if type == "string" then rel else . end)
+  | if $n == "skillsread" then .tool_input = {paths: [.tool_input | .. | strings]} else . end' 2>/dev/null) || fail "cannot rewrite cwd"
 else
   call=$(printf '%s' "$input" | jq --arg b "$base" --arg t "$top" "$rel"'
     {tool_input: {paths: [ (.tool_input.command // .tool_input.patch // "") | strings | splits("\n")
