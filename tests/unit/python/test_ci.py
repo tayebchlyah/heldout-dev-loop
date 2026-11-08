@@ -165,8 +165,9 @@ class CiVerdictTests(unittest.TestCase):
 
     def test_open_threads(self) -> None:
         def node(resolved: bool = False, body: str = "Line one\nLine two", author: dict | None = None, line: int | None = 12,
-                 **extra) -> dict:
-            comment = {"author": author if author is not None else {"login": "bot"}, "body": body, "url": "u"}
+                 association: str | None = "COLLABORATOR", **extra) -> dict:
+            comment = {"author": author if author is not None else {"login": "bot"}, "body": body, "url": "u",
+                       "authorAssociation": association}
             return {"isResolved": resolved, "path": "skill/x.py", "line": line, "comments": {"nodes": [comment]},
                     **extra}
 
@@ -183,6 +184,11 @@ class CiVerdictTests(unittest.TestCase):
             ("first line, 200 characters", answer(node(body=long + "\nmore")), [{**THREAD, "text": "x" * 200}]),
             ("deleted author", answer(ghost), [{**THREAD, "author": None}]),
             ("file comment", answer(node(line=None)), [{**THREAD, "line": None}]),
+            ("owner", answer(node(association="OWNER")), [THREAD]),
+            ("member", answer(node(association="MEMBER")), [THREAD]),
+            ("contributor: no text", answer(node(association="CONTRIBUTOR")), [{**THREAD, "text": None}]),
+            ("outside user: no text", answer(node(association="NONE")), [{**THREAD, "text": None}]),
+            ("no association: no text", answer(node(association=None)), [{**THREAD, "text": None}]),
         ]
         for name, data, want in rows:
             with self.subTest(name):
@@ -200,7 +206,7 @@ def graphql(*nodes: dict) -> dict:
 LOG = "Setup\tinstalling\nRun\tERROR: test_widget failed\n" + "".join(f"Run\tdetail {i}\n" for i in range(40))
 THREAD_NODE = {"isResolved": False, "path": "skill/x.py", "line": 12,
                "comments": {"nodes": [{"author": {"login": "bot"}, "body": "Line one\nLine two",
-                                       "url": "https://github.com/o/r/pull/7#r1"}]}}
+                                       "url": "https://github.com/o/r/pull/7#r1", "authorAssociation": "MEMBER"}]}}
 FAIL_LINK = "https://github.com/o/r/actions/runs/99/job/5"
 BUSY = {"err": "HTTP 502", "code": 1}
 
