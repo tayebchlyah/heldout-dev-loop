@@ -159,32 +159,40 @@ Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.1...v
 
 ## [2.1.1] - 2026-10-16
 
-### Highlights
+### ⬆️ Upgrade
+
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v2.1.1 upgrade` on a branch, in one PR, merged to `main`.
+2. After the merge, restart each in-flight Delivery session from the main checkout. A worktree on the old kit runs the 2.1.0 board writer and writes a duplicate note with wrong times in `dev-loop-board/`.
+3. Codex: trust the new PostToolUse hook with `/hooks`.
+
+### ✨ New Features
 
 **Board shows true progress.** Stage and task times now come from files on disk (the ledger, the task briefs, the test logs, the commits), so the board stays right with no action by you or the model. More than one task can be doing at once, each task shows its plan number, and backfilled times are marked as estimated.
 
 **Board refresh after each step.** A new PostToolUse hook refreshes the board after a task starts or ends, after a commit, a new worktree, a PR create or merge, and a task list change.
 
-**Status notes in a subfolder.** The status notes now go to `dev-loop-board/features/`, so the board note is easy to find. The board keeps its state in `board-state.json` in the git folder, and rewrites an own note that Obsidian changed and that no longer parses.
+**Status notes in a subfolder.** The status notes now go to `dev-loop-board/features/`, so the board note is easy to find. The board keeps its state in `board-state.json` in the git folder.
 
 **More in `devloop status`.** `status` reports why the board skipped a run, and a worktree kit newer than the one on `main` (`kit_drift`).
 
-### Fixes
+### 🐛 Bug Fixes
 
 - A busy board run is always queued, and each catch-up pass reads git, worktrees, specs and claims again.
+- A crashed board run is reported, an old note that does not parse is moved aside, an own note that Obsidian changed and that no longer parses is written again, and claims survive a spec that iCloud evicted.
 - A board note's `updated` time moves only when a board value changes, not on a repair.
-- A crashed board run is reported, an old note that does not parse is moved aside, and claims survive a spec that iCloud evicted.
-
-### Upgrade notes
-
-- After the kit upgrade lands on `main`, restart each in-flight Session B from the main checkout. A worktree on the old kit runs the 2.1.0 board writer and writes a duplicate note with wrong times in `dev-loop-board/`.
-- Codex: trust the new PostToolUse hook with `/hooks`.
 
 Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.0...v2.1.1
 
 ## [2.1.0] - 2026-10-16
 
-### Highlights
+### ⬆️ Upgrade
+
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v2.1.0 upgrade` on a branch, in one PR, merged to `main`.
+2. Install the Obsidian Dataview plugin with JavaScript queries on, or set `"board_dataview": false` in `dev-loop.local.json`.
+3. Add `dev-loop-board/` to the vault `.gitignore`, or set `"board_vault_git": "shared"` in `dev-loop.local.json`. `check_setup.py` reports both.
+4. Codex: trust the new `board.sh` hooks with `/hooks`.
+
+### ✨ New Features
 
 **Progress board.** One page shows every dev-loop feature in progress on all your machines: the stage, the time per stage, the build tasks and their times, the time left and what waits for you. Open it at `http://127.0.0.1:7777/` on a desktop, or as the Obsidian note `Dev Loop Board.md` on a phone. Hooks write it with a script, so no agent spends tokens on it.
 
@@ -194,97 +202,108 @@ Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.1.0...v
 
 **Mutation fix wave you can check.** The mutant report prints its base and head, and `select_mutants.py --only` reruns the listed functions. A fix-wave test is committed only when the rerun shows it kills a listed mutant.
 
-### Fixes
+### 💥 Breaking Changes
+
+- A project that sets `CLAUDE_CODE_ENABLE_TODO_TOOLS` to a value other than `1` now fails `check_setup.py`.
+
+### 🐛 Bug Fixes
 
 - A Track S feature ships on the board once its recorded head is on `main`, even after its branch is gone.
 - The board server restarts with the kit version, queues busy events, skips a FIFO note, waits for a refused port and trusts a pid only from its pidfile.
 - Board times: no Waiting time in "Needs you", zero-length tasks count in the time left, tasks split at Stage 5 only.
 - `check_setup.py` reports a board note at the kit version whose body is not the kit template, honours the board vault opt-outs, and orders prerelease versions.
 
-### Upgrade notes
-
-- Install the Obsidian Dataview plugin with JavaScript queries on (or set `"board_dataview": false` in `dev-loop.local.json`).
-- Add `dev-loop-board/` to the vault `.gitignore` (or set `"board_vault_git": "shared"` in `dev-loop.local.json`). `check_setup.py` reports both.
-- Codex: trust the new `board.sh` hooks with `/hooks`.
-- A project that set `CLAUDE_CODE_ENABLE_TODO_TOOLS` to another value now fails `check_setup.py`.
-
 Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v2.0.0...v2.1.0
 
 ## [2.0.0] - 2026-10-14
 
-### Highlights
+### ⬆️ Upgrade
+
+1. From 1.4.0: write `dev-loop.local.json` with the notes path (keep a personal vault guard outside dev-loop first), run `uninstall-global --dry-run`, then `uninstall-global`, then `init` on a branch.
+2. From 1.5.x: run `npx github:tayebchlyah/heldout-dev-loop#v2.0.0 upgrade` on a branch.
+3. Remove the user-level denies of `superpowers:executing-plans`, `mattpocock-skills:tdd` and `mattpocock-skills:diagnosing-bugs` from `~/.claude/settings.json`: a user deny wins over a project allow.
+4. Codex: install the Pocock skills `tdd`, `diagnosing-bugs`, `pr` and `prototype`.
+5. Add `feature:` and `track:` to the frontmatter of each open Track M or L spec.
+6. Optional: rename `CONTEXT.md` to `GLOSSARY.md`.
+7. Run `check_setup.py --harness claude|codex --repo .` and act on each line. Rollback: `git revert` the upgrade commit.
+
+### ✨ New Features
 
 **Tracks S, M and L.** Each piece of work gets a size. Track S has no spec and no plan; a Track M feature asks you twice: at spec approval and, with `merge: human`, at the merge.
 
-**Stages chain in sessions.** "One stage per invocation" is gone. Session A runs Stages 1 and 2 and stops at the spec approval; Session B runs Stages 3 to 7 under an autonomy grant.
+**Stages chain in sessions.** One session runs Stages 1 and 2 and stops at the spec approval; the next runs Stages 3 to 7 under an autonomy grant.
 
 **The `devloop` CLI.** `devloop.py status` detects the stage of a feature as JSON, `logged` keeps a command's full output in a log, `gate --summary` runs the gate and reports the failures, and `ci wait` waits for the PR checks. `dev-loop.json` takes an optional `commands` map and `merge: auto|human`.
 
-**One review wave.** The gate runs one wave of reviewers: native `code-review` at high effort, the Pocock spec and standards desks, and `security-review`. `simplify` and the gate mutation step are gone; mutation testing runs as a nightly CI job.
+**One review wave.** The gate runs one wave of reviewers: native `code-review` at high effort, the Pocock spec and standards desks, and `security-review`. Mutation testing runs as a nightly CI job.
 
 **New skill stack.** Stage 1 uses Pocock `grilling`; Pocock `tdd`, `diagnosing-bugs` and `pr` replace the Superpowers skills. Implementers get measured rules against over-building and a bounded test count, and Stage 7 marks a spec shipped with a `shipped:` field.
 
-### Fixes
+### 💥 Breaking Changes
+
+- "One stage per invocation" is gone: stages chain in a session.
+- `simplify` and the gate mutation step are gone.
+- The project denies the Superpowers skills `brainstorming`, `test-driven-development`, `systematic-debugging` and `finishing-a-development-branch`.
+- The 1.4 fallbacks are gone: `vault_notes:`, `--global` and `--link`. `check_setup.py` needs `dev-loop.json`.
+- Acceptance files are named after the feature slug.
+
+### 🐛 Bug Fixes
 
 - `status` ships a merged feature with no branch, lists only open specs on `main`, and compares feature slugs without case.
 - The Stop and SubagentStop gate runs the mapped `commands.gate`.
 - Every reviewer runs in the feature worktree, and Track S goes through the review wave.
 - The nightly mutation job falls back to the root commit when `main` has no commit 24 hours old.
 
-### Upgrade notes
-
-- From 1.5.x: `npx github:tayebchlyah/heldout-dev-loop#v2.0.0 upgrade` on a branch, then the steps below.
-- From 1.4.0: write `dev-loop.local.json` with the notes path (keep a personal vault guard outside dev-loop first), run `uninstall-global --dry-run`, then `uninstall-global`, then `init` on a branch.
-- Remove the user-level denies of `superpowers:executing-plans`, `mattpocock-skills:tdd` and `mattpocock-skills:diagnosing-bugs` from `~/.claude/settings.json`: a user deny wins over a project allow.
-- Codex: install the Pocock skills `tdd`, `diagnosing-bugs`, `pr` and `prototype`.
-- A Track M or L spec needs `feature:` and `track:` in its frontmatter. Acceptance files are named after the feature slug.
-- The project denies the Superpowers skills `brainstorming`, `test-driven-development`, `systematic-debugging` and `finishing-a-development-branch`.
-- The 1.4 fallbacks are gone: `vault_notes:`, `--global` and `--link`. `check_setup.py` needs `dev-loop.json`. Optional: rename `CONTEXT.md` to `GLOSSARY.md`.
-- Run `check_setup.py --harness claude|codex --repo .`. Rollback: `git revert` the upgrade commit.
-
 Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.5.0...v2.0.0
 
 ## [1.5.0] - 2026-10-13
 
-### Highlights
+### ⬆️ Upgrade
+
+1. Keep your own vault guard if you need one: it is no longer in the kit.
+2. Before the first `init` on a machine, run `npx github:tayebchlyah/heldout-dev-loop#v1.5.0 uninstall-global --dry-run`, then without `--dry-run`. With the global skill still in place, Claude Code runs it instead of the project one, and Codex runs neither.
+3. Run `init --notes=<path>` on a branch, or set the notes folder in `dev-loop.local.json`, and merge it in a PR.
+4. Upgrade later with `upgrade` on a branch and a PR. Rollback: `git revert` the upgrade commit, or `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` to put a machine back on the global install.
+
+### ✨ New Features
 
 **dev-loop in each project.** `npx github:tayebchlyah/heldout-dev-loop#<tag> init` writes the kit into the repository for Claude Code and Codex, so the team shares one version through git. `upgrade` replaces the kit and prints the release notes, and `uninstall-global` removes the 1.4 global install. `.dev-loop/MANIFEST.json` records each kit file, so `upgrade` and `check_setup.py` catch a local edit.
 
-**Notes folder per person.** The notes folder now comes from `DEV_LOOP_NOTES`, the gitignored `dev-loop.local.json`, or `notes` in `dev-loop.json`. The kit has no vault rule, and the SessionStart hooks find dev-loop by `dev-loop.json`.
+**Notes folder per person.** The notes folder now comes from `DEV_LOOP_NOTES`, the gitignored `dev-loop.local.json`, or `notes` in `dev-loop.json`. The SessionStart hooks find dev-loop by `dev-loop.json`.
 
 **Walls that never wait for you.** The git guard checks only what the shell runs: it strips heredoc bodies and reads quoted strings only where a shell runs them. A subagent never gets a prompt: its blocked push is denied with a reason. This removed almost every needless prompt.
 
 **Glossary and sizes.** The skill reads `GLOSSARY.md`, else `CONTEXT.md`, and every Superpowers 7 brainstorming size goes on to the spec.
 
-### Fixes
+### 💥 Breaking Changes
+
+- `--vault`, `DEV_LOOP_VAULT` and the vault prompt are gone.
+- The kit has no vault rule and no vault guard.
+
+### 🔒 Security
 
 - The guard follows `cd` through assignments, subshells and variables, checks a push against every repo it may reach, and asks when it cannot be sure.
 - `init` refuses symlinked paths, `upgrade` deletes only kit files the old manifest names, and a file of yours at a kit path is backed up, never overwritten.
-- `upgrade` removes the hook entries of dropped kit scripts, and names only the Codex tables that differ from dev-loop's.
+
+### 🐛 Bug Fixes
+
 - `init` writes the Claude repo contract into the project settings, so a fresh project passes `check_setup.py`.
+- `upgrade` removes the hook entries of dropped kit scripts, and names only the Codex tables that differ from dev-loop's.
 - A `$NAME` in the legacy `vault_notes:` value is read from the environment.
 - `check_setup.py` writes no `__pycache__` into the skill folder.
-
-### Upgrade notes
-
-- Before the first `init` on a machine, run `npx github:tayebchlyah/heldout-dev-loop#v1.5.0 uninstall-global` (`--dry-run` first). With the global skill still in place, Claude Code runs it instead of the project one, and Codex runs neither.
-- `--vault`, `DEV_LOOP_VAULT` and the vault prompt are gone. Set the notes folder with `init --notes=<path>` or in `dev-loop.local.json`.
-- The vault guard is no longer in the kit: keep your own if you need one.
-- Upgrade later with `upgrade` on a branch and a PR. Rollback: `git revert` the upgrade commit, or `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` to put a machine back on the global install.
 
 Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.4.0...v1.5.0
 
 ## [1.4.0] - 2026-10-12
 
-### Highlights
+### 🔒 Security
 
-**A clear push rule.** A plain push of a feature branch runs; a push that rewrites history, deletes, pushes a tag or reaches `main` asks. The Codex guard has the same rule and denies where Claude asks, since Codex cannot ask.
-
-**A stricter push check.** The guard parses a push as the shell does and fails closed: quotes, combined flags, `git -c`, aliases, remote config, shell expansion and arguments fed by `xargs` or `find` all ask. It finds `git` anywhere in a command.
-
-### Fixes
-
+- A clear push rule: a plain push of a feature branch runs; a push that rewrites history, deletes, pushes a tag or reaches `main` asks. The Codex guard has the same rule and denies where Claude asks, since Codex cannot ask.
+- The guard parses a push as the shell does and fails closed: quotes, combined flags, `git -c`, aliases, remote config, shell expansion and arguments fed by `xargs` or `find` all ask. It finds `git` anywhere in a command.
 - The vault write check judges each git call on its own folder.
+
+### 🐛 Bug Fixes
+
 - A deny wall matches a path on whole segments only.
 - A replaced skill is backed up outside its skills folder, so Codex no longer lists dev-loop three times.
 
@@ -292,46 +311,49 @@ Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.3.0...v
 
 ## [1.3.0] - 2026-10-03
 
-### Highlights
+### ⬆️ Upgrade
 
-**Faster gate from the hooks.** The hooks run the gate with `GATE_SCOPE=changed`, so a project gate can run only what the diff reaches. The gate no longer runs after a read-only subagent or one that changed nothing, and a stage that changed the repo ends on one full gate.
+1. Run the installer again (or use link mode) so `~/.claude/settings.json` gets the new `SubagentStart` hook.
+
+### ✨ New Features
 
 **Leaner acceptance tests.** `spec-tester` proves each flow once and leaves details to unit tests.
 
-### Fixes
+### 🔒 Security
 
 - The acceptance wall resolves a subagent's relative paths against its working folder.
 
-### Upgrade notes
+### ⚡️ Performance
 
-- Run the installer again (or use link mode) so `~/.claude/settings.json` gets the new `SubagentStart` hook.
+- The hooks run the gate with `GATE_SCOPE=changed`, so a project gate can run only what the diff reaches. The gate no longer runs after a read-only subagent or one that changed nothing, and a stage that changed the repo ends on one full gate.
 
 Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.2.0...v1.3.0
 
 ## [1.2.0] - 2026-10-01
 
-### Highlights
+### ⬆️ Upgrade
+
+1. Add the mutation setup `check_setup.py` now needs: a `[tool.mutmut]` `only_mutate` list and a JSON Stryker config with a `mutate` list.
+
+### ✨ New Features
 
 **One worktree per feature.** Stages 3 to 7 run in the feature's own worktree and branch, which the agent finds or creates; you never change folder. A spec lists the earlier acceptance lines it replaces, and `spec-tester` updates exactly those tests.
 
-**Smaller mutation runs.** The gate mutates only the functions a feature changed, in the modules you mark critical, and asks for one unit test per listed function. On one real feature this cut 4,108 mutants to 1,794.
+### ⚡️ Performance
 
-**Reviews in parallel.** The gate runs its reviews once, side by side, and the acceptance suite last.
+- The gate mutates only the functions a feature changed, in the modules you mark critical, and asks for one unit test per listed function. On one real feature this cut 4,108 mutants to 1,794.
+- The gate runs its reviews once, side by side, and the acceptance suite last.
 
-### Fixes
+### 🐛 Bug Fixes
 
 - A flaky test is a race to name and fix, never a rerun to green.
 - Subagent models are named by alias only, so they follow the newest model.
-
-### Upgrade notes
-
-- `check_setup.py` now needs the mutation setup: a `[tool.mutmut]` `only_mutate` list and a JSON Stryker config with a `mutate` list.
 
 Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.1.0...v1.2.0
 
 ## [1.1.0] - 2026-09-18
 
-### Fixes
+### 🐛 Bug Fixes
 
 - The installer removes a legacy root `sandbox_mode` from `~/.codex/config.toml`.
 - Link mode copies the Codex agents.
@@ -341,7 +363,7 @@ Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.0.0...v
 
 ## [1.0.0] - 2026-09-14
 
-### Highlights
+### ✨ New Features
 
 **dev-loop for Claude Code and Codex.** `npx github:tayebchlyah/heldout-dev-loop` installs the stage-driven development loop skill, its subagents and its hooks for both harnesses, by copy or by link. Every replaced file gets a timestamped backup.
 
@@ -349,8 +371,11 @@ Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v1.0.0...v
 
 **Walls around the held-out tests.** Deny walls keep subagents out of the acceptance suite, and `check_setup.py` checks the install and the vault path.
 
-### Fixes
+### 🔒 Security
+
+- The deny walls match path fields only, with no glob hole.
+
+### 🐛 Bug Fixes
 
 - A malformed hook group or an unreadable folder entry no longer stops the install, and the error names the path.
 - The Codex config merge never duplicates a key or table, and a re-run keeps the configured vault.
-- The deny walls match path fields only, with no glob hole.
