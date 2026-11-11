@@ -123,7 +123,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_policy_module_names_its_source_and_change(self) -> None:
         doc = ast.get_docstring(ast.parse((REPO_ROOT / "codex" / "hooks" / "macos_policy.py").read_text()))
-        for value in ("Source: openai/codex rust-v0.166.0", "seatbelt_base_policy.sbpl", "seatbelt_network_policy.sbpl",
+        for value in ("Source: openai/codex rust-v0.167.0", "seatbelt_base_policy.sbpl", "seatbelt_network_policy.sbpl",
                       "seatbelt_read_only_platform_defaults.sbpl", "Apache-2.0 section 4(b)", "Python string", "verbatim"):
             with self.subTest(value=value):
                 self.assertIn(value, doc)

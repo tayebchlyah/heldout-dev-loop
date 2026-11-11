@@ -62,7 +62,7 @@ Seam rule. Source: Matt Pocock skills v1.3.2, `skills/engineering/to-spec/SKILL.
 
 Spec written: dispatch one fresh subagent, no session context. Claude Code: `general-purpose`. Codex: a generic worker, read-only. Domain: "software engineer". Document: the spec path. Answer each question in the spec, or ask the user, before the approval. "nothing important left": done.
 
-Source: Superpowers 7.0.1, `skills/brainstorming/builder-check-prompt.md` (https://github.com/obra/superpowers, commit `2ce8aa1`), copied verbatim:
+Source: Superpowers 7.0.2, `skills/brainstorming/builder-check-prompt.md` (https://github.com/obra/superpowers, commit `22f0b46`), copied verbatim:
 
 ```
 You are a talented [DOMAIN, e.g. "software engineer", "event planner",

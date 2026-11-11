@@ -25,8 +25,8 @@
       "name": "superpowers",
       "repo": "obra/superpowers",
       "signal": "release",
-      "pin": "v7.0.1",
-      "version": "7.0.1",
+      "pin": "v7.0.2",
+      "version": "7.0.2",
       "paths": [
         "skills/brainstorming/builder-check-prompt.md",
         "skills/executing-plans/",
@@ -81,8 +81,8 @@
       "name": "codex-sandbox",
       "repo": "openai/codex",
       "signal": "release",
-      "pin": "rust-v0.166.0",
-      "version": "rust-v0.166.0",
+      "pin": "rust-v0.167.0",
+      "version": "rust-v0.167.0",
       "paths": [
         "codex-rs/sandboxing/src/seatbelt_base_policy.sbpl",
         "codex-rs/sandboxing/src/seatbelt_network_policy.sbpl",
