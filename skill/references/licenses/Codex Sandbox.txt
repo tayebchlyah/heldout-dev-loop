@@ -1,8 +1,8 @@
-Codex Seatbelt policies from OpenAI Codex rust-v0.166.0
-https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/sandboxing/src
+Codex Seatbelt policies from OpenAI Codex rust-v0.167.0
+https://github.com/openai/codex/tree/rust-v0.167.0/codex-rs/sandboxing/src
 Copyright OpenAI. Apache License 2.0.
 
-NOTICE of rust-v0.166.0, verbatim:
+NOTICE of rust-v0.167.0, verbatim:
 
 OpenAI Codex
 Copyright 2025 OpenAI

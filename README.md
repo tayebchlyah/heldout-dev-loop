@@ -142,11 +142,11 @@ dev-loop takes ideas and text from these projects. **Invoked**: installed apart 
 Credits:
 
 - `pocock-skills`: [https://github.com/mattpocock/skills](https://github.com/mattpocock/skills), MIT, v1.3.2. Framing, seams, maps and the build and review skills.
-- `superpowers`: [https://github.com/obra/superpowers](https://github.com/obra/superpowers), MIT, 7.0.1. The builder check and the plan and execution skills.
+- `superpowers`: [https://github.com/obra/superpowers](https://github.com/obra/superpowers), MIT, 7.0.2. The builder check and the plan and execution skills.
 - `agent-skills`: [https://github.com/addyosmani/agent-skills](https://github.com/addyosmani/agent-skills), MIT, 0.6.15. The threat model and the doubt review.
 - `ponytail`: [https://github.com/DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail), MIT, v5.3.3. The code volume rules.
 - `pstack`: [https://github.com/cursor/plugins/tree/main/pstack](https://github.com/cursor/plugins/tree/main/pstack), MIT (`pstack/LICENSE`), 0.15.36. The principles, the merge danger ladder, the benchmark checklist and the verify skill.
-- `codex-sandbox`: [https://github.com/openai/codex](https://github.com/openai/codex), Apache-2.0, rust-v0.166.0. The Seatbelt policies; license and NOTICE in `skill/references/licenses/Codex Sandbox.txt`.
+- `codex-sandbox`: [https://github.com/openai/codex](https://github.com/openai/codex), Apache-2.0, rust-v0.167.0. The Seatbelt policies; license and NOTICE in `skill/references/licenses/Codex Sandbox.txt`.
 - `security-audit`: [https://github.com/cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill), MIT, pinned commit `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`. The Stage 6 security verifier and `/release-audit`.
 
 The vendor text under `## Scope, Claude Code` and `## Scope, Codex` in `skill/references/building.md` comes from the Anthropic Claude prompting docs (https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 and https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5) and the OpenAI Codex docs (https://developers.openai.com/api/docs/guides/latest-model).
