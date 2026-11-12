@@ -16,6 +16,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
 - `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `gate.py`: `logged`, `gate`.
 - `skill/scripts/check_setup.py`: post-install verifier; `notes_path.py`: notes path resolver.
+- `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`.
 - `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
@@ -60,6 +61,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `seal-check [--uncommitted]`: Check the branch seal commits, kit file changes and taint records. `reference/cli/seal-check.md`
 - `search-wall`: Deny a subagent search that reaches the held-out suite; hook JSON on stdin. `reference/cli/search-wall.md`
 - `skill-wall`: May `implementer` load this project skill: listed, equal to the main ref, no fork, shell line or hook; hook JSON on stdin. `reference/cli/skill-wall.md`
+- `source-wall [--repo <path>]`: Decide a spec-tester call against `source_dirs` at the main ref; hook JSON on stdin. `reference/cli/source-wall.md`
 - `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a split seam. `reference/cli/size-check.md`
 - `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, feature map README and `verify` key. `reference/cli/verify-init.md`
 - `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save evidence. `reference/cli/drive.md`
