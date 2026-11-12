@@ -23,6 +23,7 @@ from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout  # noqa: 
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
+import source_dirs  # noqa: E402
 from security_skill import SECURITY_AUDIT_COMMIT, SECURITY_AUDIT_INSTALL, SECURITY_AUDIT_TREE, security_audit_groups, tree_id  # noqa: E402,F401
 from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
@@ -772,8 +773,12 @@ def main() -> int:
     action_groups += [(line, []) for line in check_release_sandbox(args.repo)]
     action_groups += [(line, []) for line in check_agent_shell(args.harness, os.environ)]
     action_groups += [(line, []) for line in ci.check_github(args.repo)]
+    source_failures, source_actions, source_notices = source_dirs.setup(args.repo)
+    failures += source_failures
+    action_groups += [(line, []) for line in source_actions]
 
     notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
+    notices += [(line, []) for line in source_notices]
     blocked = failures or action_groups
     print(f"{args.harness}: {'FAIL' if blocked else 'PASS'}")
     for failure in failures:
