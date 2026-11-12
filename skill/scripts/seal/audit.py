@@ -18,12 +18,11 @@ from xml.sax.saxutils import unescape
 
 import devloop
 from devloop import emit
-from source_dirs import in_dot_folder, matches, read_main
+from source_dirs import DEFAULT, HELD_OUT, fold, in_dot_folder, matches, read_main
 from seal import ACCEPTANCE_DIR, SEARCH_WORD, git_dir, merge_base, run_git
 from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, HEREDOC, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
                          shell_tokens)
 
-SOURCE_DIRS = ("src/", "app/", "backend/", "frontend/")
 SPEC_TESTER = ("spec-tester", "spec_tester")
 MIN_LINE = 30
 MIN_MATCHES = 2
@@ -298,9 +297,10 @@ def audit(hook: dict) -> dict:
         main = read_main(repo) if source else None
         if main and main.state == "configured":
             entries = [entry for entry in main.entries if not in_dot_folder(entry)]
-            lines = matched_lines(repo, lambda path: matches(entries, path) is not None, outputs, skip_dot_folders=True)
+            lines = matched_lines(repo, lambda path: matches(entries, path) is not None and not fold(path).startswith(HELD_OUT),
+                                  outputs, skip_dot_folders=True)
         else:
-            lines = matched_lines(repo, SOURCE_DIRS if source else (ACCEPTANCE_DIR + "/",), outputs)
+            lines = matched_lines(repo, DEFAULT if source else (ACCEPTANCE_DIR + "/",), outputs)
         paths = [] if source else suite_paths(repo, searches)
         if len(lines) < MIN_MATCHES and not paths:
             return {"taint": None, "skipped": []}

@@ -29,14 +29,14 @@ class SourceAuditTests(unittest.TestCase):
         git_in(self.repo, "add", "-A")
         git_in(self.repo, "commit", "-q", "-m", "source")
 
-    def audit(self) -> dict:
+    def audit(self, shown: str = SOURCE) -> dict:
         git_dir = Path(git_in(self.repo, "rev-parse", "--absolute-git-dir").strip())
         write(git_dir / "dev-loop-subagents" / "s1.head", git_in(self.repo, "rev-parse", "HEAD"))
         write(self.repo / "docs/new.md", "new\n")
         git_in(self.repo, "add", "-A")
-        git_in(self.repo, "commit", "-q", "-m", "one commit")
+        git_in(self.repo, "commit", "-q", "--allow-empty", "-m", "one commit")
         transcript = self.root / "t.jsonl"
-        lines = [claude_call("Read", {"file_path": "internal/x.go"}, "r1"), claude_line(SOURCE, "r1")]
+        lines = [claude_call("Read", {"file_path": "internal/x.go"}, "r1"), claude_line(shown, "r1")]
         transcript.write_text("".join(json.dumps(line) + "\n" for line in lines))
         hook = {"hook_event_name": "SubagentStop", "session_id": "s", "cwd": str(self.repo), "agent_id": "s1",
                 "agent_type": "spec-tester", "agent_transcript_path": str(transcript)}
@@ -63,6 +63,16 @@ class SourceAuditTests(unittest.TestCase):
         git_in(self.repo, "add", "-A")
         git_in(self.repo, "commit", "-q", "-m", "kit copy")
         self.assert_taint(self.audit())
+
+    def test_tests_entry_keeps_the_suite_out(self) -> None:
+        set_main(self.repo, key(["tests/"]))
+        for name, taint in (("tests/" + "acceptance/test_gizmo.py", False), ("tests/conftest.py", True)):
+            with self.subTest(name=name):
+                own = f"def gizmo_total() -> None:  # line one of {name}\n    assert gizmo_total() == 3  # line two of {name}\n"
+                write(self.repo / name, own)
+                git_in(self.repo, "add", "-A")
+                git_in(self.repo, "commit", "-q", "-m", name)
+                self.assertEqual(self.audit(own)["taint"] is not None, taint)
 
     def test_case_folded_path(self) -> None:
         set_main(self.repo, key(["Internal/"]))

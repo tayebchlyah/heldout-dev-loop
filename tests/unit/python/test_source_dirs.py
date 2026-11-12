@@ -70,6 +70,12 @@ class SourceDirsTests(unittest.TestCase):
         self.assertEqual(source_dirs.read_main(repo), Main("main", "no-key"))
         git_in(repo, "update-ref", "refs/remotes/origin/main", "refs/heads/main")
         self.assertEqual(source_dirs.read_main(repo).ref, "origin/main")
+        set_main(repo, key(["unreadable/"]))
+        blob = git_in(repo, "rev-parse", "origin/main:dev-loop.json").strip()
+        (repo / ".git" / "objects" / blob[:2] / blob[2:]).chmod(0)
+        main = source_dirs.read_main(repo)
+        self.assertEqual(main.state, "unreadable")
+        self.assertEqual(main.error(), "dev-loop.json at origin/main cannot be read: source_dirs cannot be read")
 
     def test_read_main_without_a_ref(self) -> None:
         repo = self.root / "bare"

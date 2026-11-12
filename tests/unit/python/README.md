@@ -36,7 +36,7 @@ One file per subject. A new test file adds its line here.
 - `test_source_dirs.py`, `source_fixtures.py`: `source_dirs.py`: validator, matcher, main ref read, top folders; oracle repo and plumbing fixtures.
 - `test_source_setup.py`: `source_dirs.setup`: the `check_setup.py` missing key action, invalid value and main ref failures, pending change notices.
 - `test_source_hooks.py`: the `source_dirs` wall through the spec-tester hooks, the shared `hook` runner.
-- `test_source_audit.py`: `audit` of a spec-tester read against the `source_dirs` folders at the main ref, kit copies, case folding.
-- `test_source_wall.py`: `source-wall`: modes and refs, path forms, worktree tops, quoted and unresolved words, suite, seal and heredoc exceptions, Codex shapes.
+- `test_source_audit.py`: `audit` of a spec-tester read against the `source_dirs` folders at the main ref, kit copies, the suite under a `tests/` entry, case folding.
+- `test_source_wall.py`: `source-wall`: modes and refs, an unreadable main ref file, path forms, cd and pushd moves, worktree tops, quoted, unresolved and absolute words, suite, seal and heredoc exceptions, Codex shapes.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
