@@ -219,6 +219,23 @@ class SourceWallTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("source-wall", out["error"])
 
+    def test_unreadable_main_file_is_an_error(self) -> None:
+        origin = self.repo
+        git_in(origin, "config", "uploadpack.allowFilter", "true")
+        clone = origin.parent / "clone"
+        git_in(origin.parent, "clone", "-q", "--filter=blob:none", "-b", "main", f"file://{origin}", str(clone))
+        set_main(origin, key(["internal/"]))
+        git_in(clone, "fetch", "-q", "origin")
+        env = dict(os.environ, HOME=str(clone.parent), GIT_NO_LAZY_FETCH="1")
+        set_main(self.repo, key(["cmd/"]))
+        blob = git_in(self.repo, "rev-parse", "main:dev-loop.json").strip()
+        (self.repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
+        for repo, run_env in ((clone, env), (self.repo, None)):
+            with self.subTest(repo=repo.name):
+                code, out = run(repo, read(repo, "internal/x.go"), run_env)
+                self.assertEqual(code, 1, out)
+                self.assertIn("source_dirs", out["error"])
+
     def test_not_a_json_object(self) -> None:
         done = subprocess.run([sys.executable, str(DEVLOOP), "source-wall", "--repo", str(self.repo)], input="[]",
                               capture_output=True, text=True, timeout=60)

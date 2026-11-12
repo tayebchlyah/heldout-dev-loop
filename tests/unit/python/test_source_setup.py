@@ -85,6 +85,11 @@ class SourceSetupTests(unittest.TestCase):
         self.assertEqual((len(failures), actions, notices), (1, [], []))
         self.assertTrue(failures[0].startswith("source_dirs at main is invalid: "), failures)
         self.assertTrue(failures[0].endswith(". Every spec-tester call is denied until a valid value reaches main"))
+        set_main(repo, key(["cmd/"]))
+        blob = git_in(repo, "rev-parse", "main:dev-loop.json").strip()
+        (repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
+        self.assertEqual(source_dirs.setup(repo), ([
+            "dev-loop.json at main cannot be read. Every spec-tester call is denied until it can be read"], [], []))
 
     def test_invalid_checkout_values(self) -> None:
         repo = source_repo(self.root)

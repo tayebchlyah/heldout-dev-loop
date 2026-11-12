@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Sequence
 
 from notes_path import main_ref
+from seal import ACCEPTANCE_DIR
 
 DEFAULT: tuple[str, ...] = ("src/", "app/", "backend/", "frontend/")
 RESERVED = frozenset("\\*?[]{}!$'\"`():=&;<>|")
-HELD_OUT = "tests/" + "acceptance/"
+HELD_OUT = ACCEPTANCE_DIR + "/"
 
 
 def fold(text: str) -> str:
@@ -78,6 +79,8 @@ class Main:
             return f"dev-loop.json at {self.ref} is not a JSON object: source_dirs cannot be read"
         if self.state == "invalid":
             return f"source_dirs at {self.ref} is invalid: {self.rule}"
+        if self.state == "unreadable":
+            return f"dev-loop.json at {self.ref} cannot be read: source_dirs cannot be read"
         return None
 
 
@@ -91,10 +94,14 @@ def read_main(repo: Path) -> Main:
     if not full:
         return Main(None, "no-ref")
     ref = full.removeprefix("refs/remotes/").removeprefix("refs/heads/")
-    blob = f"{full}:dev-loop.json"
-    if _git(repo, "cat-file", "-e", blob).returncode != 0:
+    listed = _git(repo, "ls-tree", "--full-tree", "--name-only", full, "--", "dev-loop.json")
+    if listed.returncode != 0:
+        return Main(ref, "unreadable")
+    if not listed.stdout:
         return Main(ref, "no-key")
-    shown = _git(repo, "cat-file", "-p", blob)
+    shown = _git(repo, "cat-file", "-p", f"{full}:dev-loop.json")
+    if shown.returncode != 0:
+        return Main(ref, "unreadable")
     try:
         data = json.loads(shown.stdout)
     except ValueError:
@@ -139,6 +146,8 @@ def setup(repo: Path) -> tuple[list[str], list[str], list[str]]:
         return failures + [f"dev-loop.json at {ref} is not a JSON object. Every spec-tester call is denied until a valid file reaches {ref}"], [], []
     if main.state == "invalid":
         return failures + [f"source_dirs at {ref} is invalid: {main.rule}. Every spec-tester call is denied until a valid value reaches {ref}"], [], []
+    if main.state == "unreadable":
+        return failures + [f"dev-loop.json at {ref} cannot be read. Every spec-tester call is denied until it can be read"], [], []
     if not has:
         if main.state == "configured":
             return failures, [], [f"no source_dirs in this checkout: the spec-tester wall at {ref} uses {_shown(main.entries)}. Rebase onto {ref}"]
