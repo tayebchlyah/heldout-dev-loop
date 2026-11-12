@@ -688,14 +688,15 @@ class FeatureGateTextTests(unittest.TestCase):
         self.assertNotIn("docker compose ps --format", stage6)
         self.assertNotIn("up -d --build --wait", stage6)
 
-    def test_lf_only_when_acceptance_absent(self) -> None:
+    def test_no_fallback_runner(self) -> None:
+        suite = "tests/" + "acceptance"
         stage6 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 6 Feature gate", "## 7 Ship")
         texts = [stage6] + [(ROOT / "skill" / "references" / n).read_text() for n in ("claude.md", "codex.md")]
         for text in texts:
-            hits = [x for x in text.split(". ") if "--lf" in x or "--last-failed" in x]
-            self.assertTrue(hits)
-            for sentence in hits:
-                self.assertIn("`commands.acceptance` absent", sentence)
+            for runner in ("--lf", "--last-failed", "pytest " + suite, "go test ./" + suite, "npx playwright test " + suite):
+                self.assertNotIn(runner, text)
+        self.assertIn("`commands.acceptance` absent, or changed by the branch: a stop item", stage6)
+        self.assertIn("commands.acceptance missing", stage6)
 
     def test_skill_stage_0(self) -> None:
         stage0 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 0 Bootstrap", "## 1 Frame")
