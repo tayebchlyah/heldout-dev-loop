@@ -25,6 +25,7 @@ One file per subject. A new test file adds its line here.
 - `test_metrics.py`, `test_metrics_cli.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
 - `test_gardener.py`, `test_retro.py`, `test_feature_gate.py`: `garden` skill, kit text, harness names; `review_due`, `sessions`; `review-merge`, `acceptance`.
 - `test_case_floor.py`: case floor.
+- `test_verify_playwright.py`: `verify.playwright`: validation, the `verify-init` lookup.
 - `test_capabilities.py`: `capabilities.py`: validator, proposal, the `check_setup.py` capabilities and `commands.acceptance` lines.
 - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
 - `test_repo_rules.py`, `test_repo_docs.py`: `repo_rules.py`, gate scope; `AGENTS.md` budget, CLI index, this file index, kit and release docs, README sections, links and inspirations.
