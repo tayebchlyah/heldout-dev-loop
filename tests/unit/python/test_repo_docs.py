@@ -48,6 +48,13 @@ class RepoDocsTests(unittest.TestCase):
                                  ".agents/", ".claude/", ".codex/", ".dev-loop/"])
         self.assertIsNone(source_dirs.validate(value))
 
+    def test_this_repo_declares_no_capability(self) -> None:
+        sys.path.insert(0, str(ROOT / "skill" / "scripts"))
+        import capabilities
+        value = json.loads((ROOT / "dev-loop.json").read_text())["capabilities"]
+        self.assertEqual(value, [])
+        self.assertTrue(capabilities.valid(value))
+
     def test_readme_sections_in_order(self) -> None:
         readme = (ROOT / "README.md").read_text()
         self.assertEqual(readme.splitlines()[0], '<h1 align="center">')

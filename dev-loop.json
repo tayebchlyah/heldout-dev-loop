@@ -4,6 +4,7 @@
     "claude",
     "codex"
   ],
+  "capabilities": [],
   "release_notes": "written",
   "version_files": [
     "package.json",
