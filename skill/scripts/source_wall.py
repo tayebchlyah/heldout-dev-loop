@@ -124,7 +124,8 @@ def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Ite
     current: str | None = start
     moving = False
     for word, bare in words:
-        for part in dict.fromkeys([*_word_parts(word), *_word_parts(bare)]):
+        parts = dict.fromkeys([*_word_parts(word), *_word_parts(bare), *_word_parts(re.sub(r"['\"\\]", "", word))])
+        for part in parts:
             if part:
                 yield part, folders
         if moving and (word == "-" or not word.startswith("-")):
@@ -138,7 +139,7 @@ def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Ite
             folders = (*folders, current, None)
         elif word in ("cd", "pushd"):
             moving = True
-        elif any(part in ("cd", "pushd") for part in (*_word_parts(word), *_word_parts(bare))):
+        elif any(part in ("cd", "pushd") for part in parts):
             folders = (*folders, None)
 
 
