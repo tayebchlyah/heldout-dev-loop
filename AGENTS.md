@@ -15,7 +15,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/references/`: harness routes (`claude.md`, `codex.md`), `building.md`, `coding-standards.md` (the `CODING_STANDARDS.md` template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `deferred.md` (Deferred triage); `skill/references/second-review.md`: second reviewer prompt.
 - `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
 - `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `gate.py`: `logged`, `gate`.
-- `skill/scripts/check_setup.py`: post-install verifier; `notes_path.py`: notes path resolver.
+- `skill/scripts/check_setup.py`: post-install verifier; `security_skill.py`: its security-audit skill check; `notes_path.py`: notes path resolver.
 - `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`.
 - `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.

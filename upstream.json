@@ -99,7 +99,7 @@
       "pin": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
       "version": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
       "paths": ["skills/security-audit/"],
-      "local": ["reference/kit.md", "README.md", "docs/usage.md", "skill/scripts/check_setup.py", "reference/cli/audit-run.md"]
+      "local": ["reference/kit.md", "README.md", "docs/usage.md", "skill/scripts/security_skill.py", "reference/cli/audit-run.md"]
     }
   ]
 }

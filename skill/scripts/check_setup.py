@@ -10,7 +10,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import tomllib
 from pathlib import Path
 from typing import Mapping
@@ -20,10 +19,11 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
-from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout, security_audit_dir  # noqa: E402
+from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout  # noqa: E402
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
+from security_skill import SECURITY_AUDIT_COMMIT, SECURITY_AUDIT_INSTALL, SECURITY_AUDIT_TREE, security_audit_groups, tree_id  # noqa: E402,F401
 from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402
@@ -627,46 +627,6 @@ def project_trust_groups(home: Path, repo: Path, env: Mapping[str, str]) -> list
         trust_failures.append(f'missing trusted Codex project: [projects."{main}"] trust_level = "trusted"')
     trust_failures += [f"missing trusted Codex hook hash: {event}" for event in untrusted_hook_events(config, repo, main)]
     return [("Trust the project, then run /hooks in Codex.", trust_failures)] if trust_failures else []
-
-
-SECURITY_AUDIT_COMMIT = "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
-SECURITY_AUDIT_TREE = "ccbc33ed119b28c3ef7b44a7e2081ab191ad63af"
-SECURITY_AUDIT_INSTALL = (
-    f"npx skills add https://github.com/cloudflare/security-audit-skill/tree/{SECURITY_AUDIT_COMMIT} "
-    "--skill security-audit --global --agent claude-code codex"
-)
-
-
-def tree_id(folder: Path) -> str | None:
-    """The git tree id of the folder's files: the Skills CLI lock's skillFolderHash."""
-    with tempfile.TemporaryDirectory() as tmp:
-        git = ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false", "-c", "core.attributesFile=/dev/null",
-               f"--git-dir={tmp}/g", f"--work-tree={folder}"]
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
-        try:
-            subprocess.run(["git", "init", "-q", "--bare", f"{tmp}/g"], check=True, capture_output=True, env=env)
-            # Finder litter is not skill content
-            subprocess.run([*git, "add", "-A", "-f", ".", ":(exclude,glob)**/.DS_Store"],
-                           check=True, capture_output=True, env=env)
-            out = subprocess.run([*git, "write-tree"], check=True, capture_output=True, text=True, env=env)
-        except (subprocess.CalledProcessError, OSError):
-            return None
-        return out.stdout.strip()
-
-
-def security_audit_groups(home: Path, harness: str, env: Mapping[str, str]) -> list[tuple[str, list[str]]]:
-    """D6: the Cloudflare security-audit skill at the pinned commit, in this harness's skills folder."""
-    folder = security_audit_dir(harness, env, home)
-    if not (folder / "SKILL.md").is_file():
-        item = f"missing {folder / 'SKILL.md'}"
-    else:
-        tree = tree_id(folder.resolve())
-        if tree == (env.get("DEVLOOP_TEST_SECURITY_AUDIT_TREE") or SECURITY_AUDIT_TREE):
-            return []
-        item = f"{folder} is tree {tree}"
-    heading = f"Install the Cloudflare security-audit skill at {SECURITY_AUDIT_COMMIT}: {SECURITY_AUDIT_INSTALL}"
-    return [(heading, [item])]
 
 
 def check_project(home: Path, repo: Path, harness: str, env: Mapping[str, str]) -> tuple[list[str], list[tuple[str, list[str]]]]:
