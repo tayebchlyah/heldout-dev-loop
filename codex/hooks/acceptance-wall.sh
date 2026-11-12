@@ -7,6 +7,10 @@
 # apply_patch (and its Edit, Write aliases): the paths are the patch file headers, never the body.
 # Every caller: no apply_patch of an installed kit file (kit files change only by upgrade).
 # Deny: exit 2 and one stderr line. The path match is deny-path.sh, in this folder.
+# source_dirs (#302): spec_tester only, for Bash, apply_patch, Edit, Write, view_image and skillsread, after the kit
+# file rule, on the original input. Repo: the first worktree of cwd. A source_dirs key at its main ref: devloop.py
+# source-wall of the kit copy that holds this hook decides (deny, allow, or mode default: the four-folder match);
+# no CLI or a CLI error blocks with a message naming source_dirs. No key: the four-folder match, no CLI call.
 #
 # A workflow guard, not a security boundary: a block means stop and report, never rephrase the call.
 # One exception: after a search-scope block, search again on named source folders or with the suite excluded.
@@ -139,6 +143,50 @@ if [ "$route" = patch ]; then
     echo "Blocked: installed dev-loop kit file. Kit files change only by upgrade: change dev-loop, then run upgrade." >&2
     exit 2
   fi
+fi
+source_key() {
+  src_top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+  src_ref=
+  for r in refs/remotes/origin/main refs/heads/main; do
+    git -C "$src_top" rev-parse --verify -q "$r^{commit}" >/dev/null 2>&1 && { src_ref=$r; break; }
+  done
+  [ -n "$src_ref" ] || return 1
+  if src_listed=$(git -C "$src_top" ls-tree --full-tree --name-only "$src_ref" -- dev-loop.json 2>/dev/null); then
+    [ -n "$src_listed" ] || return 1
+    git -C "$src_top" cat-file blob "$src_ref:dev-loop.json" 2>/dev/null \
+      | jq -e 'type == "object" and (has("source_dirs") | not)' >/dev/null 2>&1 && return 1
+  fi
+  return 0
+}
+source_wall() {
+  case "$tool" in Bash|apply_patch|Edit|Write|view_image|skillsread) ;; *) return 0 ;; esac
+  src_repo=
+  [ -z "$cwd" ] || src_repo=$(git -C "$cwd" worktree list --porcelain 2>/dev/null | awk 'NR==1{w=substr($0,10)} /^bare$/{w=""} /^$/{exit} END{print w}')
+  [ -n "$src_repo" ] && source_key "$src_repo" || return 0
+  src_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+  src_cli=
+  case "$src_dir" in
+    */.dev-loop/hooks/codex) src_cli=${src_dir%/.dev-loop/hooks/*}/.agents/skills/dev-loop/scripts/devloop.py ;;
+    */codex/hooks) src_cli=${src_dir%/*/hooks}/skill/scripts/devloop.py ;;
+  esac
+  [ -n "$src_cli" ] && [ -f "$src_cli" ] || src_cli=
+  if [ -z "$src_cli" ]; then
+    src_detail="no kit CLI"
+  elif src_out=$(printf '%s' "$input" | python3 -I "$src_cli" source-wall --repo "$src_top" 2>/dev/null) \
+    && printf '%s' "$src_out" | jq -se 'length == 1 and (.[0] | type == "object" and (.deny | type) == "boolean")' >/dev/null 2>&1; then
+    printf '%s' "$src_out" | jq -e '.mode == "default"' >/dev/null && return 0
+    printf '%s' "$src_out" | jq -e '.deny' >/dev/null || exit 0
+    printf '%s\n' "$(printf '%s' "$src_out" | jq -r '.reason | tostring | gsub("[\r\n]+"; " ")')" >&2
+    exit 2
+  else
+    src_detail=$(printf '%s' "$src_out" | jq -sr 'if length == 1 and (.[0] | type == "object" and (.error | type) == "string") then .[0].error | gsub("[\r\n]+"; " ") else "" end' 2>/dev/null)
+    src_detail=${src_detail:-the kit CLI failed}
+  fi
+  echo "Blocked: source_dirs wall: $src_detail. Every spec-tester call that names a path is denied until it is fixed." >&2
+  exit 2
+}
+if [ -n "$agent_id" ] && [ "$agent_type" = spec_tester ]; then
+  source_wall
 fi
 verdict=$(printf '%s' "$call" | sh "$(dirname "$0")/deny-path.sh" "$@") || exit 2
 if [ -n "$verdict" ]; then
