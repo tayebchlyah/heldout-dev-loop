@@ -150,7 +150,11 @@ class SourceWallTests(unittest.TestCase):
         set_main(self.repo, key(["internal/"]))
         self.verdicts([(bash(self.repo, command), True) for command in
                        ("cd docs;cd ..;cat internal/x.go", "echo cd / ; cat internal/x.go",
-                        "cd /tmp ; cd - ; cat internal/x.go", "cd internal && cat x.go")])
+                        "cd /tmp ; cd - ; cat internal/x.go", "cd internal && cat x.go",
+                        "true&&cd docs&&cat ../internal/x.go", "echo;cd docs;cat ../internal/x.go",
+                        "cd;cat repo/internal/x.go", "cd&&cat repo/internal/x.go", "cd\ncat repo/internal/x.go",
+                        "cd '..'/repo/docs\ncat ../internal/x.go\necho '",
+                        "cd \"..\"/repo/docs\ncat ../internal/x.go\necho '", "cat in\\\nternal/x.go")])
 
     @unittest.skipUnless(sys.platform == "darwin", "the /private alias of the temp folder is macOS only")
     def test_private_var_alias_of_the_top(self) -> None:
