@@ -193,8 +193,9 @@ class VerifyInitAndSetupTests(unittest.TestCase):
         return run_json([sys.executable, str(DEVLOOP), "verify-init", *args], repo, self.env)
 
     def test_f1_stage0_on_a_ui_repo(self) -> None:
-        """O1 to O12: check_setup fails on the missing skill, verify-init writes the skeleton, check_setup
-        fails on the markers and the empty map, the agent fills them, check_setup passes."""
+        """O1 to O12 (O5 and O7 as replaced by Stack Model O7 and O8: `capabilities` decides, not the
+        `AGENTS.md` `stacks:` line): check_setup fails on the missing skill, verify-init writes the skeleton,
+        check_setup fails on the markers and the empty map, the agent fills them, check_setup passes."""
         repo = self.root / "Shop App"
         init_repo(repo, self.env)
         install = subprocess.run(["node", str(INSTALLER), "init", "--yes", "--harness=both",
@@ -204,14 +205,21 @@ class VerifyInitAndSetupTests(unittest.TestCase):
         agents = repo / "AGENTS.md"
         agents_base = agents.read_text() if agents.exists() else "# AGENTS.md\n\n"
         agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python, ui\n")
-        commit_all(repo, self.env, "Install dev-loop")
         config_path = repo / "dev-loop.json"
-        base_config = json.loads(config_path.read_text())
+        installed = json.loads(config_path.read_text())
+        base_config = {**installed, "capabilities": ["ui"],
+                       "commands": {**(installed.get("commands") or {}), "acceptance": "scripts/held-out.sh"}}
+        config_path.write_text(json.dumps(base_config, indent=2) + "\n")
+        commit_all(repo, self.env, "Install dev-loop")
         self.assertEqual(base_config.get("harnesses"), ["claude", "codex"])
 
         with self.subTest(oracle=5):
-            lines = [line for line in self.checker(repo).splitlines() if "verify-init" in line]
-            self.assertTrue(lines, "no check_setup line names verify-init")
+            agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python\n")
+            try:
+                lines = [line for line in self.checker(repo).splitlines() if "verify-init" in line]
+                self.assertTrue(lines, "no check_setup line names verify-init")
+            finally:
+                agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python, ui\n")
 
         with self.subTest(oracle=6):
             config_path.write_text(json.dumps({**base_config, "verify": False}, indent=2) + "\n")
@@ -222,12 +230,13 @@ class VerifyInitAndSetupTests(unittest.TestCase):
                 config_path.write_text(json.dumps(base_config, indent=2) + "\n")
 
         with self.subTest(oracle=7):
-            agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python\n")
-            try:
-                output = self.checker(repo)
-                self.assertEqual(self.verify_lines(output), [], output)
-            finally:
-                agents.write_text(agents_base.rstrip("\n") + "\n\nstacks: python, ui\n")
+            for capabilities in ([], ["backend"]):
+                config_path.write_text(json.dumps({**base_config, "capabilities": capabilities}, indent=2) + "\n")
+                try:
+                    output = self.checker(repo)
+                    self.assertEqual(self.verify_lines(output), [], output)
+                finally:
+                    config_path.write_text(json.dumps(base_config, indent=2) + "\n")
 
         name = "verify-shop-app"
         skill_dir = repo / ".agents" / "skills" / name
