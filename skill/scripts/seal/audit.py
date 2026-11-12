@@ -13,10 +13,12 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
+from typing import Callable
 from xml.sax.saxutils import unescape
 
 import devloop
 from devloop import emit
+from source_dirs import in_dot_folder, matches, read_main
 from seal import ACCEPTANCE_DIR, SEARCH_WORD, git_dir, merge_base, run_git
 from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, HEREDOC, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
                          shell_tokens)
@@ -181,10 +183,12 @@ def feature_docs(repo: Path) -> list[str]:
         return []
 
 
-def matched_lines(repo: Path, protected: tuple[str, ...], outputs: list[str]) -> list[str]:
+def matched_lines(repo: Path, protected: tuple[str, ...] | Callable[[str], bool], outputs: list[str],
+                  skip_dot_folders: bool = False) -> list[str]:
     listed = [path for path in dict.fromkeys(run_git(repo, "ls-files", "-co", "--exclude-standard", "-z").stdout.split("\0"))
-              if path]
-    own = {path: text for path in listed if path.startswith(protected) and (text := read_text(repo / path)) is not None}
+              if path and not (skip_dot_folders and in_dot_folder(path))]
+    is_own = protected if callable(protected) else lambda path: path.startswith(protected)
+    own = {path: text for path in listed if is_own(path) and (text := read_text(repo / path)) is not None}
     output = "\n".join(outputs)
     # Output lines first, in file then line order: the costly checks below see only this small set.
     # shortcut: `line in output` per protected line, O(lines x output size); Aho-Corasick if a hook times out.
@@ -291,7 +295,12 @@ def audit(hook: dict) -> dict:
             return skip("no-tool-output", f"no tool output in {transcript}")
         outputs, searches = found
         source = agent_type in SPEC_TESTER
-        lines = matched_lines(repo, SOURCE_DIRS if source else (ACCEPTANCE_DIR + "/",), outputs)
+        main = read_main(repo) if source else None
+        if main and main.state == "configured":
+            entries = [entry for entry in main.entries if not in_dot_folder(entry)]
+            lines = matched_lines(repo, lambda path: matches(entries, path) is not None, outputs, skip_dot_folders=True)
+        else:
+            lines = matched_lines(repo, SOURCE_DIRS if source else (ACCEPTANCE_DIR + "/",), outputs)
         paths = [] if source else suite_paths(repo, searches)
         if len(lines) < MIN_MATCHES and not paths:
             return {"taint": None, "skipped": []}
