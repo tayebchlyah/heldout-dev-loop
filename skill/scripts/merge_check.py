@@ -17,6 +17,7 @@ from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, main_ref, resolve
 from seal.skills import listed_names, skill_roots
 from status import rebasing
+import source_dirs
 
 
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
@@ -91,6 +92,7 @@ def config_shape_ok(config: dict) -> bool:
     pattern never matches under fnmatchcase: write `src/auth/*`)."""
     paths = config.get("merge_human_paths", [])
     return (config.get("merge", "auto") in MERGE_VALUES and isinstance(paths, list)
+            and ("source_dirs" not in config or source_dirs.validate(config["source_dirs"]) is None)
             and all(isinstance(p, str) and p.strip() and not p.endswith("/") for p in paths))
 
 
@@ -201,14 +203,14 @@ def merge_check(args: argparse.Namespace) -> int:
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
         trusted = (config.get("merge"), config.get("merge_human_paths"), config.get("file_size_exempt", []),
-                   config.get("commands"), config.get("walled_skills", []))
+                   config.get("commands"), config.get("walled_skills", []), config.get("source_dirs"))
         branch_config = read_config(repo, head)
         if branch_config is None:
-            changed = trusted != (None, None, [], None, [])
+            changed = trusted != (None, None, [], None, [], None)
         else:
             changed = (branch_config.get("merge"), branch_config.get("merge_human_paths"),
                        branch_config.get("file_size_exempt", []), branch_config.get("commands"),
-                       branch_config.get("walled_skills", [])) != trusted
+                       branch_config.get("walled_skills", []), branch_config.get("source_dirs")) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
         roots = [apfs_fold(root) for name in listed_names(config) for root in skill_roots(repo, ref, name)]

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from source_fixtures import key
 from test_devloop import PLAN, Sandbox, frontmatter, git, load_script, put, run_cli
 
 
@@ -596,6 +597,31 @@ class MergeCheckTests(MergeCheckCase):
                     self.commit(wt, "dev-loop.json", json.dumps(branch))
                 self.gate_green(wt, self.head(wt))
                 self.assertEqual(self.reasons(self.ok(wt), "config-changed"), [{"reason": "config-changed"}] if changed else [])
+
+    def test_source_dirs_change_needs_a_human(self) -> None:
+        rows = [
+            ("branch adds an entry", key(["internal/"]), key(["internal/", "cmd/"]), True),
+            ("branch drops the key", key(["internal/"]), None, True),
+            ("branch adds an empty list", json.dumps({"version": "0.0.0"}), key([]), True),
+            ("equal value", key(["internal/"]), key(["internal/"]), False),
+        ]
+        for name, main, branch, changed in rows:
+            with self.subTest(name):
+                self.tearDown()
+                self.setUp()
+                self.main_config(None, raw=main)
+                wt = self.feature()
+                if branch is None:
+                    self.commit(wt, "dev-loop.json", json.dumps({"version": "0.0.0"}))
+                else:
+                    self.commit(wt, "dev-loop.json", branch + "\n")
+                self.gate_green(wt, self.head(wt))
+                self.assertEqual(self.reasons(self.ok(wt), "config-changed"), [{"reason": "config-changed"}] if changed else [])
+
+    def test_invalid_source_dirs_is_unreadable(self) -> None:
+        self.main_config(None, raw=key("internal/"))
+        wt, _ = self.reviewed_feature()
+        self.assertEqual(self.ok(wt)["reasons"][0], {"reason": "config-unreadable"})
 
     def link_skill(self, cwd: Path, target: str) -> None:
         link = cwd / ".claude" / "skills" / "pg-guide"
