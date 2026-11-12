@@ -24,7 +24,7 @@ import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
 import source_dirs  # noqa: E402
-from security_skill import SECURITY_AUDIT_COMMIT, SECURITY_AUDIT_INSTALL, SECURITY_AUDIT_TREE, security_audit_groups, tree_id  # noqa: E402,F401
+from security_skill import security_audit_groups, tree_id  # noqa: E402,F401
 from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
 from verify import check as check_verify, gh_line  # noqa: E402

@@ -87,6 +87,9 @@ def read_config(repo: Path, rev: str) -> dict | None:
 MERGE_VALUES = ("auto", "human")
 
 
+ABSENT = object()
+
+
 def config_shape_ok(config: dict) -> bool:
     """A known `merge`, and `merge_human_paths` items non-empty after strip and not ending in `/` (a directory
     pattern never matches under fnmatchcase: write `src/auth/*`)."""
@@ -203,14 +206,14 @@ def merge_check(args: argparse.Namespace) -> int:
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
         trusted = (config.get("merge"), config.get("merge_human_paths"), config.get("file_size_exempt", []),
-                   config.get("commands"), config.get("walled_skills", []), config.get("source_dirs"))
+                   config.get("commands"), config.get("walled_skills", []), config.get("source_dirs", ABSENT))
         branch_config = read_config(repo, head)
         if branch_config is None:
-            changed = trusted != (None, None, [], None, [], None)
+            changed = trusted != (None, None, [], None, [], ABSENT)
         else:
             changed = (branch_config.get("merge"), branch_config.get("merge_human_paths"),
                        branch_config.get("file_size_exempt", []), branch_config.get("commands"),
-                       branch_config.get("walled_skills", []), branch_config.get("source_dirs")) != trusted
+                       branch_config.get("walled_skills", []), branch_config.get("source_dirs", ABSENT)) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
         roots = [apfs_fold(root) for name in listed_names(config) for root in skill_roots(repo, ref, name)]
