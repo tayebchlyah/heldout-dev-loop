@@ -18,6 +18,7 @@ HELD_OUT = "tests/" + "acceptance/"
 
 
 def fold(text: str) -> str:
+    """The NFC, case-folded form of a path or entry, the form every match compares."""
     return unicodedata.normalize("NFC", text).casefold()
 
 
@@ -52,6 +53,7 @@ def validate(value: object) -> str | None:
 
 
 def matches(entries: Sequence[str], rel: str) -> str | None:
+    """The first entry that a repo-relative path starts with or equals without its final `/`, else None."""
     folded = fold(rel)
     for entry in entries:
         target = fold(entry)
@@ -84,6 +86,7 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def read_main(repo: Path) -> Main:
+    """The `source_dirs` key of `dev-loop.json` at the main ref, never the checkout file."""
     full = main_ref(repo)
     if not full:
         return Main(None, "no-ref")

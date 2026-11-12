@@ -1,0 +1,31 @@
+# source-wall
+
+- `source-wall [--repo <path>]`: stdin one PreToolUse hook JSON object of a spec-tester call (Claude or Codex: `tool_name`, `tool_input`, `cwd`). `--repo` default: the cwd. Reads `source_dirs` from `dev-loop.json` at the main ref of that repo (`refs/remotes/origin/main`, else `refs/heads/main`), never the checkout file. The caller checks the agent.
+- Output, exit 0: `{"mode": "configured"|"default", "deny": bool, "reason": string|null, "ref": "origin/main"|"main"|null}`. `default`: no main ref, no `dev-loop.json` there, or no `source_dirs` key; `deny` false. `configured` with `[]`: `deny` false. Deny reason: `Blocked: <entry> is outside this agent's territory (source_dirs).`
+- Exit 1: `{"error": <message>}`. The main ref file is not a JSON object (`dev-loop.json at <ref> is not a JSON object: source_dirs cannot be read`), or `source_dirs` is invalid there (`source_dirs at <ref> is invalid: <rule>`). Hook input not a JSON object: `source-wall: hook input is not a JSON object`. Exit 2: usage error.
+- Match (D1): an entry matches a repo-relative path that starts with the entry, or equals it without the final `/`; NFC, case-folded. The validator and the matcher live in `source_dirs.py`.
+
+## Decision, configured key
+
+1. Tops: each `worktree <path>` of `git -C <repo> worktree list --porcelain`, a bare entry skipped. Variants of each top: as listed, its `realpath`, and the `/private` twin of each (a leading `/private` added or stripped); folded. A form belongs to the longest variant `v` it equals or that it starts with plus `/` (the deepest top); its repo-relative path is the rest, `""` for the top itself. A form outside every top matches no entry.
+2. Start folder: the payload `cwd` when a non-empty string, else the absolute `--repo`.
+3. Seal exception, Bash or Monitor `command` only: the raw text holds none of newline `; & | < > ( ) $` and no backtick; POSIX words: at least 3, the first `python3`, the second (joined to the start folder, `realpath`) equal to `<top realpath>/.agents/skills/dev-loop/scripts/devloop.py` of a top, folded, the third `seal`. Then `deny` false for the whole call.
+4. Candidates, each a text with a folder:
+   - `apply_patch`, or `Edit` / `Write` with a string `command` or `patch` and no `file_path`: the path of each `*** Add File:`, `*** Update File:`, `*** Delete File:` and `*** Move to:` line, trailing white space stripped. Nothing else; a patch body is no candidate.
+   - `skillsread`: every string at any depth of `tool_input`.
+   - Any other tool: the strings at any depth of `file_path`, `path`, `notebook_path`, `glob` (one starting with `!` dropped), `paths`, `files`, `url`, `source`, `destination`, `directory`, `filePath`, `uri`, `args`, and `pattern` except for `Grep`; a `file://` value also as its path (`file://` and a following `localhost` dropped); `path/glob`, and `path/pattern` except for `Grep`.
+   - Bash or Monitor `command`, in addition: heredoc bodies removed (the `search-wall` heredoc rule), then POSIX words (`shlex`), whitespace words on a parse error. A `cd` or `pushd` word moves the folder: words starting with `-` are passed over, the next word is the new folder (joined, normalized); an unresolved one leaves the folder unknown. Each word gives: itself, each part after a split at `: = < > | ; & ( )`, each piece of these after a split at white space, `'`, `"` and a backtick; empty strings dropped.
+   All texts take the start folder, except the command words, which take the current folder.
+5. Expansion: a leading `~` or `~/`, `$HOME` (not followed by a name character) and `${HOME}` from `HOME` when set; `$PWD` and `${PWD}` from the candidate's folder.
+6. Unresolved text: after expansion it holds `$`, a backtick, `*`, `?`, `[` or `{`, or it is relative with an unknown folder. Matched as text: the first entry whose folded name without the final `/` stands in the folded text as whole segments (before it: start or a character outside `a-z 0-9 _ . -`; after it: `/`, a quote, a backtick, `; | & ) < > *`, white space or the end) denies.
+7. Resolved text: the absolute path (the text, or the folder plus `/` plus the text). Normalized form: `normpath`, a leading `//` collapsed to `/`; resolved form: `realpath` (symlinks, the deepest existing part). The resolved form at `tests/acceptance` of its top, or under it: the candidate is skipped (D3). Else the first entry that matches the repo-relative path of either form denies.
+
+## Exceptions and limits
+
+- D3: the held-out suite folder by its resolved form, so a symlink inside it that points out does not pass; the lone seal command.
+- A bare word equal to a walled folder at the current folder is denied (`pytest -k api` with `api/`): the reason names the folder.
+- Gaps (spec Non-goals): a variable or wildcard that hides the entry name itself (`d=internal; cat $d/x.go`, `cat int*/x.go`); a path in a heredoc body; a recursive search from a folder above a source folder; git commands that print source with no path word (`git log -p`, `git show <sha>`, `git diff <rev> <rev>`); a copy of source outside the repo (the Codex kit copies under `~/.codex/dev-loop/kit/`); source served over a URL; files at the repo root; a local move of the main ref; a shell edit of a hook script or of the kit CLI (`seal-check` reports `kit-changed`). The taint audit stays the backup.
+
+## Callers
+
+- The spec-tester branch of `deny-acceptance-to-subagents.sh`, the `spec_tester` branch of `acceptance-wall.sh` and `deny-path.sh --source-dirs`, each only when the main ref has the key. They run the `devloop.py` of the kit copy that holds the hook. `deny` true: exit 2 with `reason`; `mode` `default`: the four-folder match `src/ app/ backend/ frontend/`. No CLI, a non-zero exit or output with no boolean `deny`: a deny naming `source_dirs` for a tool that names a path or a command.
