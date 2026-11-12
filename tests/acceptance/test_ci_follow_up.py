@@ -535,9 +535,9 @@ class MergeBlockTests(CiCase):
 
 
 class SetupTests(unittest.TestCase):
-    """An installed project (`init`, both harnesses) where `check_setup.py --harness claude` passes,
-    a stub `gh` and fake `claude` and `codex` CLIs (a version above the minimums) on `PATH`, and an
-    `origin` remote."""
+    """An installed project (`init`, both harnesses, then `"capabilities": []` and a `commands.acceptance` in
+    `dev-loop.json`, the Stack Model setup keys) where `check_setup.py --harness claude` passes, a stub `gh` and
+    fake `claude` and `codex` CLIs (a version above the minimums) on `PATH`, and an `origin` remote."""
 
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -553,6 +553,10 @@ class SetupTests(unittest.TestCase):
                                f"--notes={self.root / 'notes'}"], cwd=self.project, env=self.env,
                               capture_output=True, text=True, timeout=180)
         self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
+        config_path = self.project / "dev-loop.json"
+        config = json.loads(config_path.read_text())
+        config.update(capabilities=[], commands={**(config.get("commands") or {}), "acceptance": "scripts/held-out.sh"})
+        config_path.write_text(json.dumps(config, indent=2) + "\n")
         self.env["DEVLOOP_TEST_SECURITY_AUDIT_TREE"] = self.install_security_audit()
         self.stub = StubGh(self.root / "stub-bin")
         for name, version in (("claude", "2.1.309 (Claude Code)"), ("codex", "codex-cli 0.162.1")):

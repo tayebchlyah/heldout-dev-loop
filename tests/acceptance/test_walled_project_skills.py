@@ -338,7 +338,8 @@ class SetupAndMergeTests(unittest.TestCase):
         self.env["DEVLOOP_TEST_SECURITY_AUDIT_TREE"] = merge.git(folder, tree_env, "write-tree")
 
     def installed_project(self) -> None:
-        """An installed project with no commit yet, so no main ref, and a home where `check_setup.py` passes."""
+        """An installed project with no commit yet, so no main ref, the Stack Model setup keys (`"capabilities": []`,
+        a `commands.acceptance`) in its `dev-loop.json`, and a home where `check_setup.py` passes."""
         self.root = self.scratch()
         self.env = merge.clean_env(self.root)
         self.home = self.root / "home"
@@ -351,7 +352,10 @@ class SetupAndMergeTests(unittest.TestCase):
         merge.init_repo(self.project, self.env)
         self.install("init", "--yes", "--harness=both", f"--notes={self.root / 'notes'}")
         self.plant_security_audit()
-        self.config = json.loads((self.project / "dev-loop.json").read_text())
+        installed = json.loads((self.project / "dev-loop.json").read_text())
+        self.config = {**installed, "capabilities": [],
+                       "commands": {**(installed.get("commands") or {}), "acceptance": "scripts/held-out.sh"}}
+        self.write_config()
 
     def checker(self) -> tuple[int, str]:
         done = subprocess.run([sys.executable, str(CHECKER), "--harness", "claude", "--home", str(self.home),
