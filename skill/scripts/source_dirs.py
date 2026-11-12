@@ -118,3 +118,40 @@ def top_folders(repo: Path) -> list[str]:
         return []
     paths = listed.stdout.decode("utf-8", "surrogateescape").split("\0")
     return sorted({p.split("/", 1)[0] + "/" for p in paths if "/" in p and not p.startswith(".")})
+
+
+def _shown(entries: Sequence[str]) -> str:
+    return " ".join(entries) or "no folder"
+
+
+def setup(repo: Path) -> tuple[list[str], list[str], list[str]]:
+    """The check_setup.py lines of the key: failures, user actions that fail the verdict, notices."""
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text())
+    except (OSError, ValueError):
+        config = None
+    has = isinstance(config, dict) and "source_dirs" in config
+    rule = validate(config["source_dirs"]) if has else None
+    failures = [f"source_dirs in dev-loop.json is invalid: {rule}"] if rule else []
+    main = read_main(repo)
+    ref = main.ref
+    if main.state == "not-object":
+        return failures + [f"dev-loop.json at {ref} is not a JSON object. Every spec-tester call is denied until a valid file reaches {ref}"], [], []
+    if main.state == "invalid":
+        return failures + [f"source_dirs at {ref} is invalid: {main.rule}. Every spec-tester call is denied until a valid value reaches {ref}"], [], []
+    if not has:
+        if main.state == "configured":
+            return failures, [], [f"no source_dirs in this checkout: the spec-tester wall at {ref} uses {_shown(main.entries)}. Rebase onto {ref}"]
+        folders = top_folders(repo)
+        if not folders:
+            return failures, [], []
+        return failures, [f"source_dirs missing in dev-loop.json: the spec-tester wall uses {_shown(DEFAULT)}. Top-level folders: {' '.join(folders)}. "
+                          'List in "source_dirs" each folder that holds implementation. An entry matches from the repo root only'], []
+    if rule:
+        return failures, [], []
+    if main.state == "no-ref":
+        return failures, [], [f"no main ref: the spec-tester wall uses {_shown(DEFAULT)}"]
+    if main.state == "configured" and list(main.entries) == config["source_dirs"]:
+        return failures, [], []
+    used = main.entries if main.state == "configured" else DEFAULT
+    return failures, [], [f"the spec-tester wall at {ref} uses {_shown(used)} until this dev-loop.json change reaches {ref}"]
