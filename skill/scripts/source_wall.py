@@ -115,7 +115,7 @@ def _word_parts(word: str) -> Iterator[str]:
 
 
 def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, Folders]]:
-    text = HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command)
+    text = HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command.replace("\\\n", ""))
     try:
         words = [(word, word) for word in shlex.split(text)]
     except ValueError:
@@ -129,15 +129,17 @@ def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Ite
                 yield part, folders
         if moving and (word == "-" or not word.startswith("-")):
             moving = False
-            target = _expand(word, current, env)
+            target = _expand(bare, current, env)
             if (not target or target == "-" or UNRESOLVED.search(target) or CD_OPS.search(target)
                     or (current is None and not target.startswith("/"))):
                 current = None
             else:
                 current = posixpath.normpath(posixpath.join(current or "", target))
-            folders = (*folders, current)
+            folders = (*folders, current, None)
         elif word in ("cd", "pushd"):
             moving = True
+        elif any(part in ("cd", "pushd") for part in re.split(r"[:=<>|;&()]", bare)):
+            folders = (*folders, None)
 
 
 def _candidates(hook: dict, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, Folders]]:
