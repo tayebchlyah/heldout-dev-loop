@@ -43,7 +43,7 @@ def relative_ok(path: object) -> bool:
     return not pure.is_absolute() and ".." not in pure.parts
 
 
-def config_errors(verify: object) -> list[str]:
+def config_errors(verify: object, repo: Path) -> list[str]:
     """The shape of the `verify` value: `false`, or an object with `skill`, `base_url`, optional `setup` and
     `storage_state`."""
     if verify is False:
@@ -60,6 +60,9 @@ def config_errors(verify: object) -> list[str]:
         errors.append("verify.setup in dev-loop.json must be a list of non-empty strings")
     if "storage_state" in verify and not relative_ok(verify["storage_state"]):
         errors.append("verify.storage_state in dev-loop.json must be a repo-relative path")
+    if "playwright" in verify and not (relative_ok(verify["playwright"])
+                                       and (repo / verify["playwright"]).resolve().is_relative_to(repo.resolve())):
+        errors.append("verify.playwright in dev-loop.json must be a folder path in the repo")
     return errors
 
 
@@ -147,7 +150,7 @@ def check(repo: Path) -> list[str]:
     if "verify" not in config:
         return [MISSING] if "ui" in capabilities.read(repo) else []
     verify = config["verify"]
-    if errors := config_errors(verify):
+    if errors := config_errors(verify, repo):
         return errors
     if verify is False:
         return []
@@ -240,6 +243,15 @@ One file per user-facing feature: frontmatter `routes`, `paths`, optional `scrip
 """
 
 
+def playwright_folder(repo: Path, config: dict) -> str | None:
+    import source_dirs
+
+    dirs = config.get("source_dirs", list(source_dirs.DEFAULT))
+    folders = ["."] + ([d.rstrip("/") for d in dirs] if source_dirs.validate(dirs) is None else [])
+    return next((f for f in folders if any((repo / f / "node_modules" / p).exists()
+                                           for p in ("playwright", "@playwright/test"))), None)
+
+
 def cmd_verify_init(args: argparse.Namespace) -> int:
     top = git(Path.cwd(), "rev-parse", "--show-toplevel")
     if top is None:
@@ -281,6 +293,8 @@ def cmd_verify_init(args: argparse.Namespace) -> int:
         (repo / link).symlink_to(f"../../{folder}")
         files.append(link)
     verify = {"skill": skill, "base_url": args.base_url}
+    if found := playwright_folder(repo, config):
+        verify["playwright"] = found
     config["verify"] = verify
     (repo / "dev-loop.json").write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
     files.append("dev-loop.json")
@@ -367,7 +381,7 @@ def cmd_drive(args: argparse.Namespace) -> int:
     verify = config.get("verify", False) if isinstance(config, dict) else False
     if verify is False:
         return emit({"ok": True, "skipped": "no-verify", "routes": []}, 0)
-    if errors := config_errors(verify):
+    if errors := config_errors(verify, repo):
         return emit({"error": "; ".join(errors)}, 1)
     base = skill_dir(verify["skill"])
     if not (repo / base / "SKILL.md").is_file():
