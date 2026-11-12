@@ -24,11 +24,12 @@ npx github:tayebchlyah/heldout-dev-loop#<tag> uninstall-global  # remove the 1.4
 
 ## After installing
 
-`check_setup.py` can report three things under "User actions required" that no installer can fix. All are expected, not a broken install. A `walled_skills` line under that heading is no failure: `check_setup.py` still prints PASS.
+`check_setup.py` can report four things under "User actions required" that no installer can fix. All are expected, not a broken install. A `walled_skills` line, or a `source_dirs` pending-change line (`the spec-tester wall at <ref> uses <list> until this dev-loop.json change reaches <ref>`, `no source_dirs in this checkout: ... Rebase onto <ref>`), under that heading is a notice, no failure: `check_setup.py` still prints PASS.
 
 1. **Trusted Codex hooks.** Codex only trusts hook definitions after you run `/hooks` inside Codex and approve the dev-loop hooks. Until you trust the project and its hooks, the trusted-project and trusted-hook-hash checks fail.
 2. **Third-party skills.** dev-loop does not ship the Codex skills `grilling`, `domain-modeling`, `codebase-design`, `code-review`, `tdd`, `diagnosing-bugs`, `pr` and `prototype` (Matt Pocock's skills). Install them separately from their own source.
 3. **The security-audit skill.** For both harnesses, the Stage 6 security verifier reads its prompt from Cloudflare's `security-audit` skill, pinned to one commit. Install it with `npx skills add https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 --skill security-audit --global --agent claude-code codex`.
+4. **The `source_dirs` key.** A repo with a top-level folder and no `source_dirs` in `dev-loop.json` gets a `source_dirs missing` line that lists the folders (it prints FAIL). Stage 0 proposes the entries, you confirm them, and the key goes in `dev-loop.json` through a PR that waits for your merge. See `docs/configuration.md`.
 
 ## Verify
 

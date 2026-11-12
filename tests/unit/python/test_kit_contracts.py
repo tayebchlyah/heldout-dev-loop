@@ -64,6 +64,13 @@ class SkillContractTests(unittest.TestCase):
                       "`NEEDS_FACT` comes before the seal commit", "`work from the spec`", "decide --kind discovery"):
             self.assertIn(value, codex)
 
+    def test_source_dirs_kit_text(self) -> None:
+        for name in ("docs/configuration.md", "docs/upgrade.md", "docs/usage.md", "reference/kit.md",
+                     "skill/references/claude.md", "skill/references/codex.md", "skill/SKILL.md"):
+            self.assertIn("source_dirs", (ROOT / name).read_text(), name)
+        self.assertNotIn("covers `src/ app/ backend/ frontend/`", self.skill)
+        self.assertLessEqual(len(SKILL.read_bytes()), 39945)
+
     def test_frontmatter_and_trigger_survive(self) -> None:
         self.assertIn("name: dev-loop", self.skill)
         self.assertIn("at the start of any coding session", self.skill)
