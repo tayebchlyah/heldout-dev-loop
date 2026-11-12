@@ -90,6 +90,7 @@ class SourceWallTests(unittest.TestCase):
         self.verdicts([(read(self.repo, f"{self.repo}/internal/x.go", tree), True)])
         set_main(self.repo, key([".claude/"]))
         self.verdicts([(read(self.repo, f"{tree}/docs/guide.md", tree), False),
+                       (call(self.repo, "Glob", {"path": f"{tree}/docs", "pattern": "*.md"}, tree), False),
                        (read(self.repo, f"{self.repo}/.claude/settings.json", tree), True)])
 
     def test_quoted_and_unresolved_words(self) -> None:
@@ -105,7 +106,13 @@ class SourceWallTests(unittest.TestCase):
                        (bash(r, "sh -c \"cat in''ternal/x.go\""), True),
                        (bash(r, 'bash -c "cat in\\\\ternal/x.go"'), True),
                        (bash(r, "bash -c \"bash -c 'cat in\\\"\\\"ternal/x.go'\""), True),
-                       (bash(r, 'echo "$ROOT"/docs/guide.md'), False)])
+                       (bash(r, 'echo "$ROOT"/docs/guide.md'), False),
+                       (bash(r, "cat ~+/internal/x.go"), True), (bash(r, "cd ~+/internal && cat x.go"), True),
+                       (bash(r, "cat ~-/internal/x.go"), True), (bash(r, "cat ~root/internal/x.go"), True),
+                       (bash(r, "cat ~/x"), False), (bash(r, "cat ~+/docs/guide.md"), False),
+                       (bash(r, "cat {internal,x}/x.go"), True), (bash(r, "cat {x,internal}/x.go"), True),
+                       (bash(r, "cat internal{,}/x.go"), True), (bash(r, "cat internal${E}/x.go"), True),
+                       (call(r, "Grep", {"pattern": "func", "glob": "{internal,x}/**"}), True)])
 
     def test_suite_seal_and_heredoc_exceptions(self) -> None:
         set_main(self.repo, key(["api/", "tests/", "scripts/"]))
@@ -120,6 +127,11 @@ class SourceWallTests(unittest.TestCase):
         self.verdicts([(hook, False) for hook in allowed] + [(hook, True) for hook in denied])
         os.symlink("../..", r / SUITE / "up")
         self.verdicts([(read(r, f"{SUITE}/up/api/spec.go"), True)])
+        set_main(r, key(["api/", ".agents/"]))
+        self.verdicts([(bash(r, SEAL + '"\u2705(acceptance) #302: Add tests"'), False),
+                       (bash(r, SEAL + '"cover api/ flags" > out'), True), (bash(r, SEAL + '"$(cat api/spec.go)"'), True),
+                       (bash(r, SEAL + '"cover api/ flags"\ncat api/spec.go'), True),
+                       (bash(r, f"cd {SUITE} && python3 -m pytest --tb=no api/test_gizmo.py"), False)])
 
     def test_symlinked_entry(self) -> None:
         os.symlink("pkg", self.repo / "lnk")
@@ -147,9 +159,28 @@ class SourceWallTests(unittest.TestCase):
         self.verdicts([(bash(self.repo, command), True) for command in
                        ("cat 'internal/x.go", "cat in\"\"ternal/x.go\necho '", "cat in\\ternal/x.go\necho '")])
 
-    def test_cd_into_the_suite_then_run_it(self) -> None:
+    def test_suite_reachable_under_a_tests_entry(self) -> None:
         set_main(self.repo, key(["tests/"]))
-        self.verdicts([(bash(self.repo, f"cd {SUITE} && python3 -m pytest --tb=no ."), False)])
+        r = self.repo
+        self.verdicts([(bash(r, f"cd {SUITE} && python3 -m pytest --tb=no ."), False),
+                       (bash(r, f"cd {r} && python3 -m pytest --tb=no {SUITE}"), False),
+                       (call(r, "Glob", {"pattern": f"{SUITE}/**/*.py"}), False),
+                       (call(r, "Glob", {"path": SUITE, "pattern": "**/*.py"}), False),
+                       (call(r, "Glob", {"path": f"{r}/{SUITE}", "pattern": "*.py"}), False),
+                       (bash(r, f"cat {SUITE}/{{,..}}/conftest.py"), True), (bash(r, f"cat {SUITE}/.*/conftest.py"), True),
+                       (bash(r, f"cat {SUITE}/$X/conftest.py"), True), (bash(r, f"cat {SUITE}*/conftest.py"), True),
+                       (bash(r, f"cat {SUITE}/{{.,x}}{{.,y}}/conftest.py"), True)])
+        os.symlink("..", r / SUITE / "up")
+        self.verdicts([(bash(r, f"cat {SUITE}/*/conftest.py"), True)])
+
+    def test_unresolved_absolute_text_drops_the_top(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = source_repo(Path(tmp.name).resolve() / "src")
+        set_main(repo, key(["src/"]))
+        self.repo = repo
+        self.verdicts([(call(repo, "Glob", {"path": f"{repo}/docs", "pattern": "*.md"}), False),
+                       (bash(repo, f"cat {repo}/docs/*.md"), False), (bash(repo, f"cat {repo}/src/*.py"), True)])
 
     def test_every_folder_of_the_command(self) -> None:
         set_main(self.repo, key(["internal/"]))
@@ -162,7 +193,11 @@ class SourceWallTests(unittest.TestCase):
                         "cd \"..\"/repo/docs\ncat ../internal/x.go\necho '", "cat in\\\nternal/x.go",
                         "eval 'cd docs'; cat ../internal/x.go", "eval cd\\ docs; cat ../internal/x.go",
                         "bash -c 'cd docs; cat ../internal/x.go'", "sh -c 'cd docs && cat ../internal/x.go'",
-                        "tar -C docs -cf - ../internal",
+                        "tar -C docs -cf - ../internal", "cd /nonexistent; cat internal/x.go",
+                        "cd /tmp | cat internal/x.go", "cd /tmp & cat internal/x.go",
+                        "false && cd /tmp; cat internal/x.go", "cd /tmp extra; cat internal/x.go",
+                        "cd -P /tmp; cat internal/x.go", "if false; then\ncd /tmp\nfi\ncat internal/x.go",
+                        "(cd /tmp); cat internal/x.go", "cd /tmp 2>/dev/null; cat internal/x.go",
                         "python3 -c \"import os; os.chdir('docs'); open('../internal/x.go')\"")])
 
     @unittest.skipUnless(sys.platform == "darwin", "the /private alias of the temp folder is macOS only")
