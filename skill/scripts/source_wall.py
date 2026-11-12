@@ -138,7 +138,7 @@ def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Ite
             folders = (*folders, current, None)
         elif word in ("cd", "pushd"):
             moving = True
-        elif any(part in ("cd", "pushd") for part in re.split(r"[:=<>|;&()]", bare)):
+        elif any(part in ("cd", "pushd") for part in (*_word_parts(word), *_word_parts(bare))):
             folders = (*folders, None)
 
 
@@ -199,6 +199,8 @@ def _denied(hook: dict, repo: Path, env: Mapping[str, str], entries: Sequence[st
                 hit = _text_hit(entries, text)
             else:
                 hit = _path_hit(entries, text, folder or "", variants)
+                if not hit and ".." in text.split("/"):
+                    hit = _text_hit(entries, text)
             if hit:
                 return hit
     return None
