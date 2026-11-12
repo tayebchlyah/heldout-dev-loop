@@ -1,6 +1,14 @@
 #!/bin/bash
 # Block any tool call whose PATH FIELDS name one of the given fragments.
-# Usage in a subagent frontmatter hook: deny-path.sh <fragment> [<fragment> ...]
+# Usage in a subagent frontmatter hook: deny-path.sh [--source-dirs] <fragment> [<fragment> ...]
+# --source-dirs (spec-tester, #302): for Read, Edit, Write, NotebookEdit, Grep, Glob, Bash and Monitor, the repo
+# ($CLAUDE_PROJECT_DIR, else the payload cwd) is tested in shell for a source_dirs key in dev-loop.json at its main
+# ref (origin/main, else main). No repo, no main ref, no file, or a JSON object with no key: the fragment match
+# below, with no CLI call (the default, src/ app/ backend/ frontend/). Else, a git error included: devloop.py
+# source-wall of the kit copy that holds this hook (.dev-loop/hooks/claude: the project .agents copy; claude/hooks:
+# the kit source skill/scripts; another folder: the project kit CLI of the search rule) decides: deny, allow, or
+# mode default (the fragment match). Fail closed: no CLI, a CLI error or no boolean deny blocks the call with a
+# message naming source_dirs. agent_id and agent_type are not read.
 #
 # WHAT THIS IS. A workflow guard, not a security boundary. A shell command can
 # always split or wildcard a path past a substring rule. A block means stop and
@@ -38,13 +46,17 @@ case "$(printf '%s' "$IN" | jq -r '.tool_name // empty')" in
   mcp__*|ListMcpResourcesTool|ReadMcpResourceTool|ReadMcpResourceDirTool) echo "Blocked: MCP tools are closed to this agent. Read and search named folders with the file tools or the shell." >&2; exit 2 ;;
 esac
 WORD='(^|[^[:alnum:]_.-])([efr]?grep|rg|find)([^[:alnum:]_.-]|$)'
-search_wall() {
-  local dir top cli= out
+kit_cli() {
+  local dir top
   for dir in "$(printf '%s' "$1" | jq -r '.cwd // empty')" "$CLAUDE_PROJECT_DIR"; do
     [ -n "$dir" ] || continue
     top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || continue
-    [ -f "$top/.agents/skills/dev-loop/scripts/devloop.py" ] && { cli=$top/.agents/skills/dev-loop/scripts/devloop.py; break; }
+    [ -f "$top/.agents/skills/dev-loop/scripts/devloop.py" ] && { printf '%s' "$top/.agents/skills/dev-loop/scripts/devloop.py"; return; }
   done
+}
+search_wall() {
+  local cli out
+  cli=$(kit_cli "$1")
   [ -n "$cli" ] || return 0
   out=$(printf '%s' "$1" | python3 "$cli" search-wall 2>/dev/null) || fail "search check failed"
   printf '%s' "$out" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "search check failed"
@@ -52,6 +64,55 @@ search_wall() {
   printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason')" >&2
   exit 2
 }
+source_key() {
+  local r listed
+  top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+  ref=
+  for r in refs/remotes/origin/main refs/heads/main; do
+    git -C "$top" rev-parse --verify -q "$r^{commit}" >/dev/null 2>&1 && { ref=$r; break; }
+  done
+  [ -n "$ref" ] || return 1
+  if listed=$(git -C "$top" ls-tree --full-tree --name-only "$ref" -- dev-loop.json 2>/dev/null); then
+    [ -n "$listed" ] || return 1
+    git -C "$top" cat-file blob "$ref:dev-loop.json" 2>/dev/null \
+      | jq -e 'type == "object" and (has("source_dirs") | not)' >/dev/null 2>&1 && return 1
+  fi
+  return 0
+}
+source_wall() {
+  local repo top ref d cli= out detail
+  case "$(printf '%s' "$IN" | jq -r '.tool_name // empty')" in
+    Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor) ;;
+    *) return 0 ;;
+  esac
+  repo=${CLAUDE_PROJECT_DIR:-$(printf '%s' "$IN" | jq -r '.cwd // empty')}
+  [ -n "$repo" ] && source_key "$repo" || return 0
+  d=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+  case "$d" in
+    */.dev-loop/hooks/claude) cli=${d%/.dev-loop/hooks/*}/.agents/skills/dev-loop/scripts/devloop.py ;;
+    */claude/hooks) cli=${d%/*/hooks}/skill/scripts/devloop.py ;;
+    *) cli=$(kit_cli "$IN") ;;
+  esac
+  [ -n "$cli" ] && [ -f "$cli" ] || cli=
+  if [ -z "$cli" ]; then
+    detail="no kit CLI"
+  elif out=$(printf '%s' "$IN" | python3 -I "$cli" source-wall --repo "$top" 2>/dev/null) \
+    && printf '%s' "$out" | jq -se 'length == 1 and (.[0] | type == "object" and (.deny | type) == "boolean")' >/dev/null 2>&1; then
+    printf '%s' "$out" | jq -e '.mode == "default"' >/dev/null && return 0
+    printf '%s' "$out" | jq -e '.deny' >/dev/null || exit 0
+    printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason | tostring | gsub("[\r\n]+"; " ")')" >&2
+    exit 2
+  else
+    detail=$(printf '%s' "$out" | jq -sr 'if length == 1 and (.[0] | type == "object" and (.error | type) == "string") then .[0].error | gsub("[\r\n]+"; " ") else "" end' 2>/dev/null)
+    detail=${detail:-the kit CLI failed}
+  fi
+  echo "Blocked: source_dirs wall: $detail. Every spec-tester call that names a path is denied until it is fixed." >&2
+  exit 2
+}
+if [ "$1" = --source-dirs ]; then
+  shift
+  source_wall
+fi
 CANDIDATES=$(echo "$IN" | jq -r '
   # A heredoc body and an exclusion (:!x, :(exclude)x, --exclude-dir=x, grep -v x)
   # name a path without reaching it.

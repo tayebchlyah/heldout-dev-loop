@@ -130,7 +130,7 @@ def twin_matcher() -> str:
 
 
 def walls() -> list[Wall]:
-    return [Wall(name, frozenset(hook.matcher.split("|")), tuple(hook.command.split()[1:]))
+    return [Wall(name, frozenset(hook.matcher.split("|")), tuple(arg for arg in hook.command.split()[1:] if not arg.startswith("--")))
             for name, hooks in agents() for hook in hooks if hook.command.split()[0].endswith("/deny-path.sh")]
 
 
