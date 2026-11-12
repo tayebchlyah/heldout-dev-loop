@@ -304,6 +304,7 @@ def cmd_verify_init(args: argparse.Namespace) -> int:
 PLAYWRIGHT_DIRS = ("node_modules/playwright", "node_modules/@playwright/test",
                    "frontend/node_modules/playwright", "frontend/node_modules/@playwright/test")
 READY_SECONDS = 30
+TAIL_LINES = 20
 
 
 def playwright_paths(verify: dict) -> list[str]:
@@ -311,7 +312,6 @@ def playwright_paths(verify: dict) -> list[str]:
         return list(PLAYWRIGHT_DIRS)
     return [(PurePosixPath(verify["playwright"]) / "node_modules" / name).as_posix()
             for name in ("playwright", "@playwright/test")]
-TAIL_LINES = 20
 
 
 def tail(text: str) -> str:
