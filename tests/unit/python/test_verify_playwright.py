@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import http.server
 import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
-from test_verify import CHECK_SETUP, VALID, devloop, load_verify, make_repo, put
+from test_verify import CHECK_SETUP, RUNNER, VALID, Quiet, devloop, entry_text, git, load_verify, make_repo, make_skill, put
 
 LINE = "verify.playwright in dev-loop.json must be a folder path in the repo"
 URL = "http://127.0.0.1:4173"
+STUB = """const { writeFileSync } = require('node:fs')
+writeFileSync(require('node:path').join(process.cwd(), 'loaded.txt'), __dirname)
+process.exit(3)
+"""
 
 
 class VerifyPlaywrightTests(unittest.TestCase):
@@ -82,6 +88,68 @@ class VerifyPlaywrightTests(unittest.TestCase):
         self.assertEqual(written["playwright"], "a")
         written, _ = self.init("c", ["web"], ("web/node_modules/playwright",))
         self.assertNotIn("playwright", written)
+
+
+class DriveLookupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.shutdown)
+        self.base_url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.verify = load_verify()
+
+    def repo(self, playwright: str, script: bool = False, dirs: tuple[str, ...] = ()) -> Path:
+        root = make_repo(self.tmp / "app", verify={**VALID, "base_url": self.base_url, "playwright": playwright})
+        put(root / "tools/runner.mjs", RUNNER)
+        make_skill(root, entries={"a": entry_text(paths=["web/a*"], script="tools/runner.mjs" if script else None)})
+        put(root / ".gitignore", "runner-*.json\nnode_modules/\nloaded.txt\n")
+        for path in dirs:
+            (root / path).mkdir(parents=True, exist_ok=True)
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "base")
+        return root
+
+    def test_playwright_paths(self) -> None:
+        self.assertEqual(self.verify.playwright_paths({}), list(self.verify.PLAYWRIGHT_DIRS))
+        self.assertEqual(self.verify.playwright_paths({"playwright": "."}),
+                         ["node_modules/playwright", "node_modules/@playwright/test"])
+        for value in ("web", "web/"):
+            self.assertEqual(self.verify.playwright_paths({"playwright": value}),
+                             ["web/node_modules/playwright", "web/node_modules/@playwright/test"])
+
+    def test_drive_looks_only_in_the_folder(self) -> None:
+        root = self.repo("web", dirs=("node_modules/playwright", "web"))
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertEqual(out["error"], "playwright not found in web/node_modules/playwright, "
+                         "web/node_modules/@playwright/test: run npm i -D playwright && npx playwright install "
+                         "chromium in the repo root")
+
+    def test_kit_runner_loads_the_configured_folder(self) -> None:
+        root = self.repo("web")
+        package = root / "web/node_modules/playwright"
+        put(package / "package.json", json.dumps({"name": "playwright", "main": "index.js"}))
+        put(package / "index.js", STUB)
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1, out)
+        self.assertTrue(out["error"].startswith("runner failed for"), out)
+        self.assertEqual(Path((root / "loaded.txt").read_text()).resolve(), package.resolve())
+
+    def test_script_runner_gets_no_playwright_key(self) -> None:
+        root = self.repo("web", script=True, dirs=("web/node_modules/playwright",))
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("playwright", json.loads((root / "runner-a.json").read_text()))
+
+    def test_drive_refuses_outside_playwright(self) -> None:
+        (self.tmp / "outside/node_modules/playwright").mkdir(parents=True)
+        root = self.repo("link")
+        (root / "link").symlink_to(self.tmp / "outside")
+        code, out = devloop(root, "drive", "--all")
+        self.assertEqual(code, 1)
+        self.assertIn(LINE, out["error"])
 
 
 if __name__ == "__main__":
