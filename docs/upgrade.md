@@ -7,7 +7,7 @@ Remove the 1.4 global install first: `npx github:tayebchlyah/heldout-dev-loop#<t
 ## Upgrade and rollback
 
 - **Upgrade:** on a branch, run `npx github:tayebchlyah/heldout-dev-loop#<new tag> upgrade`, commit the diff, open a PR. Each person gets the new version with `git pull`.
-- **After `upgrade`:** run `check_setup.py`. A `source_dirs missing` line under "User actions required" lists the top-level folders of the repo: add the `source_dirs` key to `dev-loop.json` in the upgrade PR (see `docs/configuration.md`). `upgrade` writes no key. That PR runs CI and waits for a human merge, because the key is a trusted key. Until it reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`.
+- **After `upgrade`:** run `check_setup.py`. A `source_dirs missing` line under "User actions required" lists the top-level folders of the repo: add the `source_dirs` key to `dev-loop.json` in the upgrade PR (see `docs/configuration.md`). `upgrade` writes no key. That PR runs CI and waits for a human merge, because the key is a trusted key. Until it reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`. A `capabilities missing` line (with its proposed value) and a `commands.acceptance missing` line can also appear: add both keys in the same upgrade PR. A UI whose Playwright is not at the root or in `frontend/` adds `"playwright": "<folder>"` to `verify`.
 - **Rollback of a project:** `git revert` the upgrade commit.
 - **Rollback of a machine to 1.4:** `npx github:tayebchlyah/heldout-dev-loop#v1.4.0` reinstalls the global install. Do not keep it on a machine whose projects use the kit.
 

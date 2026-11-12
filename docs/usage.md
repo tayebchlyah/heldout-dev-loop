@@ -42,7 +42,7 @@ python3 .agents/skills/dev-loop/scripts/check_setup.py --harness codex --repo .
 
 ## Verify skill
 
-A project with `ui` in `stacks:` holds its own verify skill in `.agents/skills/<skill>/`: how an agent launches, checks, drives and cleans up the real app, and a feature map, one file per feature, with the routes and the accessible names a user sees. Stage 0 writes it with `devloop.py verify-init`, then `skill/references/verify.md`. Stage 6 runs `devloop.py drive` on the routes the branch changed, and one subagent checks the layout on the screenshots. Stage 7 adds the before and after screens to the PR body. `"verify": false` in `dev-loop.json` opts out.
+A project with `ui` in `capabilities` of `dev-loop.json` holds its own verify skill in `.agents/skills/<skill>/`: how an agent launches, checks, drives and cleans up the real app, and a feature map, one file per feature, with the routes and the accessible names a user sees. Stage 0 writes it with `devloop.py verify-init`, then `skill/references/verify.md`. Stage 6 runs `devloop.py drive` on the routes the branch changed, and one subagent checks the layout on the screenshots. Stage 7 adds the before and after screens to the PR body. `"verify": false` in `dev-loop.json` opts out. `verify-init` records where Playwright is (`verify.playwright`): the root or the first `source_dirs` folder that has it.
 
 ## Backups
 
