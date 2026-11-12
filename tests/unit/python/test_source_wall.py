@@ -139,11 +139,18 @@ class SourceWallTests(unittest.TestCase):
 
     def test_parse_error_falls_back_to_whitespace(self) -> None:
         set_main(self.repo, key(["internal/"]))
-        self.verdicts([(bash(self.repo, "cat 'internal/x.go"), True)])
+        self.verdicts([(bash(self.repo, command), True) for command in
+                       ("cat 'internal/x.go", "cat in\"\"ternal/x.go\necho '", "cat in\\ternal/x.go\necho '")])
 
     def test_cd_into_the_suite_then_run_it(self) -> None:
         set_main(self.repo, key(["tests/"]))
         self.verdicts([(bash(self.repo, f"cd {SUITE} && python3 -m pytest --tb=no ."), False)])
+
+    def test_every_folder_of_the_command(self) -> None:
+        set_main(self.repo, key(["internal/"]))
+        self.verdicts([(bash(self.repo, command), True) for command in
+                       ("cd docs;cd ..;cat internal/x.go", "echo cd / ; cat internal/x.go",
+                        "cd /tmp ; cd - ; cat internal/x.go", "cd internal && cat x.go")])
 
     @unittest.skipUnless(sys.platform == "darwin", "the /private alias of the temp folder is macOS only")
     def test_private_var_alias_of_the_top(self) -> None:
@@ -157,6 +164,12 @@ class SourceWallTests(unittest.TestCase):
         set_main(self.repo, key(["internal/", "café/"]))
         self.verdicts([(read(self.repo, "INTERNAL/x.go"), True),
                        (read(self.repo, unicodedata.normalize("NFD", "café/x.py")), True)])
+
+    def test_nul_byte_is_an_error(self) -> None:
+        set_main(self.repo, key(["internal/"]))
+        code, out = run(self.repo, read(self.repo, "docs/\0x"))
+        self.assertEqual(code, 1)
+        self.assertIn("source-wall", out["error"])
 
     def test_not_a_json_object(self) -> None:
         done = subprocess.run([sys.executable, str(DEVLOOP), "source-wall", "--repo", str(self.repo)], input="[]",
