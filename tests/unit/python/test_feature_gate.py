@@ -696,7 +696,8 @@ class FeatureGateTextTests(unittest.TestCase):
             for runner in ("--lf", "--last-failed", "pytest " + suite, "go test ./" + suite, "npx playwright test " + suite):
                 self.assertNotIn(runner, text)
         self.assertIn("`commands.acceptance` absent, or changed by the branch: a stop item", stage6)
-        self.assertIn("commands.acceptance missing", stage6)
+        self.assertNotIn("commands.acceptance missing", stage6)
+        self.assertIn("the `check_setup.py` line (absent) or the `acceptance` error (changed)", stage6)
 
     def test_skill_stage_0(self) -> None:
         stage0 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 0 Bootstrap", "## 1 Frame")
