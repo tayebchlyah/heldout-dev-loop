@@ -34,6 +34,7 @@ One file per subject. A new test file adds its line here.
 - `junit_report.py`, `board_fixtures.py`, `audit_fixtures.py`: the one JUnit writer; board fixtures the held-out oracle shares; stub `security-audit` skill, audit run fixtures.
 - `test_codex_fill.py`: `lib/codex_fill.py`: the Codex kit copy fill, MANIFEST hash check, concurrent fills.
 - `test_source_dirs.py`, `source_fixtures.py`: `source_dirs.py`: validator, matcher, main ref read, top folders; oracle repo and plumbing fixtures.
+- `test_source_hooks.py`: the `source_dirs` wall through the spec-tester hooks, the shared `hook` runner.
 - `test_source_wall.py`: `source-wall`: modes and refs, path forms, worktree tops, quoted and unresolved words, suite, seal and heredoc exceptions, Codex shapes.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.

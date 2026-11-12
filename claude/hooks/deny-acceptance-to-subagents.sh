@@ -7,6 +7,10 @@
 # spec-tester is exempt: it authors tests/acceptance. It gets the source wall instead: no path
 # names src/, app/, backend/ or frontend/ (the segment match of deny-path.sh, in this folder).
 # Its frontmatter hook holds the same rule; this hook holds it where frontmatter hooks are skipped (#139).
+# source_dirs (#302): the same step as deny-path.sh --source-dirs, first in the spec-tester branch, on the
+# original input. A source_dirs key at the main ref: devloop.py source-wall of the kit copy that holds this hook
+# decides (deny, allow, or mode default: the four-folder match); no CLI or a CLI error blocks a path or command
+# tool with a message naming source_dirs. No key: the four-folder match, no CLI call.
 #
 # WHAT THIS IS. A workflow guard against a cooperative agent wandering into the
 # held-out suite, not a security boundary. A subagent that wants past it can
@@ -98,6 +102,51 @@ search_wall() {
   printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason')" >&2
   exit 2
 }
+source_key() {
+  local r listed
+  top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+  ref=
+  for r in refs/remotes/origin/main refs/heads/main; do
+    git -C "$top" rev-parse --verify -q "$r^{commit}" >/dev/null 2>&1 && { ref=$r; break; }
+  done
+  [ -n "$ref" ] || return 1
+  if listed=$(git -C "$top" ls-tree --full-tree --name-only "$ref" -- dev-loop.json 2>/dev/null); then
+    [ -n "$listed" ] || return 1
+    git -C "$top" cat-file blob "$ref:dev-loop.json" 2>/dev/null \
+      | jq -e 'type == "object" and (has("source_dirs") | not)' >/dev/null 2>&1 && return 1
+  fi
+  return 0
+}
+source_wall() {
+  local repo top ref d cli= out detail
+  case "$(printf '%s' "$IN" | jq -r '.tool_name // empty')" in
+    Read|Edit|Write|NotebookEdit|Grep|Glob|Bash|Monitor) ;;
+    *) return 0 ;;
+  esac
+  repo=${CLAUDE_PROJECT_DIR:-$(printf '%s' "$IN" | jq -r '.cwd // empty')}
+  [ -n "$repo" ] && source_key "$repo" || return 0
+  d=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+  case "$d" in
+    */.dev-loop/hooks/claude) cli=${d%/.dev-loop/hooks/*}/.agents/skills/dev-loop/scripts/devloop.py ;;
+    */claude/hooks) cli=${d%/*/hooks}/skill/scripts/devloop.py ;;
+    *) cli=$(kit_cli "$IN") ;;
+  esac
+  [ -n "$cli" ] && [ -f "$cli" ] || cli=
+  if [ -z "$cli" ]; then
+    detail="no kit CLI"
+  elif out=$(printf '%s' "$IN" | python3 -I "$cli" source-wall --repo "$top" 2>/dev/null) \
+    && printf '%s' "$out" | jq -se 'length == 1 and (.[0] | type == "object" and (.deny | type) == "boolean")' >/dev/null 2>&1; then
+    printf '%s' "$out" | jq -e '.mode == "default"' >/dev/null && return 0
+    printf '%s' "$out" | jq -e '.deny' >/dev/null || exit 0
+    printf '%s\n' "$(printf '%s' "$out" | jq -r '.reason | tostring | gsub("[\r\n]+"; " ")')" >&2
+    exit 2
+  else
+    detail=$(printf '%s' "$out" | jq -sr 'if length == 1 and (.[0] | type == "object" and (.error | type) == "string") then .[0].error | gsub("[\r\n]+"; " ") else "" end' 2>/dev/null)
+    detail=${detail:-the kit CLI failed}
+  fi
+  echo "Blocked: source_dirs wall: $detail. Every spec-tester call that names a path is denied until it is fixed." >&2
+  exit 2
+}
 skill_reason() {
   local cli out reason
   cli=$(kit_cli "$1")
@@ -182,6 +231,7 @@ case "$AGENT:$TOOL" in
 esac
 TESTER=
 if [ "$(echo "$IN" | jq -r '.agent_type // empty')" = "spec-tester" ]; then
+  source_wall
   TESTER=1
   # Relative paths resolve against the cwd as a repo path, so a repo that sits under a folder named
   # src or app is not walled whole. Outside a git repo: the cwd itself. Never empty: the command is
