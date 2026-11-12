@@ -40,6 +40,14 @@ class RepoDocsTests(unittest.TestCase):
         self.agents = (ROOT / "AGENTS.md").read_text()
         self.cli = self.agents.split("## devloop CLI", 1)[1].split("\n## ", 1)[0]
 
+    def test_this_repo_walls_its_source(self) -> None:
+        sys.path.insert(0, str(ROOT / "skill" / "scripts"))
+        import source_dirs
+        value = json.loads((ROOT / "dev-loop.json").read_text())["source_dirs"]
+        self.assertEqual(value, ["skill/", "skills/", "lib/", "bin/", "claude/", "codex/", "tests/unit/",
+                                 ".agents/", ".claude/", ".codex/", ".dev-loop/"])
+        self.assertIsNone(source_dirs.validate(value))
+
     def test_readme_sections_in_order(self) -> None:
         readme = (ROOT / "README.md").read_text()
         self.assertEqual(readme.splitlines()[0], '<h1 align="center">')
