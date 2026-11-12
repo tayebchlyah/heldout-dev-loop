@@ -28,6 +28,8 @@ UNRESOLVED = re.compile(r"[$`*?\[{]")
 HOME = re.compile(r"\$HOME(?![A-Za-z0-9_])|\$\{HOME\}")
 PWD = re.compile(r"\$PWD(?![A-Za-z0-9_])|\$\{PWD\}")
 SHELL_OPS = set("\n;&|<>()$`")
+CD_OPS = re.compile(r"[;&|<>()]")
+Folders = tuple[str | None, ...]
 
 
 def _tops(repo: Path) -> tuple[list[str], list[str]]:
@@ -112,30 +114,33 @@ def _word_parts(word: str) -> Iterator[str]:
         yield from re.split(r"[\s'\"`]", part)
 
 
-def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, str | None]]:
+def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, Folders]]:
     text = HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command)
     try:
-        words = shlex.split(text)
+        words = [(word, word) for word in shlex.split(text)]
     except ValueError:
-        words = text.split()
-    folder: str | None = start
+        words = [(word, re.sub(r"['\"\\]", "", word)) for word in text.split()]
+    folders: Folders = (start,)
+    current: str | None = start
     moving = False
-    for word in words:
-        for part in _word_parts(word):
+    for word, bare in words:
+        for part in dict.fromkeys([*_word_parts(word), *_word_parts(bare)]):
             if part:
-                yield part, folder
-        if moving and not word.startswith("-"):
+                yield part, folders
+        if moving and (word == "-" or not word.startswith("-")):
             moving = False
-            target = _expand(word, folder, env)
-            if UNRESOLVED.search(target) or (not target.startswith("/") and folder is None):
-                folder = None
+            target = _expand(word, current, env)
+            if (not target or target == "-" or UNRESOLVED.search(target) or CD_OPS.search(target)
+                    or (current is None and not target.startswith("/"))):
+                current = None
             else:
-                folder = posixpath.normpath(posixpath.join(folder or "", target))
+                current = posixpath.normpath(posixpath.join(current or "", target))
+            folders = (*folders, current)
         elif word in ("cd", "pushd"):
             moving = True
 
 
-def _candidates(hook: dict, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, str | None]]:
+def _candidates(hook: dict, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, Folders]]:
     tool = hook.get("tool_name")
     tool_input = hook.get("tool_input")
     if not isinstance(tool_input, dict):
@@ -145,12 +150,12 @@ def _candidates(hook: dict, start: str, env: Mapping[str, str]) -> Iterator[tupl
                                  and any(isinstance(p, str) for p in patch)):
         for body in patch:
             if isinstance(body, str):
-                yield from ((m.group(1).rstrip(), start) for m in PATCH_LINE.finditer(body))
+                yield from ((m.group(1).rstrip(), (start,)) for m in PATCH_LINE.finditer(body))
         return
     if tool == "skillsread":
-        yield from ((text, start) for text in _strings(tool_input))
+        yield from ((text, (start,)) for text in _strings(tool_input))
         return
-    yield from ((text, start) for text in _field_texts(str(tool), tool_input))
+    yield from ((text, (start,)) for text in _field_texts(str(tool), tool_input))
     command = tool_input.get("command")
     if tool in ("Bash", "Monitor") and isinstance(command, str):
         yield from _command_candidates(command, start, env)
@@ -185,14 +190,15 @@ def _denied(hook: dict, repo: Path, env: Mapping[str, str], entries: Sequence[st
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if hook.get("tool_name") in ("Bash", "Monitor") and isinstance(command, str) and _is_seal(command, start, real):
         return None
-    for text, folder in _candidates(hook, start, env):
-        text = _expand(text, folder, env)
-        if UNRESOLVED.search(text) or (folder is None and not text.startswith("/")):
-            hit = _text_hit(entries, text)
-        else:
-            hit = _path_hit(entries, text, folder or "", variants)
-        if hit:
-            return hit
+    for raw, folders in _candidates(hook, start, env):
+        for folder in dict.fromkeys(folders):
+            text = _expand(raw, folder, env)
+            if UNRESOLVED.search(text) or (folder is None and not text.startswith("/")):
+                hit = _text_hit(entries, text)
+            else:
+                hit = _path_hit(entries, text, folder or "", variants)
+            if hit:
+                return hit
     return None
 
 
@@ -204,7 +210,10 @@ def decide(hook: object, repo: Path, env: Mapping[str, str]) -> tuple[dict, int]
         return {"error": error}, 1
     if main.state != "configured":
         return {"mode": "default", "deny": False, "reason": None, "ref": main.ref}, 0
-    entry = _denied(hook, repo, env, main.entries) if main.entries else None
+    try:
+        entry = _denied(hook, repo, env, main.entries) if main.entries else None
+    except ValueError as exc:
+        return {"error": f"source-wall: {exc}"}, 1
     return {"mode": "configured", "deny": entry is not None, "reason": REASON.format(entry) if entry else None,
             "ref": main.ref}, 0
 
