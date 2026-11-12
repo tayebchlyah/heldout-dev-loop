@@ -1,4 +1,5 @@
-"""The `source_dirs` wall through the spec-tester hooks: Claude `deny-acceptance-to-subagents.sh` and `deny-path.sh --source-dirs`."""
+"""The `source_dirs` wall through the spec-tester hooks: Claude `deny-acceptance-to-subagents.sh` and
+`deny-path.sh --source-dirs`, Codex `acceptance-wall.sh`."""
 
 from __future__ import annotations
 
@@ -11,13 +12,15 @@ import unittest
 from pathlib import Path
 
 from source_fixtures import key, set_branch, set_main, source_repo
-from support import CLAUDE_HOOKS, ROOT
+from support import CLAUDE_HOOKS, CODEX_ASSETS, ROOT, git_in
 
 SUITE = "tests/" + "acceptance"
 DEFAULT = ("src/", "app/", "backend/", "frontend/")
 TWIN = (CLAUDE_HOOKS / "deny-acceptance-to-subagents.sh", (), {"agent_id": "a", "agent_type": "spec-tester"})
 FRONTMATTER = (CLAUDE_HOOKS / "deny-path.sh", ("--source-dirs", *DEFAULT), {})
 COMMAND = "~/.claude/hooks/deny-path.sh --source-dirs src/ app/ backend/ frontend/"
+CODEX_WALL = CODEX_ASSETS / "hooks" / "acceptance-wall.sh"
+TESTER = {"agent_id": "b", "agent_type": "spec_tester"}
 
 
 def hook(script: Path, args: tuple[str, ...], payload: dict, env: dict | None = None,
@@ -118,6 +121,74 @@ class ClaudeSourceHookTests(unittest.TestCase):
         text = (ROOT / "claude" / "agents" / "spec-tester.md").read_text()
         head = text.split("\n---\n", 1)[0] + "\n"
         self.assertIn(f'command: "{COMMAND}"\n          onFailure: block\n', head)
+
+
+def bash(command: str) -> tuple[str, dict]:
+    return "Bash", {"command": command}
+
+
+def add_patch(header: str, body: str = "+x") -> dict:
+    return {"command": "\n".join(["*** Begin Patch", header, body, "*** End Patch"])}
+
+
+class CodexSourceHookTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name).resolve()
+        self.top = source_repo(self.tmp)
+
+    def check(self, rows: list[tuple], script: Path = CODEX_WALL, caller: dict = TESTER,
+              cwd: Path | None = None) -> None:
+        for (tool, tool_input), code, *said in rows:
+            payload = {**caller, "tool_name": tool, "tool_input": tool_input, "cwd": str(cwd or self.top)}
+            with self.subTest(script=str(script), caller=caller, tool=tool, tool_input=tool_input):
+                done = hook(script, (), payload, cwd=self.tmp)
+                self.assertEqual(done.returncode, code, done.stderr)
+                for text in said:
+                    self.assertIn(text, done.stderr)
+                    self.assertEqual(done.stderr.count("\n"), 1, done.stderr)
+
+    def test_main_key_walls_its_folders(self) -> None:
+        set_main(self.top, key(["internal/", "cmd/"]))
+        self.check([(bash("cat internal/x.go"), 2, "internal/"), (bash("cat cmd/app/main.go"), 2),
+                    (("view_image", {"path": "internal/a.png"}), 2), (bash("cat src/app.py"), 0)])
+
+    def test_no_key_keeps_the_four_folders(self) -> None:
+        self.check([(bash("cat src/app.py"), 2), (bash("cat pkg/src/y.py"), 2), (bash("cat internal/x.go"), 0)])
+
+    def test_bad_config(self) -> None:
+        set_main(self.top, key("internal/"))
+        self.check([(bash("cat docs/guide.md"), 2, "source_dirs"),
+                    (("apply_patch", add_patch(f"*** Add File: {SUITE}/test_x.py")), 2, "source_dirs"),
+                    (("update_plan", {"plan": []}), 0)])
+        self.check([(bash("cat docs/guide.md"), 0)], caller={"agent_id": "a", "agent_type": "implementer"})
+        self.check([(bash("cat docs/guide.md"), 0)], caller={})
+
+    def test_patch_body_is_not_a_path(self) -> None:
+        set_main(self.top, key(["internal/"]))
+        self.check([(("apply_patch", add_patch(f"*** Add File: {SUITE}/test_x.py", '+PATH = "internal/x.go"')), 0)])
+
+    def test_kit_file_rule_still_first(self) -> None:
+        set_main(self.top, key([]))
+        self.check([(("apply_patch", add_patch("*** Update File: .dev-loop/hooks/codex/x.sh")), 2,
+                     "installed dev-loop kit file")])
+
+    def test_main_worktree_of_cwd(self) -> None:
+        set_main(self.top, key(["internal/"]))
+        linked = self.tmp / "w"
+        git_in(self.top, "worktree", "add", "-q", "--detach", str(linked))
+        self.check([(bash(f"cat {self.top}/internal/x.go"), 2, "internal/")], cwd=linked)
+
+    def test_no_kit_cli(self) -> None:
+        folder = self.tmp / "hooks"
+        folder.mkdir()
+        for name in ("acceptance-wall.sh", "deny-path.sh", "git-pin.sh"):
+            shutil.copy(CODEX_ASSETS / "hooks" / name, folder / name)
+        script = folder / CODEX_WALL.name
+        self.check([(bash("cat docs/guide.md"), 0), (bash("cat src/app.py"), 2)], script=script)
+        set_main(self.top, key(["internal/"]))
+        self.check([(bash("cat docs/guide.md"), 2, "source_dirs")], script=script)
 
 
 if __name__ == "__main__":
