@@ -60,7 +60,8 @@ function drive(cwd, input) {
 const CLUSTERS = [{ role: 'heading', name: 'Clusters' }]
 
 function input(dir, routes, extra = {}) {
-  return { base_url: baseUrl, storage_state: null, routes, evidence: join(dir, 'evidence'), entry: 'clusters', ...extra }
+  return { base_url: baseUrl, storage_state: null, routes, evidence: join(dir, 'evidence'), entry: 'clusters',
+    playwright: join(dir, 'node_modules', 'playwright'), ...extra }
 }
 
 test('this repo has Playwright installed: run npm ci && npx playwright install chromium', () => {
@@ -112,11 +113,24 @@ test('drive.mjs loads the storage state into the context', async () => {
   assert.equal(out.routes[0].video, null)
 })
 
-test('drive.mjs finds no Playwright outside the four repo folders', async () => {
+test('drive.mjs fails without a Playwright path in its input', async () => {
   const dir = repo({ link: false })
-  const { code, out } = await drive(dir, input(dir, [{ path: '/ok', names: [] }]))
-  assert.equal(code, 1)
-  assert.match(out.error, /playwright/)
+  const missing = await drive(dir, input(dir, [{ path: '/ok', names: [] }]))
+  assert.equal(missing.code, 1)
+  assert.match(missing.out.error, /^playwright not found/)
+  const absent = input(dir, [{ path: '/ok', names: [] }])
+  delete absent.playwright
+  const none = await drive(dir, absent)
+  assert.equal(none.code, 1)
+  assert.match(none.out.error, /^playwright not found/)
+})
+
+test('drive.mjs loads Playwright from the input path only', async () => {
+  const dir = repo({ link: false })
+  const { code, out } = await drive(dir, input(dir, [{ path: '/ok', names: [] }],
+    { playwright: join(packageRoot, 'node_modules', 'playwright') }))
+  assert.equal(code, 0, JSON.stringify(out))
+  assert.equal(out.routes[0].ok, true)
 })
 
 test('drive.mjs joins a route path to a base_url that has a path prefix', async () => {

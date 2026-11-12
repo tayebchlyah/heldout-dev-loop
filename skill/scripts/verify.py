@@ -304,6 +304,13 @@ def cmd_verify_init(args: argparse.Namespace) -> int:
 PLAYWRIGHT_DIRS = ("node_modules/playwright", "node_modules/@playwright/test",
                    "frontend/node_modules/playwright", "frontend/node_modules/@playwright/test")
 READY_SECONDS = 30
+
+
+def playwright_paths(verify: dict) -> list[str]:
+    if "playwright" not in verify:
+        return list(PLAYWRIGHT_DIRS)
+    return [(PurePosixPath(verify["playwright"]) / "node_modules" / name).as_posix()
+            for name in ("playwright", "@playwright/test")]
 TAIL_LINES = 20
 
 
@@ -424,8 +431,10 @@ def cmd_drive(args: argparse.Namespace) -> int:
     if not selected:
         return emit({"ok": True, "selected": [], "routes": [], "evidence": None, "mode": mode, "head": head}, 0)
 
-    if not any((repo / d).exists() for d in PLAYWRIGHT_DIRS):
-        return emit({"error": f"playwright not found in {', '.join(PLAYWRIGHT_DIRS)}: run npm i -D playwright "
+    paths = playwright_paths(verify)
+    found = next((d for d in paths if (repo / d).exists()), None)
+    if found is None:
+        return emit({"error": f"playwright not found in {', '.join(paths)}: run npm i -D playwright "
                               "&& npx playwright install chromium in the repo root"}, 1)
     url = verify["base_url"]
     if not reachable(url, float(os.environ.get("DEVLOOP_TEST_READY_WAIT", READY_SECONDS))):
@@ -449,6 +458,8 @@ def cmd_drive(args: argparse.Namespace) -> int:
         video.mkdir(parents=True, exist_ok=True)
         payload = {"base_url": url, "storage_state": state, "routes": entry_routes, "evidence": str(evidence),
                    "entry": stem, "video": str(video)}
+        if runner == kit_runner:
+            payload["playwright"] = str(repo / found)
         done = subprocess.run(["node", runner], cwd=repo, input=json.dumps(payload), capture_output=True, text=True)
         try:
             result = json.loads(done.stdout)
