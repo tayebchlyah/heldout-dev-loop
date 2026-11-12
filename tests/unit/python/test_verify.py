@@ -80,12 +80,14 @@ def entry_text(routes: object = None, paths: object = None, script: str | None =
 
 
 def make_repo(root: Path, verify: object = "absent", stacks: str | None = "python, ui",
-              harnesses: list[str] | None = None) -> Path:
+              harnesses: list[str] | None = None, capabilities: tuple[str, ...] | None = ("ui",)) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q")
     config: dict = {"version": "2.2.0", "harnesses": harnesses or ["claude", "codex"]}
     if verify != "absent":
         config["verify"] = verify
+    if capabilities is not None:
+        config["capabilities"] = list(capabilities)
     put(root / "dev-loop.json", json.dumps(config, indent=2) + "\n")
     put(root / "AGENTS.md", f"# AGENTS.md\n\nstacks: {stacks}\n" if stacks else "# AGENTS.md\n")
     return root
@@ -117,15 +119,18 @@ class VerifyCheckTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.verify = load_verify()
 
-    def test_ui_stack_without_verify_names_verify_init(self) -> None:
-        root = make_repo(self.tmp / "app")
+    def test_ui_capability_without_verify_names_verify_init(self) -> None:
+        root = make_repo(self.tmp / "app", stacks=None, capabilities=("ui",))
         self.assertIn(f"- {self.verify.MISSING}", verify_lines(root))
         self.assertIn("verify-init", self.verify.MISSING)
 
-    def test_verify_false_and_python_stack_are_silent(self) -> None:
+    def test_no_ui_capability_is_silent(self) -> None:
         self.assertEqual(verify_lines(make_repo(self.tmp / "a", verify=False)), [])
-        self.assertEqual(verify_lines(make_repo(self.tmp / "b", stacks="python")), [])
-        self.assertEqual(verify_lines(make_repo(self.tmp / "c", stacks=None)), [])
+        self.assertEqual(verify_lines(make_repo(self.tmp / "b", capabilities=("backend",))), [])
+        self.assertEqual(verify_lines(make_repo(self.tmp / "c", capabilities=())), [])
+        out = subprocess.run([sys.executable, str(CHECK_SETUP), "--harness", "claude", "--repo",
+                              str(make_repo(self.tmp / "d", capabilities=None))], capture_output=True, text=True).stdout
+        self.assertNotIn("verify-init", out)
 
     def stub_gh(self, version: str) -> Path:
         folder = self.tmp / f"gh-{version}"

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from board import store, writer  # noqa: E402
 from notes_path import NotesPathError, resolve, worktrees  # noqa: E402
 from devloop import AUDITS, BOARD, claude_home, codex_home, old_layout  # noqa: E402
+import capabilities  # noqa: E402
 import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
@@ -776,6 +777,9 @@ def main() -> int:
     source_failures, source_actions, source_notices = source_dirs.setup(args.repo)
     failures += source_failures
     action_groups += [(line, []) for line in source_actions]
+    cap_failures, cap_actions = capabilities.setup(args.repo)
+    failures += cap_failures
+    action_groups += [(line, []) for line in cap_actions]
 
     notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
     notices += [(line, []) for line in source_notices]

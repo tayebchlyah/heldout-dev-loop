@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
+import capabilities
 from devloop import emit, git
 
 FILL = "<!-- dev-loop: fill -->"
@@ -140,19 +141,11 @@ def read_config(repo: Path) -> dict:
     return config if isinstance(config, dict) else {}
 
 
-def stacks(repo: Path) -> set[str]:
-    try:
-        match = re.search(r"^stacks:\s*(.+)$", (repo / "AGENTS.md").read_text(), re.MULTILINE)
-    except OSError:
-        return set()
-    return {s.strip() for s in match.group(1).split(",")} if match else set()
-
-
 def check(repo: Path) -> list[str]:
     """The check_setup.py lines for the verify skill. dev-loop.json errors themselves are check_project_config's."""
     config = read_config(repo)
     if "verify" not in config:
-        return [MISSING] if "ui" in stacks(repo) else []
+        return [MISSING] if "ui" in capabilities.read(repo) else []
     verify = config["verify"]
     if errors := config_errors(verify):
         return errors

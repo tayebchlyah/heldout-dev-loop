@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import CHECKER, PACKAGE_ROOT, check_setup, checker_env, write
+from support import CHECKER, PACKAGE_ROOT, check_setup, checker_env, ready_config, write
 
 
 class NotesCheckTests(unittest.TestCase):
@@ -198,6 +198,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        ready_config(self.repo)
 
     def install_security_audit(self) -> None:
         for root in (".claude", ".agents"):
