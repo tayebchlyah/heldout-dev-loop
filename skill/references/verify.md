@@ -4,8 +4,8 @@ A project with a UI holds its own verify skill, `.agents/skills/<skill>/`: how a
 
 ## When
 
-- `ui` in `stacks:` of the root `AGENTS.md`: required. `check_setup.py` fails until `dev-loop.json` has a `verify` key.
-- Other stacks: none, or opt in with the `verify` key. `"verify": false` opts out.
+- `ui` in `capabilities` of `dev-loop.json`: required. `check_setup.py` fails until `dev-loop.json` has a `verify` key.
+- No `ui`: none, or opt in with the `verify` key. `"verify": false` opts out.
 
 `verify` in `dev-loop.json`:
 
@@ -13,6 +13,7 @@ A project with a UI holds its own verify skill, `.agents/skills/<skill>/`: how a
 - `base_url`: `http://` or `https://`. A route `path` is joined to it.
 - `setup` (optional): shell commands `drive` runs once, in order, in the repo root, before the browser opens. A CLI login goes here.
 - `storage_state` (optional): repo-relative path to the Playwright storage state file `setup` writes. `drive` loads it into the browser context.
+- `playwright` (optional): the folder, from the repo root (`.` the root), whose `node_modules` holds `playwright` or `@playwright/test`. `verify-init` writes it; `drive` then looks only there.
 
 ## Stage 0: write the skill
 
@@ -90,7 +91,7 @@ Runs after the fix wave, before the acceptance loop. `verify` absent or `false`:
 
 1. Map pass. Add or update the entry of each route the spec declares (Track S: each route the diff changes). Commit it on the feature branch.
 2. The stack is up (Stage 6 start). Run the skill's Launch and Doctor.
-3. `python3 .agents/skills/dev-loop/scripts/devloop.py drive`. It selects each entry whose `paths` match `git diff --name-only <base>...HEAD` (or whose file changed), checks the readiness of `base_url` for 30 s, runs `setup`, then per route: HTTP status below 400, every name visible, no console error or uncaught page error, one full-page JPEG. JSON `ok`, `selected`, `routes`, `evidence` (`drive.json` inside). Exit 1 with `error`: an unreachable `base_url`, a failed `setup` command, no Playwright in the repo (`node_modules/playwright`, `node_modules/@playwright/test`, the same under `frontend/`), a bad config or entry.
+3. `python3 .agents/skills/dev-loop/scripts/devloop.py drive`. It selects each entry whose `paths` match `git diff --name-only <base>...HEAD` (or whose file changed), checks the readiness of `base_url` for 30 s, runs `setup`, then per route: HTTP status below 400, every name visible, no console error or uncaught page error, one full-page JPEG. JSON `ok`, `selected`, `routes`, `evidence` (`drive.json` inside). Exit 1 with `error`: an unreachable `base_url`, a failed `setup` command, no Playwright in the repo (`verify.playwright` set: only that folder; else `node_modules/playwright`, `node_modules/@playwright/test`, the same under `frontend/`), a bad config or entry.
 4. Layout check. One fresh subagent (the route names it) gets the `drive.json` path and this prompt: "Read <path>. For each route with `ok` true, open its `screenshot` and judge the layout only: overlapping or clipped elements, broken or empty regions, unreadable text, a layout that breaks at 1280 by 800. Return a table: entry, path, pass or fail, one-line reason. No other output."
 5. Each failure, drive or layout: product (a fix round through `implementer`), map (fix the entry), or environment (fix it once at its root). Rerun with `drive --since <sha of the fix round start>`: only what the fix touched. A rerun that selects nothing (the fix touched no mapped path, for example seed data) is not a pass: drive the failed entry again (`drive --all`, or rerun the full `drive`), and the report line stays `drive: fail` until that entry passes. The layout subagent then reads only the new screenshots. The Stage 6 progress guard and the stale image rule apply to each rerun.
 6. After the last drive: Cleanup. Report line `drive: pass` or `drive: fail`.

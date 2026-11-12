@@ -30,7 +30,7 @@ What this slice does not do, one line each, at least one. Stage 6 triage drops a
 One row per decision: ID, topic, decision, one line each. Mark each one-way door. The reasoning stays in the framing note.
 
 ## Interfaces and seams
-Public interfaces: names, parameter types, return types. `ui` in stacks: routes and accessible names.
+Public interfaces: names, parameter types, return types. `ui` in `capabilities`: routes and accessible names.
 Seams under test. Prefer an existing seam, the highest one. The ideal number of seams is one.
 Under each seam: `Catches:` one line, what a test at this seam catches. `Misses:` one line, what it cannot see.
 

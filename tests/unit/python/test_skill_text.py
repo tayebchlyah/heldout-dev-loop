@@ -544,3 +544,26 @@ class UsageTextTests(unittest.TestCase):
 
     def test_skill_md_has_no_double_blank_line(self) -> None:
         self.assertNotIn("\n\n\n", (SKILL_ROOT / "SKILL.md").read_text())
+
+class CapabilityTextTests(unittest.TestCase):
+    def test_no_stack_rule(self) -> None:
+        for path in [SKILL_ROOT / "SKILL.md", *sorted((SKILL_ROOT / "references").glob("*.md"))]:
+            text = path.read_text()
+            self.assertNotIn("in stacks", text, path.name)
+            self.assertNotIn("in `stacks:`", text, path.name)
+
+    def test_stage_0_capabilities(self) -> None:
+        text = (SKILL_ROOT / "SKILL.md").read_text()
+        stage0 = text[text.index("## 0 Bootstrap"):text.index("## 1 Frame")]
+        for word in ('"capabilities"', "`ui`", "`backend`"):
+            self.assertIn(word, stage0)
+
+    def test_contract_task_and_stale_rule(self) -> None:
+        text = (SKILL_ROOT / "SKILL.md").read_text()
+        self.assertIn("`ui` and `backend` both in `capabilities`: plan task 1 is the contract", text)
+        self.assertIn("after any change under a `source_dirs` entry", text)
+
+    def test_verify_md_playwright(self) -> None:
+        text = (SKILL_ROOT / "references" / "verify.md").read_text()
+        self.assertIn("`ui` in `capabilities`", text)
+        self.assertIn("`playwright` (optional)", text)

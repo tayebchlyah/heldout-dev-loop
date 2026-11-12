@@ -100,7 +100,7 @@ class SkillContractTests(unittest.TestCase):
         required = [
             "subagent_type: implementer",
             "tests/acceptance/",
-            "pytest tests/acceptance -q --tb=no",
+            "devloop.py acceptance [--failed]",
             "superpowers:subagent-driven-development",
             "mattpocock-skills:pr",
             "gh pr merge --rebase",
@@ -141,7 +141,7 @@ class SkillContractTests(unittest.TestCase):
             "Never rerun it",
             "Progress guard",
             "Never ship red",
-            "--last-failed",
+            "no other runner",
             "GATE_SHA",
             "`commands.acceptance_failed`",
         ]:
