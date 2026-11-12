@@ -24,6 +24,19 @@
     "CHANGELOG.md",
     "tests/unit/python/fixtures/git-guard-asks.json"
   ],
+  "source_dirs": [
+    "skill/",
+    "skills/",
+    "lib/",
+    "bin/",
+    "claude/",
+    "codex/",
+    "tests/unit/",
+    ".agents/",
+    ".claude/",
+    ".codex/",
+    ".dev-loop/"
+  ],
   "merge_human_paths": [
     ".github/*",
     "scripts/*",
