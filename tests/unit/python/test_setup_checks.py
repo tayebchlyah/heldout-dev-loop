@@ -14,6 +14,7 @@ from unittest import mock
 from support import CHECKER, ROOT, check_setup, checker_env, write
 
 from seal.skills import NAMES_ERROR  # noqa: E402
+import security_skill  # noqa: E402
 
 
 class WalledSkillsConfigTests(unittest.TestCase):
@@ -154,6 +155,10 @@ class SecurityAuditCheckTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
+
+    def test_security_skill_names_stay_on_check_setup(self) -> None:
+        self.assertIs(check_setup.security_audit_groups, security_skill.security_audit_groups)
+        self.assertIs(check_setup.tree_id, security_skill.tree_id)
 
     def test_missing_skill_names_the_commit(self) -> None:
         heading = f"Install the Cloudflare security-audit skill at {self.COMMIT}: {self.INSTALL}"
