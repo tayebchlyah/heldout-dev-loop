@@ -604,6 +604,8 @@ class MergeCheckTests(MergeCheckCase):
             ("branch drops the key", key(["internal/"]), None, True),
             ("branch adds an empty list", json.dumps({"version": "0.0.0"}), key([]), True),
             ("equal value", key(["internal/"]), key(["internal/"]), False),
+            ("branch sets null on an absent key", json.dumps({"version": "0.0.0"}), key(None), True),
+            ("branch deletes the file, main empty list", key([]), "", True),
         ]
         for name, main, branch, changed in rows:
             with self.subTest(name):
@@ -613,6 +615,9 @@ class MergeCheckTests(MergeCheckCase):
                 wt = self.feature()
                 if branch is None:
                     self.commit(wt, "dev-loop.json", json.dumps({"version": "0.0.0"}))
+                elif branch == "":
+                    git(wt, "rm", "-q", "dev-loop.json")
+                    git(wt, "commit", "-q", "-m", "drop config")
                 else:
                     self.commit(wt, "dev-loop.json", branch + "\n")
                 self.gate_green(wt, self.head(wt))
