@@ -100,6 +100,11 @@ class SourceWallTests(unittest.TestCase):
                        (bash(r, 'echo "$(cat internal/x.go)"'), True), (bash(r, 'cat "$ROOT"/internal/x.go'), True),
                        (bash(r, "cat */internal/x.go"), True),
                        (bash(r, 'cat "$(git rev-parse --show-toplevel)/internal/x.go"'), True),
+                       (bash(r, "bash -c 'cat in\"\"ternal/x.go'"), True),
+                       (bash(r, "bash -c 'cd int\"\"ernal; cat x.go'"), True),
+                       (bash(r, "sh -c \"cat in''ternal/x.go\""), True),
+                       (bash(r, 'bash -c "cat in\\\\ternal/x.go"'), True),
+                       (bash(r, "bash -c \"bash -c 'cat in\\\"\\\"ternal/x.go'\""), True),
                        (bash(r, 'echo "$ROOT"/docs/guide.md'), False)])
 
     def test_suite_seal_and_heredoc_exceptions(self) -> None:
