@@ -1,0 +1,4 @@
+{
+  "version": "0.0.0",
+  "mutation": [{"path": "api/", "adapter": "mutago", "critical": ["core/*", "!core/*_test.go"]}]
+}

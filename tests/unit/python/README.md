@@ -50,6 +50,7 @@ One file per subject. A new test file adds its line here.
 - `test_mutation_rerun.py`: `devloop.py mutation --entry` and `--only` (rerun), the integrity check.
 - `test_mutation_mutmut.py`, `fixtures/mutation/mutmut/`: the mutmut adapter `mutation/mutmut.py` and `mutation/adapter.py`: units, `not_covered`, runner, recorded `results` and `show`, protocol, setup errors.
 - `test_mutation_stryker.py`, `fixtures/mutation/stryker/`: the StrykerJS adapter `mutation/stryker.py`: units, `--mutate` ranges, recorded `mutation.json` statuses, `diff`, `only`, setup refusals.
+- `test_mutation_mutago.py`, `fixtures/mutation/mutago/`: the mutago adapter `mutation/mutago.py`: Go units, recorded `report.json` statuses, pinned install, run command, git settings, `only`, report file cleanup, setup refusals.
 - `test_mutation_canary.py`: `scripts/mutation_canary.sh` (pass, fail, no temp folder left) and the shape of `mutation-canary.yml`.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
