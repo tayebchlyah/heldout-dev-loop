@@ -8,19 +8,23 @@ sys.dont_write_bytecode = True
 
 import argparse
 import json
+import os
 import re
+import shlex
 import subprocess
 import threading
 import unicodedata
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
+import notes_path
 import source_dirs
 import stacks
 from devloop import emit
 
 ADAPTERS: tuple[str, ...] = ("mutmut", "stryker", "mutago")
 ENTRY_KEYS = frozenset({"path", "critical", "adapter", "command"})
+TOOL_CONFIG = {"mutmut": "pyproject.toml", "stryker": "stryker.config.json", "mutago": "go.mod"}
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92, '"': 34}
 DIFF = ("diff", "--no-ext-diff", "--no-color", "-U0", "-M", "--diff-filter=AMR", "--src-prefix=a/",
@@ -270,8 +274,11 @@ def _call(folder: Path, argv: list[str], request: dict) -> tuple[int, bytes, str
 
     def copy() -> None:
         for raw in proc.stderr:
-            sys.stderr.buffer.write(raw)
-            sys.stderr.buffer.flush()
+            try:
+                sys.stderr.buffer.write(raw)
+                sys.stderr.buffer.flush()
+            except (OSError, AttributeError):
+                pass
             if line := raw.decode("utf-8", errors="replace").strip():
                 last[0] = line
 
@@ -402,6 +409,92 @@ def run_entry(repo: Path, entry: dict, request: dict) -> dict:
     return {"status": "survivors" if _needs_test(output) else "pass", "cause": None, "output": output}
 
 
+def _mutation_at(repo: Path, rev: str | None) -> str:
+    if rev is None:
+        file = repo / "dev-loop.json"
+        raw = file.read_bytes() if file.is_file() else None
+    else:
+        shown = _git(repo, "show", f"{rev}:dev-loop.json")
+        raw = shown.stdout if shown.returncode == 0 else None
+    if raw is None:
+        return "false"
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return repr(raw)
+    return json.dumps(data.get("mutation", False), sort_keys=True) if isinstance(data, dict) else repr(raw)
+
+
+def _blob(repo: Path, rev: str | None, path: str) -> str | None:
+    if rev is None:
+        if not (repo / path).is_file():
+            return None
+        done = _git(repo, "hash-object", "--", path)
+    else:
+        done = _git(repo, "rev-parse", "--verify", "--quiet", f"{rev}:{path}")
+    return done.stdout.decode().strip() if done.returncode == 0 else None
+
+
+def _watched(repo: Path, entries: list[dict]) -> list[str]:
+    root = repo.resolve()
+    paths = []
+    for entry in entries:
+        folder = "" if entry["path"] == "." else entry["path"]
+        if "adapter" in entry:
+            paths.append(folder + TOOL_CONFIG[entry["adapter"]])
+            continue
+        try:
+            word = shlex.split(entry["command"])[0]
+        except (ValueError, IndexError):
+            continue
+        rel = os.path.relpath(os.path.normpath(root / folder / word), root)
+        if not rel.startswith(".."):
+            paths.append(rel)
+    return paths
+
+
+def integrity(repo: Path, head: str, entries: list[dict], selected: dict[str, list[str]]) -> str | None:
+    ref = notes_path.main_ref(repo)
+    if ref is None:
+        return "no main ref (origin/main or main)"
+    main = ref.removeprefix("refs/remotes/").removeprefix("refs/heads/")
+    reads = [("dev-loop.json mutation", lambda rev: _mutation_at(repo, rev))]
+    reads += [(path, lambda rev, path=path: _blob(repo, rev, path)) for path in _watched(repo, entries)]
+    for left, right, shown in ((ref, head, (main, head)), (head, None, (head, "the working tree"))):
+        for name, read in reads:
+            if read(left) != read(right):
+                return f"{name} differs between {shown[0]} and {shown[1]}"
+    for folder, files in selected.items():
+        for file in files:
+            path = file if folder == "." else folder + file
+            if _blob(repo, head, path) != _blob(repo, None, path):
+                return f"{path} differs between {head} and the working tree"
+    return None
+
+
+def _results(repo: Path, base: str, head: str, entries: list[dict], selected: list[dict], only: list[str] | None,
+             run: bool = True) -> list[dict]:
+    files = {e["path"]: list(e["files"]) for e in selected}
+    results: list[dict] = []
+    ran = False
+    for entry in selected:
+        if not entry["files"]:
+            results.append({"status": "pass", "cause": None, "output": None})
+            continue
+        if cause := integrity(repo, head, entries, files):
+            return _failed(results if ran else [], selected, cause)
+        request = {"protocol": 1, "run": run, "base": base, "head": head, "files": entry["files"], "only": only}
+        results.append(run_entry(repo, entry, request))
+        ran = True
+        if cause := integrity(repo, head, entries, files):
+            return _failed(results[:-1], selected, cause)
+    return results
+
+
+def _failed(kept: list[dict], selected: list[dict], cause: str) -> list[dict]:
+    return kept + [{"status": "failed", "cause": _cause(cause), "output": None}] * (len(selected) - len(kept))
+
+
 ORDER = ("setup", "failed", "survivors", "pass")
 
 
@@ -460,14 +553,8 @@ def _report(base: str, head: str, selected: list[dict], results: list[dict], out
     return "\n".join(lines)
 
 
-def _run(repo: Path, base: str, head: str, selected: list[dict], outside: list[str], none: list[str]) -> int:
-    results = []
-    for entry in selected:
-        if not entry["files"]:
-            results.append({"status": "pass", "cause": None, "output": None})
-            continue
-        request = {"protocol": 1, "run": True, "base": base, "head": head, "files": entry["files"], "only": None}
-        results.append(run_entry(repo, entry, request))
+def _emit_run(base: str, head: str, selected: list[dict], results: list[dict], outside: list[str],
+              none: list[str]) -> int:
     rows = [{"path": e["path"], "status": r["status"], "cause": r["cause"],
              "mutants": len(r["output"]["mutants"]) if r["output"] else 0,
              "need_tests": len(_needs_test(r["output"])) if r["output"] else 0} for e, r in zip(selected, results)]
@@ -497,13 +584,34 @@ def cmd_mutation(args: argparse.Namespace) -> int:
     if rule:
         return _setup(f"mutation in dev-loop.json is invalid: {rule}")
     entries = value or []
+    if cause := _check_entries(repo, head, entries):
+        return _setup(cause)
+    if args.entry is not None and args.entry not in [e["path"] for e in entries]:
+        return emit({"error": f"--entry: {args.entry} is not the path of a mutation entry"}, 2)
+    if args.only and args.entry is None and len(entries) != 1:
+        return emit({"error": "--only needs --entry, or a mutation list of one entry"}, 2)
     if args.run_adapters and not entries:
         return emit({"status": "pass", "base": base, "head": head, "report": "mutation: off", "entries": [],
                      "outside": [], "none": []}, 0)
-    if cause := _check_entries(repo, head, entries):
-        return _setup(cause)
     selected, outside = _select(entries, changed_lines(repo, base, head) if entries else {})
+    none = _uncovered(config, entries) if entries else []
+    target = args.entry or (entries[0]["path"] if args.only else None)
+    if target is not None:
+        entries = [e for e in entries if e["path"] == target]
+        selected = [e for e in selected if e["path"] == target]
+    if args.only:
+        if not selected[0]["files"]:
+            return emit({"error": f"--only: entry {target} has no selected file"}, 2)
+        probe = _results(repo, base, head, entries, selected, args.only, run=False)
+        if probe[0]["output"] is None:
+            if args.run_adapters:
+                return _emit_run(base, head, selected, probe, outside, none)
+            return emit({"status": probe[0]["status"], "cause": probe[0]["cause"]}, 1)
+        units = probe[0]["output"]["units"]
+        if missing := [u for u in args.only if u not in units]:
+            return emit({"error": f"--only: {missing[0]} is not a unit of entry {target}"}, 2)
+        selected[0]["units"] = units
     if args.run_adapters:
-        return _run(repo, base, head, selected, outside, _uncovered(config, entries))
-    return emit({"base": base, "head": head, "entries": selected, "outside": outside,
-                 "none": _uncovered(config, entries) if entries else []}, 0)
+        results = _results(repo, base, head, entries, selected, args.only)
+        return _emit_run(base, head, selected, results, outside, none)
+    return emit({"base": base, "head": head, "entries": selected, "outside": outside, "none": none}, 0)

@@ -46,6 +46,7 @@ One file per subject. A new test file adds its line here.
 - `test_source_wall.py`: `source-wall`: modes and refs, an unreadable main ref file, path forms, cd and pushd moves, worktree tops, quoted, unresolved and absolute words, suite, seal and heredoc exceptions, Codex shapes.
 - `mutation_fixtures.py`, `test_mutation_select.py`: the mutation test repo, adapter script and `devloop.py mutation` runner; `mutation` selection: config at head, globs, ranges, owner entry, off, invalid, `none`.
 - `test_mutation_classify.py`: `mutation.run` `classify`: message or decision per file extension.
-- `test_mutation_run.py`, `fixtures/mutation/report.txt`: `devloop.py mutation --run`: adapter request and cwd, exit codes, output faults, unread stdin, statuses, the golden report.
+- `test_mutation_run.py`, `fixtures/mutation/report.txt`: `devloop.py mutation --run`: adapter request and cwd, exit codes, output faults, unread stdin, closed kit stderr, statuses, the golden report.
+- `test_mutation_rerun.py`: `devloop.py mutation --entry` and `--only` (rerun), the integrity check.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
