@@ -139,7 +139,35 @@ class StackDetectTests(unittest.TestCase):
             preset = by[entry["preset"]]
             with self.subTest(preset=entry["preset"]):
                 self.assertEqual(entry["commands"], {"lint": preset["lint"], "typecheck": preset["typecheck"], "test": preset["test"],
-                                                     "junit": {"command": preset["junit"]["command"], "package": preset["junit"]["package"]}})
+                                                     "junit": {key: preset["junit"][key] for key in ("command", "files", "package", "setup")}})
+
+    def test_partly_claimed_folder_is_unknown(self) -> None:
+        cases = [({"pom.xml": "", "src/main/java/A.java": "", "src/it/java/FooIT.java": ""}, ["src/"]),
+                 ({"pyproject.toml": "", "uv.lock": "", "src/pkg/a.py": "", "tests/unit/test_a.py": "",
+                   "tests/integration/test_b.py": ""}, ["tests/"]),
+                 ({"pom.xml": "", "src/main/java/A.java": "", "src/test/java/ATest.java": ""}, [])]
+        for files, unknown in cases:
+            with self.subTest(files=sorted(files)):
+                self.assertEqual(self.detect(self.tree(files))["unknown"], unknown)
+
+    def test_capabilities_start_from_the_setup_proposal(self) -> None:
+        react = '{"dependencies": {"react": "1"}}'
+        cases = [({"package.json": react}, ["ui"]),
+                 ({"package.json": "{}", "AGENTS.md": "stacks: ui\n"}, ["ui"]),
+                 ({"package.json": react, "AGENTS.md": "stacks: ui\n", "compose.yml": ""}, ["ui", "backend"]),
+                 ({"package.json": react, "compose.yml": ""}, ["ui", "backend"]),
+                 ({"go.mod": "", "AGENTS.md": "stacks: ui\n"}, ["ui"])]
+        for files, caps in cases:
+            with self.subTest(files=sorted(files)):
+                self.assertEqual(self.detect(self.tree(files))["capabilities"], caps)
+
+    def test_git_ignored_folders_are_skipped(self) -> None:
+        repo = self.tree({".gitignore": "target/\ndist/\n", "Cargo.toml": "", "target/debug/x.o": "",
+                          "dist/package.json": "{}", "docs/a.md": ""})
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        out = self.detect(repo)
+        self.assertEqual(self.units(out), [(".", "cargo", "root")])
+        self.assertEqual(out["unknown"], ["docs/"])
 
     def test_bad_package_json(self) -> None:
         for text in ("{not json", '{"dependencies": []}', "[]", '{"dependencies": {"react": "1"'):
