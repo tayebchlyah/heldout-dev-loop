@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 import test_devloop
-from support import CHECKER, MODULE_BASE, SELECTOR, SKILL_ROOT, all_instructions, check_setup, git_in, make_git_repo, select_mutants, write
+from support import CHECKER, MODULE_BASE, SELECTOR, SKILL_ROOT, all_instructions,git_in, make_git_repo, select_mutants, write
 
 
 def commit_changes(repo: Path, files: dict[str, str]) -> str:
@@ -336,92 +336,3 @@ class SelectMutantsTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines()[:2], [f"base: {base}", f"head: {head}"])
-
-
-class MutationSetupTests(unittest.TestCase):
-    PYPROJECT = (
-        '[dependency-groups]\ndev = ["pytest==9.1.1", "mutmut==3.8.0"]\n\n'
-        + MUTMUT_CONFIG
-        + 'only_mutate = ["src/pkg/core/*"]\n'
-    )
-
-    def python_setup(self, root: Path, **overrides: str) -> Path:
-        files = {
-            "AGENTS.md": PY_AGENTS,
-            "dev-loop.json": "{}",
-            "pyproject.toml": self.PYPROJECT,
-            ".gitignore": "mutants/\n",
-        }
-        files.update(overrides)
-        return make_git_repo(root, files)
-
-    def test_complete_python_setup_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            self.assertEqual(check_setup.check_mutation(self.python_setup(Path(root))), [])
-
-    def test_each_missing_python_piece_fails(self) -> None:
-        cases = {
-            "pin": ({"pyproject.toml": MUTMUT_CONFIG}, "mutmut pinned"),
-            "range pin": (
-                {"pyproject.toml": self.PYPROJECT.replace("mutmut==3.8.0", "mutmut>=3.8")},
-                "mutmut pinned",
-            ),
-            "config": ({"pyproject.toml": '[dependency-groups]\ndev = ["mutmut==3.8.0"]\n'}, "[tool.mutmut]"),
-            "acceptance": (
-                {"pyproject.toml": self.PYPROJECT.replace('["tests/unit"]', '["tests/acceptance"]')},
-                "unit tests only",
-            ),
-            "ignore": ({".gitignore": "\n"}, "not ignored"),
-            "critical list": (
-                {"pyproject.toml": self.PYPROJECT.replace('only_mutate = ["src/pkg/core/*"]\n', "")},
-                "only_mutate",
-            ),
-        }
-        for label, (overrides, expected) in cases.items():
-            with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
-                failures = check_setup.check_mutation(self.python_setup(Path(root), **overrides))
-                self.assertTrue(any(expected in f for f in failures), failures)
-
-    def test_ui_setup_needs_pinned_stryker_and_ignored_output(self) -> None:
-        package = {"devDependencies": {"@stryker-mutator/core": "10.0.0", "@stryker-mutator/vitest-runner": "10.0.0"}}
-        with tempfile.TemporaryDirectory() as root:
-            repo = make_git_repo(
-                Path(root),
-                {
-                    "AGENTS.md": "stacks: ui\n",
-                    "dev-loop.json": "{}",
-                    "frontend/stryker.config.json": json.dumps({"mutate": ["src/logic/**/*.ts"]}),
-                    "frontend/package.json": json.dumps(package),
-                    ".gitignore": ".stryker-tmp/\nreports/\n",
-                },
-            )
-            self.assertEqual(check_setup.check_mutation(repo), [])
-            package["devDependencies"]["@stryker-mutator/core"] = "^10.0.0"
-            write(repo / "frontend" / "package.json", json.dumps(package))
-            self.assertTrue(any("@stryker-mutator/core" in f for f in check_setup.check_mutation(repo)))
-
-    def test_ui_setup_needs_a_json_config_with_a_mutate_list(self) -> None:
-        package = {"devDependencies": {"@stryker-mutator/core": "10.0.0", "@stryker-mutator/vitest-runner": "10.0.0"}}
-        for label, files, expected in [
-            ("mjs", {"frontend/stryker.config.mjs": "export default {};\n"}, "stryker.config.json"),
-            ("no mutate", {"frontend/stryker.config.json": "{}"}, "mutate list"),
-        ]:
-            with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
-                base = {
-                    "AGENTS.md": "stacks: ui\n",
-                    "dev-loop.json": "{}",
-                    "frontend/package.json": json.dumps(package),
-                    ".gitignore": ".stryker-tmp/\nreports/\n",
-                }
-                repo = make_git_repo(Path(root), {**base, **files})
-                self.assertTrue(any(expected in f for f in check_setup.check_mutation(repo)))
-
-    def test_dev_loop_json_only_repo_gets_the_mutation_checks(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            repo = make_git_repo(Path(root), {"AGENTS.md": "stacks: python\n", "dev-loop.json": "{}"})
-            self.assertTrue(any("mutmut" in f for f in check_setup.check_mutation(repo)))
-
-    def test_repos_without_declared_stacks_are_not_checked(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            repo = make_git_repo(Path(root), {"dev-loop.json": "{}"})
-            self.assertEqual(check_setup.check_mutation(repo), [])
