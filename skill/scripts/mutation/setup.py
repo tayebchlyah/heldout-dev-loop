@@ -7,6 +7,7 @@ import sys
 sys.dont_write_bytecode = True
 
 import json
+import os
 import re
 import shlex
 import shutil
@@ -20,11 +21,13 @@ from mutation import run
 FAMILIES = {"python": "mutmut", "js": "stryker", "go": "mutago"}
 TOOL_FILES = (("pyproject.toml", "mutmut"), ("stryker.config.json", "stryker"), ("go.mod", "mutago"))
 STRYKER_CONFIGS = tuple(f"stryker.{kind}.{ext}" for kind in ("config", "conf") for ext in ("mjs", "js", "cjs", "json"))
-EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
+EXACT_PIN = re.compile(r"^mutmut(\[[^\]]*\])?==\d+(\.\d+)*$")
+POETRY_PIN = re.compile(r"^(==)?\d+\.\d+\.\d+$")
 EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 RANGE = re.compile(r":\d+(:\d+)?-\d+(:\d+)?$")
 GO_VERSION = re.compile(r"\bgo(\d+)\.(\d+)(?:\.(\d+))?")
 GO_MIN = (1, 26, 6)
+GO_TIMEOUT = 30
 CORE = "@stryker-mutator/core"
 
 
@@ -64,19 +67,21 @@ def _get(data: object, *keys: str) -> object:
 def _pinned(config: dict) -> bool:
     listed = [_get(config, "dependency-groups", "dev"), _get(config, "tool", "uv", "dev-dependencies"),
               _get(config, "project", "optional-dependencies", "dev")]
-    if any(isinstance(d, str) and EXACT_PIN.match(d.replace(" ", "")) for deps in listed if isinstance(deps, list)
-           for d in deps):
+    if any(isinstance(d, str) and EXACT_PIN.match(d.split(";")[0].replace(" ", "")) for deps in listed
+           if isinstance(deps, list) for d in deps):
         return True
     poetry = [_get(config, "tool", "poetry", "group", "dev", "dependencies", "mutmut"),
               _get(config, "tool", "poetry", "dev-dependencies", "mutmut")]
-    return any(isinstance(v, str) and EXACT_VERSION.match(v) for v in poetry)
+    versions = [_get(v, "version") if isinstance(v, dict) else v for v in poetry]
+    return any(isinstance(v, str) and POETRY_PIN.match(v.replace(" ", "")) for v in versions)
 
 
 def _mutmut(repo: Path, rel: str) -> list[str]:
     config = _toml(repo / rel / "pyproject.toml")
     if config is None:
         return [f"no valid pyproject.toml in {rel or '.'}"]
-    gaps = [] if _pinned(config) else ["no exact mutmut pin: add mutmut==<version> to the dev dependencies"]
+    pinned = _pinned(config) or (rel != "" and _pinned(_toml(repo / "pyproject.toml") or {}))
+    gaps = [] if pinned else ["no exact mutmut pin: add mutmut==<version> to the dev dependencies"]
     mutmut = _get(config, "tool", "mutmut")
     if not isinstance(mutmut, dict):
         gaps.append(f"no [tool.mutmut] in {rel}pyproject.toml")
@@ -130,8 +135,9 @@ def _mutago(repo: Path, rel: str) -> list[str]:
     if go is None:
         return gaps + ["go not found on PATH: install Go 1.26.6 or later"]
     try:
-        text = subprocess.run([go, "version"], cwd=repo / rel, capture_output=True, text=True, check=False).stdout
-    except OSError:
+        text = subprocess.run([go, "version"], cwd=repo / rel, capture_output=True, text=True, check=False,
+                              timeout=GO_TIMEOUT, env={**os.environ, "GOTOOLCHAIN": "local"}).stdout
+    except (OSError, subprocess.TimeoutExpired):
         text = ""
     match = GO_VERSION.search(text)
     if not match or tuple(int(n or 0) for n in match.groups()) < GO_MIN:
@@ -201,7 +207,7 @@ def _from_stacks(listed: object) -> list[tuple[str, str]]:
 def _from_files(repo: Path, tracked: list[str]) -> list[tuple[str, str]]:
     try:
         match = re.search(r"^stacks:\s*(.+)$", (repo / "AGENTS.md").read_text(encoding="utf-8"), re.MULTILINE)
-    except OSError:
+    except (OSError, ValueError):
         match = None
     go = match is not None and "go" in {s.strip() for s in match.group(1).split(",")}
     chosen: dict[str, str] = {}

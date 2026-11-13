@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,8 +77,18 @@ class MutationSetup(unittest.TestCase):
         unpinned = self.failures(mutmut, {"a/pyproject.toml": MUTMUT, **ignore})
         self.assertEqual(len(unpinned), 1, unpinned)
         self.assertIn("mutmut==", unpinned[0])
-        poetry = '[tool.poetry.group.dev.dependencies]\nmutmut = "3.8.1"\n\n' + MUTMUT
-        self.assertEqual(self.failures(mutmut, {"a/pyproject.toml": poetry, **ignore}), [])
+        for pin in ('[tool.poetry.group.dev.dependencies]\nmutmut = "3.8.1"\n',
+                    '[tool.poetry.group.dev.dependencies]\nmutmut = "==3.8.1"\n',
+                    '[tool.poetry.dev-dependencies]\nmutmut = {version = "3.8.1"}\n',
+                    '[dependency-groups]\ndev = [\'mutmut==3.8.1 ; python_version>="3.12"\']\n',
+                    '[dependency-groups]\ndev = ["mutmut[x]==3.8.1"]\n'):
+            with self.subTest(pin=pin):
+                self.assertEqual(self.failures(mutmut, {"a/pyproject.toml": pin + "\n" + MUTMUT, **ignore}), [])
+        root_pin = {"pyproject.toml": '[dependency-groups]\ndev = ["mutmut==3.8.1"]\n', "a/pyproject.toml": MUTMUT}
+        self.assertEqual(self.failures(mutmut, {**root_pin, **ignore}), [])
+        ranged = self.failures(mutmut, {"a/pyproject.toml": PINNED.replace("mutmut==3.8.1", "mutmut>=3.8"), **ignore})
+        self.assertEqual(len(ranged), 1, ranged)
+        self.assertIn("mutmut==", ranged[0])
         for broken in (PINNED.replace('source_paths = ["src"]\n', ""), PINNED.replace("tests/unit", "tests/acceptance")):
             with self.subTest(broken=broken):
                 self.assertEqual(len(self.failures(mutmut, {"a/pyproject.toml": broken, **ignore})), 1)
@@ -115,20 +126,26 @@ class MutationSetup(unittest.TestCase):
         bins = self.root / "bins"
         stub = bins / "go"
 
-        def run(found: str | None, files: dict[str, str] = module) -> list[str]:
+        git = Path(shutil.which("git") or "git").resolve().parent
+
+        def run(found: str | None, files: dict[str, str] = module, pause: str = "0") -> list[str]:
             stub.unlink(missing_ok=True)
             if found:
-                write(stub, f"#!/bin/sh\necho 'go version {found} darwin/arm64'\n")
+                write(stub, f"#!/bin/sh\n[ {pause} = 0 ] || exec /bin/sleep {pause}\n[ \"$GOTOOLCHAIN\" = local ] || exit 1\n"
+                            f"echo 'go version {found} darwin/arm64'\n")
                 stub.chmod(0o755)
-            with mock.patch.dict(os.environ, {"PATH": f"{bins}{os.pathsep}/usr/bin{os.pathsep}/bin"}):
+            with mock.patch.dict(os.environ, {"PATH": f"{bins}{os.pathsep}{git}", "GOTOOLCHAIN": "auto"}):
                 return self.failures(mutago, files)
 
         bins.mkdir()
-        self.assertEqual(len(run("go1.26.6", {"a/m.go": "package a\n"})), 1)
-        self.assertEqual(len(run("go1.26.5")), 1)
-        self.assertEqual(len(run(None)), 1)
+        self.assertEqual(run("go1.26.6", {"a/m.go": "package a\n"}), ["mutation entry a/: no go.mod in the entry folder"])
+        self.assertEqual(run("go1.26.5"), ["mutation entry a/: go version go1.26.5: install Go 1.26.6 or later"])
+        self.assertEqual(run(None), ["mutation entry a/: go not found on PATH: install Go 1.26.6 or later"])
         self.assertEqual(run("go1.26.6"), [])
         self.assertEqual(run("go1.27.0"), [])
+        with mock.patch.object(setup, "GO_TIMEOUT", 0.5):
+            self.assertEqual(run("go1.27.0", pause="5"),
+                             ["mutation entry a/: go version unknown: install Go 1.26.6 or later"])
 
     def test_workflow_names_select_mutants(self) -> None:
         flow = {".github/workflows/m.yml": "run: python3 select_mutants.py --head HEAD\n"}
@@ -154,6 +171,9 @@ class MutationSetup(unittest.TestCase):
         self.assertEqual(notices(go),
                          ([], [(offer([{"path": "api/", "adapter": "mutago", "critical": []}]), ["list the critical files"])]))
         self.assertEqual(notices({"api/go.mod": "module api\n"}), ([], []))
+        latin = self.repo({"dev-loop.json": config(), "api/go.mod": "module api\n"})
+        (latin / "AGENTS.md").write_bytes(b"stacks: go\n\xff\n")
+        self.assertEqual(setup.lines(latin), ([], []))
         self.assertEqual(notices({"README.md": "x\n"}), ([], []))
         self.assertEqual(notices(backend, False), ([], []))
 
