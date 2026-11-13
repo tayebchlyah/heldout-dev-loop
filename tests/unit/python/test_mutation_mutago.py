@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import json
 import os
@@ -18,17 +17,12 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT, write  # noqa: E402
+from mutation_fixtures import load_adapter  # noqa: E402
 
-FOLDER = ROOT / "skill" / "scripts" / "mutation"
-SCRIPT = FOLDER / "mutago.py"
 RECORDED = HERE / "fixtures" / "mutation" / "mutago" / "report.json"
 PRICE = ROOT / "tests" / "fixtures" / "mutation" / "mutago" / "head" / "api" / "core" / "price.go"
-if str(FOLDER) not in sys.path:
-    sys.path.append(str(FOLDER))
-_spec = importlib.util.spec_from_file_location("mutation_mutago", SCRIPT)
-assert _spec is not None and _spec.loader is not None
-mutago = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(mutago)
+mutago = load_adapter("mutago")
+SCRIPT = Path(mutago.__file__)
 
 SOURCE = """package a
 
