@@ -99,6 +99,7 @@ class MutationSelect(unittest.TestCase):
             ("src/**/core/*.py", ["src/core/a.py", "src/x/y/core/a.py"], ["src/core/x/a.py", "src/a.py"]),
             ("Core/*", [], ["core/a.py"]),
             ("core/*", ["core/a.py"], ["core/x/a.py"]),
+            ("app/[id]/page.tsx", ["app/[id]/page.tsx"], ["app/i/page.tsx"]),
         ]
         for glob, selected, outside in cases:
             with self.subTest(glob):
