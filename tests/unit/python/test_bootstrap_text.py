@@ -36,6 +36,29 @@ class BootstrapTextTests(unittest.TestCase):
         self.assertNotIn("empty `CODING_STANDARDS.md`", BOOT)
         self.assertNotIn("in stacks", BOOT)
 
+    def test_gate_runs_every_touched_unit_and_exits_once(self) -> None:
+        gate = BOOT[BOOT.index("\n## Gate\n"):BOOT.index("\n## Services")]
+        for word in ("every unit", "does not stop the other units", "worst exit", "at the end"):
+            with self.subTest(word=word):
+                self.assertIn(word, gate)
+        self.assertNotIn("then exit with the kept exit", gate)
+
+    def test_field_sources_named(self) -> None:
+        self.assertIn("`stack-detect` gives `commands`", BOOT)
+        self.assertRegex(BOOT, r"`layout`[^.]*`presets\.json`")
+
+    def test_units_write_stack_detect_capabilities_proposal(self) -> None:
+        units = BOOT[BOOT.index("\n## Units\n"):BOOT.index("\n## Gate")]
+        self.assertIn('the `stack-detect` proposal for `"capabilities"`', units)
+        self.assertNotIn("`check_setup.py` proposes one too", units)
+
+    def test_coverage_line_needs_source_dirs(self) -> None:
+        self.assertIn("coverage line fires when `source_dirs` is present and misses a unit", BOOT)
+        self.assertNotIn("fails while `source_dirs` does not cover", BOOT)
+
+    def test_tools_as_dev_dependencies(self) -> None:
+        self.assertIn("lint, type check and test tools", BOOT)
+
     def test_agents_stacks_line_mapping(self) -> None:
         line = next(line for line in BOOT.splitlines() if "`stacks:` line" in line)
         for word in ("`python` family", "`go` family", "`ui`", "Other families add no name"):
