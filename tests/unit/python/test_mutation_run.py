@@ -134,7 +134,8 @@ class MutationRun(unittest.TestCase):
         ]
         for name, script, status, cause in cases:
             with self.subTest(name):
-                code, out, _ = self.run_case([ENTRY], {"app/adapt": script, "app/core/a.py": "a\n"},
+                entry = {**ENTRY, "command": "exec ./adapt"} if name == "signal" else ENTRY
+                code, out, _ = self.run_case([entry], {"app/adapt": script, "app/core/a.py": "a\n"},
                                              {"app/core/a.py": "b\n"})
                 self.assertEqual((code, out["status"], out["entries"][0]["status"]), (1, status, status))
                 self.assertEqual(out["entries"][0]["cause"], cause)
