@@ -1,0 +1,10 @@
+{
+  "name": "canary-web",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "vitest": "4.1.12"
+  }
+}

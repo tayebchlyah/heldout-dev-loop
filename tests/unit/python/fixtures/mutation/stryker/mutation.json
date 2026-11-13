@@ -1,0 +1,273 @@
+{
+  "files": {
+    "src/core/price.ts": {
+      "source": "export function discount(total: number): number {\n  if (total > 100) {\n    return 10;\n  }\n  return 0;\n}\n\nexport function check(qty: number): number {\n  if (qty < 0) {\n    throw new Error(\"negative quantity\");\n  }\n  return qty;\n}\n\nexport function unused(x: number): number {\n  return x * 2;\n}\n",
+      "mutants": [
+        {
+          "status": "NoCoverage",
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 17
+            },
+            "start": {
+              "column": 43,
+              "line": 15
+            }
+          },
+          "replacement": "{}"
+        },
+        {
+          "status": "NoCoverage",
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 15,
+              "line": 16
+            },
+            "start": {
+              "column": 10,
+              "line": 16
+            }
+          },
+          "replacement": "x / 2"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "0"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 6
+            },
+            "start": {
+              "column": 49,
+              "line": 1
+            }
+          },
+          "replacement": "{}"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "0"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          },
+          "replacement": "true"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "0"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          },
+          "replacement": "total <= 100"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "0"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          },
+          "replacement": "false"
+        },
+        {
+          "status": "Survived",
+          "coveredBy": [
+            "0"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          },
+          "replacement": "total >= 100"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "0"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 4
+            },
+            "start": {
+              "column": 20,
+              "line": 2
+            }
+          },
+          "replacement": "{}"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 13
+            },
+            "start": {
+              "column": 44,
+              "line": 8
+            }
+          },
+          "replacement": "{}"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 14,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          },
+          "replacement": "true"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 14,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          },
+          "replacement": "false"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 14,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          },
+          "replacement": "qty <= 0"
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 14,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          },
+          "replacement": "qty >= 0"
+        },
+        {
+          "status": "Survived",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 10
+            },
+            "start": {
+              "column": 21,
+              "line": 10
+            }
+          },
+          "replacement": "\"\""
+        },
+        {
+          "status": "Killed",
+          "coveredBy": [
+            "1"
+          ],
+          "testsCompleted": 1,
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 11
+            },
+            "start": {
+              "column": 16,
+              "line": 9
+            }
+          },
+          "replacement": "{}"
+        }
+      ]
+    }
+  }
+}

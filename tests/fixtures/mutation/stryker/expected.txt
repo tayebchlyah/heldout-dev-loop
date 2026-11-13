@@ -1,0 +1,21 @@
+base: <base>
+head: <head>
+entry web/: stryker survivors
+web/ mutants run: 13
+web/ units that need one unit test: 1
+  src/core/price.ts
+    web/src/core/price.ts:2 survived
+      -  if (total > 100) {
+      +  if (total >= 100) {
+    web/src/core/price.ts:16 no tests
+      -  return x * 2;
+      +  return x / 2;
+web/ message-only survivors, to Deferred: 1
+  src/core/price.ts web/src/core/price.ts:10
+      -    throw new Error("negative quantity");
+      +    throw new Error("");
+web/ inconclusive: 0
+web/ not covered by the selection: 0
+outside the critical modules: 2
+  web/src/api.ts
+  web/test/price.test.ts
