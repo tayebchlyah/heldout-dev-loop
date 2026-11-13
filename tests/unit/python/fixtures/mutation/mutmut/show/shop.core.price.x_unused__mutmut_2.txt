@@ -1,0 +1,7 @@
+# shop.core.price.x_unused__mutmut_2: no tests
+--- src/shop/core/price.py
++++ src/shop/core/price.py
+@@ -1,2 +1,2 @@
+ def unused(x):
+-    return x * 2
++    return x * 3

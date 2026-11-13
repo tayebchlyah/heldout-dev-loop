@@ -48,6 +48,7 @@ One file per subject. A new test file adds its line here.
 - `test_mutation_classify.py`: `mutation.run` `classify`: message or decision per file extension.
 - `test_mutation_run.py`, `fixtures/mutation/report.txt`: `devloop.py mutation --run`: adapter request and cwd, exit codes, output faults, unread stdin, closed kit stderr, statuses, the golden report.
 - `test_mutation_rerun.py`: `devloop.py mutation --entry` and `--only` (rerun), the integrity check.
+- `test_mutation_mutmut.py`, `fixtures/mutation/mutmut/`: the mutmut adapter `mutation/mutmut.py` and `mutation/adapter.py`: units, `not_covered`, runner, recorded `results` and `show`, protocol, setup errors.
 - `test_mutation_canary.py`: `scripts/mutation_canary.sh` (pass, fail, no temp folder left) and the shape of `mutation-canary.yml`.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.

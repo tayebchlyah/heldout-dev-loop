@@ -1,0 +1,51 @@
+base: <base>
+head: <head>
+entry app/: mutmut survivors
+app/ mutants run: 11
+app/ units that need one unit test: 3
+  shop.core.price.x_discount
+    app/src/shop/core/price.py:2 survived
+       def discount(total):
+      -    if total > 100:
+      +    if total > 101:
+               return 10
+           return 0
+    app/src/shop/core/price.py:2 survived
+       def discount(total):
+      -    if total > 100:
+      +    if total >= 100:
+               return 10
+           return 0
+  shop.core.price.x_check
+    app/src/shop/core/price.py:9 survived
+       def check(qty):
+           if qty < 0:
+      -        raise ValueError("negative quantity")
+      +        raise ValueError(None)
+           return qty
+  shop.core.price.x_unused
+    app/src/shop/core/price.py:14 no tests
+       def unused(x):
+      -    return x * 2
+      +    return x * 3
+    app/src/shop/core/price.py:14 no tests
+       def unused(x):
+      -    return x * 2
+      +    return x / 2
+app/ message-only survivors, to Deferred: 2
+  shop.core.price.x_check app/src/shop/core/price.py:9
+       def check(qty):
+           if qty < 0:
+      -        raise ValueError("negative quantity")
+      +        raise ValueError("NEGATIVE QUANTITY")
+           return qty
+  shop.core.price.x_check app/src/shop/core/price.py:9
+       def check(qty):
+           if qty < 0:
+      -        raise ValueError("negative quantity")
+      +        raise ValueError("XXnegative quantityXX")
+           return qty
+app/ inconclusive: 0
+app/ not covered by the selection: 0
+outside the critical modules: 1
+  app/src/shop/api.py

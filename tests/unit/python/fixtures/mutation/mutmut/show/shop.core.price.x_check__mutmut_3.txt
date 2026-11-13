@@ -1,0 +1,9 @@
+# shop.core.price.x_check__mutmut_3: survived
+--- src/shop/core/price.py
++++ src/shop/core/price.py
+@@ -1,4 +1,4 @@
+ def check(qty):
+     if qty < 0:
+-        raise ValueError("negative quantity")
++        raise ValueError(None)
+     return qty
