@@ -14,13 +14,30 @@ Base: `main` 24 h ago. No commit that old (a repo younger than a day): the root 
 
 The command computes the selection from the diff `<base>..main`, runs each entry's adapter on that selection only, checks the output, and prints one JSON object whose `report` is the report text. The same diff always gives the same selection, so the report is comparable between runs.
 
-Mutation is opt in. No `mutation` key in `dev-loop.json` means off: the report is `mutation: off` and the status `pass`. `check_setup.py` prints a `mutation is off` line under `User actions required` with a proposed value when it finds tool config; it never fails on it. A `mutation` value that is not valid gives status `setup`.
+Mutation is opt in. No `mutation` key in `dev-loop.json` means off: the report is `mutation: off` and the status `pass`. `check_setup.py` prints a `mutation is off` line under `User actions required` with a proposed value, never a failure. The proposal comes from the `stacks` key of `dev-loop.json` when present, else from the `stacks:` line of `AGENTS.md` and tool config (`[tool.mutmut]`, `stryker.config.json`, `go.mod`) in the repo root, top-level folders or `backend/<x>/`. A `mutation` value that is not valid gives status `setup`.
 
 The `mutation` value is a list of entries, one per code unit: `{"path", "adapter", "critical"}` or `{"path", "command", "critical"}`. `adapter` is `mutmut`, `stryker` or `mutago`. `command` runs any other tool through the protocol below. `critical` lists globs relative to `path`.
 
 ## Protocol
 
-Each entry with a selected file runs in its folder, one after the other. The kit sends one JSON object on stdin: `{"protocol": 1, "run", "base", "head", "files", "only"}`, where `files` maps each selected file (relative to the entry folder) to its changed line ranges. The adapter prints one JSON object on stdout: `{"units", "mutants", "not_covered"}`. Exit `0`: done. Exit `2`: setup missing or broken. Any other exit: the tool failed. A mutant has a `unit`, `file`, `line`, `status` (`killed`, `survived`, `no-tests` or `inconclusive`) and a `diff`. The kit checks the output. A broken rule makes the entry `setup`.
+Each entry with a selected file runs in its folder, one after the other: a built-in as the kit's Python on its adapter script, a `command` through `sh -c`. The kit writes stdin and closes it (an adapter may leave it unread). Stdout holds one JSON object and nothing else. Tool output goes to stderr, which the kit streams. No timeout. An adapter never reuses the results of an earlier run.
+
+Stdin: `{"protocol": 1, "run", "base", "head", "files", "only"}`.
+
+- `files`: each selected file, relative to the entry folder, with its changed line ranges `[[start, end], ...]` (1-based, inclusive).
+- `run`: false means run no tool and return only `units`. The kit sends it before every `--only` rerun, to learn the units.
+- `only`: null, or the units to mutate.
+
+Stdout: `{"units": [<unit>], "mutants": [...], "not_covered": [...]}`.
+
+- `units`: each unit of the selection, before `only`, computed from stdin and the head tree only. A unit is a non-empty string with no control character and no leading `-`.
+- `mutants`: each has `unit` (one of `units`; with `only`, one of `only`), `file` (a key of `files`), `line` (integer, 1 or more), `status` (`killed`, `survived`, `no-tests` or `inconclusive`), `diff` (null, or rows joined by a newline, each row starting with `-`, `+` or a space, header rows removed) and an optional `detail` string (for example `timeout`).
+- `not_covered`: each has `file` (a key of `files`), `start`, `end` (integers, `start <= end`) and a non-empty `reason`. Use it for a selected line the tool cannot mutate, and for "no mutable code".
+- With `run` true, every file of `files` is named by a mutant or a `not_covered` entry. With `run` false, `mutants` and `not_covered` may be absent.
+- Exit `0`: done. Exit `2`: setup missing or broken (the message on stderr). Any other exit: the tool failed.
+- Forward rule: an adapter ignores a stdin key it does not know, and the kit ignores an output key it does not know. A new key never changes the meaning of an old one; a change that does goes with `protocol` 2. An adapter exits `2` on a `protocol` value it does not speak.
+
+The kit checks the output. A broken rule makes the entry `setup`, with the fault as `cause`.
 
 A project adapter is a script that follows this protocol, started through `command`. The integrity check watches the first word of the `command` and not the files the adapter reads (helper scripts, `conftest.py`): `sh ./adapt` and `cd x && ./adapt` leave the real script unwatched. The review of the fix PR is the backstop.
 
@@ -33,22 +50,22 @@ Mutation runs only in **critical files**: decision logic whose unit tests a regr
 - A changed file belongs to the deepest entry whose path holds it. It is selected with its changed line ranges (a deleted line counts as a change of the line above it) when a `critical` glob without `!` matches it and no `!` glob does.
 - Globs are case-sensitive. `*` and `?` stay in one path segment. `**` matches zero or more segments.
 - A line the adapter cannot mutate is listed under "not covered by the selection", with file, lines and a reason. Triage reads them as context and writes no mutation test for them.
-- mutmut: a function or a method of a top-level class whose lines the diff touches. Module-level lines, class-body lines outside a method, decorated functions (except one with a single `@staticmethod` or `@classmethod`) and `__getattribute__`, `__setattr__`, `__new__` are not covered.
+- mutmut: a function or a method of a top-level class whose lines the diff touches. A leftover `only_mutate` in `[tool.mutmut]` still narrows the files. A changed file outside `only_mutate`, in `do_not_mutate`, outside `source_paths` or not `.py` is listed as not covered with that reason. Module-level lines, class-body lines outside a method, decorated functions (except one with a single `@staticmethod` or `@classmethod`) and `__getattribute__`, `__setattr__`, `__new__` are not covered.
 - Stryker: a mutant that lies fully inside a changed range. A mutant that spans past a changed line is not run. The unit is the file.
 - mutago: a Go function or method whose lines the diff touches.
 
 ## Report and statuses
 
-The report starts with `base:` and `head:`, then one block per entry: `entry <path>: <adapter> <status>`, mutants run, units that need one unit test, message-only survivors, inconclusive, not covered by the selection, then the files outside the critical modules.
+The report starts with `base:` and `head:`, then one block per entry: `entry <path>: <adapter> <status>`, mutants run, units that need one unit test, message-only survivors, inconclusive, not covered by the selection, then the files outside the critical modules, then one `mutation: none for <path>` line for each `stacks` path that no entry holds.
 
 The kit classes each survivor from its diff, the same way on every run.
 
 - **Decision survivor.** The mutant changes what the code decides or returns: a comparison, a condition, a boolean, a number, a returned value, or a string that code reads, such as a dict key or a compared value. The report lists its unit.
 - **No tests.** No unit test reaches the mutant. The report lists its unit.
 - **Message survivor.** The mutant changes only text a person reads: Python, a string in a `raise`, an `assert` message, a logging call, or a message-named argument or variable (`detail`, `message`, `msg`, `description`, `help`, `reason`, `summary`); JS and TS, a string in a `throw`, a `new Error(`, a `console` call or a message-named property; Go, a string in `errors.New`, `fmt.Errorf`, `panic` or a log call, including a `%w` to `%v` change in a `fmt.Errorf` row that differs only in a string literal. That change can break `errors.Is`: review such a Deferred item. A message survivor goes to `## Deferred` and gets no test. A surviving Stryker `StringLiteral` is no longer always a message: the classification decides.
-- **Inconclusive.** `timeout`, `suspicious`, `segfault`, `not checked`, and Stryker `Timeout`, `RuntimeError` and `CompileError`. Reported, never counted as killed, never a test. A mutago timeout counts as killed: mutago reports no separate timeout status, so a hang that mutago stops is a kill.
+- **Inconclusive.** `timeout`, `suspicious`, `segfault`, `not checked`, Stryker `Timeout`, `RuntimeError`, `CompileError` and a mutant with no test completed (`testsCompleted` 0, detail `no test completed`), mutago `errored` and `skipped`, and any status the kit adapter does not map. Reported, never counted as killed, never a test. A mutago timeout counts as killed: mutago reports no separate timeout status, so a hang that mutago stops is a kill.
 
-Entry status: `setup` for exit 2 or a broken output; `failed` for any other failure or an integrity difference; `survivors` when a unit has a `no-tests` mutant or a decision survivor; else `pass`. Message survivors and inconclusive mutants do not count. The run status is the worst entry status. Exit `0` for `pass` and `survivors`, `1` for `setup` and `failed`.
+Entry status: `setup` for exit 2, 126 or 127, or a broken output; `failed` for any other failure or an integrity difference; `survivors` when a unit has a `no-tests` mutant or a decision survivor; else `pass`. Message survivors and inconclusive mutants do not count. The run status is the worst entry status. Exit `0` for `pass` and `survivors`, `1` for `setup` and `failed`.
 
 The nightly job fails on any run status but `pass`. A `setup` or `failed` status gets the `cause` of its entry in the record of the failed step. Stage 0 owns the repair of a `setup`, see [Setup](#setup).
 
@@ -92,8 +109,8 @@ Stage 0 owns this setup, after the user says yes to mutation. `scripts/check_set
 
 **Stryker.**
 
-- Pin `@stryker-mutator/core` (StrykerJS 10.1.1) and the runner plugin of the test runner to exact versions in the entry's `devDependencies`. Run `npm ci` first.
-- `stryker.config.json` in the entry folder: `testRunner` set to a runner but not `command`; `incremental` not `true`; `coverageAnalysis` not `"off"`. Vitest browser mode is not supported: use the Node Vitest config. A `thresholds.break` setting still reports the survivors.
+- Pin `@stryker-mutator/core` and the runner plugin of the test runner to the same exact version in the entry's `devDependencies` (StrykerJS 10.1.1 is the tested pin). Run `npm ci` first.
+- Exactly one `stryker.config.json` in the entry folder, with: `testRunner` set to a runner but not `command`; `incremental` not `true`; `coverageAnalysis` not `"off"`. Vitest browser mode is not supported: use the Node Vitest config. A `thresholds.break` setting still reports the survivors.
 - A file path with `{`, `}`, `*`, `?`, `,`, `!` or `@(`, `+(` is not mutated: it is listed as not covered with the reason `path not expressible in --mutate`. `[` and `]` in a route path work.
 - Git-ignore `.stryker-tmp/` and `reports/`.
 
@@ -110,4 +127,4 @@ Stage 0 writes this workflow for a new repo with CI only, for example `.github/w
 - Trigger: a schedule, cron once a day, on `main`.
 - One job. Check out `main` with full history. One toolchain step for each adapter in use: uv or Poetry (mutmut, with the dev dependencies), Node 22 with `npm ci` (Stryker), Go 1.26.6 (mutago). Then run the command of [Run](#run): `BASE=$(git rev-list -1 --before='24 hours ago' main); python3 .agents/skills/dev-loop/scripts/devloop.py mutation --base "${BASE:-$(git rev-list --max-parents=0 main | tail -n 1)}" --head main --run`.
 - Save the `report` of its stdout to a file. Upload that report as an artifact, pass or fail.
-- Fail the job on any `status` but `pass`: `survivors` (a report line `units that need one unit test: <n>` with `n` above 0), `setup` or `failed`.
+- `survivors` exits `0`, so the job reads `.status` from the JSON and fails on any status but `pass`: `survivors` (a report line `<path> units that need one unit test: <n>` with `n` above 0), `setup` or `failed`.
