@@ -23,7 +23,7 @@ from pathlib import Path
 import adapter
 
 # allow-comment: dependency, mutago v2.10.42 finds no changed line under other values of these (its issue 353).
-GIT_SETTINGS = (("color.diff", "never"), ("diff.noprefix", "false"), ("diff.mnemonicPrefix", "false"),
+GIT_SETTINGS = (("core.quotePath", "false"), ("color.diff", "never"), ("diff.noprefix", "false"), ("diff.mnemonicPrefix", "false"),
                 ("diff.relative", "false"), ("diff.dstPrefix", "b/"))
 REPORTS = ("report.json", "mutago-summary.json", "mutago-agentic.json")
 VERSION = "v2.10.42"
@@ -40,8 +40,14 @@ def go_units(source: str) -> list[tuple[str, int, int]]:
     for start, row in enumerate(rows, 1):
         if not row.startswith("func ") or not (match := FUNC.match(row)):
             continue
-        end = start if row.rstrip().endswith("}") else next(
-            (i for i, body in enumerate(rows[start:], start + 1) if body.rstrip() == "}"), start)
+        end = start
+        if not row.rstrip().endswith("}"):
+            for i, body in enumerate(rows[start:], start + 1):
+                if body.startswith("func "):
+                    break
+                if body.rstrip() == "}":
+                    end = i
+                    break
         units.append((f"{match[1]}.{match[2]}" if match[1] else match[2], start, end))
     return units
 
@@ -88,10 +94,17 @@ def binary() -> Path:
     if tool.is_file():
         return tool
     env = {k: v for k, v in os.environ.items() if k not in ("GONOSUMDB", "GONOSUMCHECK", "GOPRIVATE", "GOINSECURE")}
-    code, _ = adapter.stream(["go", "install", f"{PACKAGE}@{VERSION}"], Path.cwd(),
-                             {**env, "GOBIN": str(folder), "GOSUMDB": "sum.golang.org"})
-    if code != 0 or not tool.is_file():
-        adapter.setup_error(f"mutation setup broken: go install of mutago {VERSION} exited {code}. {SETUP}")
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f"{VERSION}.", dir=folder.parent))
+    try:
+        code, _ = adapter.stream(["go", "install", f"{PACKAGE}@{VERSION}"], Path.cwd(),
+                                 {**env, "GOBIN": str(staging), "GOSUMDB": "sum.golang.org", "GOENV": "off"})
+        if code != 0 or not (staging / "mutago").is_file():
+            adapter.setup_error(f"mutation setup broken: go install of mutago {VERSION} exited {code}. {SETUP}")
+        folder.mkdir(exist_ok=True)
+        os.replace(staging / "mutago", tool)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return tool
 
 
@@ -116,7 +129,7 @@ def mutants_from(report: dict, files: dict[str, list[list[int]]], entry: Path) -
 
 
 def tool_env() -> dict[str, str]:
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if k != "GIT_EXTERNAL_DIFF"}
     count = int(env.get("GIT_CONFIG_COUNT") or 0)
     for i, (key, value) in enumerate(GIT_SETTINGS, count):
         env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"] = key, value

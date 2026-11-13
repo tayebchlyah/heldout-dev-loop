@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -51,6 +53,12 @@ func Map[T any](
 ) T {
 	return v
 }
+
+func add(a, b int) int
+
+func Next() int {
+	return 1
+}
 """
 LOGGER = """#!{python}
 import json, os, pathlib, sys
@@ -93,15 +101,15 @@ class MutagoAdapter(unittest.TestCase):
         self.stub(self.bins / "go")
         write(self.entry / "a.go", SOURCE)
         write(self.entry / "notes.txt", "x\n")
-        files = {"a.go": [[3, 6], [9, 9], [11, 13], [17, 17], [19, 23]], "notes.txt": [[1, 1]]}
+        files = {"a.go": [[3, 6], [9, 9], [11, 13], [17, 17], [19, 23], [28, 28]], "notes.txt": [[1, 1]]}
         done = self.adapter({"run": False, "files": files})
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(json.loads(done.stdout),
-                         {"units": ["a.go:Box.Get", "a.go:Func", "a.go:Map", "a.go:Recv.Method"]})
+                         {"units": ["a.go:Box.Get", "a.go:Func", "a.go:Map", "a.go:Next", "a.go:Recv.Method"]})
         self.assertEqual(self.calls(), [])
         self.assertFalse(self.cache.exists())
         self.assertEqual(mutago.go_units(SOURCE), [("Func", 5, 7), ("Recv.Method", 11, 13), ("Box.Get", 17, 17),
-                                                   ("Map", 19, 23)])
+                                                   ("Map", 19, 23), ("add", 25, 25), ("Next", 27, 29)])
 
     def test_recorded_report(self) -> None:
         write(self.entry / "core" / "price.go", PRICE.read_text())
@@ -113,7 +121,8 @@ class MutagoAdapter(unittest.TestCase):
 
         report["errored"] = [extra("core/price.go", 11)]
         report["skipped"] = [extra("core/price.go", 12)]
-        report["escaped"] += [extra(str(self.entry / "core" / "price.go"), 14, "@@ -14 +14 @@\n-\treturn 0\n+\treturn 1\n"),
+        report["escaped"] += [extra(str(self.entry / "core" / "price.go"), 14, "@@ -14 +14 @@\n-\treturn 0\n"
+                              "\\ No newline at end of file\n+\treturn 1\n\\ No newline at end of file\n"),
                               extra("core/price.go", 25)]
         mutants = mutago.mutants_from(report, {"core/price.go": [[3, 24], [27, 27]]}, self.entry)
         self.assertEqual({m["file"] for m in mutants}, {"core/price.go"})
@@ -140,16 +149,31 @@ class MutagoAdapter(unittest.TestCase):
 
     def test_install_command(self) -> None:
         self.stub(self.bins / "go", "out = pathlib.Path(os.environ['GOBIN']) / 'mutago'\n"
-                                    "out.parent.mkdir(parents=True)\nout.write_text('#!/bin/sh\\n')\nout.chmod(0o755)\n")
+                                    "out.parent.mkdir(parents=True, exist_ok=True)\nout.write_text('#!/bin/sh\\n')\n"
+                                    "out.chmod(0o755)\nsys.exit(int(os.environ.get('STUB_EXIT', '0')))\n")
         folder = self.cache / "dev-loop" / "mutago" / "v2.10.42"
-        hostile = {"GOSUMDB": "off", "GONOSUMDB": "*", "GONOSUMCHECK": "1", "GOPRIVATE": "*", "GOINSECURE": "*"}
+        hostile = {"GOSUMDB": "off", "GONOSUMDB": "*", "GONOSUMCHECK": "1", "GOPRIVATE": "*", "GOINSECURE": "*",
+                   "GOPROXY": "https://proxy.example"}
+        with mock.patch.dict(os.environ, self.env(**hostile, STUB_EXIT="1"), clear=True), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as failed:
+            mutago.binary()
+        self.assertEqual(failed.exception.code, 2)
+        self.assertFalse((folder / "mutago").exists())
         with mock.patch.dict(os.environ, self.env(**hostile), clear=True):
             self.assertEqual(mutago.binary(), folder / "mutago")
             self.assertEqual(mutago.binary(), folder / "mutago")
-        [call] = self.calls()
-        self.assertEqual(call["argv"], ["install", "github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.42"])
-        self.assertEqual((call["env"]["GOBIN"], call["env"]["GOSUMDB"]), (str(folder), "sum.golang.org"))
-        self.assertEqual([k for k in ("GONOSUMDB", "GONOSUMCHECK", "GOPRIVATE", "GOINSECURE") if k in call["env"]], [])
+        self.assertEqual([p.name for p in folder.parent.iterdir()], ["v2.10.42"])
+        self.assertEqual([p.name for p in folder.iterdir()], ["mutago"])
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertEqual(call["argv"], ["install", "github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.42"])
+            self.assertEqual(Path(call["env"]["GOBIN"]).parent, folder.parent)
+            self.assertNotEqual(Path(call["env"]["GOBIN"]), folder)
+            self.assertEqual((call["env"]["GOSUMDB"], call["env"]["GOENV"], call["env"]["GOPROXY"]),
+                             ("sum.golang.org", "off", "https://proxy.example"))
+            self.assertEqual([k for k in ("GONOSUMDB", "GONOSUMCHECK", "GOPRIVATE", "GOINSECURE")
+                              if k in call["env"]], [])
 
     def test_run_command_and_cleanup(self) -> None:
         tool = self.cache / "dev-loop" / "mutago" / "v2.10.42" / "mutago"
@@ -161,7 +185,8 @@ class MutagoAdapter(unittest.TestCase):
                         "sys.exit(int(os.environ.get('STUB_EXIT', '0')))\n")
         write(self.entry / "core" / "price.go", PRICE.read_text())
         files = {"core/price.go": [[3, 24], [27, 27]]}
-        caller = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.pager", "GIT_CONFIG_VALUE_0": "cat"}
+        caller = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.pager", "GIT_CONFIG_VALUE_0": "cat",
+                  "GIT_EXTERNAL_DIFF": "/bin/false"}
         done = self.adapter({"run": True, "files": files}, **caller)
         self.assertEqual(done.returncode, 0, done.stderr)
         out = json.loads(done.stdout)
@@ -178,10 +203,12 @@ class MutagoAdapter(unittest.TestCase):
         self.assertEqual(Path(str(self.log) + ".yml").read_text().split(), ["json_output:", "true",
                                                                             "skip_without_test:", "false"])
         self.assertEqual(Path(call["cwd"]).resolve(), self.entry)
-        settings = [(call["env"][f"GIT_CONFIG_KEY_{i}"], call["env"][f"GIT_CONFIG_VALUE_{i}"]) for i in range(6)]
-        self.assertEqual((call["env"]["GIT_CONFIG_COUNT"], settings), ("6", [
-            ("core.pager", "cat"), ("color.diff", "never"), ("diff.noprefix", "false"),
+        settings = [(call["env"][f"GIT_CONFIG_KEY_{i}"], call["env"][f"GIT_CONFIG_VALUE_{i}"]) for i in range(7)]
+        self.assertEqual((call["env"]["GIT_CONFIG_COUNT"], settings), ("7", [
+            ("core.pager", "cat"), ("core.quotePath", "false"),
+ ("color.diff", "never"), ("diff.noprefix", "false"),
             ("diff.mnemonicPrefix", "false"), ("diff.relative", "false"), ("diff.dstPrefix", "b/")]))
+        self.assertNotIn("GIT_EXTERNAL_DIFF", call["env"])
         self.assertEqual(sorted(p.name for p in self.entry.iterdir()), ["core"])
         self.assertEqual(list(self.tmp.iterdir()), [])
 
@@ -202,7 +229,9 @@ class MutagoAdapter(unittest.TestCase):
                                       "GIT_CONFIG_VALUE_0": "x"}, {})):
             with self.subTest(extra=extra, files=files_before):
                 self.log.unlink(missing_ok=True)
-                self.stub(tool, "sys.exit(int(os.environ.get('STUB_EXIT', '0')))\n")
+                self.stub(tool, "for name in ('report.json', 'mutago-summary.json', 'mutago-agentic.json'):\n"
+                                "    pathlib.Path(name).write_text('{}')\n"
+                                "sys.exit(int(os.environ.get('STUB_EXIT', '0')))\n")
                 for name, text in files_before.items():
                     write(self.entry / name, text)
                 done = self.adapter({"run": True, "files": files}, **extra)
@@ -213,6 +242,7 @@ class MutagoAdapter(unittest.TestCase):
                 for name in files_before:
                     self.assertEqual((self.entry / name).read_text(), "{}")
                     (self.entry / name).unlink()
+                self.assertEqual(sorted(p.name for p in self.entry.iterdir()), ["core"])
 
 
 if __name__ == "__main__":
