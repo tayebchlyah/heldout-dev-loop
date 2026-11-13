@@ -213,13 +213,14 @@ class SelectionTests(MutationCase):
             self.assertEqual([call.get("files") for call in calls], [{"core/a.py": [[3, 4]]}], payload)
 
 
-class OffAndMissingTests(MutationCase):
-    def test_o18_o19_mutation_off_missing_and_unit_without_entry(self) -> None:
-        """O18: `"mutation": false`: status `pass`, report `mutation: off`; no `mutation` key: status `setup`, exit
-        1, with and without `--run`. O19: `stacks` `[{"path": "api/", "preset": "go"}]` and no `api/` entry:
-        `none` holds `api/`, the report holds `mutation: none for api/`."""
+class OffAndInvalidTests(MutationCase):
+    def test_o18_o19_mutation_off_invalid_and_unit_without_entry(self) -> None:
+        """O18: `"mutation": false`: status `pass`, report `mutation: off`, exit 0 (no `mutation` key: flow F4,
+        `test_mutation_adapters_setup`); `"mutation": {}`: status `setup`, exit 1, with and without `--run`. O19:
+        `stacks` `[{"path": "api/", "preset": "go"}]` and no `api/` entry: `none` holds `api/`, the report holds
+        `mutation: none for api/`."""
         files = {"app/core/a.py": COMPARE_BASE, "api/go.mod": "module example.invalid/api\n"}
-        cases = (("off", {"mutation": False}), ("missing", {}),
+        cases = (("off", {"mutation": False}), ("object", {"mutation": {}}),
                  ("none", {"mutation": [entry("app/", ["core/**"])], "stacks": [{"path": "api/", "preset": "go"}]}))
         shops = {}
         for name, config in cases:
@@ -232,8 +233,8 @@ class OffAndMissingTests(MutationCase):
             self.assertEqual(payload.get("status"), "pass", payload)
             self.assertIn("mutation: off", report_lines(payload), payload)
         for args in (("--run",), ()):
-            with self.subTest(oracle=18, mutation="missing", args=args):
-                code, payload = self.run_json(shops["missing"], "--head", "feat", *args)
+            with self.subTest(oracle=18, mutation={}, args=args):
+                code, payload = self.run_json(shops["object"], "--head", "feat", *args)
                 self.assertEqual(payload.get("status"), "setup", payload)
                 self.assertEqual(code, 1, payload)
         with self.subTest(oracle=19):
