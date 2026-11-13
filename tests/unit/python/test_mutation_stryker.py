@@ -74,8 +74,8 @@ class StrykerAdapter(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(json.loads(done.stdout), {"units": ["src/a.ts", "src/b.ts"]})
         self.assertFalse(self.log.exists())
-        self.assertEqual(stryker.mutate_arg({"b.ts": [[1, 1]], "a.ts": [[9, 9], [10, 12]]}),
-                         "a.ts:9-9,a.ts:10-12,b.ts:1-1")
+        self.assertEqual(stryker.mutate_arg({"b.ts": [[1, 1]], "a.ts": [[9, 9], [10, 12]], "r/[[x]]].ts": [[2, 2]]}),
+                         "a.ts:9-9,a.ts:10-12,b.ts:1-1,r/[[][[]x[]][]][]].ts:2-2")
 
     def test_recorded_report(self) -> None:
         report = json.loads(RECORDED.read_text())
@@ -128,15 +128,15 @@ class StrykerAdapter(unittest.TestCase):
             ("src/!n.ts", 1, 1, "path not expressible in --mutate"),
             ("src/*.ts", 1, 1, "path not expressible in --mutate"),
             ("src/a,b.ts", 1, 1, "path not expressible in --mutate"),
-            ("src/app/[id]/page.ts", 3, 5, "path not expressible in --mutate"),
+            ("src/app/[id]/page.ts", 3, 5, "no mutable code"),
             ("src/core/none.ts", 1, 1, "no mutable code"),
             ("src/p@(q).ts", 4, 4, "path not expressible in --mutate"),
             ("src/q?.ts", 1, 1, "path not expressible in --mutate"),
             ("src/t(u) v.ts", 1, 1, "no mutable code"),
             ("src/{x}.ts", 2, 2, "path not expressible in --mutate"),
         ])
-        self.assertEqual(self.log.read_text(), "stryker run --mutate src/core/none.ts:1-1,src/core/price.ts:1-17,"
-                                               "src/t(u) v.ts:1-1 --reporters json\n")
+        self.assertEqual(self.log.read_text(), "stryker run --mutate src/app/[[]id[]]/page.ts:3-5,src/core/none.ts:1-1,"
+                                               "src/core/price.ts:1-17,src/t(u) v.ts:1-1 --reporters json\n")
 
         self.log.unlink()
         done = self.adapter({"reports/mutation/mutation.json": "{}"},
