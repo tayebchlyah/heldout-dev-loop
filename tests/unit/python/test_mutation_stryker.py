@@ -37,8 +37,9 @@ pathlib.Path({log!r}).open("a").write(" ".join(sys.argv[1:]) + "\\n")
 report = pathlib.Path("reports/mutation/mutation.json")
 if report.exists():
     sys.exit(5)
-report.parent.mkdir(parents=True, exist_ok=True)
-shutil.copy({recorded!r}, report)
+if {report}:
+    report.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy({recorded!r}, report)
 sys.exit({code})
 """
 LOCATION = {"start": {"line": 2, "column": 7}, "end": {"line": 2, "column": 18}}
@@ -54,9 +55,10 @@ class StrykerAdapter(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def adapter(self, files: dict[str, str], request: dict, code: int = 0) -> subprocess.CompletedProcess[str]:
+    def adapter(self, files: dict[str, str], request: dict, code: int = 0,
+                report: bool = True) -> subprocess.CompletedProcess[str]:
         write(self.root / "bin" / "npx", STUB.format(python=sys.executable, log=str(self.log),
-                                                     recorded=str(RECORDED), code=code))
+                                                     recorded=str(RECORDED), code=code, report=report))
         (self.root / "bin" / "npx").chmod(0o755)
         entry = self.root / "entry"
         for name, text in files.items():
@@ -114,15 +116,27 @@ class StrykerAdapter(unittest.TestCase):
         sources = {"stryker.config.json": CONFIG, CORE: "{}", "src/core/price.ts": PRICE.read_text(),
                    "src/core/none.ts": "export {};\n", "reports/mutation/mutation.json": "{}"}
         files = {"src/core/price.ts": [[1, 17]], "src/core/none.ts": [[1, 1]]}
-        done = self.adapter(sources, {"run": True, "files": files})
+        odd = {"src/app/[id]/page.ts": [[3, 5]], "src/a,b.ts": [[1, 1]], "src/{x}.ts": [[2, 2]], "src/*.ts": [[1, 1]],
+               "src/q?.ts": [[1, 1]], "src/!n.ts": [[1, 1]], "src/p@(q).ts": [[4, 4]], "src/t(u) v.ts": [[1, 1]]}
+        done = self.adapter(sources, {"run": True, "files": {**files, **odd}}, code=1)
         self.assertEqual(done.returncode, 0, done.stderr)
         out = json.loads(done.stdout)
-        self.assertEqual(out["units"], ["src/core/none.ts", "src/core/price.ts"])
+        self.assertEqual(out["units"], sorted([*files, *odd]))
         self.assertEqual(len(out["mutants"]), 15)
-        self.assertEqual(out["not_covered"], [{"file": "src/core/none.ts", "start": 1, "end": 1,
-                                               "reason": "no mutable code"}])
-        self.assertEqual(self.log.read_text(),
-                         "stryker run --mutate src/core/none.ts:1-1,src/core/price.ts:1-17 --reporters json\n")
+        gaps = sorted((g["file"], g["start"], g["end"], g["reason"]) for g in out["not_covered"])
+        self.assertEqual(gaps, [
+            ("src/!n.ts", 1, 1, "path not expressible in --mutate"),
+            ("src/*.ts", 1, 1, "path not expressible in --mutate"),
+            ("src/a,b.ts", 1, 1, "path not expressible in --mutate"),
+            ("src/app/[id]/page.ts", 3, 5, "path not expressible in --mutate"),
+            ("src/core/none.ts", 1, 1, "no mutable code"),
+            ("src/p@(q).ts", 4, 4, "path not expressible in --mutate"),
+            ("src/q?.ts", 1, 1, "path not expressible in --mutate"),
+            ("src/t(u) v.ts", 1, 1, "no mutable code"),
+            ("src/{x}.ts", 2, 2, "path not expressible in --mutate"),
+        ])
+        self.assertEqual(self.log.read_text(), "stryker run --mutate src/core/none.ts:1-1,src/core/price.ts:1-17,"
+                                               "src/t(u) v.ts:1-1 --reporters json\n")
 
         self.log.unlink()
         done = self.adapter({"reports/mutation/mutation.json": "{}"},
@@ -141,8 +155,11 @@ class StrykerAdapter(unittest.TestCase):
         self.assertEqual(stryker.diff_of(source, location, "()"), "-foo(1,\n-  2);\n+foo(());")
         one = {"start": {"line": 4, "column": 1}, "end": {"line": 4, "column": 2}}
         self.assertEqual(stryker.diff_of(source, one, "y\nw"), "-z\n+y\n+w")
-        crlf = {"start": {"line": 2, "column": 1}, "end": {"line": 2, "column": 2}}
-        self.assertEqual(stryker.diff_of("a\r\nb c\r\nd\n", crlf, "X"), "-b c\n+X c")
+        breaks = {"start": {"line": 4, "column": 1}, "end": {"line": 4, "column": 2}}
+        self.assertEqual(stryker.diff_of("a\r\nb\u2028c\rd\n", breaks, "X"), "-d\n+X")
+        emoji = {"start": {"line": 1, "column": 21}, "end": {"line": 1, "column": 26}}
+        self.assertEqual(stryker.diff_of('const s = "\U0001F600"; if (a > b) {\n', emoji, "a >= b"),
+                         '-const s = "\U0001F600"; if (a > b) {\n+const s = "\U0001F600"; if (a >= b) {')
 
     def test_setup_refusals(self) -> None:
         request = {"run": True, "files": {"src/a.ts": [[1, 1]]}}
@@ -152,6 +169,8 @@ class StrykerAdapter(unittest.TestCase):
                  '"incremental": true'),
                 ({"stryker.config.json": json.dumps({"testRunner": "command"}), CORE: "{}"}, "testRunner"),
                 ({"stryker.config.json": "{}", CORE: "{}"}, "testRunner"),
+                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "coverageAnalysis": "off"}), CORE: "{}"},
+                 "coverageAnalysis"),
                 ({"stryker.config.json": "{", CORE: "{}"}, "stryker.config.json"),
                 ({CORE: "{}"}, "stryker.config.json")):
             with self.subTest(words=words, files=sorted(files)):
@@ -163,7 +182,12 @@ class StrykerAdapter(unittest.TestCase):
                 self.assertIn(words, last)
                 self.assertTrue(last.endswith(SUFFIX), last)
                 self.assertFalse(self.log.exists())
-        done = self.adapter({"stryker.config.json": CONFIG, CORE: "{}"}, request, code=3)
+        for allowed in ("perTest", "all"):
+            config = json.dumps({"testRunner": "vitest", "coverageAnalysis": allowed})
+            self.log.unlink(missing_ok=True)
+            done = self.adapter({"stryker.config.json": config, CORE: "{}"}, request)
+            self.assertEqual(done.returncode, 0, done.stderr)
+        done = self.adapter({"stryker.config.json": CONFIG, CORE: "{}"}, request, code=3, report=False)
         self.assertEqual(done.returncode, 1, done.stderr)
         self.assertEqual(done.stdout, "")
 

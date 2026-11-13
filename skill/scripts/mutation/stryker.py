@@ -12,10 +12,15 @@ import sys
 sys.dont_write_bytecode = True
 
 import json
+import re
 from pathlib import Path
 
 import adapter
 
+# allow-comment: dependency, Stryker 10.1.1 counts lines at each JavaScript line terminator, columns in UTF-16 units.
+LINE_BREAK = re.compile(r"\r\n|[\n\r\u2028\u2029]")
+# allow-comment: dependency, Stryker 10.1.1 refuses a --mutate range on a glob path, and a comma splits the list.
+NOT_EXPRESSIBLE = re.compile(r"[][{}*?,!]|[@+]\(")
 INCONCLUSIVE = {"Timeout", "RuntimeError", "CompileError"}
 STATUSES = {"Killed": "killed", "Survived": "survived", "NoCoverage": "no-tests"}
 REPORT = Path("reports") / "mutation" / "mutation.json"
@@ -40,18 +45,25 @@ def check_setup(folder: Path) -> None:
     if config.get("testRunner") in (None, "command"):
         adapter.setup_error("mutation setup broken: stryker.config.json testRunner is command or absent; name the "
                             f"project test runner. {SETUP}")
+    if config.get("coverageAnalysis") == "off":
+        adapter.setup_error("mutation setup broken: stryker.config.json sets coverageAnalysis off, so a report has no "
+                            f"coveredBy and every survivor reads as no tests; use perTest. {SETUP}")
 
 
 def mutate_arg(files: dict[str, list[list[int]]]) -> str:
-    # shortcut: a path with a comma or a glob character breaks the --mutate list, escape it when a project has one.
     return ",".join(f"{file}:{start}-{end}" for file in sorted(files) for start, end in sorted(files[file]))
+
+
+def split_at(row: str, column: int) -> tuple[str, str]:
+    units = row.encode("utf-16-le")
+    return units[:2 * (column - 1)].decode("utf-16-le"), units[2 * (column - 1):].decode("utf-16-le")
 
 
 def diff_of(source: str, location: dict, replacement: str) -> str:
     start, end = location["start"], location["end"]
-    old = [row.removesuffix("\r") for row in source.split("\n")[start["line"] - 1:end["line"]]]
-    new = old[0][:start["column"] - 1] + replacement + old[-1][end["column"] - 1:]
-    return "\n".join([*("-" + row for row in old), *("+" + row for row in new.split("\n"))])
+    old = LINE_BREAK.split(source)[start["line"] - 1:end["line"]]
+    new = split_at(old[0], start["column"])[0] + replacement + split_at(old[-1], end["column"])[1]
+    return "\n".join([*("-" + row for row in old), *("+" + row for row in LINE_BREAK.split(new))])
 
 
 def status_of(mutant: dict) -> tuple[str, str | None]:
@@ -85,7 +97,8 @@ def mutants_from(report: dict, files: dict) -> list[dict]:
 def run(folder: Path, files: dict[str, list[list[int]]]) -> list[dict]:
     (folder / REPORT).unlink(missing_ok=True)
     code, _ = adapter.stream(["npx", "stryker", "run", "--mutate", mutate_arg(files), "--reporters", "json"], folder)
-    if code != 0:
+    # allow-comment: dependency, under thresholds.break Stryker writes the report, then exits 1.
+    if code != 0 and not (folder / REPORT).is_file():
         adapter.tool_failed(f"stryker run exited {code}")
     try:
         report = json.loads((folder / REPORT).read_text())
@@ -102,9 +115,16 @@ def main() -> None:
     units = sorted(files)
     if not request["run"]:
         adapter.finish(request, units, [], [])
-    picked = {file: ranges for file, ranges in files.items() if only is None or file in only}
-    gaps = [{"file": file, "start": start, "end": end, "reason": "unit not in only"}
-            for file, ranges in files.items() if file not in picked for start, end in ranges]
+    picked, gaps = {}, []
+    for file, ranges in files.items():
+        if only is not None and file not in only:
+            reason = "unit not in only"
+        elif NOT_EXPRESSIBLE.search(file):
+            reason = "path not expressible in --mutate"
+        else:
+            picked[file] = ranges
+            continue
+        gaps += [{"file": file, "start": start, "end": end, "reason": reason} for start, end in ranges]
     adapter.finish(request, units, run(folder, picked) if picked else [], gaps)
 
 
