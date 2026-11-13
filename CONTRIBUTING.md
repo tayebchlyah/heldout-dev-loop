@@ -26,6 +26,14 @@ npm ci && npx playwright install chromium   # once per clone or worktree: the no
 
 To try a change in a project, run `node <path to your clone>/bin/install.mjs init` (or `upgrade`) from the top level of that project.
 
+## Add a preset
+
+A preset is one build tool that Stage 0 can set up with no kit change.
+
+1. Add one entry to `skill/presets.json` at its place in detect order: the first preset that matches a folder wins, so a tool that shares a build file with another (a lock file decides) comes before it. Fill every field of the schema: `name`, `family`, `detect`, `lint`, `typecheck`, `test`, `junit` (`command`, `files`, `package`, `setup`), `source_dirs`, `test_dir`, `layout` (`init`, `dirs`), and `source`: the `https://` pages behind its commands.
+2. Add one fixture tree to `tests/unit/python/test_stack_detect.py` that proves `stack-detect` picks the preset.
+3. `tests/unit/python/test_presets.py` checks the schema. No kit test runs a preset command: the Stage 0 done check of the first project that uses it is the run proof.
+
 ## Before you open a pull request
 
 Run the gate. All of it must be green:

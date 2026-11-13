@@ -1,0 +1,461 @@
+{
+  "ui_frameworks": [
+    "react",
+    "vue",
+    "svelte",
+    "@angular/core",
+    "solid-js",
+    "next",
+    "nuxt",
+    "astro"
+  ],
+  "presets": [
+    {
+      "name": "maven",
+      "family": "jvm",
+      "detect": [
+        [
+          "pom.xml"
+        ]
+      ],
+      "lint": "mvn checkstyle:check",
+      "typecheck": "mvn test-compile",
+      "test": "mvn test",
+      "junit": {
+        "command": "mvn test",
+        "files": "target/surefire-reports/TEST-*.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/main/"
+      ],
+      "test_dir": "src/test/",
+      "layout": {
+        "init": null,
+        "dirs": [
+          "src/main/java/",
+          "src/test/java/"
+        ]
+      },
+      "source": [
+        "https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html",
+        "https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html",
+        "https://maven.apache.org/surefire/maven-surefire-plugin/test-mojo.html",
+        "https://maven.apache.org/plugins/maven-checkstyle-plugin/check-mojo.html"
+      ]
+    },
+    {
+      "name": "gradle",
+      "family": "jvm",
+      "detect": [
+        [
+          "settings.gradle*"
+        ],
+        [
+          "build.gradle*"
+        ]
+      ],
+      "lint": "./gradlew checkstyleMain checkstyleTest",
+      "typecheck": "./gradlew compileJava compileTestJava",
+      "test": "./gradlew test",
+      "junit": {
+        "command": "./gradlew test",
+        "files": "build/test-results/test/*.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/main/"
+      ],
+      "test_dir": "src/test/",
+      "layout": {
+        "init": null,
+        "dirs": [
+          "src/main/java/",
+          "src/test/java/"
+        ]
+      },
+      "source": [
+        "https://docs.gradle.org/current/userguide/java_testing.html",
+        "https://docs.gradle.org/current/userguide/java_plugin.html",
+        "https://docs.gradle.org/current/userguide/checkstyle_plugin.html",
+        "https://docs.gradle.org/current/userguide/build_init_plugin.html"
+      ]
+    },
+    {
+      "name": "go",
+      "family": "go",
+      "detect": [
+        [
+          "go.mod"
+        ]
+      ],
+      "lint": "golangci-lint run",
+      "typecheck": "go vet ./...",
+      "test": "go test ./...",
+      "junit": {
+        "command": "gotestsum --junitfile junit.xml",
+        "files": "junit.xml",
+        "package": "gotest.tools/gotestsum",
+        "setup": null
+      },
+      "source_dirs": [
+        "cmd/",
+        "internal/"
+      ],
+      "test_dir": null,
+      "layout": {
+        "init": "go mod init <module>",
+        "dirs": [
+          "cmd/<prog>/",
+          "internal/<pkg>/"
+        ]
+      },
+      "source": [
+        "https://go.dev/doc/modules/layout",
+        "https://pkg.go.dev/cmd/go#hdr-Test_packages",
+        "https://golangci-lint.run/docs/welcome/quick-start/",
+        "https://github.com/gotestyourself/gotestsum"
+      ]
+    },
+    {
+      "name": "uv",
+      "family": "python",
+      "detect": [
+        [
+          "pyproject.toml",
+          "uv.lock"
+        ]
+      ],
+      "lint": "uv run ruff check",
+      "typecheck": "uv run pyright",
+      "test": "uv run pytest tests/unit",
+      "junit": {
+        "command": "uv run pytest tests/unit --junit-xml=junit.xml",
+        "files": "junit.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/unit/",
+      "layout": {
+        "init": "uv init --package",
+        "dirs": [
+          "src/<pkg>/",
+          "tests/unit/"
+        ]
+      },
+      "source": [
+        "https://docs.astral.sh/uv/concepts/projects/init/",
+        "https://docs.astral.sh/uv/concepts/projects/layout/",
+        "https://docs.astral.sh/ruff/linter/",
+        "https://github.com/microsoft/pyright/blob/main/docs/command-line.md",
+        "https://docs.pytest.org/en/stable/how-to/output.html",
+        "https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/"
+      ]
+    },
+    {
+      "name": "poetry",
+      "family": "python",
+      "detect": [
+        [
+          "pyproject.toml",
+          "poetry.lock"
+        ]
+      ],
+      "lint": "poetry run ruff check",
+      "typecheck": "poetry run pyright",
+      "test": "poetry run pytest tests/unit",
+      "junit": {
+        "command": "poetry run pytest tests/unit --junit-xml=junit.xml",
+        "files": "junit.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/unit/",
+      "layout": {
+        "init": "poetry init -n",
+        "dirs": [
+          "src/<pkg>/",
+          "tests/unit/"
+        ]
+      },
+      "source": [
+        "https://python-poetry.org/docs/basic-usage/",
+        "https://docs.astral.sh/ruff/linter/",
+        "https://github.com/microsoft/pyright/blob/main/docs/command-line.md",
+        "https://docs.pytest.org/en/stable/how-to/output.html",
+        "https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/"
+      ]
+    },
+    {
+      "name": "pip",
+      "family": "python",
+      "detect": [
+        [
+          "pyproject.toml"
+        ],
+        [
+          "requirements.txt"
+        ]
+      ],
+      "lint": "ruff check",
+      "typecheck": "pyright",
+      "test": "python -m pytest tests/unit",
+      "junit": {
+        "command": "python -m pytest tests/unit --junit-xml=junit.xml",
+        "files": "junit.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/unit/",
+      "layout": {
+        "init": null,
+        "dirs": [
+          "src/<pkg>/",
+          "tests/unit/"
+        ]
+      },
+      "source": [
+        "https://pip.pypa.io/en/stable/user_guide/",
+        "https://pip.pypa.io/en/stable/reference/requirements-file-format/",
+        "https://docs.astral.sh/ruff/linter/",
+        "https://github.com/microsoft/pyright/blob/main/docs/command-line.md",
+        "https://docs.pytest.org/en/stable/how-to/output.html",
+        "https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/"
+      ]
+    },
+    {
+      "name": "pnpm",
+      "family": "js",
+      "detect": [
+        [
+          "package.json",
+          "pnpm-lock.yaml"
+        ]
+      ],
+      "lint": "pnpm exec biome ci",
+      "typecheck": "pnpm exec tsc --noEmit",
+      "test": "pnpm exec vitest run",
+      "junit": {
+        "command": "pnpm exec vitest run --reporter=junit --outputFile=junit.xml",
+        "files": "junit.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/unit/",
+      "layout": {
+        "init": "pnpm init",
+        "dirs": [
+          "src/",
+          "tests/unit/"
+        ]
+      },
+      "source": [
+        "https://pnpm.io/git",
+        "https://pnpm.io/cli/test",
+        "https://biomejs.dev/reference/cli/",
+        "https://www.typescriptlang.org/tsconfig/#noEmit",
+        "https://vitest.dev/guide/cli",
+        "https://vitest.dev/guide/reporters"
+      ]
+    },
+    {
+      "name": "yarn",
+      "family": "js",
+      "detect": [
+        [
+          "package.json",
+          "yarn.lock"
+        ]
+      ],
+      "lint": "yarn biome ci",
+      "typecheck": "yarn tsc --noEmit",
+      "test": "yarn vitest run",
+      "junit": {
+        "command": "yarn vitest run --reporter=junit --outputFile=junit.xml",
+        "files": "junit.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/unit/",
+      "layout": {
+        "init": "yarn init",
+        "dirs": [
+          "src/",
+          "tests/unit/"
+        ]
+      },
+      "source": [
+        "https://yarnpkg.com/getting-started/qa",
+        "https://yarnpkg.com/cli/run",
+        "https://biomejs.dev/reference/cli/",
+        "https://www.typescriptlang.org/tsconfig/#noEmit",
+        "https://vitest.dev/guide/cli",
+        "https://vitest.dev/guide/reporters"
+      ]
+    },
+    {
+      "name": "npm",
+      "family": "js",
+      "detect": [
+        [
+          "package.json"
+        ]
+      ],
+      "lint": "npx biome ci",
+      "typecheck": "npx tsc --noEmit",
+      "test": "npx vitest run",
+      "junit": {
+        "command": "npx vitest run --reporter=junit --outputFile=junit.xml",
+        "files": "junit.xml",
+        "package": null,
+        "setup": null
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/unit/",
+      "layout": {
+        "init": "npm init -y",
+        "dirs": [
+          "src/",
+          "tests/unit/"
+        ]
+      },
+      "source": [
+        "https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json",
+        "https://docs.npmjs.com/cli/v11/commands/npm-init",
+        "https://biomejs.dev/reference/cli/",
+        "https://www.typescriptlang.org/tsconfig/#noEmit",
+        "https://vitest.dev/guide/cli",
+        "https://vitest.dev/guide/reporters"
+      ]
+    },
+    {
+      "name": "cargo",
+      "family": "rust",
+      "detect": [
+        [
+          "Cargo.toml"
+        ]
+      ],
+      "lint": "cargo clippy --all-targets",
+      "typecheck": "cargo check",
+      "test": "cargo test",
+      "junit": {
+        "command": "cargo nextest run --profile ci",
+        "files": "target/nextest/ci/junit.xml",
+        "package": "cargo-nextest",
+        "setup": ".config/nextest.toml: [profile.ci.junit] path = \"junit.xml\""
+      },
+      "source_dirs": [
+        "src/"
+      ],
+      "test_dir": "tests/",
+      "layout": {
+        "init": "cargo init",
+        "dirs": [
+          "src/",
+          "tests/"
+        ]
+      },
+      "source": [
+        "https://doc.rust-lang.org/cargo/guide/project-layout.html",
+        "https://doc.rust-lang.org/cargo/commands/cargo-check.html",
+        "https://doc.rust-lang.org/cargo/commands/cargo-test.html",
+        "https://doc.rust-lang.org/clippy/usage.html",
+        "https://nexte.st/docs/machine-readable/junit/"
+      ]
+    },
+    {
+      "name": "dotnet",
+      "family": "dotnet",
+      "detect": [
+        [
+          "*.sln"
+        ],
+        [
+          "*.slnx"
+        ],
+        [
+          "*.csproj"
+        ]
+      ],
+      "lint": "dotnet format --verify-no-changes",
+      "typecheck": "dotnet build -warnaserror",
+      "test": "dotnet test",
+      "junit": {
+        "command": "dotnet test --logger \"junit;LogFilePath=$PWD/TestResults/{assembly}.junit.xml\"",
+        "files": "TestResults/*.junit.xml",
+        "package": "JunitXml.TestLogger",
+        "setup": null
+      },
+      "source_dirs": [],
+      "test_dir": null,
+      "layout": {
+        "init": "dotnet new sln",
+        "dirs": [
+          "<Project>/",
+          "<Project>.Tests/"
+        ]
+      },
+      "source": [
+        "https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit",
+        "https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-format",
+        "https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-test",
+        "https://github.com/spekt/junit.testlogger"
+      ]
+    },
+    {
+      "name": "bundler",
+      "family": "ruby",
+      "detect": [
+        [
+          "Gemfile"
+        ]
+      ],
+      "lint": "bundle exec rubocop",
+      "typecheck": null,
+      "test": "bundle exec rspec",
+      "junit": {
+        "command": "bundle exec rspec --format progress --format RspecJunitFormatter --out junit.xml",
+        "files": "junit.xml",
+        "package": "rspec_junit_formatter",
+        "setup": null
+      },
+      "source_dirs": [
+        "lib/"
+      ],
+      "test_dir": "spec/",
+      "layout": {
+        "init": "bundle init",
+        "dirs": [
+          "lib/",
+          "spec/"
+        ]
+      },
+      "source": [
+        "https://bundler.io/man/bundle-gem.1.html",
+        "https://docs.rubocop.org/rubocop/latest/formatters.html",
+        "https://rspec.info/features/3-13/rspec-core/command-line/init/",
+        "https://github.com/sj26/rspec_junit_formatter"
+      ]
+    }
+  ]
+}

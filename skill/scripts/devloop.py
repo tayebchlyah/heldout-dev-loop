@@ -16,6 +16,7 @@
   devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
   devloop.py skill-wall                               PreToolUse hook JSON on stdin: may implementer load this project skill
   devloop.py source-wall [--repo PATH]                PreToolUse hook JSON on stdin: decide a spec-tester call against source_dirs
+  devloop.py stack-detect [--repo PATH]               propose the stacks, capabilities and source_dirs of a repo from presets.json
   devloop.py size-check [--uncommitted | --all]       file-size ratchet: a new or grown file over 40,000 bytes fails
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
@@ -365,6 +366,10 @@ def main() -> int:
     source_wall = commands.add_parser("source-wall")
     source_wall.add_argument("--repo", default=".")
     source_wall.set_defaults(run=("source_wall", "cmd_source_wall"))
+
+    stack_detect = commands.add_parser("stack-detect")
+    stack_detect.add_argument("--repo", default=".")
+    stack_detect.set_defaults(run=("stacks", "cmd_stack_detect"))
 
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()

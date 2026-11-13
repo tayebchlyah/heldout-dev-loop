@@ -16,7 +16,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
 - `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `gate.py`: `logged`, `gate`.
 - `skill/scripts/check_setup.py`: post-install verifier; `security_skill.py`: its security-audit skill check; `capabilities.py`: its `capabilities` and `commands.acceptance` lines; `notes_path.py`: notes path resolver.
-- `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`.
+- `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`; `stacks.py`: `stack-detect`, the `stacks` lines; `skill/presets.json`: build tool presets.
 - `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
@@ -31,7 +31,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
 - `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
-- `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh`: empty `TMPDIR`, leftover fails; suite lock: one run at a time across worktrees.
+- `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time across worktrees.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only).
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
@@ -43,9 +43,9 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md` (guard test).
 - `dev-loop.json`: this repo's project marker, kit version.
-- `assets/`: README logo (`logo.svg`, `logo-dark.svg`), icon (`icon.svg`, `icon.png`), The loop diagram (`the-loop.png`, `the-loop-dark.png`, archify source `the-loop.archify.json`).
+- `assets/`: README logo, icon, The loop diagram (light and dark PNG, archify source `the-loop.archify.json`).
 - `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`, linked from `README.md`. `reference/` stays the agent contract.
-- `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy (guard test). `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`: community files.
+- `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy (guard test). `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.
 - `.github/rulesets/`: ruleset bodies for `gh api`, contexts equal `ci.yml` job ids (guard test).
 
 ## devloop CLI
@@ -62,6 +62,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `search-wall`: Deny a subagent search that reaches the held-out suite; hook JSON on stdin. `reference/cli/search-wall.md`
 - `skill-wall`: May `implementer` load this project skill: listed, equal to the main ref, no fork, shell line or hook; hook JSON on stdin. `reference/cli/skill-wall.md`
 - `source-wall [--repo <path>]`: Decide a spec-tester call against `source_dirs` at the main ref; hook JSON on stdin. `reference/cli/source-wall.md`
+- `stack-detect [--repo <path>]`: Propose the code units of a repo from `presets.json`. `reference/cli/stack-detect.md`
 - `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a split seam. `reference/cli/size-check.md`
 - `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, feature map README and `verify` key. `reference/cli/verify-init.md`
 - `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save evidence. `reference/cli/drive.md`
