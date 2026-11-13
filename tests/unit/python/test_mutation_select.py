@@ -12,6 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from mutation_fixtures import adapter_script, commit, make_repo, run_mutation  # noqa: E402
+from support import git_in  # noqa: E402
 
 
 def config(mutation: object = None, **extra: object) -> str:
@@ -131,6 +132,23 @@ class MutationSelect(unittest.TestCase):
         with self.subTest("not a folder"):
             _, (code, out, _) = self.select([good], {"b/x.py": "a\n"}, {"b/x.py": "b\n"})
             self.assertEqual((code, out["status"]), (1, "setup"))
+        for name, value, cause in (
+                ("run invalid", [{**good, "critical": []}], "mutation in dev-loop.json is invalid: "),
+                ("run unknown adapter", [{**good, "command": None, "adapter": "pit"}], "unknown adapter pit"),
+                ("run not a folder", [{**good, "path": "c/"}], "c/ is not a folder"),
+                ("run not an object", None, "is not a JSON object")):
+            with self.subTest(name):
+                entry = value if value is None else [{k: v for k, v in e.items() if v is not None} for e in value]
+                repo, _ = self.select(entry, {"a/x.py": "a\n"}, {"a/x.py": "b\n"})
+                if value is None:
+                    commit(repo, {"dev-loop.json": "[]"})
+                head = git_in(repo, "rev-parse", "HEAD").strip()
+                code, out, _ = run_mutation(repo, "--head", "HEAD", "--run")
+                self.assertEqual(code, 1)
+                self.assertEqual((out["status"], out["head"], out["entries"], out["outside"], out["none"]),
+                                 ("setup", head, [], [], []))
+                self.assertEqual(sorted(out), ["base", "entries", "head", "none", "outside", "report", "status"])
+                self.assertIn(cause, out["report"])
 
     def test_config_read_at_head(self) -> None:
         a = [{"path": "a/", "command": "./adapt", "critical": ["**"]}]
