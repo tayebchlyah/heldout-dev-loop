@@ -23,8 +23,7 @@ SCRIPTS = (
     ".agents/skills/dev-loop/scripts/devloop.py",
     ".agents/skills/dev-loop/scripts/board/writer.py",
 )
-DATA = (".agents/skills/dev-loop/presets.json",)
-D6 = HOOKS + SCRIPTS + DATA
+D6 = HOOKS + SCRIPTS
 MANIFEST = ".dev-loop/MANIFEST.json"
 
 
