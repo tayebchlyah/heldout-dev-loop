@@ -19,8 +19,9 @@ import adapter
 
 # allow-comment: dependency, Stryker 10.1.1 counts lines at each JavaScript line terminator, columns in UTF-16 units.
 LINE_BREAK = re.compile(r"\r\n|[\n\r\u2028\u2029]")
-# allow-comment: dependency, Stryker 10.1.1 refuses a --mutate range on a glob path, and a comma splits the list.
-NOT_EXPRESSIBLE = re.compile(r"[][{}*?,!]|[@+]\(")
+# allow-comment: dependency, Stryker 10.1.1 refuses a --mutate range on a glob path ([[] escapes [), a comma splits it.
+NOT_EXPRESSIBLE = re.compile(r"[{}*?,!]|[@+]\(")
+BRACKET = re.compile(r"[][]")
 INCONCLUSIVE = {"Timeout", "RuntimeError", "CompileError"}
 STATUSES = {"Killed": "killed", "Survived": "survived", "NoCoverage": "no-tests"}
 REPORT = Path("reports") / "mutation" / "mutation.json"
@@ -51,7 +52,8 @@ def check_setup(folder: Path) -> None:
 
 
 def mutate_arg(files: dict[str, list[list[int]]]) -> str:
-    return ",".join(f"{file}:{start}-{end}" for file in sorted(files) for start, end in sorted(files[file]))
+    return ",".join(BRACKET.sub(r"[\g<0>]", file) + f":{start}-{end}" for file in sorted(files)
+                    for start, end in sorted(files[file]))
 
 
 def split_at(row: str, column: int) -> tuple[str, str]:
