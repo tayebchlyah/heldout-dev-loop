@@ -8,6 +8,9 @@ on:
     paths:
       - skill/scripts/mutation/**
       - tests/fixtures/mutation/**
+      - scripts/mutation_canary.sh
+      - .github/workflows/mutation-canary.yml
+      - skill/scripts/devloop.py
 
 permissions:
   contents: read
