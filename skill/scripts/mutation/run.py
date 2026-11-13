@@ -33,12 +33,13 @@ DIFF = ("diff", "--no-ext-diff", "--no-color", "-U0", "-M", "--diff-filter=AMR",
 PY_STRING = re.compile(r"""[rRbBuUfF]{0,2}('''|\"\"\"|'|")(?:\\.|(?!\1).)*\1""", re.S)
 GO_STRING = re.compile(r'"(?:\\.|[^"\\])*"|`[^`]*`')
 JS_STRING = re.compile(r"""'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`""", re.S)
-GO_LOG = r"\b(?:log|slog)\.\w+\s*\("
+GO_LOG = r"(?<![\w.])(?:log|slog)\.\w+\s*\("
 JS_LOG = r"\bconsole\.\w+\s*\("
 CLASSIFIERS = {
     **dict.fromkeys((".py", ".pyi"), (
         PY_STRING,
-        re.compile(r"\b(?:log(?:ger)?|logging|print|warnings?|console)\b[\w.]*\s*\("),
+        re.compile(r"(?<![\w.])(?:log(?:ger)?|logging|print|warnings?|console)\b[\w.]*\s*\("
+                   r"|\b(?:_?log(?:ger)?|logging|LOG(?:GER)?|warnings?|console)\.[\w.]*\s*\("),
         re.compile(r"^\s*raise\b|^\s*assert\b.*,|\b(?:detail|message|msg|description|help|reason|summary)\s*=(?!=)"),
     )),
     ".go": (GO_STRING, re.compile(GO_LOG), re.compile(rf"\berrors\.New\(|\bfmt\.Errorf\(|\bpanic\(|{GO_LOG}")),
@@ -50,12 +51,25 @@ CLASSIFIERS = {
 }
 
 
+SUBSCRIPT = (re.compile(r"\[\s*$"), re.compile(r"\s*\]"))
+COMPARED = (re.compile(r"(?:[=!]=|\bin|\bis(?:\s+not)?)\s*$"), re.compile(r"\s*(?:[=!]=|in\b|not\s+in\b|is\b)"))
+
+
+def _blank(string: re.Pattern, text: str) -> str:
+    def read(match: re.Match) -> bool:
+        before, after = text[:match.start()], text[match.end():]
+        return bool(SUBSCRIPT[0].search(before) and SUBSCRIPT[1].match(after)
+                    or COMPARED[0].search(before) or COMPARED[1].match(after))
+
+    return string.sub(lambda match: match[0] if read(match) else '""', text).strip()
+
+
 def classify(file: str, diff: str | None) -> str:
     rules = CLASSIFIERS.get(PurePosixPath(file).suffix)
     if rules is None or diff is None:
         return "decision"
     string, log_call, context = rules
-    rows = [row for row in diff.splitlines() if row.startswith(("-", "+")) and not row.startswith(("---", "+++"))]
+    rows = [row for row in diff.split("\n") if row[:1] in ("-", "+")]
     if not rows:
         return "decision"
     texts = [row[1:] for row in rows]
@@ -63,7 +77,7 @@ def classify(file: str, diff: str | None) -> str:
         return "message"
 
     def blank(sign: str) -> list[str]:
-        return [string.sub('""', row[1:]).strip() for row in rows if row[0] == sign]
+        return [_blank(string, row[1:]) for row in rows if row[0] == sign]
 
     if blank("-") == blank("+") and all(context.search(text) for text in texts):
         return "message"

@@ -28,6 +28,17 @@ ROWS = [
     ("a.py", '-    if kind == "gauge":\n+    if kind == "XXgaugeXX":\n', "decision"),
     ("a.py", "-    if count >= limit:\n+    if count > limit:\n", "decision"),
     ("a.py", "-    return total\n+    return None\n", "decision"),
+    ("a.py", "-    return math.log(x + 1)\n+    return math.log(x - 1)", "decision"),
+    ("a.py", "-    return np.log(x + 1)\n+    return np.log(x - 1)", "decision"),
+    ("a.py", '-    _logger.info("a")\n+    _logger.info("b")', "message"),
+    ("a.py", '-    LOGGER.warning("a", x + 1)\n+    LOGGER.warning("a", x - 1)', "message"),
+    ("a.py", '-    print("a")\n+    print("b")', "message"),
+    ("a.go", "-\treturn foo.log.Sum(x + 1)\n+\treturn foo.log.Sum(x - 1)", "decision"),
+    ("a.go", "-\treturn mylog.Sum(x + 1)\n+\treturn mylog.Sum(x - 1)", "decision"),
+    ("a.py", '-    raise E(404, detail=errors["missing"])\n+    raise E(404, detail=errors["XXmissingXX"])', "decision"),
+    ("a.py", '-    assert kind == "gauge", "bad"\n+    assert kind == "XXgaugeXX", "bad"', "decision"),
+    ("a.py", '-    assert "id" in row, "bad"\n+    assert "XXidXX" in row, "bad"', "decision"),
+    ("a.js", '-console.log("a")\n+console.log("b")\n---x;', "decision"),
 ]
 for ext in ("pyi", "jsx", "tsx", "mjs", "cjs", "vue", "svelte"):
     body = '-    raise ValueError("a")\n+    raise ValueError("b")' if ext == "pyi" else '-  console.log("a")\n+  console.log("b")'
