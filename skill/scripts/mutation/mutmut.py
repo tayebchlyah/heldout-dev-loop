@@ -67,10 +67,11 @@ def units_of(source: str, relative: str) -> tuple[list[Unit], list[Span]]:
 
 
 def runner(folder: Path) -> list[str]:
-    if (folder / "uv.lock").is_file():
-        return ["uv", "run", "mutmut"]
-    if (folder / "poetry.lock").is_file():
-        return ["poetry", "run", "mutmut"]
+    for place in (folder, adapter.repo_root(folder)):
+        if (place / "uv.lock").is_file():
+            return ["uv", "run", "mutmut"]
+        if (place / "poetry.lock").is_file():
+            return ["poetry", "run", "mutmut"]
     return ["mutmut"]
 
 

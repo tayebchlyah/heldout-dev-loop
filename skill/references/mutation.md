@@ -92,7 +92,7 @@ Stage 0 owns this setup, after the user says yes to mutation. `scripts/check_set
 
 **mutmut.**
 
-- Pin mutmut to an exact version in the dev dependency group: `mutmut==<version>`, in the entry's `pyproject.toml` or the repo root `pyproject.toml` (a uv workspace).
+- Pin mutmut to an exact version in the dev dependency group: `mutmut==<version>`, in the entry's `pyproject.toml` or the repo root `pyproject.toml` (a uv workspace). The adapter runs mutmut in the entry folder through `uv run` or `poetry run` when `uv.lock` or `poetry.lock` is in the entry folder, else in the repo root; else as plain `mutmut`.
 - Put `[tool.mutmut]` in the `pyproject.toml` of the package the tests import. Single stack: the root file. Two stacks: `backend/pyproject.toml`. mutmut names each mutant from the file path relative to the directory it runs in, and matches that name against the imported module at run time, so this directory is the only one that works.
 
   ```toml

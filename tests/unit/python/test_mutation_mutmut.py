@@ -14,7 +14,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import MODULE_BASE, ROOT, write  # noqa: E402
+from support import MODULE_BASE, ROOT, git_in, write  # noqa: E402
 
 FOLDER = ROOT / "skill" / "scripts" / "mutation"
 SCRIPT = FOLDER / "mutmut.py"
@@ -140,6 +140,15 @@ class MutmutAdapter(unittest.TestCase):
             if lock:
                 write(folder / lock, "")
             self.assertEqual(mutmut.runner(folder), expected, lock)
+        workspace = self.root / "ws"
+        write(workspace / "uv.lock", "")
+        git_in(workspace, "init", "-q")
+        for entry, lock, expected in (("app", None, ["uv", "run", "mutmut"]),
+                                      ("lib", "poetry.lock", ["poetry", "run", "mutmut"])):
+            (workspace / entry).mkdir()
+            if lock:
+                write(workspace / entry / lock, "")
+            self.assertEqual(mutmut.runner(workspace / entry), expected, entry)
 
     def test_recorded_results_and_show(self) -> None:
         results = (RECORDED / "results.txt").read_text()

@@ -66,6 +66,12 @@ def stream(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> 
     return process.wait(), "".join(kept)
 
 
+def repo_root(folder: Path) -> Path:
+    """The git top level of the folder, resolved; the folder itself outside a git repo."""
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=folder, capture_output=True, text=True)
+    return Path(top.stdout.strip()).resolve() if top.returncode == 0 else folder.resolve()
+
+
 def diff_rows(text: str) -> str | None:
     """The rows of a unified diff without its header rows (before the first `@@`), `@@` rows and `\\` rows (such as
     `\\ No newline at end of file`), an empty row as a space row; None when none is left."""
