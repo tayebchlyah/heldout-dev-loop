@@ -13,7 +13,6 @@ sys.dont_write_bytecode = True
 
 import json
 import re
-import subprocess
 from pathlib import Path
 
 import adapter
@@ -31,8 +30,7 @@ SETUP = "Stage 0 owns it: see references/mutation.md, Setup."
 
 
 def tool(folder: Path) -> Path | None:
-    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=folder, capture_output=True, text=True)
-    root = Path(top.stdout.strip()).resolve() if top.returncode == 0 else folder
+    root = adapter.repo_root(folder)
     for parent in [folder.resolve(), *folder.resolve().parents]:
         if (parent / BIN).is_file():
             return parent / BIN
