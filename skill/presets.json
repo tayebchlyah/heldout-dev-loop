@@ -23,7 +23,7 @@
       "test": "mvn test",
       "junit": {
         "command": "mvn test",
-        "files": "target/surefire-reports/TEST-*.xml",
+        "files": "**/target/surefire-reports/TEST-*.xml",
         "package": null,
         "setup": null
       },
@@ -61,7 +61,7 @@
       "test": "./gradlew test",
       "junit": {
         "command": "./gradlew test",
-        "files": "build/test-results/test/*.xml",
+        "files": "**/build/test-results/test/*.xml",
         "package": null,
         "setup": null
       },
@@ -93,9 +93,9 @@
       ],
       "lint": "golangci-lint run",
       "typecheck": "go vet ./...",
-      "test": "go test ./...",
+      "test": "go test $(go list ./... | grep -v /tests/acceptance)",
       "junit": {
-        "command": "gotestsum --junitfile junit.xml",
+        "command": "gotestsum --junitfile junit.xml -- $(go list ./... | grep -v /tests/acceptance)",
         "files": "junit.xml",
         "package": "gotest.tools/gotestsum",
         "setup": null
@@ -245,9 +245,9 @@
       ],
       "lint": "pnpm exec biome ci",
       "typecheck": "pnpm exec tsc --noEmit",
-      "test": "pnpm exec vitest run",
+      "test": "pnpm exec vitest run --exclude \"tests/acceptance/**\"",
       "junit": {
-        "command": "pnpm exec vitest run --reporter=junit --outputFile=junit.xml",
+        "command": "pnpm exec vitest run --exclude \"tests/acceptance/**\" --reporter=junit --outputFile=junit.xml",
         "files": "junit.xml",
         "package": null,
         "setup": null
@@ -283,9 +283,9 @@
       ],
       "lint": "yarn biome ci",
       "typecheck": "yarn tsc --noEmit",
-      "test": "yarn vitest run",
+      "test": "yarn vitest run --exclude \"tests/acceptance/**\"",
       "junit": {
-        "command": "yarn vitest run --reporter=junit --outputFile=junit.xml",
+        "command": "yarn vitest run --exclude \"tests/acceptance/**\" --reporter=junit --outputFile=junit.xml",
         "files": "junit.xml",
         "package": null,
         "setup": null
@@ -320,9 +320,9 @@
       ],
       "lint": "npx biome ci",
       "typecheck": "npx tsc --noEmit",
-      "test": "npx vitest run",
+      "test": "npx vitest run --exclude \"tests/acceptance/**\"",
       "junit": {
-        "command": "npx vitest run --reporter=junit --outputFile=junit.xml",
+        "command": "npx vitest run --exclude \"tests/acceptance/**\" --reporter=junit --outputFile=junit.xml",
         "files": "junit.xml",
         "package": null,
         "setup": null

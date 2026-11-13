@@ -62,13 +62,21 @@ class PresetsTests(unittest.TestCase):
                 self.assertEqual((by[name]["source_dirs"], by[name]["test_dir"], by[name]["layout"]["dirs"]),
                                  (["src/"], "tests/unit/", ["src/", "tests/unit/"]))
         self.assertEqual(by["dotnet"]["source_dirs"], [])
-        self.assertEqual(by["maven"]["junit"]["files"], "target/surefire-reports/TEST-*.xml")
+        self.assertEqual(by["maven"]["junit"]["files"], "**/target/surefire-reports/TEST-*.xml")
+        self.assertEqual(by["gradle"]["junit"]["files"], "**/build/test-results/test/*.xml")
         self.assertEqual(by["cargo"]["junit"]["package"], "cargo-nextest")
         self.assertIn("[profile.ci.junit]", by["cargo"]["junit"]["setup"])
         self.assertIn(".config/nextest.toml", by["cargo"]["junit"]["setup"])
         self.assertIsNone(by["bundler"]["typecheck"])
         self.assertEqual(by["uv"]["detect"], [["pyproject.toml", "uv.lock"]])
         self.assertEqual(by["pip"]["detect"], [["pyproject.toml"], ["requirements.txt"]])
+
+    def test_default_discovery_families_exclude_the_held_out_suite(self) -> None:
+        for p in stacks.load_presets()["presets"]:
+            if p["family"] in {"js", "go"}:
+                with self.subTest(preset=p["name"]):
+                    self.assertIn("tests/acceptance", p["test"])
+                    self.assertIn("tests/acceptance", p["junit"]["command"])
 
     def test_presets_path_is_beside_the_skill(self) -> None:
         self.assertEqual(stacks.PRESETS, SKILL_ROOT / "presets.json")
