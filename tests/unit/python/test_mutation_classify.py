@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import signal
 import unittest
 
 import support  # noqa: F401
@@ -50,6 +51,19 @@ class ClassifyTest(unittest.TestCase):
         for file, diff, expected in ROWS:
             with self.subTest(file=file, diff=diff):
                 self.assertEqual(classify(file, diff), expected)
+
+    def test_unterminated_escapes_stay_linear(self) -> None:
+        def expire(*_: object) -> None:
+            raise TimeoutError
+
+        row = "'" + "\\a" * 200
+        previous = signal.signal(signal.SIGALRM, expire)
+        signal.setitimer(signal.ITIMER_REAL, 1)
+        try:
+            self.assertEqual(classify("a.py", f"-raise E({row}\n+raise E({row}x"), "decision")
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
 
 
 if __name__ == "__main__":

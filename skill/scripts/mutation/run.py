@@ -30,7 +30,7 @@ ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92,
 DIFF = ("diff", "--no-ext-diff", "--no-color", "-U0", "-M", "--diff-filter=AMR", "--src-prefix=a/",
         "--dst-prefix=b/", "--ignore-submodules")
 
-PY_STRING = re.compile(r"""[rRbBuUfF]{0,2}('''|\"\"\"|'|")(?:\\.|(?!\1).)*\1""", re.S)
+PY_STRING = re.compile(r"""[rRbBuUfF]{0,2}('''|\"\"\"|'|")(?:\\.|(?!\1)[^\\])*\1""", re.S)
 GO_STRING = re.compile(r'"(?:\\.|[^"\\])*"|`[^`]*`')
 JS_STRING = re.compile(r"""'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`""", re.S)
 GO_LOG = r"(?<![\w.])(?:log|slog)\.\w+\s*\("
