@@ -3,7 +3,7 @@
 # GATE_SCOPE=changed (the Stop hook): any change reaches the node suite (it scans every tracked file),
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
 # README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh,
-# scripts/temp_leak.sh, scripts/suite_lock.sh. No change: neither. Else both. A run of either suite waits for the
+# scripts/temp_leak.sh, scripts/suite_lock.sh, scripts/mutation_canary.sh, tests/fixtures/. No change: neither. Else both. A run of either suite waits for the
 # suite lock (scripts/suite_lock.sh, when beside this file): one suite run at a time across the worktrees.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there.
 # Both suites run with an empty TMPDIR: anything the rule of scripts/temp_leak.sh does not allow fails the gate
@@ -23,7 +23,7 @@ if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
   while IFS= read -r path; do
     case "$path" in
-      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|scripts/temp_leak.sh|scripts/suite_lock.sh|cliff.toml) py=1 ;;
+      skill/*|skills/*|claude/*|codex/*|bin/*|lib/*|tests/unit/python/*|reference/*|AGENTS.md|README.md|CODING_STANDARDS.md|package.json|upstream.json|scripts/upstream_watch.py|scripts/acceptance.sh|scripts/repo_rules.py|scripts/gate.sh|scripts/temp_leak.sh|scripts/suite_lock.sh|scripts/mutation_canary.sh|tests/fixtures/*|cliff.toml) py=1 ;;
     esac
     node=1
   done < <(git diff --name-only HEAD; git ls-files --others --exclude-standard)

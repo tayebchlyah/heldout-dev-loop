@@ -32,12 +32,12 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
 - `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
-- `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time across worktrees.
+- `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
-- `scripts/canary.sh`: live canary before a release (this repo only).
+- `scripts/canary.sh`: live canary before a release (this repo only). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
-- `scripts/repo_rules.py`: repo checks `comments`, `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source, `package.json` beyond `version` included), this repo only.
-- `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
+- `scripts/repo_rules.py`: repo checks `comments`, `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source, `package.json` beyond `version` included).
+- `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes. `reference/upstream.md`
 - `reference/cli/<command>.md`: full contract per `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
 - `reference/release.md`: the release steps.
