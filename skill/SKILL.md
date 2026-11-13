@@ -70,18 +70,7 @@ Kit on `origin/main` newer: `status` `kit_drift` `direction` `main-newer`, read 
 Every conflict under `tests/acceptance/` goes to `spec-tester`: it resolves the file and runs `scripts/devloop.py seal --rebase-continue`, which writes the new seal value into the commit message of the rebase and continues it. A conflict happens only in a file the seal commit touched.
 
 ## 0 Bootstrap
-`old-notes-layout`: `notes-migrate` dry run, the user confirms, then `--apply --plan <hash>`. Delivery never migrates. See [references/notes-migrate.md](references/notes-migrate.md).
-Invoke `new-repo-setup`. Apply the selected harness setup contract. Claude Code writes its `.claude/settings.json`. Codex writes its `.codex/config.toml` only when a project override is needed. Security review runs once per feature in Stage 6, not per Stop and commit.
-`git init`, one commit. Invoke the route's domain-modeling skill for first terms of `GLOSSARY.md`.
-Detect stacks: `pyproject.toml` = python, `go.mod` = go, `package.json` with UI framework or `frontend/` = ui. Confirm with the user. Write `stacks: <list>` in repo AGENTS.md. Write `"capabilities"` in `dev-loop.json` (`check_setup.py` proposes; the user confirms): `ui` (web UI), `backend` (service), both, or `[]`.
-Layout: PyPA src layout, `uv init --package`. One stack: `src/<pkg>/` + `tests/unit/`. Two stacks: uv workspace root, `backend/src/<pkg>/` + `backend/tests/unit/`, `frontend/src/` + `frontend/tests/unit/`. FastAPI-template `backend/app/` also acceptable; the spec-tester wall: `source_dirs` in `dev-loop.json`. Acceptance tests once, at root `tests/acceptance/` (`api/`, and `e2e/` when ui). Root only: spec-tester writes it and cannot enter a stack dir.
-Write `scripts/gate.sh`: runs only the stack `git diff --name-only HEAD` touched. python: ruff, pyright, `pytest tests/unit`. go: `go vet`, `go test ./...`. ui: biome, `tsc --noEmit`, `vitest run`. Never E2E. It exports `core.fsmonitor=false` through `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`, appended after the caller's entries, before its first git call (`check_setup.py` checks it, and skips it when `commands.gate` runs another command).
-`backend`: compose test profile with seeded fixtures, for Stage 6. Else skip.
-Verify skill, `ui` in `capabilities`: `scripts/devloop.py verify-init --base-url <url>`, then follow [references/verify.md](references/verify.md): fill the skill, seed 3 to 5 map entries, prove it once. `"verify": false` in `dev-loop.json` opts out. `check_setup.py` fails on `ui` with no `verify` key.
-Mutation setup per stack, as [references/mutation.md](references/mutation.md) section Setup states. `check_setup.py` verifies it. New repo with CI only: the nightly mutation workflow, as `mutation.md` section Nightly CI states.
-Write the app CLI skeleton (acceptance run; `backend`: stack up, stack reset), mapped in `commands` of `dev-loop.json` (`commands.acceptance` required). The acceptance run writes JUnit XML into `$DEVLOOP_REPORT_DIR` (the standard `scripts/devloop.py acceptance` reads; not checked). `commands.stack_reset` must recreate the build service containers: compose keeps an unchanged one, with its old `Created` time.
-New repo only: `CODING_STANDARDS.md` at the root, a copy of [references/coding-standards.md](references/coding-standards.md). Only the standards reviewer reads it.
-Notes path: ask for it, the folder must exist. Write `{"notes": "<path>"}` to `dev-loop.local.json` in the main worktree. Add it to `.gitignore` when `git check-ignore` says it is not ignored.
+Read [references/bootstrap.md](references/bootstrap.md) and run its steps: units from `stack-detect`, `scripts/gate.sh`, the services, verify, mutation and notes setup.
 Done when `scripts/gate.sh` blocks a deliberately broken unit test.
 
 ## 1 Frame
@@ -99,7 +88,6 @@ Framing note, Tracks M and L, once the user accepts the track: write the grillin
 Start fresh: `git fetch origin`, `git switch main`, `git rebase origin/main`. Local commits on `main` or uncommitted changes: stop, ask. The analysis below reads current specs and current code.
 Write the spec from [references/spec.md](references/spec.md) to `Spec.md` in that feature folder. From a map: `## Sources` cites the map decisions it relies on. Size, best effort: `wc -w` of Goal, Non-goals, Interfaces and seams, Acceptance oracle, Acceptance flows and Supersedes, target 1,500 words. Over it: one `## Goal` line gives the count and why. Never split a feature for size alone. Run its builder check. Then once, the only board command: `scripts/devloop.py board --claim <slug>`. Track L: its threat model. One-way door: its doubt review.
 Spec must declare public interfaces: names, parameter types, return types, seams under test. `ui` in `capabilities`: also routes and accessible names.
-`ui` and `backend` both in `capabilities`: plan task 1 is the contract (OpenAPI or shared types), later tasks vertical slices; else none.
 Supersedes: read the earlier specs in `$NOTES/Features/*/Spec.md`. List every earlier `## Acceptance oracle` line the new behaviour contradicts, quoted, each with its replacement. None: write "Supersedes: none". The user approves this list with the spec.
 Acceptance: decide from Stages 1 and 2, write it in spec frontmatter `acceptance:`. A new or changed user or system flow: empty. No flow change, product code changes (refactor, performance): `regression`. No product code change (tests, CI, tooling, docs only): `none`. `regression` or `none`: one `## Acceptance oracle` line says why no flow changes, `## Acceptance flows` says none. The user approves it with the spec.
 Stop when the user approves: end of Shaping. Acceptance tests (Stage 3) precede the plan.
@@ -116,7 +104,8 @@ Suite frozen after this commit. Only `spec-tester` edits `tests/acceptance/`, on
 The route's planner subagent, high effort, invokes `superpowers:writing-plans` and returns the plan path; read it, apply the checks below. Plan to `Plan.md` in the feature folder, frontmatter `type: plan`, `feature: <slug>`, `spec: Spec.md`.
 Plan never references `tests/acceptance/`. No hand-off question: Track M inline, Track L subagent-driven.
 Run `scripts/devloop.py size-check --all`. A task that changes a file over 40,000 bytes or pushes one past it names the split in its brief.
-Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or seam, the brief names each file it changes, no ruling from another task. A task that fails: split it before Stage 5. Checks done: then Stage 5.
+Smart zone rule. Each task fits one smart zone: a fresh agent finishes it from its brief alone. One module or seam, the brief names each file it changes, no ruling from another task. A task that fails: split it before Stage 5.
+`ui` and `backend` both in `capabilities`, or two or more `stacks` entries in `dev-loop.json`: plan task 1 is the contract (OpenAPI or shared types), later tasks vertical slices; else none. Checks done: then Stage 5.
 
 ## 5 Build
 Track S: no plan, no executor. Build in the feature worktree yourself, test-first, then the Stage 6 review wave, triage and fix wave, then Stage 7.

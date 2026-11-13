@@ -699,12 +699,6 @@ class FeatureGateTextTests(unittest.TestCase):
         self.assertNotIn("commands.acceptance missing", stage6)
         self.assertIn("the `check_setup.py` line (absent) or the `acceptance` error (changed)", stage6)
 
-    def test_skill_stage_0(self) -> None:
-        stage0 = section((ROOT / "skill" / "SKILL.md").read_text(), "## 0 Bootstrap", "## 1 Frame")
-        self.assertIn("DEVLOOP_REPORT_DIR", stage0)
-        self.assertIn("commands.stack_reset", stage0)
-        self.assertIn("recreate", stage0)
-
     def test_routes(self) -> None:
         claude = (ROOT / "skill" / "references" / "claude.md").read_text()
         codex = (ROOT / "skill" / "references" / "codex.md").read_text()

@@ -29,6 +29,7 @@ One file per subject. A new test file adds its line here.
 - `test_capabilities.py`: `capabilities.py`: validator, proposal, the `check_setup.py` capabilities and `commands.acceptance` lines.
 - `test_presets.py`: `presets.json` schema, order and pinned values, the presets reader.
 - `test_stack_detect.py`: `stack-detect`: a fixture per preset, detection order, skip rules, members, capabilities, `source_dirs`, `unknown`.
+- `test_bootstrap_text.py`: Stage 0 pointer in `SKILL.md`, `references/bootstrap.md` text, the Stage 4 contract line.
 - `test_stacks_setup.py`: the `stacks` validator and the `check_setup.py` `stacks` lines.
 - `test_upstream_watch.py`, `test_autonomy.py`: upstream watch; `decide`, `pause`, autonomy hooks.
 - `test_repo_rules.py`, `test_repo_docs.py`: `repo_rules.py`, gate scope; `AGENTS.md` budget, CLI index, this file index, kit and release docs, README sections, links and inspirations.

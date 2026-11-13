@@ -179,7 +179,8 @@ class SpecGapContractTests(unittest.TestCase):
                 self.assertIn(value, nightly)
 
     def test_stage_0_writes_the_app_cli_skeleton(self) -> None:
-        self.assertIn("app CLI skeleton (acceptance run; `backend`: stack up, stack reset), mapped in `commands`", stage_text(0))
+        self.assertIn("app CLI skeleton (acceptance run; `backend`: stack up, stack reset), mapped in `commands`",
+                      (SKILL_ROOT / "references" / "bootstrap.md").read_text())
 
     def test_stack_up_and_stack_reset_are_read(self) -> None:
         self.assertIn("`commands.stack_up`, else `docker compose --profile test up -d --wait`", stage_text(5))

@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 import test_devloop
-from support import CHECKER, MODULE_BASE, SELECTOR, SKILL, SKILL_ROOT, all_instructions, check_setup, git_in, make_git_repo, select_mutants, write
+from support import CHECKER, MODULE_BASE, SELECTOR, SKILL_ROOT, all_instructions, check_setup, git_in, make_git_repo, select_mutants, write
 
 
 def commit_changes(repo: Path, files: dict[str, str]) -> str:
@@ -83,7 +83,7 @@ class MutationContractTests(unittest.TestCase):
         for value in ["What the selection does not cover", "Stage 0 owns this setup", "runtime_checkable", "mutants/"]:
             with self.subTest(value=value):
                 self.assertIn(value, mutation)
-        self.assertIn("references/mutation.md", SKILL.read_text())
+        self.assertIn("references/mutation.md", (SKILL_ROOT / "references" / "bootstrap.md").read_text())
 
     def test_no_em_dash_in_the_mutation_payload(self) -> None:
         for path in [
