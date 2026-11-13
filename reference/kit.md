@@ -132,6 +132,8 @@ Codex TUI task tools upgrade (#283): the matcher of `acceptance-wall.sh` becomes
 
 Capabilities upgrade (#304): `check_setup.py` gives two new lines, `capabilities missing` (with a proposed value) and `commands.acceptance missing`: the agent adds both keys in the upgrade PR. The per-stack fallback acceptance runners are gone: `commands.acceptance` is the only runner. The verify rule reads `capabilities`, not the `AGENTS.md` `stacks:` line, which stays for the mutation code and `/garden`. The stale image rule follows `source_dirs`. `verify.playwright` is optional: an existing `verify` key without it keeps the four lookup paths.
 
+Stack presets upgrade (#307): the kit adds `presets.json` (12 build tool presets), `references/bootstrap.md` (the Stage 0 steps, out of `SKILL.md`) and `devloop.py stack-detect`. `dev-loop.json` takes an optional `stacks` record; `check_setup.py` checks it only when present, so the upgrade PR needs no change. The Codex kit copy also holds `.agents/skills/dev-loop/presets.json`: a new `H`, so `/hooks` in Codex again, as the #227 note says.
+
 Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fails below it). `upgrade` merges `[features]`, `[permissions.dev-workspace.network]` and `[permissions.dev-workspace.network.domains]` key by key: each missing kit key is added, each project value is kept and named in a `kept your own <table> <key>` line. It adds `network_proxy`, `mode`, `allow_local_binding`, the domains and the `dev-docker` tables. Other tables keep the table-level merge.
 
 3.0.0 upgrade (breaking): from 2.1.x, in this order.
