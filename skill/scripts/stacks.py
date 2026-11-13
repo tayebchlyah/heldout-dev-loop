@@ -6,11 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 from fnmatch import fnmatchcase
 from pathlib import Path
 
 import source_dirs
-from capabilities import COMPOSE_FILES
+import capabilities
 from devloop import emit
 from seal import ACCEPTANCE_DIR
 
@@ -80,25 +81,39 @@ def _ui(folder: Path, frameworks: list[str]) -> bool:
     return False
 
 
-def _holds_a_file(repo: Path, folder: str) -> bool:
+def _ignored(repo: Path, folders: list[str]) -> set[str]:
+    if not folders:
+        return set()
+    try:
+        done = subprocess.run(["git", "-C", str(repo), "check-ignore", "--stdin", "-z"], input="\0".join(folders),
+                              capture_output=True, text=True, check=False)
+    except OSError:
+        return set()
+    return set(done.stdout.split("\0")) & set(folders) if done.returncode == 0 else set()
+
+
+def _covered(folder: str, paths: list[str]) -> bool:
+    return any(folder.startswith(p) for p in paths)
+
+
+def _holds_a_file(repo: Path, folder: str, claimed: list[str]) -> bool:
     for root, dirs, files in os.walk(repo / folder):
         if files:
             return True
         rel = Path(root).relative_to(repo).as_posix() + "/"
-        dirs[:] = [d for d in dirs if not _skipped(f"{rel}{d}/")]
+        dirs[:] = [d for d in dirs if not _skipped(f"{rel}{d}/") and not _covered(f"{rel}{d}/", claimed)]
     return False
-
-
-def _covered(folder: str, paths: list[str]) -> bool:
-    return any(folder.startswith(p) or p.startswith(folder) for p in paths)
 
 
 def detect(repo: Path, data: dict) -> dict:
     presets = data["presets"]
     matched: list[tuple[str, dict]] = []
-    for path in _candidates(repo):
-        folder = repo if path == "." else repo / path
-        preset = next((p for p in presets if folder_matches(folder, p)), None)
+    candidates = _candidates(repo)
+    ignored = _ignored(repo, candidates[1:])
+    for path in candidates:
+        if path in ignored:
+            continue
+        preset = next((p for p in presets if folder_matches(repo / path, p)), None)
         if preset:
             matched.append((path, preset))
     units = [(path, preset) for path, preset in matched
@@ -106,24 +121,22 @@ def detect(repo: Path, data: dict) -> dict:
     units.sort(key=lambda item: (item[0] != ".", item[0]))
     stacks = [{"path": path, "preset": preset["name"], "unit": unit_name(path),
                "commands": {"lint": preset["lint"], "typecheck": preset["typecheck"], "test": preset["test"],
-                            "junit": {"command": preset["junit"]["command"], "package": preset["junit"]["package"]}}}
+                            "junit": {key: preset["junit"][key] for key in ("command", "files", "package", "setup")}}}
               for path, preset in units]
-    capabilities = []
-    if any(_ui(repo if path == "." else repo / path, data["ui_frameworks"]) for path, _ in matched):
-        capabilities.append("ui")
-    if any((repo / name).is_file() for name in COMPOSE_FILES):
-        capabilities.append("backend")
+    proposed = capabilities.proposal(repo)
+    if "ui" not in proposed and any(_ui(repo / path, data["ui_frameworks"]) for path, _ in matched):
+        proposed.insert(0, "ui")
     dirs = {path for path, _ in matched if path != "."}
     for path, preset in units:
         if path == ".":
             dirs.update(preset["source_dirs"])
             if preset["test_dir"]:
                 dirs.add(preset["test_dir"])
-    source_dirs = sorted(d for d in dirs if not (d == HELD or d.startswith(HELD)))
-    claimed = [path for path, _ in matched if path != "."] + source_dirs
+    walled = sorted(d for d in dirs if not d.startswith(HELD))
+    claimed = [path for path, _ in matched if path != "."] + walled
     unknown = [folder for folder in _folders(repo, "")
-               if not _covered(folder, claimed) and _holds_a_file(repo, folder)]
-    return {"stacks": stacks, "capabilities": capabilities, "source_dirs": source_dirs, "unknown": unknown}
+               if folder not in ignored and not _covered(folder, claimed) and _holds_a_file(repo, folder, claimed)]
+    return {"stacks": stacks, "capabilities": proposed, "source_dirs": walled, "unknown": unknown}
 
 
 def validate(value: object) -> str | None:
@@ -162,7 +175,7 @@ def setup(repo: Path) -> list[str]:
         return [f"stacks in dev-loop.json is invalid: {rule}"]
     try:
         presets = by_name(load_presets())
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError) as exc:
         return [f"stacks: presets.json cannot be read: {exc}"]
     entries = config.get("source_dirs")
     covered = entries if "source_dirs" in config and source_dirs.validate(entries) is None else None
