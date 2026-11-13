@@ -9,22 +9,23 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus it
 Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`).
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
-- `lib/`: installer internals: flag parsing, per-format merges, kit file list, MANIFEST, `init`, `upgrade`, `uninstall-global`; `lib/codex_fill.py`: fill and check of Codex kit copy, embedded in each Codex hook command.
+- `lib/`: installer internals; `lib/codex_fill.py`: fill and check of Codex kit copy, embedded in each Codex hook command.
 - `skills/`: kit skills `pause`, `continue`, `release-audit`, `garden`, `release`, `release-notes` (user-invoked only, except `continue`).
 - `skill/SKILL.md`: the dev-loop skill payload.
 - `skill/references/`: harness routes (`claude.md`, `codex.md`), `bootstrap.md` (Stage 0), `building.md`, `coding-standards.md` (standards template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `deferred.md`; `skill/references/second-review.md`: second reviewer prompt.
-- `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers. Each command's code: the module of its line below.
+- `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers.
 - `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `gate.py`: `logged`, `gate`.
 - `skill/scripts/check_setup.py`: post-install verifier; `security_skill.py`: its security-audit skill check; `capabilities.py`: its `capabilities` and `commands.acceptance` lines; `notes_path.py`: notes path resolver.
 - `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`; `stacks.py`: `stack-detect`, the `stacks` lines; `skill/presets.json`: build tool presets.
 - `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
-- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry of `release-record`; `release_rulings.py`: the `## Deferred` item and ruling parser; `sandbox-run.py`: audit sandbox runner (Docker).
-- `skill/scripts/audit/`: `audit-run` package: one module per step (`seed`, `units`, `brief`, `check`, `promote`, `fold`, `fold_review`, `close`, `report`), shared `common`, `skilltext`, `safefs`.
+- `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry; `release_rulings.py`: `## Deferred` parser; `sandbox-run.py`: audit sandbox runner (Docker).
+- `skill/scripts/audit/`: `audit-run` package: one module per step, shared `common`, `skilltext`, `safefs`.
+- `skill/scripts/mutation/`: `mutation`: `run.py` (selection, protocol, checks, report), built-in adapters `mutmut.py`, `stryker.py`, `mutago.py` (`adapter.py` shared), `setup.py` (its `check_setup.py` lines).
 - `skill/scripts/feature_gate.py`: `review-merge`, `review-save`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
-- `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board writer, server and page; `board/cli.py`: `board`.
+- `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board (`board/cli.py`: `board`).
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
 - `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md` (a new test file adds its line there, not here). No test file under `skill/`.
@@ -35,18 +36,18 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only).
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
-- `scripts/repo_rules.py`: repo checks `comments` (allowed comments, private docstrings, trailing `.sh` comments), `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source, `package.json` beyond `version` included), this repo only.
+- `scripts/repo_rules.py`: repo checks `comments`, `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source, `package.json` beyond `version` included), this repo only.
 - `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes (this repo only). `reference/upstream.md`
 - `reference/cli/<command>.md`: full contract per `devloop` command.
 - `reference/kit.md`: what `init` and `upgrade` write, MANIFEST rule, notes path, verify after install, upgrade notes.
 - `reference/release.md`: the release steps.
 - `GLOSSARY.md`: domain terms (Stage 0).
-- `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md` (guard test).
+- `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md`.
 - `dev-loop.json`: this repo's project marker, kit version.
-- `assets/`: README logo, icon, The loop diagram (light and dark PNG, archify source `the-loop.archify.json`).
-- `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`, linked from `README.md`. `reference/` stays the agent contract.
-- `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy (guard test). `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.
-- `.github/rulesets/`: ruleset bodies for `gh api`, contexts equal `ci.yml` job ids (guard test).
+- `assets/`: README logo, icon, The loop diagram (`the-loop.archify.json` source).
+- `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`.
+- `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.
+- `.github/rulesets/`: ruleset bodies for `gh api`, contexts equal `ci.yml` job ids.
 
 ## devloop CLI
 
@@ -63,6 +64,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `skill-wall`: May `implementer` load this project skill: listed, equal to the main ref, no fork, shell line or hook; hook JSON on stdin. `reference/cli/skill-wall.md`
 - `source-wall [--repo <path>]`: Decide a spec-tester call against `source_dirs` at the main ref; hook JSON on stdin. `reference/cli/source-wall.md`
 - `stack-detect [--repo <path>]`: Propose the code units of a repo from `presets.json`. `reference/cli/stack-detect.md`
+- `mutation --head <rev> [--base <rev>] [--main <branch>] [--repo <path>] [--run] [--entry <path>] [--only <unit> ...]`: Select the changed critical lines of each `mutation` entry; `--run`: run its adapter, classify survivors, report. `reference/cli/mutation.md`
 - `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a split seam. `reference/cli/size-check.md`
 - `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, feature map README and `verify` key. `reference/cli/verify-init.md`
 - `drive [--all | --since <sha> | --routes-from <file>]`: Drive the verify map routes the branch touches in Chromium; save evidence. `reference/cli/drive.md`
