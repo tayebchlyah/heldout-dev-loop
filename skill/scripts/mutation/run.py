@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """`devloop.py mutation`: the changed critical lines of each `mutation` entry of dev-loop.json."""
 
 from __future__ import annotations
@@ -11,7 +10,6 @@ import argparse
 import json
 import re
 import subprocess
-from fnmatch import fnmatchcase
 from functools import lru_cache
 from pathlib import Path
 
@@ -61,6 +59,12 @@ def validate(value: object) -> str | None:
     return None
 
 
+@lru_cache(maxsize=None)
+def _segment(pattern: str) -> re.Pattern:
+    return re.compile("".join(".*" if c == "*" else "." if c == "?" else re.escape(c) for c in pattern),
+                      re.DOTALL)
+
+
 def glob_match(path: str, pattern: str) -> bool:
     parts, globs = tuple(path.split("/")), tuple(pattern.split("/"))
 
@@ -70,7 +74,7 @@ def glob_match(path: str, pattern: str) -> bool:
             return i == len(parts)
         if globs[j] == "**":
             return walk(i, j + 1) or (i < len(parts) and walk(i + 1, j))
-        return i < len(parts) and fnmatchcase(parts[i], globs[j]) and walk(i + 1, j + 1)
+        return i < len(parts) and _segment(globs[j]).fullmatch(parts[i]) and walk(i + 1, j + 1)
 
     return walk(0, 0)
 
