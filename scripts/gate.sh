@@ -2,9 +2,10 @@
 # dev-loop gate for this repo: the installer suite (node) and the skill suite (python), side by side.
 # GATE_SCOPE=changed (the Stop hook): any change reaches the node suite (it scans every tracked file),
 # the skill suite only for skill/skills/claude/codex/bin/lib/tests/unit/python, reference/, AGENTS.md,
-# README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py, scripts/gate.sh,
-# scripts/temp_leak.sh, scripts/suite_lock.sh, scripts/mutation_canary.sh, tests/fixtures/. No change: neither. Else both. A run of either suite waits for the
-# suite lock (scripts/suite_lock.sh, when beside this file): one suite run at a time across the worktrees.
+# README.md, package.json, cliff.toml, the upstream watch, scripts/acceptance.sh, scripts/repo_rules.py,
+# scripts/gate.sh, scripts/temp_leak.sh, scripts/suite_lock.sh, scripts/mutation_canary.sh, tests/fixtures/.
+# No change: neither. Else both. A run of either suite waits for the suite lock (scripts/suite_lock.sh,
+# when beside this file): one suite run at a time across the worktrees.
 # DEVLOOP_REPORT_DIR (devloop.py gate): JUnit XML of each suite there.
 # Both suites run with an empty TMPDIR: anything the rule of scripts/temp_leak.sh does not allow fails the gate
 # (a temp leak).
