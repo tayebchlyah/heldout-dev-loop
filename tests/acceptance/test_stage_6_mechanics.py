@@ -524,7 +524,8 @@ def section(text: str, number: int) -> str:
 class KitTextTests(unittest.TestCase):
 
     def test_f5_kit_text_contract(self) -> None:
-        """F5, O23, O24, O25: the repo commands, the SKILL.md Stage 0 and Stage 6 text, the harness refs."""
+        """F5, O23, O24, O25: the repo commands, the SKILL.md Stage 6 text, the bootstrap.md line of O24 (as replaced
+        by Stack Presets), the harness refs."""
         with self.subTest(oracle=23, file="dev-loop.json"):
             config = json.loads((REPO_ROOT / "dev-loop.json").read_text())
             self.assertIn("scripts/acceptance.sh", config.get("commands", {}).get("acceptance", ""))
@@ -544,8 +545,8 @@ class KitTextTests(unittest.TestCase):
                             or re.search(r"file\W+line\W+finding\W+class\W+verdict", stage6), "reviewer table columns")
             self.assertNotIn("Merge the tables, dedupe by file and line", stage6)
             self.assertNotIn("docker compose ps --format", stage6)
-        with self.subTest(oracle=24, stage=0):
-            self.assertIn("DEVLOOP_REPORT_DIR", section(skill, 0))
+        with self.subTest(oracle=24, file="references/bootstrap.md"):
+            self.assertIn("DEVLOOP_REPORT_DIR", (REFS / "bootstrap.md").read_text())
 
         claude = (REFS / "claude.md").read_text()
         codex = (REFS / "codex.md").read_text()
