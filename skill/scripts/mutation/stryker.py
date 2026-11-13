@@ -13,6 +13,7 @@ sys.dont_write_bytecode = True
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import adapter
@@ -25,12 +26,26 @@ BRACKET = re.compile(r"[][]")
 INCONCLUSIVE = {"Timeout", "RuntimeError", "CompileError"}
 STATUSES = {"Killed": "killed", "Survived": "survived", "NoCoverage": "no-tests"}
 REPORT = Path("reports") / "mutation" / "mutation.json"
+BIN = Path("node_modules") / ".bin" / "stryker"
 SETUP = "Stage 0 owns it: see references/mutation.md, Setup."
 
 
-def check_setup(folder: Path) -> None:
-    if not (folder / "node_modules" / "@stryker-mutator" / "core").is_dir():
-        adapter.setup_error(f"mutation setup missing: no node_modules/@stryker-mutator/core, run npm ci first. {SETUP}")
+def tool(folder: Path) -> Path | None:
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=folder, capture_output=True, text=True)
+    root = Path(top.stdout.strip()).resolve() if top.returncode == 0 else folder
+    for parent in [folder.resolve(), *folder.resolve().parents]:
+        if (parent / BIN).is_file():
+            return parent / BIN
+        if parent == root or root not in parent.parents:
+            return None
+    return None
+
+
+def check_setup(folder: Path) -> Path:
+    binary = tool(folder)
+    if binary is None:
+        adapter.setup_error("mutation setup missing: no node_modules/.bin/stryker in the entry folder or a parent up "
+                            f"to the repo root, run npm ci first. {SETUP}")
     file = folder / "stryker.config.json"
     if not file.is_file():
         adapter.setup_error(f"mutation setup missing: no stryker.config.json in the entry folder. {SETUP}")
@@ -49,6 +64,7 @@ def check_setup(folder: Path) -> None:
     if config.get("coverageAnalysis") == "off":
         adapter.setup_error("mutation setup broken: stryker.config.json sets coverageAnalysis off, so a report has no "
                             f"coveredBy and every survivor reads as no tests; use perTest. {SETUP}")
+    return binary
 
 
 def mutate_arg(files: dict[str, list[list[int]]]) -> str:
@@ -96,9 +112,11 @@ def mutants_from(report: dict, files: dict) -> list[dict]:
     return found
 
 
-def run(folder: Path, files: dict[str, list[list[int]]]) -> list[dict]:
+def run(folder: Path, binary: Path, files: dict[str, list[list[int]]]) -> list[dict]:
     (folder / REPORT).unlink(missing_ok=True)
-    code, _ = adapter.stream(["npx", "stryker", "run", "--mutate", mutate_arg(files), "--reporters", "json"], folder)
+    # allow-comment: dependency, Stryker 10.1.1 loads stryker.conf.* before stryker.config.json unless one is named.
+    command = [str(binary), "run", "stryker.config.json", "--mutate", mutate_arg(files), "--reporters", "json"]
+    code, _ = adapter.stream(command, folder)
     # allow-comment: dependency, under thresholds.break Stryker writes the report, then exits 1.
     if code != 0 and not (folder / REPORT).is_file():
         adapter.tool_failed(f"stryker run exited {code}")
@@ -112,7 +130,7 @@ def run(folder: Path, files: dict[str, list[list[int]]]) -> list[dict]:
 def main() -> None:
     request = adapter.read_request()
     folder = Path.cwd()
-    check_setup(folder)
+    binary = check_setup(folder)
     files, only = request["files"], request["only"]
     units = sorted(files)
     if not request["run"]:
@@ -127,7 +145,7 @@ def main() -> None:
             picked[file] = ranges
             continue
         gaps += [{"file": file, "start": start, "end": end, "reason": reason} for start, end in ranges]
-    adapter.finish(request, units, run(folder, picked) if picked else [], gaps)
+    adapter.finish(request, units, run(folder, binary, picked) if picked else [], gaps)
 
 
 if __name__ == "__main__":
