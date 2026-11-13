@@ -153,6 +153,8 @@ class MutmutAdapter(unittest.TestCase):
                          "         return 10\n     return 0")
         self.assertEqual(adapter.diff_rows("# h\n--- a\n+++ b\n@@ -1 +1 @@\n x\n\n-y\n+z\n"), " x\n \n-y\n+z")
         self.assertIsNone(adapter.diff_rows("# h\n--- a\n+++ b\n"))
+        self.assertEqual(adapter.diff_rows("--- a\n+++ b\n@@ -1 +1 @@\n-y\n\\ No newline at end of file\n+z\n"
+                                           "\\ No newline at end of file\n"), "-y\n+z")
         self.assertEqual(adapter.diff_rows("# h\n--- a\n+++ b\n@@ -1,2 +1,2 @@\n--- x\n+++ y\n @@ z\n"),
                          "--- x\n+++ y\n @@ z")
         self.assertEqual(mutmut.mutant_line(show("x_discount__mutmut_1"), 1), 2)

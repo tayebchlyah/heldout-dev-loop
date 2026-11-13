@@ -67,13 +67,15 @@ def stream(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> 
 
 
 def diff_rows(text: str) -> str | None:
-    """The rows of a unified diff without its header rows (before the first `@@`) and `@@` rows, an empty row as a
-    space row; None when none is left."""
+    """The rows of a unified diff without its header rows (before the first `@@`), `@@` rows and `\\` rows (such as
+    `\\ No newline at end of file`), an empty row as a space row; None when none is left."""
     rows: list[str] = []
     in_hunk = False
     for row in text.removesuffix("\n").split("\n") if text else []:
         if row.startswith("@@"):
             in_hunk = True
+        elif row.startswith("\\"):
+            continue
         elif in_hunk or not row.startswith(HEADERS):
             rows.append(row or " ")
     return "\n".join(rows) if rows else None
