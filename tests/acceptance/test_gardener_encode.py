@@ -132,7 +132,8 @@ class InstallFlowTests(unittest.TestCase):
 class KitTextFlowTests(unittest.TestCase):
 
     def test_f2_kit_text_contract(self) -> None:
-        """F2, O3 to O9: the garden procedure, the comment rule template, Stage 0 and 6, building.md, the guard."""
+        """F2, O3 to O9: the garden procedure, the comment rule template, bootstrap.md and Stage 6, building.md, the
+        guard."""
         # O3: invocation locks.
         text = GARDEN_SKILL.read_text()
         frontmatter = text.split("---", 2)[1]
@@ -163,11 +164,11 @@ class KitTextFlowTests(unittest.TestCase):
             self.assertRegex(comments, re.compile(re.escape(kind), re.I), kind)
         self.assertIn("shortcut: <the limit>, <when to upgrade>", comments)
 
-        # O7: Stage 0 and Stage 6 of the dev-loop skill.
+        # O7 (as replaced by Stack Presets): references/bootstrap.md and Stage 6 of the dev-loop skill.
         skill = SKILL.read_text()
-        stage0 = section(skill, r"0 ")
-        self.assertIn("references/coding-standards.md", stage0)
-        self.assertNotIn("empty `CODING_STANDARDS.md`", skill)
+        bootstrap = (REFS / "bootstrap.md").read_text()
+        self.assertIn("references/coding-standards.md", bootstrap)
+        self.assertNotIn("empty `CODING_STANDARDS.md`", bootstrap)
         stage6 = section(skill, r"6 ")
         self.assertIn("/garden", stage6)
         self.assertIn("$garden", stage6)

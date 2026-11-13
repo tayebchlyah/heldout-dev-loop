@@ -546,14 +546,14 @@ class DriveTests(unittest.TestCase):
 
 class KitTextTests(unittest.TestCase):
     def test_o26_skill_names_verify_init_and_drive(self) -> None:
-        """O26: SKILL.md Stage 0 names verify-init and references/verify.md; Stage 6 names drive and `drive:`."""
+        """O26 (as replaced by Stack Presets): references/bootstrap.md names verify-init and references/verify.md;
+        SKILL.md Stage 6 names drive and `drive:`."""
         text = (SKILL / "SKILL.md").read_text()
-        stage0 = re.search(r"(?ms)^## 0 .*?(?=^## 1 )", text)
+        bootstrap = (SKILL / "references" / "bootstrap.md").read_text()
         stage6 = re.search(r"(?ms)^## 6 .*?(?=^## 7 )", text)
-        self.assertIsNotNone(stage0)
         self.assertIsNotNone(stage6)
-        self.assertIn("devloop.py verify-init", stage0.group(0))
-        self.assertIn("references/verify.md", stage0.group(0))
+        self.assertIn("devloop.py verify-init", bootstrap)
+        self.assertIn("references/verify.md", bootstrap)
         self.assertIn("devloop.py drive", stage6.group(0))
         self.assertIn("drive:", stage6.group(0))
 

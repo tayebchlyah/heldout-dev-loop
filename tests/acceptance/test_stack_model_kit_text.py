@@ -59,9 +59,9 @@ class KitTextTests(unittest.TestCase):
                                    "check_setup.py")
 
     def test_o16_o17_stage_0_writes_capabilities_and_this_repo_sets_it(self) -> None:
-        """O16: Stage 0 names `capabilities`, `ui` and `backend`. O17: this repo's `dev-loop.json` has
-        `"capabilities": []`."""
-        text = stage(0)
+        """O16 (as replaced by Stack Presets): `skill/references/bootstrap.md` names `capabilities`, `ui` and
+        `backend`. O17: this repo's `dev-loop.json` has `"capabilities": []`."""
+        text = (REFERENCES / "bootstrap.md").read_text()
         with self.subTest(oracle=16):
             self.assertIn("capabilities", text)
             self.assertRegex(text, r"(?<![\w-])ui(?![\w-])")
