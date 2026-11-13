@@ -42,7 +42,6 @@ SKILL = SKILL_ROOT / "SKILL.md"
 CHECKER = SKILL_ROOT / "scripts" / "check_setup.py"
 CODEX_ASSETS = SKILL_ROOT.parent / "codex"
 CLAUDE_HOOKS = SKILL_ROOT.parent / "claude" / "hooks"
-SELECTOR = SKILL_ROOT / "scripts" / "select_mutants.py"
 NOTES_PATH = SKILL_ROOT / "scripts" / "notes_path.py"
 GUARD_ASKS = Path(__file__).resolve().parent / "fixtures" / "git-guard-asks.json"
 
@@ -59,13 +58,6 @@ try:
 except FileNotFoundError as exc:
     raise FileNotFoundError(f"cannot load check_setup module: missing {CHECKER}") from exc
 
-
-_selector_spec = importlib.util.spec_from_file_location("select_mutants", SELECTOR)
-if _selector_spec is None or _selector_spec.loader is None:
-    raise ImportError(f"cannot load select_mutants module: {SELECTOR}")
-select_mutants = importlib.util.module_from_spec(_selector_spec)
-sys.modules["select_mutants"] = select_mutants
-_selector_spec.loader.exec_module(select_mutants)
 
 _notes_spec = importlib.util.spec_from_file_location("notes_path", NOTES_PATH)
 if _notes_spec is None or _notes_spec.loader is None:

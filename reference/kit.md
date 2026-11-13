@@ -134,6 +134,8 @@ Capabilities upgrade (#304): `check_setup.py` gives two new lines, `capabilities
 
 Stack presets upgrade (#307): the kit adds `presets.json` (12 build tool presets), `references/bootstrap.md` (the Stage 0 steps, out of `SKILL.md`) and `devloop.py stack-detect`. `dev-loop.json` takes an optional `stacks` record; `check_setup.py` checks it only when present, so the upgrade PR needs no change. The Codex kit copy does not hold `presets.json`: its hooks run `check_setup.py --hooks-trust` only, which reads no preset.
 
+Mutation adapters upgrade (#309): the nightly run line changes from `select_mutants.py` to `devloop.py mutation` (`select_mutants.py` is removed). A workflow that names `select_mutants.py` fails `check_setup.py` until it uses the new line (`mutation.md` section Run). Mutation is off until `dev-loop.json` gets a `mutation` key: `check_setup.py` prints a `mutation is off` line with a proposed value, never a failure. The Stryker message rule changes: a surviving `StringLiteral` is a message survivor only when its diff is message text, so it can now be a decision survivor.
+
 Codex network scope upgrade: Update Codex to 0.165.0 first (`check_setup.py` fails below it). `upgrade` merges `[features]`, `[permissions.dev-workspace.network]` and `[permissions.dev-workspace.network.domains]` key by key: each missing kit key is added, each project value is kept and named in a `kept your own <table> <key>` line. It adds `network_proxy`, `mode`, `allow_local_binding`, the domains and the `dev-docker` tables. Other tables keep the table-level merge.
 
 3.0.0 upgrade (breaking): from 2.1.x, in this order.

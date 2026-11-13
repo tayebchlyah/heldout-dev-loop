@@ -174,7 +174,7 @@ class SpecGapContractTests(unittest.TestCase):
     def test_mutation_md_describes_the_nightly_ci_workflow(self) -> None:
         nightly = section(REFERENCES / "mutation.md", "## Nightly CI")
         for value in ["schedule", "cron", "once a day", "`main`", "--head main --run", "artifact",
-                      "functions that need one unit test", "Stage 0", "new repo"]:
+                      "units that need one unit test", "Stage 0", "new repo"]:
             with self.subTest(value=value):
                 self.assertIn(value, nightly)
 
