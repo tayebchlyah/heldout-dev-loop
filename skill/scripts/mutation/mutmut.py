@@ -22,13 +22,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 
 import adapter
+from adapter import SETUP
 
 HUNK = re.compile(r"^@@ -(\d+)")
 # allow-comment: dependency, mutmut 3.8 never trampolines these (mutation/file_mutation.py).
 NEVER_MUTATE = {"__getattribute__", "__setattr__", "__new__"}
 PLAIN_DECORATORS = {"staticmethod", "classmethod"}
 STATUSES = {"killed": "killed", "caught by type check": "killed", "survived": "survived", "no tests": "no-tests"}
-SETUP = "Stage 0 owns it: see references/mutation.md, Setup."
 
 Unit = tuple[str, int, int]
 Span = tuple[int, int, str]
@@ -134,16 +134,6 @@ def file_gap(file: str, sources: list[str], only: list[str], never: list[str]) -
     return None
 
 
-def spans(lines: set[int]) -> list[tuple[int, int]]:
-    found: list[tuple[int, int]] = []
-    for line in sorted(lines):
-        if found and line == found[-1][1] + 1:
-            found[-1] = (found[-1][0], line)
-        else:
-            found.append((line, line))
-    return found
-
-
 def select(folder: Path, files: dict[str, list[list[int]]], picked: list[str] | None) -> tuple[
         dict[str, tuple[str, int]], list[dict]]:
     sources, only, never = read_config(folder)
@@ -166,7 +156,7 @@ def select(folder: Path, files: dict[str, list[list[int]]], picked: list[str] | 
                     reason = next((s[2] for s in skipped if s[0] <= line <= s[1]), "outside any function")
                 missed.setdefault(reason, set()).add(line)
         gaps += [{"file": file, "start": a, "end": b, "reason": reason}
-                 for reason, lines in sorted(missed.items()) for a, b in spans(lines)]
+                 for reason, lines in sorted(missed.items()) for a, b in adapter.spans(lines)]
     return chosen, gaps
 
 

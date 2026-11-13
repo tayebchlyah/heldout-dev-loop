@@ -19,7 +19,6 @@ import stacks
 from mutation import run
 
 FAMILIES = {"python": "mutmut", "js": "stryker", "go": "mutago"}
-TOOL_FILES = (("pyproject.toml", "mutmut"), ("stryker.config.json", "stryker"), ("go.mod", "mutago"))
 STRYKER_CONFIGS = tuple(f"stryker.{kind}.{ext}" for kind in ("config", "conf") for ext in ("mjs", "js", "cjs", "json"))
 EXACT_PIN = re.compile(r"^mutmut(\[[^\]]*\])?==\d+(\.\d+)*$")
 POETRY_PIN = re.compile(r"^(==)?\d+\.\d+\.\d+$")
@@ -211,7 +210,7 @@ def _from_files(repo: Path, tracked: list[str]) -> list[tuple[str, str]]:
         match = None
     go = match is not None and "go" in {s.strip() for s in match.group(1).split(",")}
     chosen: dict[str, str] = {}
-    for name, adapter in TOOL_FILES:
+    for adapter, name in run.TOOL_CONFIG.items():
         for file in tracked:
             parts = PurePosixPath(file).parts
             folders = parts[:-1]

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import NoReturn
 
 HEADERS = ("# ", "--- ", "+++ ", "@@", "diff ", "index ")
+SETUP = "Stage 0 owns it: see references/mutation.md, Setup."
 
 
 def setup_error(message: str) -> NoReturn:
@@ -70,6 +71,17 @@ def repo_root(folder: Path) -> Path:
     """The git top level of the folder, resolved; the folder itself outside a git repo."""
     top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=folder, capture_output=True, text=True)
     return Path(top.stdout.strip()).resolve() if top.returncode == 0 else folder.resolve()
+
+
+def spans(lines: set[int]) -> list[tuple[int, int]]:
+    """The sorted lines as runs of consecutive lines, each `(first, last)`."""
+    found: list[tuple[int, int]] = []
+    for line in sorted(lines):
+        if found and line == found[-1][1] + 1:
+            found[-1] = (found[-1][0], line)
+        else:
+            found.append((line, line))
+    return found
 
 
 def diff_rows(text: str) -> str | None:

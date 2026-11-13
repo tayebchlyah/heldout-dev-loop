@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 import adapter
+from adapter import SETUP
 
 # allow-comment: dependency, Stryker 10.1.1 counts lines at each JavaScript line terminator, columns in UTF-16 units.
 LINE_BREAK = re.compile(r"\r\n|[\n\r\u2028\u2029]")
@@ -26,7 +27,6 @@ INCONCLUSIVE = {"Timeout", "RuntimeError", "CompileError"}
 STATUSES = {"Killed": "killed", "Survived": "survived", "NoCoverage": "no-tests"}
 REPORT = Path("reports") / "mutation" / "mutation.json"
 BIN = Path("node_modules") / ".bin" / "stryker"
-SETUP = "Stage 0 owns it: see references/mutation.md, Setup."
 
 
 def tool(folder: Path) -> Path | None:
