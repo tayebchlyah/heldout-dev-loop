@@ -500,7 +500,7 @@ class TracksContractTests(unittest.TestCase):
     def test_new_repo_files_and_the_deferred_cap(self) -> None:
         for value in ["`CODING_STANDARDS.md`", "nightly"]:
             with self.subTest(value=value):
-                self.assertIn(value, stage_text(0))
+                self.assertIn(value, (SKILL_ROOT / "references" / "bootstrap.md").read_text())
         self.assertIn("`## Deferred` holds 20 open items", stage_text(1))
 
     def test_track_s_has_no_spec_and_no_plan(self) -> None:
@@ -553,14 +553,13 @@ class CapabilityTextTests(unittest.TestCase):
             self.assertNotIn("in `stacks:`", text, path.name)
 
     def test_stage_0_capabilities(self) -> None:
-        text = (SKILL_ROOT / "SKILL.md").read_text()
-        stage0 = text[text.index("## 0 Bootstrap"):text.index("## 1 Frame")]
+        stage0 = (SKILL_ROOT / "references" / "bootstrap.md").read_text()
         for word in ('"capabilities"', "`ui`", "`backend`"):
             self.assertIn(word, stage0)
 
     def test_contract_task_and_stale_rule(self) -> None:
         text = (SKILL_ROOT / "SKILL.md").read_text()
-        self.assertIn("`ui` and `backend` both in `capabilities`: plan task 1 is the contract", text)
+        self.assertIn("`ui` and `backend` both in `capabilities`, or two or more `stacks` entries in `dev-loop.json`: plan task 1 is the contract", text)
         self.assertIn("after any change under a `source_dirs` entry", text)
 
     def test_verify_md_playwright(self) -> None:

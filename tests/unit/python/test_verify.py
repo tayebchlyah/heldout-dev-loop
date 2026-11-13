@@ -625,7 +625,7 @@ def section(text: str, heading: str) -> str:
 class VerifyTextTests(unittest.TestCase):
     def test_kit_text_names_verify_commands(self) -> None:
         skill = (SCRIPTS.parent / "SKILL.md").read_text()
-        stage0 = section(skill, "0 Bootstrap")
+        stage0 = (SCRIPTS.parent / "references" / "bootstrap.md").read_text()
         self.assertIn("devloop.py verify-init", stage0)
         self.assertIn("references/verify.md", stage0)
         stage6 = section(skill, "6 Feature gate")

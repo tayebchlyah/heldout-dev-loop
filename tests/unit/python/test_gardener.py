@@ -61,8 +61,9 @@ class KitTextTests(unittest.TestCase):
 
     def test_stage_lines(self) -> None:
         text = self.read("skill/SKILL.md")
-        self.assertIn("references/coding-standards.md", text)
-        self.assertNotIn("empty `CODING_STANDARDS.md`", text)
+        bootstrap = self.read("skill/references/bootstrap.md")
+        self.assertIn("references/coding-standards.md", bootstrap)
+        self.assertNotIn("empty `CODING_STANDARDS.md`", text + bootstrap)
         self.assertIn("triaged weekly with `/garden` (Codex `$garden`)", text)
 
     def test_building_pointer(self) -> None:

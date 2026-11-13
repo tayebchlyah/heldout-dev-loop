@@ -155,7 +155,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertNotIn("Rerun step 1.", claude)
 
     def test_the_glossary_is_glossary_md_else_context_md(self) -> None:
-        text = SKILL.read_text()
+        text = SKILL.read_text() + (SKILL_ROOT / "references" / "bootstrap.md").read_text()
         self.assertIn("Glossary = `GLOSSARY.md` at the repo root, else `CONTEXT.md`", text)
         self.assertIn("Both exist: `GLOSSARY.md` wins.", text)
         self.assertIn("first terms of `GLOSSARY.md`", text)
@@ -325,7 +325,7 @@ class NotesLayoutTextTests(unittest.TestCase):
                         self.assertNotIn(old, text)
 
     def test_skill_names_new_layout(self) -> None:
-        text = SKILL.read_text()
+        text = SKILL.read_text() + (SKILL_ROOT / "references" / "bootstrap.md").read_text()
         for name in (
             "Features/<YYYYMMDD> <Title>/",
             "Framing.md",
@@ -341,8 +341,7 @@ class NotesLayoutTextTests(unittest.TestCase):
     def test_stage_0_migration_text(self) -> None:
         from support import PACKAGE_ROOT
 
-        text = SKILL.read_text()
-        stage_0 = text[text.index("## 0 Bootstrap"):text.index("## 1 ")]
+        stage_0 = (SKILL.parent / "references" / "bootstrap.md").read_text()
         self.assertIn("dry run", stage_0)
         self.assertIn("confirm", stage_0)
         kit = (PACKAGE_ROOT / "reference/kit.md").read_text()
@@ -359,9 +358,10 @@ class NotesLayoutTextTests(unittest.TestCase):
         self.assertIn("type: framing", SKILL.read_text())
 
     def test_skill_links_notes_migrate_reference(self) -> None:
-        self.assertIn("(references/notes-migrate.md)", SKILL.read_text())
+        bootstrap = (SKILL_ROOT / "references" / "bootstrap.md").read_text()
+        self.assertIn("[references/notes-migrate.md](notes-migrate.md)", bootstrap)
         self.assertTrue((SKILL_ROOT / "references/notes-migrate.md").is_file())
-        self.assertNotIn("reference/cli/notes-migrate.md", SKILL.read_text())
+        self.assertNotIn("reference/cli/notes-migrate.md", SKILL.read_text() + bootstrap)
 
 
 class KitSkillListTests(unittest.TestCase):
