@@ -216,8 +216,11 @@ def _read_config(repo: Path, head: str) -> dict | str:
     return data if isinstance(data, dict) else f"dev-loop.json at {head} is not a JSON object"
 
 
-def _setup(cause: str) -> int:
-    return emit({"status": "setup", "cause": cause}, 1)
+def _setup(cause: str, run: bool, base: str, head: str) -> int:
+    if not run:
+        return emit({"status": "setup", "cause": cause}, 1)
+    return emit({"status": "setup", "base": base, "head": head, "report": f"mutation setup: {_cause(cause)}",
+                 "entries": [], "outside": [], "none": []}, 1)
 
 
 def _check_entries(repo: Path, head: str, value: list) -> str | None:
@@ -592,14 +595,14 @@ def cmd_mutation(args: argparse.Namespace) -> int:
         return emit({"error": "--base: no base commit (give --base or a --main branch that exists)"}, 2)
     config = _read_config(repo, head)
     if isinstance(config, str):
-        return _setup(config)
+        return _setup(config, args.run_adapters, base, head)
     value = config.get("mutation", False)
     rule = validate(value)
     if rule:
-        return _setup(f"mutation in dev-loop.json is invalid: {rule}")
+        return _setup(f"mutation in dev-loop.json is invalid: {rule}", args.run_adapters, base, head)
     entries = value or []
     if cause := _check_entries(repo, head, entries):
-        return _setup(cause)
+        return _setup(cause, args.run_adapters, base, head)
     if args.entry is not None and args.entry not in [e["path"] for e in entries]:
         return emit({"error": f"--entry: {args.entry} is not the path of a mutation entry"}, 2)
     if args.only and args.entry is None and len(entries) != 1:
