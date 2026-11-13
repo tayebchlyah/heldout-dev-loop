@@ -33,7 +33,7 @@ def read(base, rel):
 paths = {manifest}
 try:
     paths |= {p for p, v in json.loads(read(copy, manifest)).get("files").items() if isinstance(v, str)
-              and v.startswith("sha256:") and p.startswith((".dev-loop/hooks/codex/", ".agents/skills/dev-loop/scripts/"))}
+              and v.startswith("sha256:") and p.startswith((".dev-loop/hooks/codex/", ".agents/skills/dev-loop/scripts/", ".agents/skills/dev-loop/presets.json"))}
 except (TypeError, ValueError, AttributeError):
     pass
 differ = sorted(p for p in paths if (data := read(copy, p)) is None or data != read(main, p))

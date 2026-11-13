@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 MANIFEST = ".dev-loop/MANIFEST.json"
-D6_PREFIXES = (".dev-loop/hooks/codex/", ".agents/skills/dev-loop/scripts/")
+D6_PREFIXES = (".dev-loop/hooks/codex/", ".agents/skills/dev-loop/scripts/", ".agents/skills/dev-loop/presets.json")
 
 
 def stage(source_file: str, target: str) -> bytes:
