@@ -1,0 +1,11 @@
+[project]
+name = "shop"
+version = "0.0.0"
+
+[tool.mutmut]
+source_paths = ["src"]
+only_mutate = ["src/shop/core/*"]
+pytest_add_cli_args_test_selection = ["tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

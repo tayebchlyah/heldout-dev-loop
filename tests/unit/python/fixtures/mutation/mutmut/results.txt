@@ -1,0 +1,11 @@
+    shop.core.price.x_discount__mutmut_1: survived
+    shop.core.price.x_discount__mutmut_2: survived
+    shop.core.price.x_discount__mutmut_3: killed
+    shop.core.price.x_discount__mutmut_4: killed
+    shop.core.price.x_check__mutmut_1: killed
+    shop.core.price.x_check__mutmut_2: killed
+    shop.core.price.x_check__mutmut_3: survived
+    shop.core.price.x_check__mutmut_4: survived
+    shop.core.price.x_check__mutmut_5: survived
+    shop.core.price.x_unused__mutmut_1: no tests
+    shop.core.price.x_unused__mutmut_2: no tests

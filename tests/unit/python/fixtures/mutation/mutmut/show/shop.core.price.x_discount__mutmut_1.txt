@@ -1,0 +1,9 @@
+# shop.core.price.x_discount__mutmut_1: survived
+--- src/shop/core/price.py
++++ src/shop/core/price.py
+@@ -1,4 +1,4 @@
+ def discount(total):
+-    if total > 100:
++    if total >= 100:
+         return 10
+     return 0
