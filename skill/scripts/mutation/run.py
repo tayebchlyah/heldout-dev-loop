@@ -10,6 +10,8 @@ import argparse
 import json
 import re
 import subprocess
+import threading
+import unicodedata
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
@@ -241,6 +243,240 @@ def _uncovered(config: dict, entries: list[dict]) -> list[str]:
             if not any(_holds(source_dirs.fold(e["path"]), source_dirs.fold(s["path"])) for e in entries)]
 
 
+def _argv(entry: dict) -> list[str]:
+    if "adapter" in entry:
+        return [sys.executable, str(Path(__file__).resolve().parent / f"{entry['adapter']}.py")]
+    return ["sh", "-c", entry["command"]]
+
+
+def _clean(text: str) -> str:
+    return "".join(" " if unicodedata.category(c) == "Cc" else c for c in text)
+
+
+def _cause(text: str) -> str:
+    return _clean(text).strip()[:200]
+
+
+def _call(folder: Path, argv: list[str], request: dict) -> tuple[int, bytes, str]:
+    proc = subprocess.Popen(argv, cwd=folder, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    last = [""]
+
+    def feed() -> None:
+        try:
+            proc.stdin.write(json.dumps(request).encode())
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
+
+    def copy() -> None:
+        for raw in proc.stderr:
+            sys.stderr.buffer.write(raw)
+            sys.stderr.buffer.flush()
+            if line := raw.decode("utf-8", errors="replace").strip():
+                last[0] = line
+
+    threads = [threading.Thread(target=feed), threading.Thread(target=copy)]
+    for thread in threads:
+        thread.start()
+    stdout = proc.stdout.read()
+    proc.wait()
+    for thread in threads:
+        thread.join()
+    return proc.returncode, stdout, last[0]
+
+
+STATUSES = ("killed", "survived", "no-tests", "inconclusive")
+UNIT_RULE = "is not a unit (a non-empty string, no control character, no leading -)"
+
+
+def _unit(value: object) -> bool:
+    return (_non_empty(value) and not value.startswith("-")
+            and not any(unicodedata.category(c) == "Cc" for c in value))
+
+
+def _count(value: object) -> bool:
+    return type(value) is int and value >= 1
+
+
+def _file_fault(item: dict, files: dict) -> str | None:
+    file = item["file"]
+    return None if isinstance(file, str) and file in files else f"file {json.dumps(file)} is not a selected file"
+
+
+def _mutant_fault(m: object, files: dict, units: list, only: list | None) -> str | None:
+    if not isinstance(m, dict):
+        return "is not a JSON object"
+    if missing := [k for k in ("unit", "file", "line", "status", "diff") if k not in m]:
+        return f"has no {missing[0]}"
+    if not _unit(m["unit"]):
+        return f"unit {json.dumps(m['unit'])} {UNIT_RULE}"
+    if fault := _file_fault(m, files):
+        return fault
+    if not _count(m["line"]):
+        return f"line {json.dumps(m['line'])} is not an integer of 1 or more"
+    if m["status"] not in STATUSES:
+        return f"status {json.dumps(m['status'])} is not one of {', '.join(STATUSES)}"
+    diff = m["diff"]
+    if diff is not None and not isinstance(diff, str):
+        return "diff must be null or a string"
+    rows = [r for r in diff.split("\n") if not r.startswith(("-", "+", " "))] if diff is not None else []
+    if rows:
+        return f"diff row {json.dumps(rows[0])} does not start with -, + or a space"
+    if "detail" in m and not isinstance(m["detail"], str):
+        return "detail must be a string"
+    if m["unit"] not in units:
+        return f"unit {m['unit']} is not in units"
+    if only is not None and m["unit"] not in only:
+        return f"unit {m['unit']} is not in only"
+    return None
+
+
+def _gap_fault(gap: object, files: dict) -> str | None:
+    if not isinstance(gap, dict):
+        return "is not a JSON object"
+    if missing := [k for k in ("file", "start", "end", "reason") if k not in gap]:
+        return f"has no {missing[0]}"
+    if fault := _file_fault(gap, files):
+        return fault
+    if not (_count(gap["start"]) and _count(gap["end"])):
+        return f"start {json.dumps(gap['start'])} and end {json.dumps(gap['end'])} must be integers of 1 or more"
+    if gap["start"] > gap["end"]:
+        return f"start {gap['start']} is after end {gap['end']}"
+    if not _non_empty(gap["reason"]):
+        return "reason must be a non-empty string"
+    return None
+
+
+def check_output(text: str, request: dict) -> tuple[dict | None, str | None]:
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return None, "adapter output is not one JSON object"
+    required = ("units", "mutants", "not_covered") if request["run"] else ("units",)
+    for key in ("units", "mutants", "not_covered"):
+        if (key in required or key in data) and not isinstance(data.get(key), list):
+            return None, f"adapter output {key} must be a list"
+    if bad := [u for u in data["units"] if not _unit(u)]:
+        return None, f"adapter output units: {json.dumps(bad[0])} {UNIT_RULE}"
+    files = request["files"]
+    named: set[str] = set()
+    for i, m in enumerate(data.get("mutants", [])):
+        fault = _mutant_fault(m, files, data["units"], request["only"])
+        if fault:
+            return None, f"adapter mutant {i}: {fault}"
+        named.add(m["file"])
+    for i, gap in enumerate(data.get("not_covered", [])):
+        fault = _gap_fault(gap, files)
+        if fault:
+            return None, f"adapter not_covered {i}: {fault}"
+        named.add(gap["file"])
+    if request["run"] and (missing := sorted(set(files) - named)):
+        return None, f"adapter output names no mutant and no not_covered entry for {missing[0]}"
+    return data, None
+
+
+def _needs(mutant: dict) -> bool:
+    return mutant["status"] == "no-tests" or (
+        mutant["status"] == "survived" and classify(mutant["file"], mutant["diff"]) == "decision")
+
+
+def _needs_test(output: dict) -> set[str]:
+    return {m["unit"] for m in output.get("mutants", []) if _needs(m)}
+
+
+def run_entry(repo: Path, entry: dict, request: dict) -> dict:
+    folder = repo if entry["path"] == "." else repo / entry["path"]
+    code, stdout, last = _call(folder, _argv(entry), request)
+    if code != 0:
+        status = "setup" if code in (2, 126, 127) else "failed"
+        return {"status": status, "cause": _cause(last or f"exit {code}"), "output": None}
+    try:
+        text = stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        text = ""
+    output, fault = check_output(text, request)
+    if fault:
+        return {"status": "setup", "cause": _cause(fault), "output": None}
+    return {"status": "survivors" if _needs_test(output) else "pass", "cause": None, "output": output}
+
+
+ORDER = ("setup", "failed", "survivors", "pass")
+
+
+def _key(mutant: dict) -> tuple:
+    return mutant["file"], mutant["line"], mutant["diff"] or ""
+
+
+def _diff_rows(mutant: dict) -> list[str]:
+    return [] if mutant["diff"] is None else [f"      {row}" for row in mutant["diff"].split("\n")]
+
+
+def _entry_report(entry: dict, result: dict) -> list[str]:
+    path = entry["path"]
+    label = entry.get("adapter") or entry["command"]
+    prefix = "" if path == "." else path
+    output = result["output"] or {"mutants": [], "not_covered": []}
+    mutants = sorted(output["mutants"], key=_key)
+    listed: dict[str, list[dict]] = {}
+    message, inconclusive = [], {}
+    for m in mutants:
+        if m["status"] == "inconclusive":
+            name = _clean(m.get("detail") or "inconclusive")
+            inconclusive[name] = inconclusive.get(name, 0) + 1
+        elif _needs(m):
+            listed.setdefault(m["unit"], []).append(m)
+        elif m["status"] == "survived":
+            message.append(m)
+    lines = [f"entry {path}: {_clean(label)} {result['status']}", f"{path} mutants run: {len(mutants)}",
+             f"{path} units that need one unit test: {len(listed)}"]
+    for unit, rows in sorted(listed.items(), key=lambda item: (_key(item[1][0]), item[0])):
+        lines.append(f"  {unit}")
+        for m in rows:
+            word = "survived" if m["status"] == "survived" else "no tests"
+            lines += [f"    {prefix}{m['file']}:{m['line']} {word}", *_diff_rows(m)]
+    lines.append(f"{path} message-only survivors, to Deferred: {len(message)}")
+    for m in message:
+        lines += [f"  {m['unit']} {prefix}{m['file']}:{m['line']}", *_diff_rows(m)]
+    lines.append(f"{path} inconclusive: {sum(inconclusive.values())}")
+    lines += [f"  {name}: {count}" for name, count in sorted(inconclusive.items())]
+    gaps = sorted(output["not_covered"], key=lambda g: (g["file"], g["start"], g["end"]))
+    lines.append(f"{path} not covered by the selection: {len(gaps)}")
+    lines += [f"  {prefix}{g['file']}:{g['start']}-{g['end']} {_clean(g['reason'])}" for g in gaps]
+    if result["cause"]:
+        lines.append(f"{path} {result['status']}: {result['cause']}")
+    return lines
+
+
+def _report(base: str, head: str, selected: list[dict], results: list[dict], outside: list[str],
+            none: list[str]) -> str:
+    lines = [f"base: {base}", f"head: {head}"]
+    for entry, result in zip(selected, results):
+        lines += _entry_report(entry, result)
+    lines.append(f"outside the critical modules: {len(outside)}")
+    lines += [f"  {path}" for path in outside]
+    lines += [f"mutation: none for {path}" for path in none]
+    return "\n".join(lines)
+
+
+def _run(repo: Path, base: str, head: str, selected: list[dict], outside: list[str], none: list[str]) -> int:
+    results = []
+    for entry in selected:
+        if not entry["files"]:
+            results.append({"status": "pass", "cause": None, "output": None})
+            continue
+        request = {"protocol": 1, "run": True, "base": base, "head": head, "files": entry["files"], "only": None}
+        results.append(run_entry(repo, entry, request))
+    rows = [{"path": e["path"], "status": r["status"], "cause": r["cause"],
+             "mutants": len(r["output"]["mutants"]) if r["output"] else 0,
+             "need_tests": len(_needs_test(r["output"])) if r["output"] else 0} for e, r in zip(selected, results)]
+    status = min((r["status"] for r in rows), key=ORDER.index, default="pass")
+    report = _report(base, head, selected, results, outside, none)
+    return emit({"status": status, "base": base, "head": head, "report": report, "entries": rows,
+                 "outside": outside, "none": none}, 0 if status in ("pass", "survivors") else 1)
+
+
 def cmd_mutation(args: argparse.Namespace) -> int:
     repo = Path(args.repo)
     head = _resolve(repo, args.head)
@@ -253,8 +489,6 @@ def cmd_mutation(args: argparse.Namespace) -> int:
         base = merged.stdout.decode().strip() if merged.returncode == 0 else None
     if base is None:
         return emit({"error": "--base: no base commit (give --base or a --main branch that exists)"}, 2)
-    if args.run_adapters:
-        return emit({"error": "--run: not built"}, 2)
     config = _read_config(repo, head)
     if isinstance(config, str):
         return _setup(config)
@@ -263,8 +497,13 @@ def cmd_mutation(args: argparse.Namespace) -> int:
     if rule:
         return _setup(f"mutation in dev-loop.json is invalid: {rule}")
     entries = value or []
+    if args.run_adapters and not entries:
+        return emit({"status": "pass", "base": base, "head": head, "report": "mutation: off", "entries": [],
+                     "outside": [], "none": []}, 0)
     if cause := _check_entries(repo, head, entries):
         return _setup(cause)
     selected, outside = _select(entries, changed_lines(repo, base, head) if entries else {})
+    if args.run_adapters:
+        return _run(repo, base, head, selected, outside, _uncovered(config, entries))
     return emit({"base": base, "head": head, "entries": selected, "outside": outside,
                  "none": _uncovered(config, entries) if entries else []}, 0)

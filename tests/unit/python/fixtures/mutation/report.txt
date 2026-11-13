@@ -1,0 +1,22 @@
+base: <base>
+head: <head>
+entry app/: ./adapt survivors
+app/ mutants run: 5
+app/ units that need one unit test: 1
+  u1
+    app/core/a.py:3 survived
+      -    return a > b
+      +    return a >= b
+    app/core/a.py:4 no tests
+app/ message-only survivors, to Deferred: 1
+  u3 app/core/a.py:7
+      -        raise ValueError("bad")
+      +        raise ValueError("XXbadXX")
+app/ inconclusive: 2
+  inconclusive: 1
+  timeout: 1
+app/ not covered by the selection: 1
+  app/core/a.py:8-9 no mutable code
+outside the critical modules: 1
+  app/web/b.py
+mutation: none for api/
