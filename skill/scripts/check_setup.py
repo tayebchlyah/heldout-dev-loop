@@ -25,6 +25,7 @@ import ci  # noqa: E402
 import merge_check  # noqa: E402
 import second_review  # noqa: E402
 import source_dirs  # noqa: E402
+import stacks  # noqa: E402
 from security_skill import security_audit_groups, tree_id  # noqa: E402,F401
 from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
@@ -780,6 +781,7 @@ def main() -> int:
     cap_failures, cap_actions = capabilities.setup(args.repo)
     failures += cap_failures
     action_groups += [(line, []) for line in cap_actions]
+    failures += stacks.setup(args.repo)
 
     notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
     notices += [(line, []) for line in source_notices]
