@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 import adapter
+from adapter import SETUP
 
 # allow-comment: dependency, mutago v2.10.42 finds no changed line under other values of these (its issue 353).
 GIT_SETTINGS = (("core.quotePath", "false"), ("color.diff", "never"), ("diff.noprefix", "false"), ("diff.mnemonicPrefix", "false"),
@@ -28,7 +29,6 @@ GIT_SETTINGS = (("core.quotePath", "false"), ("color.diff", "never"), ("diff.nop
 REPORTS = ("report.json", "mutago-summary.json", "mutago-agentic.json")
 VERSION = "v2.10.42"
 PACKAGE = "github.com/quality-gates/mutago/v2/cmd/mutago"
-SETUP = "Stage 0 owns it: see references/mutation.md, Setup."
 LISTS = {"killed": ("killed", None), "escaped": ("survived", None), "notCovered": ("no-tests", None),
          "errored": ("inconclusive", "errored"), "skipped": ("inconclusive", "skipped")}
 FUNC = re.compile(r"func\s*(?:\(\s*(?:\w+\s+)?\*?\s*(\w+)(?:\[[^\]]*\])?\s*\)\s*)?(\w+)")
@@ -50,16 +50,6 @@ def go_units(source: str) -> list[tuple[str, int, int]]:
                     break
         units.append((f"{match[1]}.{match[2]}" if match[1] else match[2], start, end))
     return units
-
-
-def spans(lines: set[int]) -> list[tuple[int, int]]:
-    found: list[tuple[int, int]] = []
-    for line in sorted(lines):
-        if found and line == found[-1][1] + 1:
-            found[-1] = (found[-1][0], line)
-        else:
-            found.append((line, line))
-    return found
 
 
 def select(entry: Path, files: dict[str, list[list[int]]], only: list[str] | None) -> tuple[set[str], list[dict]]:
@@ -84,7 +74,7 @@ def select(entry: Path, files: dict[str, list[list[int]]], only: list[str] | Non
                     reason = "outside any function"
                 missed.setdefault(reason, set()).add(line)
         gaps += [{"file": file, "start": a, "end": b, "reason": reason}
-                 for reason, lines in sorted(missed.items()) for a, b in spans(lines)]
+                 for reason, lines in sorted(missed.items()) for a, b in adapter.spans(lines)]
     return chosen, gaps
 
 
