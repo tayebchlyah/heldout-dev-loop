@@ -9,7 +9,7 @@ import { fakePackage, git, hookCommands, init, readJson, run, setup, upgrade } f
 
 const WALLS = ['git-guard.sh', 'acceptance-wall.sh']
 const MANIFEST = '.dev-loop/MANIFEST.json'
-const D6 = ['.dev-loop/hooks/codex/', '.agents/skills/dev-loop/scripts/', '.agents/skills/dev-loop/presets.json']
+const D6 = ['.dev-loop/hooks/codex/', '.agents/skills/dev-loop/scripts/']
 const CHANGED = ['.dev-loop/hooks/codex/board.sh', '.agents/skills/dev-loop/scripts/devloop.py', '.agents/skills/dev-loop/scripts/notes_path.py']
 const hasZsh = spawnSync('zsh', ['-c', 'true']).status === 0
 
