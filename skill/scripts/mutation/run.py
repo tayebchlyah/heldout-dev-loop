@@ -11,7 +11,7 @@ import json
 import re
 import subprocess
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import source_dirs
 import stacks
@@ -23,6 +23,45 @@ HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92, '"': 34}
 DIFF = ("diff", "--no-ext-diff", "--no-color", "-U0", "-M", "--diff-filter=AMR", "--src-prefix=a/",
         "--dst-prefix=b/", "--ignore-submodules")
+
+PY_STRING = re.compile(r"""[rRbBuUfF]{0,2}('''|\"\"\"|'|")(?:\\.|(?!\1).)*\1""", re.S)
+GO_STRING = re.compile(r'"(?:\\.|[^"\\])*"|`[^`]*`')
+JS_STRING = re.compile(r"""'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`""", re.S)
+GO_LOG = r"\b(?:log|slog)\.\w+\s*\("
+JS_LOG = r"\bconsole\.\w+\s*\("
+CLASSIFIERS = {
+    **dict.fromkeys((".py", ".pyi"), (
+        PY_STRING,
+        re.compile(r"\b(?:log(?:ger)?|logging|print|warnings?|console)\b[\w.]*\s*\("),
+        re.compile(r"^\s*raise\b|^\s*assert\b.*,|\b(?:detail|message|msg|description|help|reason|summary)\s*=(?!=)"),
+    )),
+    ".go": (GO_STRING, re.compile(GO_LOG), re.compile(rf"\berrors\.New\(|\bfmt\.Errorf\(|\bpanic\(|{GO_LOG}")),
+    **dict.fromkeys((".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"), (
+        JS_STRING,
+        re.compile(JS_LOG),
+        re.compile(rf"\bthrow\b|\bnew Error\(|{JS_LOG}|\b(?:message|msg|reason|description)\s*:"),
+    )),
+}
+
+
+def classify(file: str, diff: str | None) -> str:
+    rules = CLASSIFIERS.get(PurePosixPath(file).suffix)
+    if rules is None or diff is None:
+        return "decision"
+    string, log_call, context = rules
+    rows = [row for row in diff.splitlines() if row.startswith(("-", "+")) and not row.startswith(("---", "+++"))]
+    if not rows:
+        return "decision"
+    texts = [row[1:] for row in rows]
+    if all(log_call.search(text) for text in texts):
+        return "message"
+
+    def blank(sign: str) -> list[str]:
+        return [string.sub('""', row[1:]).strip() for row in rows if row[0] == sign]
+
+    if blank("-") == blank("+") and all(context.search(text) for text in texts):
+        return "message"
+    return "decision"
 
 
 def _non_empty(value: object) -> bool:
