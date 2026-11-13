@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
 import unittest
 
 import test_devloop
-from support import CHECKER, SKILL_ROOT, all_instructions
+from support import CHECKER, ROOT, SKILL_ROOT, all_instructions
 
 REFERENCES = SKILL_ROOT / "references"
 MUTATION_MD = REFERENCES / "mutation.md"
@@ -21,10 +22,11 @@ SETUP_CHECK = SKILL_ROOT / "scripts" / "mutation" / "setup.py"
 class MutationKitTextTests(unittest.TestCase):
     def test_script_removed(self) -> None:
         self.assertFalse((SKILL_ROOT / "scripts" / "select_mutants.py").exists())
-        for folder in KIT_FOLDERS:
-            for path in folder.rglob("*"):
-                if path.is_file() and path != SETUP_CHECK and "select_mutants" in path.read_text(errors="ignore"):
-                    self.fail(f"{path} names select_mutants")
+        tracked = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--", *map(str, KIT_FOLDERS)],
+                                 capture_output=True, text=True, check=True).stdout.split("\0")
+        for path in (ROOT / name for name in tracked if name):
+            if path.is_file() and path != SETUP_CHECK and "select_mutants" in path.read_text(errors="ignore"):
+                self.fail(f"{path} names select_mutants")
 
     def test_run_line(self) -> None:
         for heading in ["## Run", "## Nightly CI"]:
