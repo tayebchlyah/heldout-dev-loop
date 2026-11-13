@@ -2,14 +2,17 @@
 """Held-out oracle tests for mutation adapters (spec: 20261113 Mutation Adapters), the `check_setup.py` seam.
 
 Seam 2: the `check_setup.py --harness claude` process of the kit source on a fixture repo, its stdout and exit code.
-One test for flow F4, plus the setup oracle lines no flow holds; each docstring names the `## Acceptance oracle`
-lines (O<n>) it checks.
+One test for flow F4 (which also runs seam 1, `devloop.py mutation`, on the same project for O18), plus the setup
+oracle lines no flow holds; each docstring names the `## Acceptance oracle` lines (O<n>) it checks.
 
 Fixture choices the spec leaves open:
 - The fixture repo is the Stack Model setup project (`stack_model_support.SetupProject`): installed, on `main`.
   Each case writes `dev-loop.json` and its files, then commits them on `main`, so the checkout and the main ref agree.
-- A "mutation line" is a stripped stdout line that starts with `- mutation `. The proposal of the `mutation missing`
-  line is the JSON value right after `add "mutation": `; words may follow it.
+- A "mutation line" is a stripped stdout line that starts with `- mutation `. The proposal of the `mutation is off`
+  line is the JSON value right after `add "mutation": `; ` to dev-loop.json` follows it.
+- A "failure line" is a stripped stdout line that starts with `- ` and comes before the `User actions required`
+  heading; the `User actions required` lines are the lines under that heading.
+- F4 drops the `stacks` and `mutation` keys from the installed config, so the project has neither.
 - Version pins sit in the entry `package.json` `devDependencies` (Stryker) and the entry `pyproject.toml` (mutmut).
 """
 
@@ -17,12 +20,13 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import unittest
 
-from stack_model_support import SetupProject, commit_all, put, stripped
+from stack_model_support import DEVLOOP, SetupProject, commit_all, put, run_json, stripped, user_actions
 
 INVALID = "- mutation in dev-loop.json is invalid: "
-MISSING = '- mutation missing in dev-loop.json: add "mutation": '
+OFF = '- mutation is off: to turn it on, add "mutation": '
 WORKFLOW = "name: nightly\non: workflow_dispatch\njobs:\n  mutate:\n    runs-on: ubuntu-latest\n    steps:\n" \
            "      - run: python3 .agents/skills/dev-loop/scripts/select_mutants.py --run\n"
 MUTMUT_TOOL = '[tool.mutmut]\nsource_paths = ["src/"]\npytest_add_cli_args_test_selection = ["tests/unit"]\n'
@@ -36,11 +40,20 @@ def entry_lines(output: str, path: str) -> list[str]:
     return [line for line in stripped(output) if line.startswith(f"- mutation entry {path}: ")]
 
 
+def failure_lines(output: str) -> list[str]:
+    lines = output.splitlines()
+    heads = [n for n, line in enumerate(lines) if line.startswith("User actions required")]
+    return [line for line in stripped("\n".join(lines[:heads[0]] if heads else lines)) if line.startswith("- ")]
+
+
 def proposal(output: str) -> object:
-    found = [line for line in stripped(output) if line.startswith(MISSING)]
+    """The proposal of the one `mutation is off` line under `User actions required`."""
+    found = [line for line in stripped("\n".join(user_actions(output))) if line.startswith(OFF)]
     if len(found) != 1:
-        raise AssertionError(f"not one `mutation missing` line:\n{output[-3000:]}")
-    value, _ = json.JSONDecoder().raw_decode(found[0][len(MISSING):])
+        raise AssertionError(f"not one `mutation is off` line under User actions required:\n{output[-3000:]}")
+    value, end = json.JSONDecoder().raw_decode(found[0][len(OFF):])
+    if found[0][len(OFF) + end:] != " to dev-loop.json":
+        raise AssertionError(f"the `mutation is off` line does not end with ` to dev-loop.json`: {found[0]}")
     return value
 
 
@@ -63,18 +76,28 @@ class MutationSetup(SetupProject):
 
 
 class UpgradeFlowTests(MutationSetup):
-    def test_f4_o28_o29_o30_upgrade_without_mutation_key(self) -> None:
-        """F4, O30: no `mutation` key, no `stacks` key, no `stacks:` line, no tool config: the proposal is `false`.
-        O28: `.github/workflows/m.yml` that names `select_mutants.py`: the line with `devloop.py mutation`. O29:
-        `stacks` `[{"path": "backend/", "preset": "uv"}]` and `backend/pyproject.toml` `only_mutate =
-        ["src/p/core/*"]`: the proposal is the `backend/` mutmut entry with that `critical`."""
+    def test_f4_o18_o28_o29_o30_upgrade_without_mutation_key(self) -> None:
+        """F4, O30: no `mutation` key, no `stacks` key, no `stacks:` line, no tool config: no line that names
+        `mutation`, exit 0. O18: on that project, `devloop.py mutation --run`: status `pass`, report `mutation: off`,
+        exit 0. O28: `.github/workflows/m.yml` that names `select_mutants.py`: the line with `devloop.py mutation`.
+        O29: still no `mutation` key, `stacks` `[{"path": "backend/", "preset": "uv"}]` and `backend/pyproject.toml`
+        `only_mutate = ["src/p/core/*"]`: no failure line names `mutation`; under `User actions required`, the
+        `mutation is off` line with the `backend/` mutmut entry with that `critical`."""
         put(self.project / "AGENTS.md", "# AGENTS.md\n\nKettle works: boils water on request.\n")
-        code, output = self.apply()
+        bare = ("stacks", "mutation")
+        code, output = self.apply(drop=bare)
         with self.subTest(oracle=30):
-            self.assertEqual(code, 1, output)
-            self.assertIs(proposal(output), False, output)
+            self.assertEqual([line for line in output.splitlines() if "mutation" in line], [], output[-3000:])
+            self.assertEqual(code, 0, output)
 
-        code, output = self.apply({".github/workflows/m.yml": WORKFLOW})
+        with self.subTest(oracle=18):
+            code, payload = run_json([sys.executable, str(DEVLOOP), "mutation", "--repo", str(self.project),
+                                      "--head", "main", "--run"], self.project, self.env, timeout=300)
+            self.assertEqual(payload.get("status"), "pass", payload)
+            self.assertIn("mutation: off", str(payload.get("report")).splitlines(), payload)
+            self.assertEqual(code, 0, payload)
+
+        code, output = self.apply({".github/workflows/m.yml": WORKFLOW}, drop=bare)
         with self.subTest(oracle=28):
             self.assertEqual(code, 1, output)
             lines = [line for line in stripped(output) if "select_mutants.py" in line and "m.yml" in line]
@@ -82,10 +105,13 @@ class UpgradeFlowTests(MutationSetup):
             self.assertTrue(all("devloop.py mutation" in line for line in lines), lines)
 
         pyproject = '[project]\nname = "p"\nversion = "0.1.0"\n\n[tool.mutmut]\nonly_mutate = ["src/p/core/*"]\n'
-        code, output = self.apply({"backend/pyproject.toml": pyproject, "backend/uv.lock": "version = 1\n",
-                                   "backend/src/p/core/m.py": "X = 1\n"},
-                                  stacks=[{"path": "backend/", "preset": "uv"}], source_dirs=["src/", "backend/"])
-        with self.subTest(oracle=29):
+        code, output = self.apply({".github/workflows/m.yml": None, "backend/pyproject.toml": pyproject,
+                                   "backend/uv.lock": "version = 1\n", "backend/src/p/core/m.py": "X = 1\n"},
+                                  drop=("mutation",), stacks=[{"path": "backend/", "preset": "uv"}],
+                                  source_dirs=["src/", "backend/"])
+        with self.subTest(oracle=29, part="no failure line"):
+            self.assertEqual([line for line in failure_lines(output) if "mutation" in line], [], output[-3000:])
+        with self.subTest(oracle=29, part="proposal"):
             self.assertEqual(proposal(output), [{"path": "backend/", "adapter": "mutmut",
                                                  "critical": ["src/p/core/*"]}], output[-3000:])
 

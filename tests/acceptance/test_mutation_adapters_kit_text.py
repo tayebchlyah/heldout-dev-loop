@@ -46,13 +46,12 @@ class KitTextTests(unittest.TestCase):
             self.assertTrue([line for line in text.splitlines() if "mutago" in line and "timeout" in line.lower()],
                             "no mutation.md line names the mutago timeout gap")
 
-    def test_o31_this_repo_turns_mutation_off(self) -> None:
-        """O31: this repo's `dev-loop.json` has `"mutation": false`; `check_setup.py --harness claude --repo <this
+    def test_o31_this_repo_has_no_mutation_key(self) -> None:
+        """O31: this repo's `dev-loop.json` has no `mutation` key; `check_setup.py --harness claude --repo <this
         repo>` prints no mutation line."""
         with self.subTest(oracle=31, part="dev-loop.json"):
             config = json.loads((REPO_ROOT / "dev-loop.json").read_text())
-            self.assertIn("mutation", config)
-            self.assertIs(config["mutation"], False)
+            self.assertNotIn("mutation", config)
         with self.subTest(oracle=31, part="check_setup"):
             result = subprocess.run([sys.executable, str(CHECKER), "--harness", "claude", "--repo", str(REPO_ROOT)],
                                     cwd=REPO_ROOT, capture_output=True, text=True, timeout=300)
