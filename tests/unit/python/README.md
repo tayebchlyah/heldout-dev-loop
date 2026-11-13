@@ -44,5 +44,6 @@ One file per subject. A new test file adds its line here.
 - `test_source_hooks.py`: the `source_dirs` wall through the spec-tester hooks, the shared `hook` runner.
 - `test_source_audit.py`: `audit` of a spec-tester read against the `source_dirs` folders at the main ref, kit copies, the suite under a `tests/` entry, case folding.
 - `test_source_wall.py`: `source-wall`: modes and refs, an unreadable main ref file, path forms, cd and pushd moves, worktree tops, quoted, unresolved and absolute words, suite, seal and heredoc exceptions, Codex shapes.
+- `mutation_fixtures.py`, `test_mutation_select.py`: the mutation test repo, adapter script and `devloop.py mutation` runner; `mutation` selection: config at head, globs, ranges, owner entry, off, invalid, `none`.
 - `support.py`: shared constants, helpers.
 - `fixtures/`: test data. No test file under `skill/`.
