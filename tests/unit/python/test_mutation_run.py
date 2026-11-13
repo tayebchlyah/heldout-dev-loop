@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from board_fixtures import slow  # noqa: E402
-from mutation_fixtures import adapter_script, commit, make_repo, run_mutation  # noqa: E402
+from mutation_fixtures import DEVLOOP, adapter_script, commit, make_repo, run_mutation  # noqa: E402
 
 ENTRY = {"path": "app/", "command": "./adapt", "critical": ["core/**"]}
 TEN = "".join(f"l{n}\n" for n in range(1, 11))
@@ -182,6 +183,18 @@ class MutationRun(unittest.TestCase):
                                      {"app/core/a.py": changed}, timeout=30)
         self.assertEqual((code, out["status"]), (0, "pass"))
         self.assertIn("app/core/a.py:1-1 r", out["report"])
+
+    def test_kit_stderr_closed(self) -> None:
+        script = "#!/bin/sh\ncat > /dev/null\nyes | head -c 300000 >&2\nprintf x\n"
+        repo = make_repo(self.root / "closed", {"dev-loop.json": json.dumps({"mutation": [ENTRY]}),
+                                                "app/adapt": script, "app/core/a.py": "a\n"})
+        before = commit(repo, {"app/core/a.py": "b\n"})
+        done = subprocess.run(["sh", "-c", 'exec "$@" 2>&-', "sh", sys.executable, str(DEVLOOP), "mutation", "--repo",
+                               str(repo), "--run", "--head", "HEAD", "--base", before],
+                              capture_output=True, text=True, timeout=60)
+        out = json.loads(done.stdout)
+        self.assertEqual((done.returncode, out["status"]), (1, "setup"))
+        self.assertIn("JSON", out["entries"][0]["cause"])
 
     @slow
     def test_two_entries_one_fails(self) -> None:
