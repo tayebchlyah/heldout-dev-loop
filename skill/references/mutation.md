@@ -109,7 +109,7 @@ Stage 0 owns this setup, after the user says yes to mutation. `scripts/check_set
 
 **Stryker.**
 
-- Pin `@stryker-mutator/core` and the runner plugin of the test runner to the same exact version in the entry's `devDependencies` (StrykerJS 10.1.1 is the tested pin). Run `npm ci` first.
+- Pin `@stryker-mutator/core` and the runner plugin of the test runner to the same exact version in the entry's `devDependencies` (StrykerJS 10.1.1 is the tested pin). Run `npm ci` first. The adapter runs `node_modules/.bin/stryker` of the entry folder, else of the first parent folder up to the repo root that has it (a workspace root), never `npx`, and names `stryker.config.json` on its command line.
 - Exactly one `stryker.config.json` in the entry folder, with: `testRunner` set to a runner but not `command`; `incremental` not `true`; `coverageAnalysis` not `"off"`. Vitest browser mode is not supported: use the Node Vitest config. A `thresholds.break` setting still reports the survivors.
 - A file path with `{`, `}`, `*`, `?`, `,`, `!` or `@(`, `+(` is not mutated: it is listed as not covered with the reason `path not expressible in --mutate`. `[` and `]` in a route path work.
 - Git-ignore `.stryker-tmp/` and `reports/`.

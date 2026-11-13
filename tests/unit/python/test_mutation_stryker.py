@@ -16,7 +16,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT, write  # noqa: E402
+from support import ROOT, git_in, write  # noqa: E402
 
 FOLDER = ROOT / "skill" / "scripts" / "mutation"
 SCRIPT = FOLDER / "stryker.py"
@@ -30,7 +30,7 @@ stryker = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(stryker)
 
 CONFIG = json.dumps({"testRunner": "vitest"})
-CORE = "node_modules/@stryker-mutator/core/package.json"
+BIN = "node_modules/.bin/stryker"
 STUB = """#!{python}
 import pathlib, shutil, sys
 pathlib.Path({log!r}).open("a").write(" ".join(sys.argv[1:]) + "\\n")
@@ -51,26 +51,31 @@ class StrykerAdapter(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name).resolve()
         self.log = self.root / "calls.log"
+        (self.root / "repo").mkdir()
+        git_in(self.root / "repo", "init", "-q")
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def adapter(self, files: dict[str, str], request: dict, code: int = 0,
-                report: bool = True) -> subprocess.CompletedProcess[str]:
-        write(self.root / "bin" / "npx", STUB.format(python=sys.executable, log=str(self.log),
-                                                     recorded=str(RECORDED), code=code, report=report))
-        (self.root / "bin" / "npx").chmod(0o755)
-        entry = self.root / "entry"
+    def adapter(self, files: dict[str, str], request: dict, code: int = 0, report: bool = True,
+                tool: str | None = "repo/web") -> subprocess.CompletedProcess[str]:
+        if tool is not None:
+            write(self.root / tool / BIN, STUB.format(python=sys.executable, log=str(self.log),
+                                                      recorded=str(RECORDED), code=code, report=report))
+            (self.root / tool / BIN).chmod(0o755)
+        entry = self.root / "repo" / "web"
         for name, text in files.items():
             write(entry / name, text)
         env = {**os.environ, "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}"}
+        write(self.root / "bin" / "npx", "#!/bin/sh\nexit 9\n")
+        (self.root / "bin" / "npx").chmod(0o755)
         stdin = json.dumps({"protocol": 1, "base": "b", "head": "h", "only": None, **request})
         return subprocess.run([sys.executable, str(SCRIPT)], cwd=entry, input=stdin, capture_output=True,
                               text=True, env=env, timeout=60)
 
     def test_units_without_tool(self) -> None:
         files = {"src/b.ts": [[1, 1]], "src/a.ts": [[2, 3]]}
-        done = self.adapter({"stryker.config.json": CONFIG, CORE: "{}"}, {"run": False, "files": files})
+        done = self.adapter({"stryker.config.json": CONFIG}, {"run": False, "files": files})
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(json.loads(done.stdout), {"units": ["src/a.ts", "src/b.ts"]})
         self.assertFalse(self.log.exists())
@@ -113,7 +118,7 @@ class StrykerAdapter(unittest.TestCase):
             (16, "no-tests", None, "-  return x * 2;\n+  return x / 2;"),
         ])
 
-        sources = {"stryker.config.json": CONFIG, CORE: "{}", "src/core/price.ts": PRICE.read_text(),
+        sources = {"stryker.config.json": CONFIG, "src/core/price.ts": PRICE.read_text(),
                    "src/core/none.ts": "export {};\n", "reports/mutation/mutation.json": "{}"}
         files = {"src/core/price.ts": [[1, 17]], "src/core/none.ts": [[1, 1]]}
         odd = {"src/app/[id]/page.ts": [[3, 5]], "src/a,b.ts": [[1, 1]], "src/{x}.ts": [[2, 2]], "src/*.ts": [[1, 1]],
@@ -135,7 +140,7 @@ class StrykerAdapter(unittest.TestCase):
             ("src/t(u) v.ts", 1, 1, "no mutable code"),
             ("src/{x}.ts", 2, 2, "path not expressible in --mutate"),
         ])
-        self.assertEqual(self.log.read_text(), "stryker run --mutate src/app/[[]id[]]/page.ts:3-5,src/core/none.ts:1-1,"
+        self.assertEqual(self.log.read_text(), "run stryker.config.json --mutate src/app/[[]id[]]/page.ts:3-5,src/core/none.ts:1-1,"
                                                "src/core/price.ts:1-17,src/t(u) v.ts:1-1 --reporters json\n")
 
         self.log.unlink()
@@ -147,7 +152,7 @@ class StrykerAdapter(unittest.TestCase):
         self.assertEqual(len(out["mutants"]), 15)
         self.assertEqual(out["not_covered"], [{"file": "src/core/none.ts", "start": 1, "end": 1,
                                                "reason": "unit not in only"}])
-        self.assertEqual(self.log.read_text(), "stryker run --mutate src/core/price.ts:1-17 --reporters json\n")
+        self.assertEqual(self.log.read_text(), "run stryker.config.json --mutate src/core/price.ts:1-17 --reporters json\n")
 
     def test_diff(self) -> None:
         source = "a\nfoo(1,\n  2);\nz\n"
@@ -164,17 +169,16 @@ class StrykerAdapter(unittest.TestCase):
     def test_setup_refusals(self) -> None:
         request = {"run": True, "files": {"src/a.ts": [[1, 1]]}}
         for files, words in (
-                ({"stryker.config.json": CONFIG}, "run npm ci first"),
-                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "incremental": True}), CORE: "{}"},
+                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "incremental": True})},
                  '"incremental": true'),
-                ({"stryker.config.json": json.dumps({"testRunner": "command"}), CORE: "{}"}, "testRunner"),
-                ({"stryker.config.json": "{}", CORE: "{}"}, "testRunner"),
-                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "coverageAnalysis": "off"}), CORE: "{}"},
+                ({"stryker.config.json": json.dumps({"testRunner": "command"})}, "testRunner"),
+                ({"stryker.config.json": "{}"}, "testRunner"),
+                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "coverageAnalysis": "off"})},
                  "coverageAnalysis"),
-                ({"stryker.config.json": "{", CORE: "{}"}, "stryker.config.json"),
-                ({CORE: "{}"}, "stryker.config.json")):
+                ({"stryker.config.json": "{"}, "stryker.config.json"),
+                ({}, "stryker.config.json")):
             with self.subTest(words=words, files=sorted(files)):
-                shutil.rmtree(self.root / "entry", ignore_errors=True)
+                shutil.rmtree(self.root / "repo" / "web", ignore_errors=True)
                 done = self.adapter({"src/a.ts": "export const a = 1;\n", **files}, request)
                 self.assertEqual(done.returncode, 2, done.stderr)
                 self.assertEqual(done.stdout, "")
@@ -182,12 +186,25 @@ class StrykerAdapter(unittest.TestCase):
                 self.assertIn(words, last)
                 self.assertTrue(last.endswith(SUFFIX), last)
                 self.assertFalse(self.log.exists())
+        for tool, words in ((None, "run npm ci first"), ("", "run npm ci first")):
+            with self.subTest(tool=tool):
+                shutil.rmtree(self.root / "repo" / "web", ignore_errors=True)
+                done = self.adapter({"stryker.config.json": CONFIG}, request, tool=tool)
+                self.assertEqual(done.returncode, 2, done.stderr)
+                last = done.stderr.strip().splitlines()[-1]
+                self.assertIn(words, last)
+                self.assertTrue(last.endswith(SUFFIX), last)
+                self.assertFalse(self.log.exists())
+        shutil.rmtree(self.root / "repo" / "web", ignore_errors=True)
+        done = self.adapter({"stryker.config.json": CONFIG}, request, tool="repo")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(self.log.read_text().startswith("run stryker.config.json --mutate src/a.ts:1-1"))
         for allowed in ("perTest", "all"):
             config = json.dumps({"testRunner": "vitest", "coverageAnalysis": allowed})
             self.log.unlink(missing_ok=True)
-            done = self.adapter({"stryker.config.json": config, CORE: "{}"}, request)
+            done = self.adapter({"stryker.config.json": config}, request)
             self.assertEqual(done.returncode, 0, done.stderr)
-        done = self.adapter({"stryker.config.json": CONFIG, CORE: "{}"}, request, code=3, report=False)
+        done = self.adapter({"stryker.config.json": CONFIG}, request, code=3, report=False)
         self.assertEqual(done.returncode, 1, done.stderr)
         self.assertEqual(done.stdout, "")
 
