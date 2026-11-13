@@ -1,0 +1,93 @@
+base: <base>
+head: <head>
+entry api/: mutago survivors
+api/ mutants run: 21
+api/ units that need one unit test: 3
+  core/price.go:Discount
+    api/core/price.go:11 survived
+       var ErrNegative = errors.New("negative")
+       
+       func Discount(total int) int {
+      -	if total > 100 {
+      +	if total > 101 {
+       		return 10
+       	}
+       	return 0
+    api/core/price.go:11 survived
+       var ErrNegative = errors.New("negative")
+       
+       func Discount(total int) int {
+      -	if total > 100 {
+      +	if total > 99 {
+       		return 10
+       	}
+       	return 0
+    api/core/price.go:11 survived
+       var ErrNegative = errors.New("negative")
+       
+       func Discount(total int) int {
+      -	if total > 100 {
+      +	if total >= 100 {
+       		return 10
+       	}
+       	return 0
+  core/price.go:Cart.Check
+    api/core/price.go:20 survived
+       type Cart struct{ Qty int }
+       
+       func (c *Cart) Check() (int, error) {
+      -	if c.Qty < 0 {
+      +	if c.Qty < 1 {
+       		return 0, fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+       	}
+       	return c.Qty, nil
+    api/core/price.go:20 survived
+       type Cart struct{ Qty int }
+       
+       func (c *Cart) Check() (int, error) {
+      -	if c.Qty < 0 {
+      +	if c.Qty <= 0 {
+       		return 0, fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+       	}
+       	return c.Qty, nil
+    api/core/price.go:21 survived
+       
+       func (c *Cart) Check() (int, error) {
+       	if c.Qty < 0 {
+      -		return 0, fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+      +		return (-1), fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+       	}
+       	return c.Qty, nil
+       }
+    api/core/price.go:21 survived
+       
+       func (c *Cart) Check() (int, error) {
+       	if c.Qty < 0 {
+      -		return 0, fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+      +		return 1, fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+       	}
+       	return c.Qty, nil
+       }
+  core/price.go:Unused
+    api/core/price.go:27 no tests
+    api/core/price.go:27 no tests
+    api/core/price.go:27 no tests
+    api/core/price.go:27 no tests
+api/ message-only survivors, to Deferred: 1
+  core/price.go:Cart.Check api/core/price.go:21
+       
+       func (c *Cart) Check() (int, error) {
+       	if c.Qty < 0 {
+      -		return 0, fmt.Errorf("quantity %d: %w", c.Qty, ErrNegative)
+      +		return 0, fmt.Errorf("quantity %d: %v", c.Qty, ErrNegative)
+       	}
+       	return c.Qty, nil
+       }
+api/ inconclusive: 0
+api/ not covered by the selection: 3
+  api/core/price.go:3-9 outside any function
+  api/core/price.go:16-18 outside any function
+  api/core/price.go:25-25 outside any function
+outside the critical modules: 2
+  api/core/price_test.go
+  api/greet.go
