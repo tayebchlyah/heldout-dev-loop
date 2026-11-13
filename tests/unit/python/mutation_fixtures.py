@@ -43,9 +43,9 @@ def commit(repo: Path, files: dict[str, str | None]) -> str:
     return before
 
 
-def run_mutation(repo: Path, *args: str) -> tuple[int, dict, str]:
+def run_mutation(repo: Path, *args: str, timeout: float | None = None) -> tuple[int, dict, str]:
     done = subprocess.run([sys.executable, str(DEVLOOP), "mutation", "--repo", str(repo), *args],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, timeout=timeout)
     return done.returncode, json.loads(done.stdout), done.stderr
 
 
