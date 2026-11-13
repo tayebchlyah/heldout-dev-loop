@@ -126,7 +126,9 @@ class MutationSetup(unittest.TestCase):
         bins = self.root / "bins"
         stub = bins / "go"
 
-        git = Path(shutil.which("git") or "git").resolve().parent
+        git = self.root / "git"
+        git.mkdir()
+        (git / "git").symlink_to(Path(shutil.which("git") or "git").resolve())
 
         def run(found: str | None, files: dict[str, str] = module, pause: str = "0") -> list[str]:
             stub.unlink(missing_ok=True)
