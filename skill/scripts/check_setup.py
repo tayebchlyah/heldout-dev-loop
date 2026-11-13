@@ -26,6 +26,7 @@ import merge_check  # noqa: E402
 import second_review  # noqa: E402
 import source_dirs  # noqa: E402
 import stacks  # noqa: E402
+from mutation import setup as mutation_setup  # noqa: E402
 from security_skill import security_audit_groups, tree_id  # noqa: E402,F401
 from seal.skills import NAMES_ERROR, names_ok, setup_lines  # noqa: E402
 from size import EXEMPT_ERROR, exempt_ok  # noqa: E402
@@ -44,11 +45,6 @@ SAFE_OPS = ("rm", "cp", "mv", "ln")
 COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed",
                 "release_prepare", "release_check", "release_verify")
 MERGE_VALUES = ("auto", "human")
-EXACT_PIN = re.compile(r"^mutmut==\d+(\.\d+)*$")
-EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
-STRYKER_CONFIGS = [
-    f"stryker.{kind}.{ext}" for kind in ("config", "conf") for ext in ("mjs", "js", "cjs", "json")
-]
 
 
 def load_json(path: Path, failures: list[str]) -> dict:
@@ -643,105 +639,6 @@ def check_project(home: Path, repo: Path, harness: str, env: Mapping[str, str]) 
     return failures, project_trust_groups(home, repo, env) + codex_skill_groups(home) + security_audit_groups(home, harness, env)
 
 
-def repo_files(repo: Path, name: str) -> list[Path]:
-    """Tracked files with this basename, or every such file outside tool directories."""
-    listed = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if listed.returncode == 0:
-        return sorted(repo / p for p in listed.stdout.splitlines() if Path(p).name == name)
-    skip = {".git", ".venv", "node_modules", "mutants", ".stryker-tmp"}
-    return sorted(p for p in repo.rglob(name) if not skip & set(p.relative_to(repo).parts))
-
-
-def is_ignored(repo: Path, path: Path) -> bool:
-    result = subprocess.run(
-        ["git", "check-ignore", "-q", "--no-index", str(path.relative_to(repo))],
-        cwd=repo,
-        capture_output=True,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def dev_dependencies(config: dict) -> list[str]:
-    groups = config.get("dependency-groups", {}).get("dev", [])
-    uv_dev = config.get("tool", {}).get("uv", {}).get("dev-dependencies", [])
-    optional = config.get("project", {}).get("optional-dependencies", {}).get("dev", [])
-    return [d for d in [*groups, *uv_dev, *optional] if isinstance(d, str)]
-
-
-def check_mutmut(repo: Path) -> list[str]:
-    failures: list[str] = []
-    configs: list[tuple[Path, dict]] = []
-    pinned = False
-    for path in repo_files(repo, "pyproject.toml"):
-        config, _ = load_toml(path, failures)
-        if isinstance(config.get("tool", {}).get("mutmut"), dict):
-            configs.append((path, config["tool"]["mutmut"]))
-        pinned = pinned or any(EXACT_PIN.match(d.replace(" ", "")) for d in dev_dependencies(config))
-    if not pinned:
-        failures.append("missing mutation dev dependency: mutmut pinned as mutmut==<version>")
-    if len(configs) != 1:
-        failures.append(f"expected one pyproject.toml with [tool.mutmut], found {len(configs)}")
-        return failures
-    path, mutmut = configs[0]
-    root = path.parent
-    if not mutmut.get("source_paths"):
-        failures.append(f"missing [tool.mutmut] source_paths in {path}")
-    if not mutmut.get("only_mutate"):
-        failures.append(f"missing [tool.mutmut] only_mutate list of critical modules in {path}")
-    selection = mutmut.get("pytest_add_cli_args_test_selection", [])
-    if not selection:
-        failures.append(f"missing [tool.mutmut] pytest_add_cli_args_test_selection in {path}")
-    elif any("acceptance" in str(arg) for arg in selection):
-        failures.append(f"[tool.mutmut] test selection in {path} must run unit tests only")
-    if not is_ignored(repo, root / "mutants" / "probe"):
-        failures.append(f"mutmut working directory not ignored by git: {(root / 'mutants').relative_to(repo)}/")
-    return failures
-
-
-def check_stryker(repo: Path) -> list[str]:
-    failures: list[str] = []
-    configs = [p for name in STRYKER_CONFIGS for p in repo_files(repo, name)]
-    if len(configs) != 1 or configs[0].name != "stryker.config.json":
-        return [f"expected one stryker.config.json, found {', '.join(p.name for p in configs) or 'none'}"]
-    root = configs[0].parent
-    if not load_json(configs[0], failures).get("mutate"):
-        failures.append(f"missing mutate list of critical files in {configs[0]}")
-    package = load_json(root / "package.json", failures)
-    dev = package.get("devDependencies", {})
-    for name in ["@stryker-mutator/core", "@stryker-mutator/vitest-runner"]:
-        if not EXACT_VERSION.match(str(dev.get(name, ""))):
-            failures.append(f"missing mutation dev dependency: {name} pinned to an exact version in {root / 'package.json'}")
-    for probe in [root / ".stryker-tmp" / "probe", root / "reports" / "mutation" / "mutation.json"]:
-        if not is_ignored(repo, probe):
-            failures.append(f"Stryker output not ignored by git: {probe.parent.relative_to(repo)}/")
-    return failures
-
-
-def check_mutation(repo: Path) -> list[str]:
-    """The mutation tool setup Stage 0 owns, per declared stack."""
-    agents = repo / "AGENTS.md"
-    if not agents.is_file():
-        return []
-    text = agents.read_text()
-    match = re.search(r"^stacks:\s*(.+)$", text, re.MULTILINE)
-    if not uses_dev_loop(repo) or not match:
-        return []
-    stacks = {s.strip() for s in match.group(1).split(",")}
-    failures: list[str] = []
-    if "python" in stacks:
-        failures += check_mutmut(repo)
-    if "ui" in stacks:
-        failures += check_stryker(repo)
-    return failures
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--harness", choices=["claude", "codex"], required=True)
@@ -768,7 +665,8 @@ def main() -> int:
     second_failures, second_groups = check_second_review(args.repo, args.harness)
     failures += second_failures
     action_groups += second_groups
-    failures += check_mutation(args.repo)
+    mutation_failures, mutation_notices = mutation_setup.lines(args.repo)
+    failures += mutation_failures
     failures += check_verify(args.repo)
     failures += gh_line(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
@@ -784,7 +682,7 @@ def main() -> int:
     failures += stacks.setup(args.repo)
 
     notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
-    notices += [(line, []) for line in source_notices]
+    notices += [(line, []) for line in source_notices] + mutation_notices
     blocked = failures or action_groups
     print(f"{args.harness}: {'FAIL' if blocked else 'PASS'}")
     for failure in failures:

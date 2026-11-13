@@ -4,7 +4,7 @@ One file per subject. A new test file adds its line here.
 
 - `test_dev_loop.py`: entry: loads every `test_*.py` here (no wire line to add), runs them in chunks.
 - `test_devloop.py`, `test_status.py`, `test_merge_check.py`, `test_merge_binding.py`, `test_skill_text.py`, `test_review_text.py`, `test_kit_contracts.py`: `logged`, `gate`, the project config shape, the config roots (`claude_home`, `codex_home`), CLI test helpers; `status`, `merge-check`; kit text contracts.
-- `test_check_setup.py`, `test_setup_checks.py`, `test_notes_path.py`, `test_mutation.py`: `check_setup.py`; `notes_path.py`; `select_mutants.py`, mutation setup, contract.
+- `test_check_setup.py`, `test_setup_checks.py`, `test_notes_path.py`, `test_mutation.py`: `check_setup.py`; `notes_path.py`; `select_mutants.py`, mutation contract.
 - `test_codex_gate_launcher.py`, `test_codex_trusted_checks.py`, `test_macos_hook.py`: Codex gate policy, trusted main checkers, macOS confinement and nested broker.
 - `test_hooks.py`, `test_seal.py`: board hook launch, Claude gate hook; `seal`, `audit`.
 - `test_seal_check.py`, `test_search_wall.py`, `test_search_hooks.py`, `test_skill_wall.py`, `test_skill_hooks.py`: `seal-check`, `kit-changed`, `weakened`; `search-wall`: direct, via walls; `skill-wall`: direct, via the wall.
@@ -45,6 +45,7 @@ One file per subject. A new test file adds its line here.
 - `test_source_audit.py`: `audit` of a spec-tester read against the `source_dirs` folders at the main ref, kit copies, the suite under a `tests/` entry, case folding.
 - `test_source_wall.py`: `source-wall`: modes and refs, an unreadable main ref file, path forms, cd and pushd moves, worktree tops, quoted, unresolved and absolute words, suite, seal and heredoc exceptions, Codex shapes.
 - `mutation_fixtures.py`, `test_mutation_select.py`: the mutation test repo, adapter script and `devloop.py mutation` runner; `mutation` selection: config at head, globs, ranges, owner entry, off, invalid, `none`.
+- `test_mutation_setup.py`: `mutation/setup.py`: the `mutation` lines of `check_setup.py` (shape, adapter, command, globs, built-in setups, workflows) and the proposal when mutation is off.
 - `test_mutation_classify.py`: `mutation.run` `classify`: message or decision per file extension.
 - `test_mutation_run.py`, `fixtures/mutation/report.txt`: `devloop.py mutation --run`: adapter request and cwd, exit codes, output faults, unread stdin, closed kit stderr, statuses, the golden report.
 - `test_mutation_rerun.py`: `devloop.py mutation --entry` and `--only` (rerun), the integrity check.
