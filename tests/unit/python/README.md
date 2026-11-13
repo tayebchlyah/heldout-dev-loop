@@ -44,7 +44,7 @@ One file per subject. A new test file adds its line here.
 - `test_source_hooks.py`: the `source_dirs` wall through the spec-tester hooks, the shared `hook` runner.
 - `test_source_audit.py`: `audit` of a spec-tester read against the `source_dirs` folders at the main ref, kit copies, the suite under a `tests/` entry, case folding.
 - `test_source_wall.py`: `source-wall`: modes and refs, an unreadable main ref file, path forms, cd and pushd moves, worktree tops, quoted, unresolved and absolute words, suite, seal and heredoc exceptions, Codex shapes.
-- `mutation_fixtures.py`, `test_mutation_select.py`: the mutation test repo, adapter script and `devloop.py mutation` runner; `mutation` selection: config at head, globs, ranges, owner entry, off, invalid, `none`.
+- `mutation_fixtures.py`, `test_mutation_select.py`: the mutation test repo, adapter script, built-in adapter loader and `devloop.py mutation` runner; `mutation` selection: config at head, globs, ranges, owner entry, off, invalid, `none`.
 - `test_mutation_setup.py`: `mutation/setup.py`: the `mutation` lines of `check_setup.py` (shape, adapter, command, globs, built-in setups, workflows) and the proposal when mutation is off.
 - `test_mutation_classify.py`: `mutation.run` `classify`: message or decision per file extension.
 - `test_mutation_run.py`, `fixtures/mutation/report.txt`: `devloop.py mutation --run`: adapter request and cwd, exit codes, output faults, unread stdin, closed kit stderr, statuses, the golden report.

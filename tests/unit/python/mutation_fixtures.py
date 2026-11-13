@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 from support import ROOT, git_in, write
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
+ADAPTERS = ROOT / "skill" / "scripts" / "mutation"
+
+
+def load_adapter(name: str) -> ModuleType:
+    if str(ADAPTERS) not in sys.path:
+        sys.path.append(str(ADAPTERS))
+    spec = importlib.util.spec_from_file_location(f"mutation_{name}", ADAPTERS / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _put(repo: Path, files: dict[str, str | None]) -> None:

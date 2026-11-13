@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import os
 import shutil
@@ -17,17 +16,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT, git_in, write  # noqa: E402
+from mutation_fixtures import load_adapter  # noqa: E402
 
-FOLDER = ROOT / "skill" / "scripts" / "mutation"
-SCRIPT = FOLDER / "stryker.py"
 RECORDED = HERE / "fixtures" / "mutation" / "stryker" / "mutation.json"
 PRICE = ROOT / "tests" / "fixtures" / "mutation" / "stryker" / "head" / "web" / "src" / "core" / "price.ts"
-if str(FOLDER) not in sys.path:
-    sys.path.append(str(FOLDER))
-_spec = importlib.util.spec_from_file_location("mutation_stryker", SCRIPT)
-assert _spec is not None and _spec.loader is not None
-stryker = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(stryker)
+stryker = load_adapter("stryker")
+SCRIPT = Path(stryker.__file__)
 
 CONFIG = json.dumps({"testRunner": "vitest"})
 BIN = "node_modules/.bin/stryker"
