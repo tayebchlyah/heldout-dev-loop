@@ -108,7 +108,7 @@ def read_config(folder: Path) -> tuple[list[str], list[str], list[str]]:
     except tomllib.TOMLDecodeError as error:
         adapter.setup_error(f"mutation setup broken: pyproject.toml is not valid TOML ({error}). {SETUP}")
     if not isinstance(config, dict):
-        adapter.setup_error(f"mutation setup missing: pyproject.toml holds no [tool.mutmut]. {SETUP}")
+        adapter.setup_error(f"mutation setup missing: no pyproject.toml holds [tool.mutmut]. {SETUP}")
     sources = config.get("source_paths") or config.get("paths_to_mutate")
     if not isinstance(sources, list) or not sources:
         adapter.setup_error(f"mutation setup missing: [tool.mutmut] has no source_paths. {SETUP}")
@@ -143,7 +143,8 @@ def spans(lines: set[int]) -> list[tuple[int, int]]:
     return found
 
 
-def select(folder: Path, files: dict[str, list[list[int]]]) -> tuple[dict[str, tuple[str, int]], list[dict]]:
+def select(folder: Path, files: dict[str, list[list[int]]], picked: list[str] | None) -> tuple[
+        dict[str, tuple[str, int]], list[dict]]:
     sources, only, never = read_config(folder)
     chosen: dict[str, tuple[str, int]] = {}
     gaps: list[dict] = []
@@ -157,8 +158,11 @@ def select(folder: Path, files: dict[str, list[list[int]]]) -> tuple[dict[str, t
             for line in range(start, end + 1):
                 if hit := next((u for u in units if u[1] <= line <= u[2]), None):
                     chosen[hit[0]] = (file, hit[1])
-                    continue
-                reason = next((s[2] for s in skipped if s[0] <= line <= s[1]), "outside any function")
+                    if picked is None or hit[0] in picked:
+                        continue
+                    reason = "unit not in only"
+                else:
+                    reason = next((s[2] for s in skipped if s[0] <= line <= s[1]), "outside any function")
                 missed.setdefault(reason, set()).add(line)
         gaps += [{"file": file, "start": a, "end": b, "reason": reason}
                  for reason, lines in sorted(missed.items()) for a, b in spans(lines)]
@@ -184,11 +188,11 @@ def run(folder: Path, names: list[str], chosen: dict[str, tuple[str, int]]) -> l
     if crashed * 2 > total:
         adapter.setup_error(f"mutation setup broken: {crashed} of {total} mutants crashed the forked worker "
                             '(status segfault), so no test judged them. Set process_isolation = "forkserver" '
-                            "in [tool.mutmut]")
+                            f"in [tool.mutmut]. {SETUP}")
     untested = sum(status == "no tests" for status in statuses.values())
     if untested * 2 > total:
         adapter.setup_error(f"mutation setup broken: {untested} of {total} mutants reach no unit test, so unit "
-                            "tests are skipped or not collected inside mutmut's copy")
+                            f"tests are skipped or not collected inside mutmut's copy. {SETUP}")
     shown = [name for name, status in statuses.items() if status in ("survived", "no tests")]
     with ThreadPoolExecutor(max_workers=8) as pool:
         texts = dict(zip(shown, pool.map(lambda name: capture([*command, "show", name], folder, env), shown)))
@@ -217,11 +221,11 @@ def capture(command: list[str], folder: Path, env: dict[str, str]) -> str:
 def main() -> None:
     request = adapter.read_request()
     folder = Path.cwd()
-    chosen, gaps = select(folder, request["files"])
+    only = request["only"]
+    chosen, gaps = select(folder, request["files"], only)
     units = sorted(chosen)
     if not request["run"]:
         adapter.finish(request, units, [], [])
-    only = request["only"]
     names = [unit for unit in units if only is None or unit in only]
     adapter.finish(request, units, run(folder, names, chosen) if names else [], gaps)
 

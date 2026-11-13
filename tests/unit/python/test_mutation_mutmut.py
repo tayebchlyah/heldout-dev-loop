@@ -122,6 +122,16 @@ class MutmutAdapter(unittest.TestCase):
         self.assertEqual(self.log.read_text(), "run pkg.mod.x_changed__mutmut_* pkg.plain.x_f__mutmut_*\n")
         self.assertFalse((self.root / "entry" / "mutants").exists())
 
+        self.log.unlink()
+        files = {"src/pkg/mod.py": [[5, 5]], "src/pkg/plain.py": [[2, 2]]}
+        done = self.adapter(sources, {"run": True, "files": files, "only": ["pkg.mod.x_changed"]})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        out = json.loads(done.stdout)
+        self.assertEqual(out["units"], ["pkg.mod.x_changed", "pkg.plain.x_f"])
+        self.assertEqual(sorted((g["file"], g["start"], g["end"], g["reason"]) for g in out["not_covered"]), [
+            ("src/pkg/mod.py", 5, 5, "no mutable code"), ("src/pkg/plain.py", 2, 2, "unit not in only")])
+        self.assertEqual(self.log.read_text(), "run pkg.mod.x_changed__mutmut_*\n")
+
     def test_runner(self) -> None:
         for lock, expected in (("uv.lock", ["uv", "run", "mutmut"]), ("poetry.lock", ["poetry", "run", "mutmut"]),
                                (None, ["mutmut"])):
@@ -143,6 +153,8 @@ class MutmutAdapter(unittest.TestCase):
                          "         return 10\n     return 0")
         self.assertEqual(adapter.diff_rows("# h\n--- a\n+++ b\n@@ -1 +1 @@\n x\n\n-y\n+z\n"), " x\n \n-y\n+z")
         self.assertIsNone(adapter.diff_rows("# h\n--- a\n+++ b\n"))
+        self.assertEqual(adapter.diff_rows("# h\n--- a\n+++ b\n@@ -1,2 +1,2 @@\n--- x\n+++ y\n @@ z\n"),
+                         "--- x\n+++ y\n @@ z")
         self.assertEqual(mutmut.mutant_line(show("x_discount__mutmut_1"), 1), 2)
         self.assertEqual(mutmut.mutant_line(show("x_check__mutmut_4"), 7), 9)
         self.assertEqual(mutmut.mutant_line("# h\n@@ -3,3 +3,3 @@\n a\n b\n-c\n+d\n", 10), 14)
@@ -188,12 +200,20 @@ class MutmutAdapter(unittest.TestCase):
         request = {"run": True, "files": {"src/pkg/plain.py": [[2, 2]]}}
         crashed = "".join(f"    pkg.plain.x_f__mutmut_{n}: segfault\n" for n in (1, 2)) + "    pkg.plain.x_f__mutmut_3: killed\n"
         untested = crashed.replace("segfault", "no tests")
-        for case in ({"run_out": "failed to collect stats. runner returned 1", "run_exit": 1},
-                     {"results": crashed}, {"results": untested}):
+        suffix = ". Stage 0 owns it: see references/mutation.md, Setup."
+        for case, project, words in (
+                ({"run_out": "failed to collect stats. runner returned 1", "run_exit": 1}, PYPROJECT, "unit tests fail"),
+                ({"results": crashed}, PYPROJECT, "2 of 3 mutants crashed"),
+                ({"results": untested}, PYPROJECT, "2 of 3 mutants reach no unit test"),
+                ({}, "[project]\n", "mutation setup missing: no pyproject.toml holds [tool.mutmut]"),
+                ({}, "[tool.mutmut]\n", "mutation setup missing: [tool.mutmut] has no source_paths")):
             self.stub(**case)
-            done = self.adapter(sources, request)
+            done = self.adapter({**sources, "pyproject.toml": project}, request)
             self.assertEqual(done.returncode, 2, (case, done.stderr))
             self.assertEqual(done.stdout, "", case)
+            last = done.stderr.strip().splitlines()[-1]
+            self.assertIn(words, last)
+            self.assertTrue(last.endswith(suffix), last)
         self.stub(run_out="boom", run_exit=3)
         self.assertEqual(self.adapter(sources, request).returncode, 1)
 
