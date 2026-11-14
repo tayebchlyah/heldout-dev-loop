@@ -237,6 +237,10 @@ class ImpactMapWorkflowTests(unittest.TestCase):
         text, _ = self.files()
         self.assertRegex(text, r"actions/checkout@\S+ # \S+\n\s+with:\n\s+ref: main\n")
 
+    def test_the_issue_lookup_is_the_bots_own(self) -> None:
+        text, _ = self.files()
+        self.assertRegex(text, r"gh issue list [^\n]*--app github-actions")
+
     def test_trace_and_push_steps(self) -> None:
         text, _ = self.files()
         trace = ReleaseWorkflowTests.step(self, text, "Trace the suites")
