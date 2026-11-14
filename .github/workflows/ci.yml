@@ -52,7 +52,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DEVLOOP_REQUIRE_DOCKER: "1"
-      DEVLOOP_TEST_JOBS: "8"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

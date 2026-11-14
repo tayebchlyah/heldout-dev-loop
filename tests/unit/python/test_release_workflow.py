@@ -91,6 +91,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("        part: [installer, 1/4, 2/4, 3/4, 4/4]\n", jobs["test-shards"])
         self.assertIn("DEVLOOP_TEST_SHARD: ${{ matrix.part }}\n", self.step(jobs["test-shards"], "Skill suite"))
         self.assertNotIn("DEVLOOP_TEST_SHARD", jobs["acceptance"])
+        self.assertIn('      DEVLOOP_TEST_JOBS: "8"\n', jobs["acceptance"])
+        self.assertNotIn("DEVLOOP_TEST_JOBS", jobs["test-shards"])
         self.assertIn("if: ${{ matrix.part == 'installer' }}\n", self.step(jobs["test-shards"], "Installer suite"))
 
     def test_a_retarget_runs_ci_again_on_the_new_base(self) -> None:
