@@ -235,7 +235,8 @@ test('dev-loop.json maps commands.acceptance to the script that runs both runner
 test('the ruleset files hold the CI job ids and the release tags', () => {
   const read = (path) => readFileSync(join(packageRoot, path), 'utf8')
   const jobs = [...read('.github/workflows/ci.yml').split(/^jobs:$/m)[1].matchAll(/^ {2}([\w-]+):\s*$/gm)].map((m) => m[1])
-  assert.deepEqual(jobs, ['changes', 'test', 'acceptance'])
+  assert.deepEqual(jobs, ['changes', 'test-shards', 'test', 'acceptance-shards', 'acceptance'])
+  const required = jobs.filter((job) => !job.endsWith('-shards'))
   const rule = (set, type) => set.rules.find((r) => r.type === type)
   const main = JSON.parse(read('.github/rulesets/main.json'))
   assert.equal(main.target, 'branch')
@@ -243,7 +244,7 @@ test('the ruleset files hold the CI job ids and the release tags', () => {
   assert.deepEqual(main.conditions.ref_name.include, ['~DEFAULT_BRANCH'])
   assert.deepEqual(main.rules.map((r) => r.type).sort(),
     ['deletion', 'non_fast_forward', 'pull_request', 'required_linear_history', 'required_status_checks'])
-  assert.deepEqual(rule(main, 'required_status_checks').parameters.required_status_checks.map((c) => c.context).sort(), [...jobs].sort())
+  assert.deepEqual(rule(main, 'required_status_checks').parameters.required_status_checks.map((c) => c.context).sort(), [...required].sort())
   assert.equal(rule(main, 'pull_request').parameters.required_approving_review_count, 0)
   assert.deepEqual(rule(main, 'pull_request').parameters.allowed_merge_methods, ['rebase'])
   assert.deepEqual(main.bypass_actors, [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' }])

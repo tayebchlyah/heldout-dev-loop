@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+import zlib
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -43,6 +44,16 @@ def case_outcomes(result: TimedResult) -> dict:
 def flat(suite: unittest.TestSuite):
     for test in suite:
         yield from flat(test) if isinstance(test, unittest.TestSuite) else [test]
+
+
+def in_shard(keys: list[str]) -> list[str]:
+    value = os.environ.get("DEVLOOP_TEST_SHARD")
+    if not value:
+        return keys
+    index, _, total = value.partition("/")
+    if not (index.isdigit() and total.isdigit() and 1 <= int(index) <= int(total)):
+        sys.exit(f"DEVLOOP_TEST_SHARD must be <index>/<total> with 1 <= index <= total, not {value!r}")
+    return [key for key in keys if zlib.crc32(key.encode()) % int(total) == int(index) - 1]
 
 
 def chunk_report(outcomes: Path, chunk: list[str]) -> Path:
@@ -114,8 +125,12 @@ def set_discover_path(folder: str) -> None:
 def run_discover(runner: str, folder: str, xml: str | None, jobs: int) -> int:
     set_discover_path(folder)
     tests = list(flat(unittest.TestLoader().discover(folder, pattern="test_*.py")))
-    broken = [test for test in tests if test.id().startswith("unittest.loader.")]
-    classes = list(dict.fromkeys(test.id().rpartition(".")[0] for test in tests if test not in broken))
+    loader_errors = [test.id() for test in tests if test.id().startswith("unittest.loader.")]
+    classes = in_shard(list(dict.fromkeys(test.id().rpartition(".")[0] for test in tests
+                                          if test.id() not in loader_errors)))
+    kept = set(in_shard(loader_errors)) | set(classes)
+    tests = [test for test in tests if test.id() in kept or test.id().rpartition(".")[0] in kept]
+    broken = [test for test in tests if test.id() in loader_errors]
     outcomes = Path(tempfile.mkdtemp(dir=os.environ.get("DEVLOOP_RUN_DIR")))
     try:
         if broken:
