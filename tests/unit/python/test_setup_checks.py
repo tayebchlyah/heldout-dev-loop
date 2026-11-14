@@ -31,6 +31,20 @@ class WalledSkillsConfigTests(unittest.TestCase):
             self.assertIn("walled_skills", (ROOT / doc).read_text())
 
 
+class DeleteBranchConfigTests(unittest.TestCase):
+    def test_shape(self) -> None:
+        message = "delete_branch_on_merge in dev-loop.json must be true or false"
+        for value, failures in ((True, []), (False, []), ("no", [message]), (0, [message]), (None, [message]),
+                                ([], [message])):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
+                write(Path(tmp) / "dev-loop.json", json.dumps({"delete_branch_on_merge": value}))
+                self.assertEqual(check_setup.check_project_config(Path(tmp)), failures)
+
+    def test_the_docs_name_the_key(self) -> None:
+        for doc in ("reference/kit.md", "docs/configuration.md"):
+            self.assertIn("delete_branch_on_merge", (ROOT / doc).read_text())
+
+
 class ComposeProjectConfigTests(unittest.TestCase):
     def test_shape(self) -> None:
         message = "commands.compose_project in dev-loop.json must be a non-empty string"
