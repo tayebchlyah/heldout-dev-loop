@@ -196,6 +196,16 @@ class RunModuleTests(unittest.TestCase):
             self.assertEqual(impact_map.run_module(self.root, slow, False), (False, ""))
         self.assertLess(time.monotonic() - start, 10)
 
+    def test_run_module_timeout_keeps_the_partial_trace(self) -> None:
+        slow = self.module("tests/unit/python/test_sleep.py", "import time, unittest\n"
+                           "class T(unittest.TestCase):\n    def test_sleep(self):\n        time.sleep(30)\n")
+        stand_in = [sys.executable, "-c", "import subprocess, sys\nopen(sys.argv[2], 'w').write('partial')\n"
+                    "subprocess.run(sys.argv[3:])"]
+        start = time.monotonic()
+        with mock.patch.object(impact_map, "TIMEOUT", 1), mock.patch.object(impact_map, "STRACE", stand_in):
+            self.assertEqual(impact_map.run_module(self.root, slow, True), (False, "partial"))
+        self.assertLess(time.monotonic() - start, 10)
+
 
 if __name__ == "__main__":
     unittest.main()
