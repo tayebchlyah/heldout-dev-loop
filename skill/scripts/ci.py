@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
+import stat
 import subprocess
 import time
 from pathlib import Path
 
+from board import store
 from devloop import emit
 
 POLL_SECONDS = 30
 GH_TIMEOUT = 60
-VIEW_FIELDS = ("number,url,headRefOid,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision,latestReviews,"
+VIEW_FIELDS = ("number,url,headRefOid,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision,latestReviews,"
                "statusCheckRollup")
 THREADS_QUERY = ("query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {"
                  " pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path line"
@@ -118,6 +121,32 @@ def stale_base(slug: str, base: str, head: str) -> bool | None:
     return number > 0 if isinstance(number, int) and not isinstance(number, bool) else None
 
 
+def record(view: dict) -> None:
+    number = view.get("number")
+    if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+        return
+    found = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], capture_output=True, text=True)
+    if found.returncode != 0:
+        return
+    text = json.dumps({"number": number, "url": str(view.get("url") or ""),
+                       "branch": str(view.get("headRefName") or "")}) + "\n"
+    fds: list[int] = []
+    try:
+        fds.append(os.open(found.stdout.strip(), os.O_RDONLY | os.O_DIRECTORY))
+        with contextlib.suppress(FileExistsError):
+            os.mkdir("dev-loop", 0o755, dir_fd=fds[0])
+        fds.append(os.open("dev-loop", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fds[0]))
+        with contextlib.suppress(FileNotFoundError):
+            if not stat.S_ISREG(os.stat("pr.json", dir_fd=fds[1], follow_symlinks=False).st_mode):
+                return
+        store.write_in(fds[1], "pr.json", text)
+    except OSError:
+        return
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
 def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
     """Poll the PR of the local HEAD until a final verdict or the deadline."""
     payload: dict = {"state": "error", "reason": None, "url": None, "head": None, "failed_job": None,
@@ -140,6 +169,7 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
             view = json.loads(shown.stdout)
         except ValueError:
             return 1, {**payload, "message": "gh pr view did not return JSON"}
+        record(view)
         payload.update(url=view.get("url"), head=view.get("headRefOid"))
         match = re.search(r"/([^/]+)/([^/]+)/pull/\d+", view.get("url") or "")
         owner, name = match.groups() if match else ("", "")
