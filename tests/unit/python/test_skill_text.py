@@ -576,3 +576,31 @@ class CapabilityTextTests(unittest.TestCase):
         text = (SKILL_ROOT / "references" / "verify.md").read_text()
         self.assertIn("`ui` in `capabilities`", text)
         self.assertIn("`playwright` (optional)", text)
+
+
+class CleanupTextTests(unittest.TestCase):
+    LINE = "python3 .agents/skills/dev-loop/scripts/devloop.py cleanup --branch <branch>"
+
+    def test_stage_7_cleanup_text(self) -> None:
+        stage = stage_text(7)
+        for needle in (self.LINE, "`cleanup: done`", '`cleanup: skipped: <reasons joined by "; ">`',
+                       "`cleanup: skipped: no cleanup command in the main checkout kit`", "`worktree: in-use`",
+                       "the user says the PR merged", "`shipped` with a `worktree`"):
+            self.assertIn(needle, stage)
+        self.assertLess(stage.index("metrics --write"), stage.index("`ExitWorktree` with `keep`"))
+        self.assertLess(stage.index("`ExitWorktree` with `keep`"), stage.index("cleanup --branch"))
+        for banned in ("push --delete", "push origin --delete"):
+            self.assertNotIn(banned, stage)
+
+    def test_routes_and_status_name_cleanup(self) -> None:
+        claude = next(line for line in (REFERENCES / "claude.md").read_text().splitlines()
+                      if line.startswith("- Stage 7 end:"))
+        self.assertLess(claude.index("`ExitWorktree` with `keep`"), claude.index("cleanup --branch <branch>"))
+        codex = next(line for line in (REFERENCES / "codex.md").read_text().splitlines()
+                     if line.startswith("- Stage 7 end:"))
+        for needle in ("cleanup --branch <branch>", "main checkout as the working folder"):
+            self.assertIn(needle, codex)
+        status = next(line for line in (SKILL_ROOT / "SKILL.md").read_text().splitlines()
+                      if "`shipped`: nothing left" in line)
+        for needle in ("`worktree`", "Stage 7"):
+            self.assertIn(needle, status)

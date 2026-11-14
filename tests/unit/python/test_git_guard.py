@@ -158,7 +158,8 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
 
     def test_everyday_feature_flows_still_run(self) -> None:
         for command, got in self.decisions(("git checkout -b feat2 && git push -u origin feat2", "git status && git log --oneline -3",
-                        "git commit -m 'fix login' && git push")):
+                        "git commit -m 'fix login' && git push",
+                        "python3 .agents/skills/dev-loop/scripts/devloop.py cleanup --branch feat/x")):
             self.assertEqual(got, "allow", command)
 
     def test_a_cd_after_a_semicolon_or_an_assignment_moves_the_push(self) -> None:
