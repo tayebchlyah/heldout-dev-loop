@@ -17,5 +17,6 @@
 - `review-merge <reviewer>=<file> ...`: merges the Stage 6 reviewer tables (columns `file`, `line`, `finding`, `class`, `verdict`) into one row per file and line, and lists the rows with a security finding.
 - `acceptance [--failed]`: runs `commands.acceptance` (or `commands.acceptance_failed`) with `DEVLOOP_REPORT_DIR` set, reads the failing tests from the JUnit XML there, checks that no compose build container is older than the newest code commit, records the run, and gives the progress guard verdict (`continue`, `stop`, `green` or `unknown`).
 - `ci wait`: gives one verdict for the pull request of the current branch: conflicts, open review threads, a change request, failed checks (with the failed job and its first error), a merge block, or pass.
+- `cleanup --branch <branch>`: after a merge, fetches with prune, removes the merged worktree, deletes the local branch and rebases the main checkout. Each part checks first and skips with a reason: an unmerged branch, a worktree with changes or a pause note, a main checkout with changes or local commits. It never deletes a remote branch: turn on "Automatically delete head branches" in the GitHub settings and GitHub does it.
 
 The full contract of each command: [`reference/cli/<command>.md`](../reference/cli/).

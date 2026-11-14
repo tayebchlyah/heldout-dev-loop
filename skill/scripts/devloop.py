@@ -3,6 +3,7 @@
 
   devloop.py status [--repo PATH] [--feature SLUG]   stage of the repo or of one feature
   devloop.py merge-check [--repo PATH] [--feature SLUG]   auto or human merge, with reasons
+  devloop.py cleanup --branch BRANCH [--repo PATH]    after a merge: fetch, remove the merged worktree, delete the branch, rebase main
   devloop.py logged [--name NAME] -- CMD...          run CMD, full output to a log file
   devloop.py gate --summary                           run the gate through `logged`, summarize it
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
@@ -321,6 +322,11 @@ def main() -> int:
     merge_check.add_argument("--repo", default=".")
     merge_check.add_argument("--feature")
     merge_check.set_defaults(run=("merge_check", "cmd_merge_check"))
+
+    cleanup = commands.add_parser("cleanup")
+    cleanup.add_argument("--branch", required=True)
+    cleanup.add_argument("--repo", default=".")
+    cleanup.set_defaults(run=("cleanup", "cmd_cleanup"))
 
     logged = commands.add_parser("logged")
     logged.add_argument("--name")

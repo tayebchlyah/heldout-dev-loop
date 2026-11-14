@@ -25,6 +25,7 @@ One file per subject. A new test file adds its line here.
 - `test_release_guard.py`, `test_sandbox_run.py`: release guards, setup, kit, text; `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails, set in CI).
 - `test_metrics.py`, `test_metrics_cli.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
 - `test_gardener.py`, `test_retro.py`, `test_feature_gate.py`: `garden` skill, kit text, harness names; `review_due`, `sessions`; `review-merge`, `acceptance`.
+- `test_cleanup.py`: `cleanup`: worktree removal, its safety skips, branch delete, main checkout rebase, fetch failure, usage errors, no push or force.
 - `test_case_floor.py`: case floor.
 - `test_stale_check.py`: the `acceptance` stale check: the compose lookup of today, `commands.compose_project`, `project`.
 - `test_verify_playwright.py`: `verify.playwright`: validation, the `verify-init` lookup, the `drive` lookup and the `drive.mjs` input.
