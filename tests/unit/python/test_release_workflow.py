@@ -78,7 +78,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         jobs = self.jobs(self.workflow("ci.yml"))
         for name in ("test", "acceptance"):
             job = jobs[name]
-            self.assertIn(f"    needs: [changes, {name}-shards]\n    if: ${{{{ !cancelled() }}}}\n", job)
+            self.assertIn(f"    needs: [changes, {name}-shards]\n    if: ${{{{ always() }}}}\n", job)
             self.assertIn(f"SHARDS: ${{{{ needs.{name}-shards.result }}}}\n", job)
             self.assertIn("SKIP: ${{ needs.changes.outputs.skip }}\n", job)
             run = job.split("        run: ", 1)[1].strip().strip("'")
