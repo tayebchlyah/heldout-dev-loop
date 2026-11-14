@@ -545,6 +545,23 @@ class AcceptanceScriptTests(TempDir):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(list(self.tmp.glob("*.xml")), [])
 
+    def test_script_gives_the_shard_to_the_python_part_only(self) -> None:
+        folder, seen = self.tmp / "suite", self.tmp / "seen"
+        folder.mkdir()
+        seen.mkdir()
+        (folder / "test_one.py").write_text(
+            "import os, unittest\n\n\nclass One(unittest.TestCase):\n    def test_ok(self):\n"
+            f"        open({str(seen / 'py')!r}, 'w').write(repr(os.environ.get('DEVLOOP_TEST_SHARD')))\n")
+        (folder / "one.test.mjs").write_text(
+            "import test from 'node:test';\nimport fs from 'node:fs';\n"
+            f"test('env', () => fs.writeFileSync({str(seen / 'node')!r}, String(process.env.DEVLOOP_TEST_SHARD)));\n")
+        result = subprocess.run(["bash", str(ROOT / "scripts" / "acceptance.sh"), str(folder)], cwd=self.tmp,
+                                capture_output=True, text=True,
+                                env={**os.environ, "DEVLOOP_TEST_SHARD": "1/1", "DEVLOOP_SUITE_LOCK_HELD": "1"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((seen / "py").read_text(), "None")
+        self.assertEqual((seen / "node").read_text(), "undefined")
+
     def test_config_and_ci_run_the_script(self) -> None:
         config = json.loads((ROOT / "dev-loop.json").read_text())
         self.assertEqual(config["commands"]["acceptance"], "scripts/acceptance.sh")

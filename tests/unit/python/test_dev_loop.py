@@ -176,6 +176,18 @@ class JUnitReportTests(unittest.TestCase):
         self.assertFalse(seen[0] & seen[1])
         self.assertEqual(seen[0] | seen[1], {f"test_a.K{i}" for i in range(12)})
 
+    def test_discover_keeps_the_shard_out_of_the_tests_it_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder, seen = Path(tmp, "suite"), Path(tmp, "seen")
+            folder.mkdir()
+            (folder / "test_a.py").write_text(
+                "import os, unittest\nclass A(unittest.TestCase):\n    def test_1(self):\n"
+                f"        open({str(seen)!r}, 'w').write(repr(os.environ.get('DEVLOOP_TEST_SHARD')))\n")
+            result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(Path(tmp, "r.xml"))],
+                                    capture_output=True, text=True, env={**os.environ, "DEVLOOP_TEST_SHARD": "1/1"})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(seen.read_text(), "None")
+
     def test_discover_keeps_its_chunk_reports_in_the_run_dir_not_in_tmpdir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             folder, scratch, run_dir, seen = (Path(tmp, name) for name in ("suite", "scratch", "run", "seen"))
