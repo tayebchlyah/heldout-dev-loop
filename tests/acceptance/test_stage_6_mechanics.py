@@ -19,6 +19,8 @@ Fixture choices the spec leaves open:
 - Acceptance Case Floor amends O10, O11 and O12: no full run executes fewer cases than an earlier full run. Each full
   run with a JUnit file in F2 executes 7 cases, its failing cases plus passing ones, so a green run there is never
   `short`.
+- Stale Check Project replaces O15: no compose file and no `commands.compose_project` (or `COMPOSE_PROJECT_NAME`
+  set): `skipped`; each `stale` object gains `project`, null here (no key, no variable).
 """
 
 from __future__ import annotations
@@ -317,7 +319,10 @@ class AcceptanceLoopTests(Sandbox):
             self.assertTrue(log and Path(log).name.startswith("acceptance-") and Path(log).is_file(), run)
             self.assertIn(f"acceptance log: {log}", stderr)
         with self.subTest(oracle=15):
-            self.assertEqual(run.get("stale", {}).get("state"), "skipped", run)
+            stale = run.get("stale", {})
+            self.assertEqual(stale.get("state"), "skipped", run)
+            self.assertIn("project", stale, run)
+            self.assertIsNone(stale["project"], run)
 
         code, run, _ = self.accept(None, 1)
         with self.subTest(oracle=9):
