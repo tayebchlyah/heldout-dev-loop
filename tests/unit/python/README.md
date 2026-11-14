@@ -65,4 +65,5 @@ One file per subject. A new test file adds its line here.
 - `test_impact_map.py`: `scripts/impact_map.py select`, the map reader and shape, the committed map, the case list twin of `scripts/gate.sh`.
 - `test_impact_trace.py`: `scripts/impact_map.py` `parse_trace` and `trace`: strace text to tracked reads, module runs, the map write.
 - `test_support.py`: `support.py` loads `check_setup` on first use (D11 of #327).
+- `test_impact_gate.py`: `scripts/gate.sh` with `GATE_SCOPE=changed` and the impact map: which suites and modules start, fallbacks, renames.
 - `fixtures/`: test data. No test file under `skill/`.
