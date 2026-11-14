@@ -82,6 +82,9 @@ class RatchetRepo(unittest.TestCase):
 
     def branch(self, name: str = "feat/x") -> None:
         git(self.repo, "switch", "-q", "-c", name)
+        put(self.repo / "branch.txt", f"{name}\n")
+        git(self.repo, "add", "branch.txt")
+        git(self.repo, "commit", "-q", "-m", "branch")
 
     def commit(self, message: str, trailer: str | None = None) -> None:
         extra = ["-m", f"Test-Time: {trailer}"] if trailer else []

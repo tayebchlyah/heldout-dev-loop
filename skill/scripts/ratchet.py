@@ -7,8 +7,10 @@ import math
 import re
 import statistics
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 
+from autonomy import write_atomic
 from devloop import git
 from gate import case_id
 from merge_check import read_config
@@ -17,6 +19,7 @@ DEFAULTS = {
     "gate": {"unmarked": 2, "marked": 10, "max": 30, "growth": 0.03},
     "acceptance": {"unmarked": 10, "marked": 30, "max": 60},
 }
+KEEP = 50
 LOOKBACK = 200
 MIN_SHARED = 10
 SHARED_FLOOR = 0.1
@@ -182,3 +185,24 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
         payload["growth"] = {"share": round(share, 3), "limit": None, "ok": True, "waived": None}
         payload["ok"] = not payload["red"]
     return payload
+
+
+def clean(top: Path) -> bool:
+    """No change, staged or not, and no untracked file outside `.gitignore`."""
+    return git(top, "status", "--porcelain") == ""
+
+
+def write_record(kind: str, top: Path, report_dir: Path) -> str | None:
+    """Write the times of this run as the record of the HEAD tree, keep the newest 50 of `kind`; its path, or None."""
+    times = read_times(top, report_dir)
+    tree, head = git(top, "rev-parse", "HEAD^{tree}"), git(top, "rev-parse", "HEAD")
+    if not times or not tree or not head:
+        return None
+    folder = store(top, kind)
+    path = folder / f"{tree}.json"
+    at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_atomic(path, json.dumps({"tree": tree, "head": head, "at": at, "times": times}, sort_keys=True) + "\n")
+    old = sorted(folder.glob("*.json"), key=lambda p: (p.stat().st_mtime_ns, p.name))
+    for stale in old[:-KEEP]:
+        stale.unlink(missing_ok=True)
+    return str(path)

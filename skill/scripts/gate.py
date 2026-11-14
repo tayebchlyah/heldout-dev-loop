@@ -189,4 +189,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     payload["size"] = size.check(top, "uncommitted")
     payload["ratchet"] = ratchet.check("gate", top, reports, main_ref(top))
     ok = payload["exit"] == 0 and payload["seal"]["ok"] and payload["size"]["ok"] and payload["ratchet"]["ok"]
+    if (ok and os.environ.get("GATE_SCOPE") != "changed" and payload["ratchet"]["state"] in ("checked", "no-baseline")
+            and ratchet.clean(top)):
+        payload["ratchet"]["record"] = ratchet.write_record("gate", top, reports)
     return emit(payload, 0 if ok else 1)
