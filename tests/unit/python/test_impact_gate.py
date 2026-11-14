@@ -14,7 +14,8 @@ sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
 MAP = {"source": "s", "paths": {"a.py": ["tests/unit/python/test_a.py"], "b.js": ["tests/unit/node/b.test.mjs"],
-                                "both.txt": ["tests/unit/node/a.test.mjs", "tests/unit/python/test_b.py"]}}
+                                "both.txt": ["tests/unit/node/a.test.mjs", "tests/unit/python/test_b.py"],
+                                "café.py": ["tests/unit/python/test_a.py"]}}
 BOTH = ["a.test.mjs", "b.test.mjs"]
 PY_STUB = "import os\nopen(os.path.join(os.environ['MARKS'], 'py'), 'w').write(repr(os.environ.get('DEVLOOP_TEST_MODULES')))\n"
 
@@ -34,7 +35,7 @@ class ImpactGateTests(unittest.TestCase):
                  "tests/unit/python/test_b.py": "", "tests/unit/node/a.test.mjs": node_stub("a.test.mjs"),
                  "tests/unit/node/b.test.mjs": node_stub("b.test.mjs"), "tests/impact-map.json": json.dumps(MAP),
                  ".gitignore": "node_modules/\n", "a.py": "a\n", "b.js": "b\n", "both.txt": "c\n", "x.txt": "x\n",
-                 "reference/cli/status.md": "s\n"}
+                 "café.py": "c\n", "reference/cli/status.md": "s\n"}
         for script in ("gate.sh", "temp_leak.sh", "suite_lock.sh", "impact_map.py"):
             files[f"scripts/{script}"] = (ROOT / "scripts" / script).read_text()
         for path, text in files.items():
@@ -42,6 +43,7 @@ class ImpactGateTests(unittest.TestCase):
             (self.repo / path).write_text(text)
         (self.repo / "node_modules" / "playwright").mkdir(parents=True)
         self.git("init", "-q")
+        self.git("config", "core.quotePath", "true")
         self.commit()
 
     def git(self, *args: str) -> None:
@@ -99,6 +101,21 @@ class ImpactGateTests(unittest.TestCase):
     def test_a_rename_runs_the_modules_of_the_old_path(self) -> None:
         self.git("mv", "a.py", "c.py")
         self.assertIn("test_a", self.gate(None)["py"] or "")
+
+    def test_a_non_ascii_tracked_path_reaches_the_map_slow(self) -> None:
+        self.assertEqual(self.gate("café.py"), {"py": "'test_a'", "node": []})
+
+    def test_a_non_ascii_untracked_path_runs_the_skill_suite_slow(self) -> None:
+        (self.repo / "skill").mkdir()
+        (self.repo / "skill" / "é.md").write_text("e\n")
+        self.assertEqual(self.gate(None)["py"], "None")
+
+    def test_a_non_ascii_path_in_the_fallback_runs_the_skill_suite_slow(self) -> None:
+        (self.repo / "scripts" / "impact_map.py").unlink()
+        self.commit()
+        (self.repo / "skill").mkdir()
+        (self.repo / "skill" / "é.md").write_text("e\n")
+        self.assertEqual(self.gate(None)["py"], "None")
 
     def test_no_change_runs_nothing(self) -> None:
         self.assertEqual(self.gate(None), {"py": None, "node": []})

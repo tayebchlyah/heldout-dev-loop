@@ -22,7 +22,7 @@ unset DEVLOOP_TEST_MODULES
 node=1 py=1 py_modules="" node_targets=(tests/unit/node/*.test.mjs)
 if [ "${GATE_SCOPE:-}" = changed ]; then
   node=0 py=0
-  changed=$(git diff --name-only --no-renames HEAD; git ls-files --others --exclude-standard)
+  changed=$(git -c core.quotePath=false diff --name-only --no-renames HEAD; git -c core.quotePath=false ls-files --others --exclude-standard)
   if [ ! -f scripts/impact_map.py ]; then
     while IFS= read -r path; do
       case "$path" in
