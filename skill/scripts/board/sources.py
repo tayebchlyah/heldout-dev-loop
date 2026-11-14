@@ -1,4 +1,5 @@
-"""The files that hold the real stage and task times and the doing tasks (Board Robustness D6, D7, D9, D10)."""
+"""The files that hold the real stage and task times and the doing tasks (Board Robustness D6, D7, D9, D10), and the
+GitHub issue, PR and repository of a feature (#319)."""
 
 from __future__ import annotations
 
@@ -59,3 +60,34 @@ def native_doing(config_dir: Path, session: str | None) -> set[int]:
 def briefs(sdd: Path) -> set[int]:
     """D9 (b): the numbers of the `task-N-brief.md` files in the SDD workspace."""
     return {int(m.group(1)) for p in sdd.glob("task-*-brief.md") if (m := re.fullmatch(r"task-(\d+)-brief\.md", p.name))}
+
+
+def issue(spec_value: str | None, slug: str) -> int | None:
+    """#319 D1: the spec frontmatter `issue` when a positive integer, else the leading number of the slug."""
+    if spec_value and re.fullmatch(r"[1-9][0-9]*", spec_value):
+        return int(spec_value)
+    found = re.match(r"(\d+)-", slug)
+    return int(found.group(1)) if found and int(found.group(1)) > 0 else None
+
+
+def pull_request(dl: ModuleType, worktree: Path) -> int | None:
+    """#319 D2: `number` of `<worktree git dir>/dev-loop/pr.json` (no link followed) when its `branch` is the
+    worktree branch."""
+    git_dir = dl.git(worktree, "rev-parse", "--absolute-git-dir")
+    branch = dl.git(worktree, "symbolic-ref", "--quiet", "--short", "HEAD")
+    data = dl.read_below(Path(git_dir), "dev-loop", "pr.json") if git_dir and branch else None
+    try:
+        record = json.loads(data) if data else None
+    except ValueError:
+        return None
+    if not isinstance(record, dict) or record.get("branch") != branch:
+        return None
+    number = record.get("number")
+    return number if isinstance(number, int) and not isinstance(number, bool) and number > 0 else None
+
+
+def github_repo(origin: str | None) -> str:
+    """#319 D3: `https://github.com/<o>/<r>` from an origin URL on github.com, else ""."""
+    found = re.fullmatch(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([A-Za-z0-9_.-]+)/"
+                         r"([A-Za-z0-9_.-]+?)(?:\.git)?/?", origin or "")
+    return f"https://github.com/{found.group(1)}/{found.group(2)}" if found else ""
