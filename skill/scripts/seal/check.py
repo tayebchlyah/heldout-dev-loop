@@ -179,6 +179,10 @@ def record_violations(repo: Path) -> tuple[list[dict], list[dict]]:
     return dropped, []
 
 
+def public(record: dict) -> dict:
+    return {key: value for key, value in record.items() if key not in ("lines", "paths")}
+
+
 def check(repo: Path, uncommitted: bool) -> dict:
     base = merge_base(repo)
     violations = commit_violations(repo, base) if base else []
@@ -191,8 +195,8 @@ def check(repo: Path, uncommitted: bool) -> dict:
         state = taint_state(repo)
         # `<base>` itself counts: a tainted subagent with no commit on a fresh branch ends there.
         recent = set(run_git(repo, "rev-list", f"{base}..HEAD" if base else "HEAD").stdout.split()) | {base}
-        warnings = [item for item in state["closed"] + state["skipped"] if item.get("end") in recent]
-        taint = state["open"]
+        warnings = [public(item) for item in state["closed"] + state["skipped"] if item.get("end") in recent]
+        taint = [public(item) for item in state["open"]]
     except (ValueError, AttributeError, TypeError, KeyError):  # taint.json does not parse or has the wrong shape
         violations.append(violation("taint-unreadable", path=str(taint_file(repo))))
         taint, warnings = [], []

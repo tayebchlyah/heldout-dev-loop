@@ -617,7 +617,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual((out["taint"]["paths"], out["taint"]["commits"]), ([PROTECTED], []))
         code, check = run_cli("seal-check", cwd=self.repo)
         self.assertEqual((check["ok"], check["taint"]), (True, []))
-        self.assertIn(out["taint"], check["warnings"])
+        self.assertIn({k: v for k, v in out["taint"].items() if k not in ("lines", "paths")}, check["warnings"])
         self.commit("src/app.py", "x = 1\n", "app")
         code, out = self.audit(self.transcript(bash_result("grep -rn make .", "src/app.py:3:x")), agent_type="spec-tester",
                                agent_id="s1")

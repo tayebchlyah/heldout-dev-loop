@@ -169,7 +169,8 @@ class SealCheckTests(SealRepo):
         start = git(self.repo, "rev-parse", "HEAD").strip()
         old = git(self.repo, "commit-tree", "HEAD^{tree}", "-m", "outside the branch history").strip()
         sha = self.commit("src/total.py", "def total(xs):\n    return sum(xs)\n")
-        record = {"agent_id": "a1", "agent_type": "implementer", "at": "t", "set": "acceptance", "lines": [],
+        record = {"agent_id": "a1", "agent_type": "implementer", "at": "t", "set": "acceptance",
+                  "lines": ["def test_secret_flow():", "assert secret() == 1"], "paths": [SUITE],
                   "start": start, "end": sha, "attribution": "transcript"}
         taint = {"records": [{**record, "commits": [audit_module.commit_record(self.repo, sha)]},
                              {**record, "agent_id": "closed", "commits": []},
@@ -181,7 +182,11 @@ class SealCheckTests(SealRepo):
         code, out = self.check()
         self.assertEqual((code, out["ok"], out["violations"]), (1, False, []))
         self.assertEqual([r["agent_id"] for r in out["taint"]], ["a1"])
-        self.assertEqual(out["warnings"], [taint["records"][1], taint["skipped"][0]])
+        held_out = {"lines", "paths"}
+        self.assertEqual(out["warnings"], [{k: v for k, v in taint["records"][1].items() if k not in held_out},
+                                           taint["skipped"][0]])
+        self.assertNotIn("secret", json.dumps(out))
+        self.assertEqual(json.loads(path.read_text()), taint)
         for text in ("{not json", "[]"):
             with self.subTest(taint=text):
                 path.write_text(text)
@@ -196,6 +201,7 @@ class SealCheckTests(SealRepo):
         path = audit_module.taint_file(self.repo)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"records": [record], "skipped": []}))
+        del record["lines"]
         self.assertEqual(self.check(), (0, {"ok": True, "violations": [], "taint": [], "warnings": [record]}))
 
     def test_quoted_trailer_in_an_earlier_paragraph_is_no_seal(self) -> None:
