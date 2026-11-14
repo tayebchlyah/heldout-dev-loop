@@ -89,5 +89,7 @@ def pull_request(dl: ModuleType, worktree: Path) -> int | None:
 def github_repo(origin: str | None) -> str:
     """#319 D3: `https://github.com/<o>/<r>` from an origin URL on github.com, else ""."""
     found = re.fullmatch(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([A-Za-z0-9_.-]+)/"
-                         r"([A-Za-z0-9_.-]+?)(?:\.git)?/?", origin or "")
+                         r"([A-Za-z0-9_.-]+?)(?:\.git)?", origin or "")
+    if not found and (origin or "").startswith("https://"):
+        found = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/", origin or "")
     return f"https://github.com/{found.group(1)}/{found.group(2)}" if found else ""

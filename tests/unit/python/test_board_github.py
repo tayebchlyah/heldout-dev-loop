@@ -25,7 +25,9 @@ class GithubReaderTests(unittest.TestCase):
                 ("ssh://git@github.com/tayebchlyah/heldout-dev-loop.git", GOOD),
                 ("https://github.com/o/r.github", "https://github.com/o/r.github"),
                 ("https://gitlab.com/o/r.git", ""), ("https://github.com/o w/r", ""), ("https://github.com/o/r$x", ""),
-                ("https://github.com/o/r/x", ""), ("http://github.com/o/r", ""), ("/tmp/origin.git", ""), ("", ""),
+                ("https://github.com/o/r.git/", "https://github.com/o/r"), ("git@github.com:o/r/", ""),
+                ("git@github.com:o/r.git/", ""), ("ssh://git@github.com/o/r/", ""),
+                ("ssh://git@github.com/o/r.git/", ""), ("https://github.com/o/r/x", ""), ("http://github.com/o/r", ""), ("/tmp/origin.git", ""), ("", ""),
                 (None, "")]
         for origin, want in rows:
             with self.subTest(origin=origin):
