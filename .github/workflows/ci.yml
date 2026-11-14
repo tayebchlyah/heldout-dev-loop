@@ -42,9 +42,13 @@ jobs:
             python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output
           fi
 
-  test:
+  test-shards:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [installer, 1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-latest
     env:
       DEVLOOP_REQUIRE_DOCKER: "1"
@@ -71,14 +75,33 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Installer suite
+        if: ${{ matrix.part == 'installer' }}
         run: npm test
 
       - name: Skill suite
+        if: ${{ matrix.part != 'installer' }}
+        env:
+          DEVLOOP_TEST_SHARD: ${{ matrix.part }}
         run: python3 tests/unit/python/test_dev_loop.py
 
-  acceptance:
+  test:
+    needs: [changes, test-shards]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every shard passed, or changes skipped the suites
+        env:
+          SKIP: ${{ needs.changes.outputs.skip }}
+          SHARDS: ${{ needs.test-shards.result }}
+        run: '[ "$SKIP" = true ] || [ "$SHARDS" = success ]'
+
+  acceptance-shards:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1/2, 2/2]
     runs-on: ubuntu-latest
     env:
       DEVLOOP_REQUIRE_DOCKER: "1"
@@ -105,4 +128,17 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Held-out acceptance suite
+        env:
+          DEVLOOP_TEST_SHARD: ${{ matrix.part }}
         run: scripts/acceptance.sh
+
+  acceptance:
+    needs: [changes, acceptance-shards]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every shard passed, or changes skipped the suites
+        env:
+          SKIP: ${{ needs.changes.outputs.skip }}
+          SHARDS: ${{ needs.acceptance-shards.result }}
+        run: '[ "$SKIP" = true ] || [ "$SHARDS" = success ]'

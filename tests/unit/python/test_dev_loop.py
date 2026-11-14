@@ -16,6 +16,7 @@ import unittest
 import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest import mock
 
 def job_count() -> int:
     return max(int(os.environ.get("DEVLOOP_TEST_JOBS") or os.cpu_count() or 1), 1)
@@ -52,7 +53,7 @@ from support import SKILL_ROOT  # noqa: E402
 # The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
 # never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
-from junit_report import (chunk_report, flat, record_dead_chunks, run_chunk, run_chunks,  # noqa: E402
+from junit_report import (chunk_report, flat, in_shard, record_dead_chunks, run_chunk, run_chunks,  # noqa: E402
                           without_summary, write_junit)
 
 
@@ -135,6 +136,45 @@ class JUnitReportTests(unittest.TestCase):
                                      ("test_a.C", "test_2"), ("test_b.B", "test_1")])
             self.assertEqual(ran["test_a.A.test_1"], ran["test_a.A.test_2"])
             self.assertEqual(len({ran["test_a.A.test_1"], ran["test_a.C.test_1"], ran["test_b.B.test_1"]}), 3)
+
+    def test_shards_run_each_test_exactly_once(self) -> None:
+        keys = [f"test_m.C{i}.test_{j}" for i in range(40) for j in range(5)]
+        for total in (1, 2, 3, 4):
+            with self.subTest(total=total):
+                parts = []
+                for index in range(1, total + 1):
+                    with mock.patch.dict(os.environ, {"DEVLOOP_TEST_SHARD": f"{index}/{total}"}):
+                        parts.append(in_shard(keys))
+                self.assertEqual(sorted(sum(parts, [])), sorted(keys))
+                self.assertTrue(all(parts) or total == 1)
+        with mock.patch.dict(os.environ, {"DEVLOOP_TEST_SHARD": ""}):
+            self.assertEqual(in_shard(keys), keys)
+
+    def test_shards_refuse_a_malformed_value(self) -> None:
+        for value in ("0/4", "5/4", "1/0", "2", "a/b"):
+            with self.subTest(value=value), mock.patch.dict(os.environ, {"DEVLOOP_TEST_SHARD": value}):
+                with self.assertRaisesRegex(SystemExit, "DEVLOOP_TEST_SHARD"):
+                    in_shard(["x"])
+
+    def test_discover_shards_by_class(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp, "suite")
+            folder.mkdir()
+            (folder / "test_a.py").write_text("import unittest\n" + "".join(
+                f"class K{i}(unittest.TestCase):\n    def test_1(self): pass\n    def test_2(self): pass\n"
+                for i in range(12)))
+            seen = []
+            for index in (1, 2):
+                report = Path(tmp, f"{index}.xml")
+                result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(report)],
+                                        capture_output=True, text=True,
+                                        env={**os.environ, "DEVLOOP_TEST_SHARD": f"{index}/2"})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                classes = {c.get("classname") for c in ET.parse(report).getroot().iter("testcase")}
+                self.assertEqual(sum(1 for _ in ET.parse(report).getroot().iter("testcase")), 2 * len(classes))
+                seen.append(classes)
+        self.assertFalse(seen[0] & seen[1])
+        self.assertEqual(seen[0] | seen[1], {f"test_a.K{i}" for i in range(12)})
 
     def test_discover_keeps_its_chunk_reports_in_the_run_dir_not_in_tmpdir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -331,7 +371,7 @@ def run_parallel(jobs: int) -> int:
     if loader.errors:
         print("\n".join(map(str, loader.errors)), file=sys.stderr)
         return 1
-    ids = list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1) for test in flat(suite)))
+    ids = in_shard(list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1) for test in flat(suite))))
     chunks = [ids[i:i + 5] for i in range(0, len(ids), 5)]
     reports = os.environ.get("DEVLOOP_REPORT_DIR")
     outcomes = Path(tempfile.mkdtemp())

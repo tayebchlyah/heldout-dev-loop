@@ -47,7 +47,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `assets/`: README logo, icon, The loop diagram (`the-loop.archify.json` source).
 - `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`.
 - `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.
-- `.github/rulesets/`: ruleset bodies for `gh api`, contexts equal `ci.yml` job ids.
+- `.github/rulesets/`: ruleset bodies for `gh api`, contexts: `ci.yml` non-shard job ids.
 
 ## devloop CLI
 
@@ -98,7 +98,7 @@ npm test                                    # node suite: installer, board rende
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
-Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR`: JUnit `skill.xml` there; dead chunk errors its ids. Test name argument: plain unittest, no report.
+Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR`: JUnit `skill.xml` there; dead chunk errors its ids. Test name arg: plain unittest, no report.
 
 `scripts/gate.sh` (both suites) fails with `run npm ci && npx playwright install chromium` without `node_modules/playwright`; new worktree (Stage 3) runs it first. Both pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both green or skipped.
 
