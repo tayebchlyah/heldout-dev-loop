@@ -178,12 +178,15 @@ def cmd_gate(args: argparse.Namespace) -> int:
     payload["slowest"] = slowest(reports, top)
     if not parsed:
         payload["hint"] = JUNIT_HINT
+    import ratchet
     import size
+    from notes_path import main_ref
     from seal.check import check
     from seal.weakened import weakened
 
     payload["seal"] = check(top, True)
     payload["weakened"] = weakened(top)
     payload["size"] = size.check(top, "uncommitted")
-    ok = payload["exit"] == 0 and payload["seal"]["ok"] and payload["size"]["ok"]
+    payload["ratchet"] = ratchet.check("gate", top, reports, main_ref(top))
+    ok = payload["exit"] == 0 and payload["seal"]["ok"] and payload["size"]["ok"] and payload["ratchet"]["ok"]
     return emit(payload, 0 if ok else 1)
