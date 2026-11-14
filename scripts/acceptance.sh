@@ -4,6 +4,7 @@
 # per process, DEVLOOP_TEST_JOBS at once), in an empty TMPDIR: a leftover fails the
 # run and is listed (rule in scripts/temp_leak.sh). DEVLOOP_REPORT_DIR set: JUnit XML there, acceptance-python.xml,
 # acceptance-node.xml and acceptance-temp-leak.xml (one case temp-leak TMPDIR, failing on a leak).
+# DEVLOOP_TEST_SHARD goes to the Python part only (not to the Node part or the tests).
 # Exit 1 when one part fails, the tests leave a temp leak, or (reports on) no held-out test ran.
 # It waits for the suite lock (scripts/suite_lock.sh, when beside this file): one suite run at a time across the
 # worktrees.
@@ -15,6 +16,8 @@ if [ -f scripts/suite_lock.sh ]; then
   suite_lock || exit 1
 fi
 folder=${1:-tests/acceptance}
+shard=${DEVLOOP_TEST_SHARD:-}
+unset DEVLOOP_TEST_SHARD
 scratch=$(mktemp -d) out=$(mktemp -d)
 trap 'rm -rf "$scratch" "$out"' EXIT
 
@@ -25,7 +28,7 @@ if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
     --test-reporter=junit --test-reporter-destination="$DEVLOOP_REPORT_DIR/acceptance-node.xml")
 fi
 
-{ TMPDIR="$scratch" DEVLOOP_RUN_DIR="$out" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"}; echo $? >"$out/py.exit"; } 9>&- &
+{ TMPDIR="$scratch" DEVLOOP_TEST_SHARD="$shard" DEVLOOP_RUN_DIR="$out" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"}; echo $? >"$out/py.exit"; } 9>&- &
 { TMPDIR="$scratch" node --test ${node_report[@]+"${node_report[@]}"} "$folder"/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } 9>&- &
 wait
 status=0

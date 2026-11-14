@@ -47,7 +47,7 @@ def flat(suite: unittest.TestSuite):
 
 
 def in_shard(keys: list[str]) -> list[str]:
-    value = os.environ.get("DEVLOOP_TEST_SHARD")
+    value = os.environ.pop("DEVLOOP_TEST_SHARD", None)
     if not value:
         return keys
     index, _, total = value.partition("/")
@@ -126,9 +126,9 @@ def run_discover(runner: str, folder: str, xml: str | None, jobs: int) -> int:
     set_discover_path(folder)
     tests = list(flat(unittest.TestLoader().discover(folder, pattern="test_*.py")))
     loader_errors = [test.id() for test in tests if test.id().startswith("unittest.loader.")]
-    classes = in_shard(list(dict.fromkeys(test.id().rpartition(".")[0] for test in tests
-                                          if test.id() not in loader_errors)))
-    kept = set(in_shard(loader_errors)) | set(classes)
+    every_class = list(dict.fromkeys(test.id().rpartition(".")[0] for test in tests if test.id() not in loader_errors))
+    kept = set(in_shard(loader_errors + every_class))
+    classes = [name for name in every_class if name in kept]
     tests = [test for test in tests if test.id() in kept or test.id().rpartition(".")[0] in kept]
     broken = [test for test in tests if test.id() in loader_errors]
     outcomes = Path(tempfile.mkdtemp(dir=os.environ.get("DEVLOOP_RUN_DIR")))
