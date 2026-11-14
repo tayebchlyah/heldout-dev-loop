@@ -184,15 +184,27 @@ class SizeRuleTests(SizeRepo):
         self.assertEqual(self.reasons(), [("kit/other.py", "new")])
         self.assertEqual(self.reasons("--uncommitted"), [("kit/other.py", "new")])
 
-    def test_held_out_suite_is_skipped(self) -> None:
+    def test_held_out_violations_carry_no_file_text(self) -> None:
         self.on_main("tests/acceptance/old.py", b"def test_old():\n" + blob(50000))
         self.commit("tests/acceptance/api/big.py", b"def test_secret():\n" + blob(41000))
         self.commit("tests/acceptance_more/big.py", blob(41000))
         self.write("tests/acceptance/loose.py", blob(41000))
-        expected = {(): "new", ("--uncommitted",): "new", ("--all",): "over"}
-        for mode, why in expected.items():
+        expected = {
+            (): [("tests/acceptance/api/big.py", "new"), ("tests/acceptance_more/big.py", "new")],
+            ("--uncommitted",): [("tests/acceptance/api/big.py", "new"), ("tests/acceptance/loose.py", "new"),
+                                 ("tests/acceptance_more/big.py", "new")],
+            ("--all",): [("tests/acceptance/api/big.py", "over"), ("tests/acceptance/loose.py", "over"),
+                         ("tests/acceptance/old.py", "over"), ("tests/acceptance_more/big.py", "over")],
+        }
+        for mode, reasons in expected.items():
             with self.subTest(mode=mode):
-                self.assertEqual(self.reasons(*mode), [("tests/acceptance_more/big.py", why)])
+                code, out = self.check(*mode)
+                self.assertEqual(self.reasons(*mode), reasons)
+                for v in out["violations"]:
+                    if v["path"].startswith("tests/acceptance/"):
+                        self.assertEqual((v["seam"], v["units"], v["hint"]),
+                                         (None, [], f"split {v['path']} by responsibility"))
+                self.assertNotIn("def test_", json.dumps(out))
 
     def test_git_failure_is_an_error(self) -> None:
         self.commit("a.txt", blob(41000))
@@ -313,6 +325,9 @@ class SealSizeTests(SizeRepo):
         git(self.repo, "add", self.SUITE)
         code, out = run_cli("seal", "--rebase-continue", cwd=self.repo)
         self.assertEqual((code, out["rebase"]), (0, "continued"), out)
+        code, out = run_cli("size-check", cwd=self.repo)
+        [v] = out["violations"]
+        self.assertEqual((code, v["path"], v["reason"], v["seam"], v["units"]), (1, self.SUITE, "grown", None, []))
 
     def test_from_a_subfolder(self) -> None:
         self.on_main(self.SUITE, blob(50000))
