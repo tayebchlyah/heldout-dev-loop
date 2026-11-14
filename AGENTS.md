@@ -116,7 +116,7 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 - Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
 - Changelog: `release_notes` `written`: prose `CHANGELOG.md` by `/release-notes`. `cliff.toml` kept for `repo_rules.py subjects`. Releases tag-driven (`vX.Y.Z`, `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check (tag = `package.json`), `promoted`, `release-notes`, `ncipollo/release-action`.
 - Release: `reference/release.md`. Stage 7 after a merge: report line `rc: now|later: <reason>`.
-- Comments: `scripts/repo_rules.py comments` fails a new comment line, private docstring or trailing `.sh` comment of a kind `CODING_STANDARDS.md` disallows; mark one an outside dependency forces with `allow-comment: dependency`.
+- Comments: `scripts/repo_rules.py comments` fails a new comment line, private docstring or trailing `.sh` comment of a kind `CODING_STANDARDS.md` disallows; mark a comment an outside dependency forces with `allow-comment: dependency`.
 - Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase.
 - No tracked file holds an absolute home path: write a `~` path, never its expansion. Owner's name only as GitHub handle `tayebchlyah` (guard test, case-sensitive).
 - No tracked file names an internal client or project (employer, its customers, private projects): notes folder `Internal Names.md`, one `- <name>` line each; `tests/unit/node/payload.test.mjs` reads it (skipped: no notes path or note). New name: there, never in the repo.

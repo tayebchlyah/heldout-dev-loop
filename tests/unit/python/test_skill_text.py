@@ -585,7 +585,7 @@ class CleanupTextTests(unittest.TestCase):
         stage = stage_text(7)
         for needle in (self.LINE, "`cleanup: done`", '`cleanup: skipped: <reasons joined by "; ">`',
                        "`cleanup: skipped: no cleanup command in the main checkout kit`", "`worktree: in-use`",
-                       "the user says the PR merged", "`shipped` with a `worktree`"):
+                       "the user says the PR merged", "`shipped` with a `worktree`", "never a `cd`"):
             self.assertIn(needle, stage)
         self.assertLess(stage.index("metrics --write"), stage.index("`ExitWorktree` with `keep`"))
         self.assertLess(stage.index("`ExitWorktree` with `keep`"), stage.index("cleanup --branch"))
@@ -598,7 +598,7 @@ class CleanupTextTests(unittest.TestCase):
         self.assertLess(claude.index("`ExitWorktree` with `keep`"), claude.index("cleanup --branch <branch>"))
         codex = next(line for line in (REFERENCES / "codex.md").read_text().splitlines()
                      if line.startswith("- Stage 7 end:"))
-        for needle in ("cleanup --branch <branch>", "main checkout as the working folder"):
+        for needle in ("cleanup --branch <branch>", "never a `cd`"):
             self.assertIn(needle, codex)
         status = next(line for line in (SKILL_ROOT / "SKILL.md").read_text().splitlines()
                       if "`shipped`: nothing left" in line)
