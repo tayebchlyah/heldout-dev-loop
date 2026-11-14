@@ -23,6 +23,7 @@ import devloop
 from devloop import emit, git
 import gate
 import merge_check
+import ratchet
 from seal import ACCEPTANCE_DIR
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
@@ -384,15 +385,25 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     this["short"] = green(this) and floor is not None and tests < floor
     runs.append(this)
     write_record(record, runs)
+    verdict = guard(runs)
+    if failed:
+        times = ratchet.skipped("failed-mode")
+    elif not verdict or verdict["verdict"] != "green":
+        times = ratchet.skipped("not-green")
+    else:
+        times = ratchet.check("acceptance", top, reports, ref)
+        if times["ok"] and times["state"] in ("checked", "no-baseline") and ratchet.clean(top):
+            times["record"] = ratchet.write_record("acceptance", top, reports)
     payload.update(mode=this["mode"], head=head, failing=failing, ids=ids, cases=cases, tests=tests, floor=floor,
-                   short=this["short"], stale=stale, counted=counted, guard=guard(runs), record=str(record))
+                   short=this["short"], stale=stale, counted=counted, guard=verdict, record=str(record),
+                   ratchet=times)
     if this["short"]:
         payload["hint"] = SHORT_HINT.format(tests=tests, floor=floor, head=floor_head[:12])
     elif failing is None:
         payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
     elif cases == 0:
         payload["hint"] = CASES_HINT.format(folder=reports)
-    return payload, 0 if payload["exit"] == 0 and counted and cases and not this["short"] else 1
+    return payload, 0 if payload["exit"] == 0 and counted and cases and not this["short"] and times["ok"] else 1
 
 
 def cmd_review_merge(args: argparse.Namespace) -> int:
