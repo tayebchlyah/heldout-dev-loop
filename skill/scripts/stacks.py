@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import subprocess
+import tomllib
 from fnmatch import fnmatchcase
 from pathlib import Path
 
@@ -17,6 +18,9 @@ from seal import ACCEPTANCE_DIR
 
 PRESETS = Path(__file__).resolve().parent.parent / "presets.json"
 HELD = ACCEPTANCE_DIR + "/"
+CARGO_MAIN = ACCEPTANCE_DIR + "/main.rs"
+CARGO_SUITE = (f"stacks path . preset cargo: Cargo builds {CARGO_MAIN} as a test target, so the unit commands run the held-out "
+               f'suite: add [[test]] name = "acceptance", path = "{CARGO_MAIN}", test = false to Cargo.toml')
 
 
 def load_presets(path: Path = PRESETS) -> dict:
@@ -162,6 +166,19 @@ def validate(value: object) -> str | None:
     return None
 
 
+def _cargo_builds_suite(repo: Path) -> bool:
+    if not (repo / CARGO_MAIN).is_file():
+        return False
+    try:
+        cargo = tomllib.loads((repo / "Cargo.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    targets = [t for t in cargo.get("test", []) if isinstance(t, dict) and t.get("path") == CARGO_MAIN]
+    if targets:
+        return any(t.get("test") is not False for t in targets)
+    return cargo.get("package", {}).get("autotests") is not False
+
+
 def setup(repo: Path) -> list[str]:
     """The check_setup.py failure lines of the `stacks` key, read from this checkout."""
     try:
@@ -188,6 +205,8 @@ def setup(repo: Path) -> list[str]:
         if path != "." and not (repo / path).is_dir():
             lines.append(f"stacks path {path} is not a folder in this checkout")
             continue
+        if path == "." and name == "cargo" and _cargo_builds_suite(repo):
+            lines.append(CARGO_SUITE)
         if covered is None:
             continue
         if path != ".":
