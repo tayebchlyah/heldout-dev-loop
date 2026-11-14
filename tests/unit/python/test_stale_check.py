@@ -89,8 +89,9 @@ class StaleCheckTests(RepoCase):
 
     def test_old_image_only_container_fresh(self) -> None:
         self.docker(api="2026-10-02T11:00:00Z", db="2026-09-01T00:00:00Z")
-        self.assertEqual(stale_check(self.repo, self.env, None), {"state": "fresh", "checked": ["api"], "services": [],
-                                                            "reference": self.code_sha, "project": None})
+        self.assertEqual(stale_check(self.repo, self.env, None), {"state": "fresh", "checked": ["api"],
+                                                                  "services": [], "reference": self.code_sha,
+                                                                  "project": None})
 
     def test_test_and_doc_commit_not_reference(self) -> None:
         (self.repo / "tests" / "acceptance").mkdir(parents=True)

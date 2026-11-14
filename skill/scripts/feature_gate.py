@@ -356,7 +356,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     if gate.mapped_command(top, key) != command:
         return {"error": f"commands.{key} in dev-loop.json differs from {ref}"}, 1
     compose = trusted.get("compose_project")
-    if compose is not None and (not isinstance(compose, str) or not compose):
+    if "compose_project" in trusted and (not isinstance(compose, str) or not compose):
         return {"error": f"commands.compose_project in dev-loop.json at {ref} must be a non-empty string"}, 1
     if gate.mapped_command(top, "compose_project") != compose:
         return {"error": f"commands.compose_project in dev-loop.json differs from {ref}"}, 1

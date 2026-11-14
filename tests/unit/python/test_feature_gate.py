@@ -451,6 +451,7 @@ class AcceptanceMainRefTests(RepoCase):
             ("compose key differs", {**a, "compose_project": "echo a"}, {**a, "compose_project": "echo b"}),
             ("compose key a number on main", {**a, "compose_project": 3}, {**a, "compose_project": 3}),
             ("compose key empty on main", {**a, "compose_project": ""}, {**a, "compose_project": ""}),
+            ("compose key null on main", {**a, "compose_project": None}, {**a, "compose_project": None}),
         ]
         named = {**os.environ, "COMPOSE_PROJECT_NAME": "acme-env"}
         rows = [(name, main, change, args, needle, None) for name, main, change, args, needle in rows]
