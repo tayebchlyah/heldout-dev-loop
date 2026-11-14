@@ -204,3 +204,43 @@ class ReleaseWorkflowTests(unittest.TestCase):
             self.assertIn("24f397c733add5390fdceee3a2088588ab0d5f944ce00d34cb7029b888cf2db4  git-cliff.tar.gz", job)
             self.assertIn('echo "$HOME/.local/bin" >> "$GITHUB_PATH"', job)
             self.assertLess(job.index("git-cliff-2.14.2"), job.index(suite))
+
+
+class ImpactMapWorkflowTests(unittest.TestCase):
+    def files(self) -> tuple[str, str]:
+        folder = ROOT / ".github" / "workflows"
+        return (folder / "impact-map.yml").read_text(), (folder / "ci.yml").read_text()
+
+    def test_triggers_permissions_and_limits(self) -> None:
+        text, _ = self.files()
+        for needle in ('cron: "0 5 * * 1"', "workflow_dispatch:", "contents: write", "issues: write",
+                       "timeout-minutes: 120", "group: impact-map", 'DEVLOOP_REQUIRE_DOCKER: "1"'):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, text)
+
+    def test_installs_what_the_shards_install(self) -> None:
+        text, ci = self.files()
+        shards = ReleaseWorkflowTests.jobs(ci)["test-shards"]
+        for action in ("actions/checkout", "actions/setup-node", "actions/setup-python"):
+            with self.subTest(action=action):
+                uses = re.compile(rf"uses: {action}@\S+ # \S+")
+                self.assertEqual(uses.findall(text), uses.findall(shards))
+        self.assertIn("node-version: 24", text)
+        self.assertIn('python-version: "3.14"', text)
+        for name in ("Install Playwright and Chromium", "Install git-cliff"):
+            with self.subTest(step=name):
+                self.assertEqual(ReleaseWorkflowTests.step(self, text, name).strip(),
+                                 ReleaseWorkflowTests.step(self, shards, name).strip())
+        self.assertIn("sudo apt-get install -y strace", text)
+
+    def test_trace_and_push_steps(self) -> None:
+        text, _ = self.files()
+        trace = ReleaseWorkflowTests.step(self, text, "Trace the suites")
+        self.assertIn("python3 scripts/impact_map.py trace --jobs 4", trace)
+        push = ReleaseWorkflowTests.step(self, text, "Push the new map")
+        for needle in ("git status --porcelain -- tests/impact-map.json", "git switch -c chore/impact-map",
+                       "🔧(tests) #327: Refresh the impact map", "git push --force origin chore/impact-map",
+                       "Impact map refresh", "compare/main...chore/impact-map", "GH_TOKEN: ${{ github.token }}"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, push)
+        self.assertLess(text.index(trace), text.index(push))

@@ -23,7 +23,7 @@ One file per subject. A new test file adds its line here.
 - `test_second_review.py`, `test_second_review_run.py`, `test_release.py`, `test_release_record.py`, `test_release_carry.py`: `second-review` locks, export, setup, text; `second-review` run (stub reviewers); `release-check`, `release-plan`, `release-notes`; `release-record`; the `accept` carry of `release-record`.
 - `test_release_rulings.py`: scoped rulings: `waive`, unparsed ruling lines, fences, `release-check --for`, the release text of #241, the `cliff` release body (real `git cliff`).
 - `test_release_guard.py`, `test_sandbox_run.py`: release guards, setup, kit, text; `sandbox-run.py` (real Docker; none: skip, `DEVLOOP_REQUIRE_DOCKER=1` fails, set in CI).
-- `test_release_workflow.py`: the workflows as text: CI jobs, shards and their aggregate jobs, the release workflow, its config and scripts.
+- `test_release_workflow.py`: the workflows as text: CI jobs, shards and their aggregate jobs, the release workflow, its config and scripts, the impact map refresh.
 - `test_metrics.py`, `test_metrics_cli.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
 - `test_gardener.py`, `test_retro.py`, `test_feature_gate.py`: `garden` skill, kit text, harness names; `review_due`, `sessions`; `review-merge`, `acceptance`.
 - `test_cleanup.py`: `cleanup`: worktree removal, its safety skips, branch delete, main checkout rebase, fetch failure, usage errors, no push or force.
