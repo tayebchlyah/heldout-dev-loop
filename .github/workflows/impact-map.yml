@@ -61,7 +61,7 @@ jobs:
           git commit -m "🔧(tests) #327: Refresh the impact map"
           git push --force origin chore/impact-map
           link="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...chore/impact-map?expand=1"
-          issue=$(gh issue list --state open --search 'in:title "Impact map refresh"' --json number,title --jq 'map(select(.title == "Impact map refresh"))[0].number // empty')
+          issue=$(gh issue list --state open --app github-actions --search 'in:title "Impact map refresh"' --json number,title --jq 'map(select(.title == "Impact map refresh"))[0].number // empty')
           if [ -n "$issue" ]; then
             gh issue comment "$issue" --body "The impact map changed. Open the PR: $link"
           else
