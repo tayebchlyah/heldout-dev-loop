@@ -9,7 +9,7 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus in
 Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`).
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
-- `lib/`: installer internals; `lib/codex_fill.py`: fill and check of Codex kit copy, embedded in each Codex hook command.
+- `lib/`: installer internals; `lib/codex_fill.py`: fill and check of Codex kit copy, in each Codex hook command.
 - `skills/`: kit skills `pause`, `continue`, `release-audit`, `garden`, `release`, `release-notes` (user-invoked only, except `continue`).
 - `skill/SKILL.md`: the dev-loop skill payload.
 - `skill/references/`: harness routes (`claude.md`, `codex.md`), `bootstrap.md` (Stage 0), `building.md`, `coding-standards.md` (template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `deferred.md`; `skill/references/second-review.md`: second reviewer prompt.
@@ -18,20 +18,20 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/check_setup.py`: post-install verifier; `security_skill.py`: its security-audit skill check; `capabilities.py`: its `capabilities` and `commands.acceptance` lines; `notes_path.py`: notes path resolver.
 - `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`; `stacks.py`: `stack-detect`, the `stacks` lines; `skill/presets.json`: build tool presets.
 - `skill/scripts/autonomy.py`: `decide`, `pause`, pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
-- `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
+- `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
 - `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry; `release_rulings.py`: `## Deferred` parser; `sandbox-run.py`: audit sandbox (Docker).
 - `skill/scripts/audit/`: `audit-run` package: one module per step, shared `common`, `skilltext`, `safefs`.
 - `skill/scripts/mutation/`: `mutation`: `run.py` (selection, protocol, checks, report), built-in adapters `mutmut.py`, `stryker.py`, `mutago.py` (`adapter.py` shared), `setup.py` (its `check_setup.py` lines).
 - `skill/scripts/feature_gate.py`: `review-merge`, `review-save`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
-- `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board (`board/cli.py`: `board`).
+- `skill/scripts/seal/`: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board (`board/cli.py`: `board`).
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
-- `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md` (new test file: its line there). No test file under `skill/`.
+- `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md`. No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
-- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
+- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed`: modules `scripts/impact_map.py select` picks (`tests/impact-map.json`, weekly `impact-map.yml`).
 - `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
@@ -98,7 +98,7 @@ npm test                                    # node suite: installer, board rende
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
-Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR`: JUnit `skill.xml` there; dead chunk errors its ids. Test name arg: plain unittest, no report.
+Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR`: JUnit `skill.xml` there; dead chunk errors its ids. Test name arg: plain unittest, no report. `DEVLOOP_TEST_MODULES`: those modules.
 
 `scripts/gate.sh` (both suites) fails with `run npm ci && npx playwright install chromium` without `node_modules/playwright`; new worktree (Stage 3) runs it first. Both pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both green or skipped.
 
@@ -110,7 +110,7 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 
 ## Conventions
 
-- Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in Review Yield.md (`$NOTES/Review Yield.md`).
+- Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in `$NOTES/Review Yield.md`.
 - Cost data rule: no process cut for cost (drop a reviewer, no `tdd`, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (`metrics --write`, Stage 7).
 - Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required.
 - Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
