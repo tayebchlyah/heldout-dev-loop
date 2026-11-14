@@ -56,6 +56,13 @@ def in_shard(keys: list[str]) -> list[str]:
     return [key for key in keys if zlib.crc32(key.encode()) % int(total) == int(index) - 1]
 
 
+def in_modules(keys: list[str]) -> list[str]:
+    names = set((os.environ.pop("DEVLOOP_TEST_MODULES", None) or "").split())
+    if not names:
+        return keys
+    return [key for key in keys if key.split(".")[0] in names | {"test_dev_loop"}]
+
+
 def chunk_report(outcomes: Path, chunk: list[str]) -> Path:
     return outcomes / f"{chunk[0]}.json"
 

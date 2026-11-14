@@ -53,8 +53,8 @@ from support import SKILL_ROOT  # noqa: E402
 # The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
 # never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
-from junit_report import (chunk_report, flat, in_shard, record_dead_chunks, run_chunk, run_chunks,  # noqa: E402
-                          without_summary, write_junit)
+from junit_report import (chunk_report, flat, in_modules, in_shard, record_dead_chunks, run_chunk,  # noqa: E402
+                          run_chunks, without_summary, write_junit)
 
 
 def wire(name: str) -> None:
@@ -79,6 +79,25 @@ for _path in sorted(HERE.glob("test_*.py")):
 
 
 class JUnitReportTests(unittest.TestCase):
+    def test_in_modules_table(self) -> None:
+        ids = ["test_dev_loop.JUnitReportTests.test_1", "test_x.A.test_1", "test_x.B.test_2", "test_y.C.test_1",
+               "test_xy.D.test_1"]
+        rows = (("test_x", ids[:3]), ("test_x test_y", ids[:4]), ("", ids), (None, ids))
+        for value, kept in rows:
+            with self.subTest(value=value):
+                env = {} if value is None else {"DEVLOOP_TEST_MODULES": value}
+                with mock.patch.dict(os.environ, env):
+                    if value is None:
+                        os.environ.pop("DEVLOOP_TEST_MODULES", None)
+                    self.assertEqual(in_modules(ids), kept)
+                    self.assertNotIn("DEVLOOP_TEST_MODULES", os.environ)
+
+    def test_run_parallel_keeps_the_listed_modules(self) -> None:
+        with mock.patch.dict(os.environ, {"DEVLOOP_TEST_MODULES": "test_size", "DEVLOOP_TEST_SHARD": ""}), \
+                mock.patch.object(sys.modules[__name__], "run_chunks", return_value=0) as run:
+            self.assertEqual(run_parallel(1), 0)
+        self.assertEqual({test_id.split(".")[0] for test_id in run.call_args.args[2]}, {"test_size", "test_dev_loop"})
+
     def test_discover_keeps_flow_modules_separate_from_unit_helpers(self) -> None:
         """A discovered module can load unit helpers without hiding a later flow module."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -383,7 +402,8 @@ def run_parallel(jobs: int) -> int:
     if loader.errors:
         print("\n".join(map(str, loader.errors)), file=sys.stderr)
         return 1
-    ids = in_shard(list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1) for test in flat(suite))))
+    ids = in_shard(in_modules(list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1)
+                                                 for test in flat(suite)))))
     chunks = [ids[i:i + 5] for i in range(0, len(ids), 5)]
     reports = os.environ.get("DEVLOOP_REPORT_DIR")
     outcomes = Path(tempfile.mkdtemp())
