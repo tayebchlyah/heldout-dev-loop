@@ -11,6 +11,7 @@ feature: <slug>
 track: S|M|L
 acceptance:
 review_status: draft
+issue:
 shipped:
 pr:
 ---
@@ -52,7 +53,7 @@ Every decision and surprise of Delivery, one row each, appended by `scripts/devl
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ```
 
-`feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
+`feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `issue`: the GitHub issue number when the feature has one, else empty (the board links it). `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
 
 Seam rule. Source: Matt Pocock skills v1.3.2, `skills/engineering/to-spec/SKILL.md` line 15 (https://github.com/mattpocock/skills, commit `d1478fc`), copied verbatim:
 

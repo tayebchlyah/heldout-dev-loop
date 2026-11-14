@@ -361,6 +361,16 @@ class TracksContractTests(unittest.TestCase):
         self.skill = (SKILL_ROOT / "SKILL.md").read_text()
         self.header = self.skill[: self.skill.index("\n## 0 ")]
 
+    def test_spec_issue_key(self) -> None:
+        spec = (REFERENCES / "spec.md").read_text()
+        self.assertIn("review_status: draft\nissue:\nshipped:\npr:\n", spec)
+        self.assertIn("spec frontmatter `issue:`", stage_text(2))
+        self.assertIn("GitHub issue number", stage_text(2))
+
+    def test_track_s_branch_names_the_issue(self) -> None:
+        self.assertIn("`<prefix>/<issue>-<slug>`", stage_text(1))
+        self.assertIn("`<prefix>/<issue>-<slug>`", self.header)
+
     def test_skill_chains_stages_under_the_grant(self) -> None:
         self.assertNotIn("Run one stage per invocation", self.skill)
         self.assertNotIn("Never chain stages", self.skill)
