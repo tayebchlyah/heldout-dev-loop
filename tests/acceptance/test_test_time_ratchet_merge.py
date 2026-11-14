@@ -35,7 +35,7 @@ class MergeDecisionTests(unittest.TestCase):
         self.assertEqual(out.get("merge"), "human", out)
         found = reasons(out, "test-time-waived")
         self.assertEqual(len(found), 1, out)
-        self.assertEqual((found[0].get("commit"), found[0].get("reason")), (commit, reason), out)
+        self.assertEqual((found[0].get("commit"), found[0].get("waiver")), (commit, reason), out)
 
     def test_f3_merge_decision_with_a_waiver_or_a_config_change(self) -> None:
         """F3, O8, O9, O17."""
