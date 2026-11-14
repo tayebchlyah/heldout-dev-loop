@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: board header variants E to I on the real render.js, switch with ?variant= or the bottom bar. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Heldout Dev Loop</title>
+<style>
+  html, body { margin: 0; }
+  #app .dlb { min-height: 100vh; border-radius: 0; padding: 28px max(20px, calc((100vw - 1180px) / 2)) 96px; }
+  .themes { position: fixed; bottom: 16px; right: 16px; display: flex; gap: 2px; background: Canvas; color: CanvasText;
+    border: 1px solid GrayText; border-radius: 8px; padding: 3px; font: 600 12px system-ui; z-index: 10; }
+  .themes button { font: inherit; background: none; border: 0; color: inherit; padding: 5px 9px; border-radius: 5px; cursor: pointer; }
+  .themes button[aria-pressed="true"] { background: CanvasText; color: Canvas; }
+  .proto { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+    background: #111; color: #fff; border-radius: 999px; padding: 6px 10px; font: 600 13px system-ui; z-index: 20; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  .proto button { background: #333; color: #fff; border: 0; border-radius: 999px; width: 28px; height: 28px; cursor: pointer; font: inherit; }
+  .proto span { min-width: 200px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="themes"><button data-theme="">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div>
+<div class="proto"><button id="prev">&larr;</button><span id="name"></span><button id="next">&rarr;</button><button id="smp" style="width:auto;padding:0 12px"></button></div>
+<script src="render.js"></script>
+<script src="prototype-header.js"></script>
+<script src="prototype-logos.js"></script>
+<script>
+const logos = PROTO_LOGOS;
+const keys = Object.keys(PROTO_VARIANTS);
+let sample = "basic", theme = "", v = new URLSearchParams(location.search).get("variant") || "H1";
+const open = new Set(["project:dev-loop", "project:shop-api"]);
+function draw() {
+  protoDraw(document.getElementById("app"), v, Date.now(), logos, { theme: theme || null, open }, sample);
+  document.getElementById("smp").textContent = PROTO_SAMPLES[sample];
+  document.getElementById("name").textContent = PROTO_VARIANTS[v];
+  document.querySelectorAll(".themes [data-theme]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.theme === theme)));
+}
+const go = (d) => { v = keys[(keys.indexOf(v) + d + keys.length) % keys.length]; history.replaceState(null, "", `?variant=${v}`); draw(); };
+document.getElementById("prev").onclick = () => go(-1);
+document.getElementById("next").onclick = () => go(1);
+document.getElementById("smp").onclick = () => { sample = sample === "basic" ? "busy" : "basic"; draw(); };
+addEventListener("keydown", (e) => { if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); });
+document.getElementById("app").addEventListener("toggle", (e) => { const k = e.target.dataset && e.target.dataset.key; if (k) e.target.open ? open.add(k) : open.delete(k); }, true);
+document.querySelectorAll(".themes [data-theme]").forEach((b) => b.onclick = () => { theme = b.dataset.theme; draw(); });
+draw();
+</script>
+</body>
+</html>
