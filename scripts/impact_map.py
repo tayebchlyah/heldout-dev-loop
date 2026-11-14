@@ -10,7 +10,9 @@ trace [--out <file>] [--jobs <n>]: Linux with strace only. Runs each test module
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -73,6 +75,71 @@ def select(paths: list[str], impact: dict[str, list[str]] | None,
             if any(fnmatchcase(path, pattern) for pattern in CASE_LIST):
                 py_all = True
     return ("all" if py_all else sorted(py)), ("all" if node_all else sorted(node))
+
+
+PID_LINE = re.compile(r"(\d+)\s+(.*)")
+CALL = re.compile(r"(\w+)\((.*)")
+RESUMED = re.compile(r"<\.\.\. (\w+) resumed>(.*)")
+RESULT = re.compile(r"\)\s+=\s+(-?\d+)")
+QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"')
+DIRFD = re.compile(r"(AT_FDCWD|\d+)(?:<([^>]*)>)?,\s*$")
+UNFINISHED = " <unfinished ...>"
+
+
+def unescape(text: str) -> str:
+    raw = codecs.escape_decode(text.encode("utf-8", "surrogateescape"))[0]
+    return raw.decode("utf-8", "replace")
+
+
+def parse_trace(text: str, start_cwd: str, repo: str, tracked: set[str]) -> set[str]:
+    cwd: dict[str, str] = {}
+    pending: dict[str, str] = {}
+    seen: set[str] = set()
+    for raw in text.splitlines():
+        match = PID_LINE.fullmatch(raw)
+        if not match:
+            continue
+        pid, rest = match[1], match[2]
+        if rest.endswith(UNFINISHED):
+            pending[pid] = rest[:-len(UNFINISHED)]
+            continue
+        resumed = RESUMED.fullmatch(rest)
+        if resumed:
+            head = pending.pop(pid, None)
+            if head is None:
+                continue
+            rest = head + resumed[2]
+        call = CALL.fullmatch(rest)
+        if not call:
+            continue
+        name, args = call[1], call[2]
+        here = cwd.setdefault(pid, start_cwd)
+        result = RESULT.search(args)
+        ok = result is not None and not result[1].startswith("-")
+        if name in ("clone", "clone3", "fork", "vfork"):
+            if ok and result:
+                cwd[result[1]] = here
+            continue
+        if name == "fchdir":
+            fd = re.match(r"\d+<([^>]*)>", args)
+            if ok and fd:
+                cwd[pid] = fd[1]
+            continue
+        for quoted in QUOTED.finditer(args):
+            dirfd = DIRFD.search(args[:quoted.start()])
+            base = here
+            if dirfd and dirfd[2] is not None:
+                base = dirfd[2]
+            elif dirfd and dirfd[1] != "AT_FDCWD":
+                continue
+            path = os.path.normpath(os.path.join(base, unescape(quoted[1])))
+            if name == "chdir":
+                if ok:
+                    cwd[pid] = path
+                break
+            if path.startswith(repo + "/") and path[len(repo) + 1:] in tracked:
+                seen.add(path[len(repo) + 1:])
+    return seen
 
 
 def line(name: str, words: list[str] | str) -> str:

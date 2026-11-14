@@ -63,4 +63,5 @@ One file per subject. A new test file adds its line here.
 - `test_ratchet_record.py`: the time ratchet record a green full gate writes, prune to 50.
 - `test_ratchet_gate.py`, `ratchet_fixtures.py`: `gate --summary` `ratchet` (time ratchet read side, gate rules); the scratch repo with JUnit times.
 - `test_impact_map.py`: `scripts/impact_map.py select`, the map reader and shape, the committed map, the case list twin of `scripts/gate.sh`.
+- `test_impact_trace.py`: `scripts/impact_map.py` `parse_trace` and `trace`: strace text to tracked reads, module runs, the map write.
 - `fixtures/`: test data. No test file under `skill/`.
