@@ -118,7 +118,7 @@ def links(fragment: str) -> list[dict]:
 
 
 def github_links(fragment: str) -> list[dict]:
-    return [link for link in links(fragment) if link["attrs"].get("href", "").startswith("https://github.com")]
+    return [link for link in links(fragment) if link["attrs"].get("href", "").startswith("https://github.com/")]
 
 
 def names(fragment: str) -> list[str]:

@@ -98,7 +98,7 @@ function links(fragment) {
   return found
 }
 
-const githubLinks = (fragment) => links(fragment).filter((l) => (l.attrs.href || '').startsWith('https://github.com'))
+const githubLinks = (fragment) => links(fragment).filter((l) => (l.attrs.href || '').startsWith('https://github.com/'))
 const names = (fragment) => githubLinks(fragment).map((l) => l.attrs['aria-label'])
 const hasGhl = (fragment) => /\bclass\s*=\s*["'][^"']*\bghl\b/.test(fragment)
 
