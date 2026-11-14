@@ -219,6 +219,10 @@ class SkillStackContractTests(unittest.TestCase):
                         if not line.lstrip("- ").startswith("Never invoke"):
                             self.assertIn(f"Skill({name})", line)
 
+    def test_time_ratchet_records_are_a_written_gap(self) -> None:
+        for text in (self.claude, self.codex):
+            self.assertIn("dev-loop/test-times/", text)
+
     def test_codex_skill_list(self) -> None:
         self.assertEqual(
             load_check_setup().CODEX_SKILLS,
