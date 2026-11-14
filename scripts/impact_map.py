@@ -67,7 +67,7 @@ def select(paths: list[str], impact: dict[str, list[str]] | None,
             node.add(module)
 
     for path in paths:
-        if impact is not None and path in RUNNERS:
+        if path in RUNNERS:
             py_all = node_all = True
         elif impact is not None and (PY_MODULE.fullmatch(path) or NODE_MODULE.fullmatch(path)):
             add(path)

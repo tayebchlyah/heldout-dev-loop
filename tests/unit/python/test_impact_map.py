@@ -75,7 +75,10 @@ class SelectTests(unittest.TestCase):
         for text in (None, *bad):
             with self.subTest(cli=text):
                 self.assertEqual(cli("a.py\ntests/unit/python/test_b.py\n", text).stdout, "py all\nnode all\n")
-        self.assertEqual(impact_map.select(["scripts/impact_map.py"], None, every), ([], "all"))
+        for runner in impact_map.RUNNERS:
+            with self.subTest(runner=runner):
+                self.assertEqual(impact_map.select([runner], None, every), ("all", "all"))
+        self.assertEqual(impact_map.select(["tests/unit/python/test_b.py"], None, every), ("all", "all"))
 
     def test_no_changed_path_selects_nothing(self) -> None:
         self.assertEqual(cli("").stdout, "py\nnode\n")
