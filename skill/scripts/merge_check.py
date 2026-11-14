@@ -206,14 +206,16 @@ def merge_check(args: argparse.Namespace) -> int:
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
         trusted = (config.get("merge"), config.get("merge_human_paths"), config.get("file_size_exempt", []),
-                   config.get("commands"), config.get("walled_skills", []), config.get("source_dirs", ABSENT))
+                   config.get("commands"), config.get("walled_skills", []), config.get("source_dirs", ABSENT),
+                   config.get("test_time", ABSENT))
         branch_config = read_config(repo, head)
         if branch_config is None:
-            changed = trusted != (None, None, [], None, [], ABSENT)
+            changed = trusted != (None, None, [], None, [], ABSENT, ABSENT)
         else:
             changed = (branch_config.get("merge"), branch_config.get("merge_human_paths"),
                        branch_config.get("file_size_exempt", []), branch_config.get("commands"),
-                       branch_config.get("walled_skills", []), branch_config.get("source_dirs", ABSENT)) != trusted
+                       branch_config.get("walled_skills", []), branch_config.get("source_dirs", ABSENT),
+                       branch_config.get("test_time", ABSENT)) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
         roots = [apfs_fold(root) for name in listed_names(config) for root in skill_roots(repo, ref, name)]
@@ -221,6 +223,10 @@ def merge_check(args: argparse.Namespace) -> int:
                        if any(apfs_fold(p) == root or apfs_fold(p).startswith(f"{root}/") for root in roots))
     reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if is_harness_config(p))
     reasons.extend({"reason": "ci-config", "path": p} for p in landing_paths if is_ci_config(p))
+    import ratchet
+
+    reasons.extend({"reason": "test-time-waived", "commit": w["commit"], "waiver": w["reason"]}
+                   for w in ratchet.waivers(repo, ref, head))
 
     reviewed = reviewed_head(worktree, notes, spec)
     # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.

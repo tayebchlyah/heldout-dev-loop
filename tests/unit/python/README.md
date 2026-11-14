@@ -58,6 +58,7 @@ One file per subject. A new test file adds its line here.
 - `test_mutation_mutago.py`, `fixtures/mutation/mutago/`: the mutago adapter `mutation/mutago.py`: Go units, recorded `report.json` statuses, pinned install, run command, git settings, `only`, report file cleanup, setup refusals.
 - `test_mutation_canary.py`: `scripts/mutation_canary.sh` (pass, fail, no temp folder left) and the shape of `mutation-canary.yml`.
 - `support.py`: shared constants, helpers.
+- `test_merge_test_time.py`: `merge-check` `test-time-waived`, `test_time` in `config-changed`.
 - `test_ratchet_acceptance.py`: `acceptance` `ratchet`: grown, waived, new slow flows, skipped runs.
 - `test_ratchet_record.py`: the time ratchet record a green full gate writes, prune to 50.
 - `test_ratchet_gate.py`, `ratchet_fixtures.py`: `gate --summary` `ratchet` (time ratchet read side, gate rules); the scratch repo with JUnit times.
