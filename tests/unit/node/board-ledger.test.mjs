@@ -221,12 +221,12 @@ test('O12: 6 shipped features show the 5 latest, viewer first then newest', () =
   assert.deepEqual(keys(html(notes, { here: 'A' }), /^p\//), ['p/s2', 'p/s6', 'p/s5', 'p/s4', 'p/s3'])
 })
 
-test('O20: shipped features stay out of the header, the Needs you panel and the stage counts', () => {
+test('O20: shipped features stay out of the header, its need-you total and the stage counts', () => {
   const h = html([note({ waiting: 'reply' }), shippedNote({ feature: 's', waiting: 'old', decisions: ['x'] })])
   const head = text(h.slice(0, h.indexOf('data-key="project:')))
-  assert.ok(head.includes('1 feature in progress. 1 needs you.'), head)
+  assert.ok(head.includes('1 needs you'), head)
   assert.ok(!head.includes('old') && !head.includes('Shipped'), head)
-  assert.ok(/1 in 5\. Build/.test(head) && !/in 7\. Ship/.test(head), head)
+  assert.ok(/1 needs you 1 5\. Build/.test(head) && /0 7\. Ship/.test(head), head)
 })
 
 test('O21: only shipped features: the empty text, the hint, then the project folds', () => {
