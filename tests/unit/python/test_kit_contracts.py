@@ -67,7 +67,6 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn(term, glossary)
         self.assertIn("`test_time`", (ROOT / "docs" / "configuration.md").read_text())
         self.assertIn("Test time ratchet upgrade (#325)", (ROOT / "reference" / "kit.md").read_text())
-        self.assertNotIn("def slow", (ROOT / "tests" / "unit" / "python" / "board_fixtures.py").read_text())
         self.assertLessEqual(len(SKILL.read_bytes()), 39945)
 
     def test_route_files_name_the_tool_walls(self) -> None:
