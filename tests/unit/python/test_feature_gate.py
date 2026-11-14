@@ -12,7 +12,6 @@ import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -20,7 +19,7 @@ sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
-from feature_gate import TableError, created_seconds, guard, merge, parse_table, stale_check  # noqa: E402
+from feature_gate import TableError, guard, merge, parse_table  # noqa: E402
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 HEADER = "| file | line | finding | class | verdict |\n| --- | --- | --- | --- | --- |\n"
@@ -476,138 +475,6 @@ class AcceptanceMainRefTests(RepoCase):
         code, out, _ = self.devloop("acceptance", cwd=wt)
         self.assertEqual(code, 0, out)
         self.assertTrue((wt / "ran.marker").exists())
-
-
-FAKE_DOCKER = """#!/usr/bin/env python3
-import json, os, sys
-spec = json.load(open(os.environ["FAKE_DOCKER"]))
-args = sys.argv[1:]
-key = "config" if "config" in args else "ps" if "ps" in args else "inspect"
-if spec.get("fail") == key:
-    sys.exit(1)
-if key == "config":
-    print(json.dumps({"services": spec["services"]}))
-elif key == "ps":
-    print("\\n".join(spec["ps"].get(args[-1], [])))
-else:
-    print(json.dumps([c for c in spec["inspect"] if any(c["Id"].startswith(i) for i in args[1:])]))
-"""
-T0, T1, T2 = "2026-10-01T10:00:00Z", "2026-10-02T10:00:00Z", "2026-10-03T10:00:00Z"
-API_ID, DB_ID = "a" * 12 + "1" * 52, "b" * 12 + "2" * 52
-
-
-class StaleCheckTests(RepoCase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.repo = self.make_repo({"acceptance": "./run.sh"}, when=T0)
-        (self.repo / "compose.yaml").write_text("services: {}\n")
-        (self.repo / "app.py").write_text("x = 2\n")
-        git(self.repo, "add", ".")
-        git(self.repo, "commit", "-qm", "code", when=T1)
-        self.code_sha = git(self.repo, "rev-parse", "HEAD")
-        bins = self.tmp / "bin"
-        bins.mkdir()
-        (bins / "docker").write_text(FAKE_DOCKER)
-        (bins / "docker").chmod(0o755)
-        self.spec_file = self.tmp / "docker.json"
-        self.env = {**os.environ, "PATH": f"{bins}{os.pathsep}{os.environ['PATH']}", "FAKE_DOCKER": str(self.spec_file)}
-
-    def docker(self, api: str | None, db: str | None = None, **extra: object) -> None:
-        services = {"api": {"build": {"context": "."}}, "db": {"image": "postgres"}}
-        ps = {"api": [API_ID[:12]] if api else [], "db": [DB_ID[:12]] if db else []}
-        inspect = [{"Id": i, "Created": t} for i, t in ((API_ID, api), (DB_ID, db)) if t]
-        self.spec_file.write_text(json.dumps({"services": services, "ps": ps, "inspect": inspect, **extra}))
-
-    def test_no_compose_skipped(self) -> None:
-        (self.repo / "compose.yaml").unlink()
-        self.assertEqual(stale_check(self.repo, self.env), {"state": "skipped", "reason": "no-compose"})
-
-    def test_compose_file_env_counts(self) -> None:
-        (self.repo / "compose.yaml").unlink()
-        self.docker(api="2026-10-02T11:00:00Z")
-        self.assertEqual(stale_check(self.repo, {**self.env, "COMPOSE_FILE": "x.yaml"})["state"], "fresh")
-
-    def test_no_build_service(self) -> None:
-        self.spec_file.write_text(json.dumps({"services": {"db": {"image": "x"}}, "ps": {}, "inspect": []}))
-        self.assertEqual(stale_check(self.repo, self.env), {"state": "skipped", "reason": "no-build-service"})
-
-    def test_no_container(self) -> None:
-        self.docker(api=None)
-        self.assertEqual(stale_check(self.repo, self.env), {"state": "skipped", "reason": "no-container"})
-
-    def test_old_build_container_is_stale(self) -> None:
-        self.docker(api="2026-10-02T09:59:59.900Z")
-        self.assertEqual(stale_check(self.repo, self.env), {"state": "stale", "checked": ["api"], "services": ["api"],
-                                                            "reference": self.code_sha})
-        (self.repo / "fixture.xml").write_text(junit([]))
-        code, out, _ = self.devloop("acceptance", cwd=self.repo, env=self.env)
-        self.assertEqual((code, out["counted"], out["guard"], out["stale"]["state"]), (1, False, None, "stale"))
-        runs = json.loads(self.record(self.repo).read_text())["runs"]
-        self.assertEqual((runs[-1]["stale"], runs[-1]["counted"]), ("stale", False))
-
-    def test_same_second_is_fresh(self) -> None:
-        self.docker(api="2026-10-02T10:00:00.100Z")
-        self.assertEqual(stale_check(self.repo, self.env)["state"], "fresh")
-
-    def test_old_image_only_container_fresh(self) -> None:
-        self.docker(api="2026-10-02T11:00:00Z", db="2026-09-01T00:00:00Z")
-        self.assertEqual(stale_check(self.repo, self.env), {"state": "fresh", "checked": ["api"], "services": [],
-                                                            "reference": self.code_sha})
-
-    def test_test_and_doc_commit_not_reference(self) -> None:
-        (self.repo / "tests" / "acceptance").mkdir(parents=True)
-        (self.repo / "tests" / "acceptance" / "x_test.py").write_text("")
-        (self.repo / "README.md").write_text("r\n")
-        git(self.repo, "add", ".")
-        git(self.repo, "commit", "-qm", "tests", when=T2)
-        self.docker(api="2026-10-02T11:00:00Z")
-        self.assertEqual(stale_check(self.repo, self.env)["state"], "fresh")
-        self.assertEqual(stale_check(self.repo, self.env)["reference"], self.code_sha)
-
-    def test_ci_commit_is_reference(self) -> None:
-        (self.repo / ".github" / "workflows").mkdir(parents=True)
-        (self.repo / ".github" / "workflows" / "x.test.yml").write_text("on: push\n")
-        git(self.repo, "add", ".")
-        git(self.repo, "commit", "-qm", "ci", when=T2)
-        self.docker(api="2026-10-02T11:00:00Z")
-        out = stale_check(self.repo, self.env)
-        self.assertEqual((out["state"], out["reference"]), ("stale", git(self.repo, "rev-parse", "HEAD")))
-
-    def test_non_ascii_test_path_not_reference(self) -> None:
-        (self.repo / "tests" / "acceptance").mkdir(parents=True)
-        (self.repo / "tests" / "acceptance" / "café_test.py").write_text("")
-        git(self.repo, "add", ".")
-        git(self.repo, "commit", "-qm", "tests", when=T2)
-        self.docker(api="2026-10-02T11:00:00Z")
-        out = stale_check(self.repo, self.env)
-        self.assertEqual((out["state"], out["reference"]), ("fresh", self.code_sha))
-
-    def test_docker_fails_error(self) -> None:
-        for step in ("config", "ps", "inspect"):
-            self.docker(api="2026-10-02T11:00:00Z", fail=step)
-            out = stale_check(self.repo, self.env)
-            self.assertEqual(out["state"], "error", step)
-            self.assertTrue(out["message"])
-        self.docker(api="2026-10-02T11:00:00Z", fail="inspect")
-        (self.repo / "fixture.xml").write_text(junit([]))
-        _, out, _ = self.devloop("acceptance", cwd=self.repo, env=self.env)
-        self.assertEqual((out["stale"]["state"], out["counted"]), ("error", False))
-
-    def test_bad_time_error(self) -> None:
-        self.docker(api="yesterday")
-        self.assertEqual(stale_check(self.repo, self.env)["state"], "error")
-
-    def test_short_ids_match_full_ids(self) -> None:
-        self.docker(api="2026-10-02T11:00:00Z", db="2026-10-02T11:00:00Z")
-        self.assertEqual(stale_check(self.repo, self.env)["checked"], ["api"])
-
-    def test_nine_digit_fraction_with_offset(self) -> None:
-        self.assertEqual(created_seconds("2026-10-26T10:00:00.123456789+02:00"),
-                         int(datetime(2026, 10, 26, 8, tzinfo=timezone.utc).timestamp()))
-        self.assertEqual(created_seconds("2026-10-26T08:00:00Z"),
-                         int(datetime(2026, 10, 26, 8, tzinfo=timezone.utc).timestamp()))
-        with self.assertRaises(ValueError):
-            created_seconds("2026-10-26 08:00:00")
 
 
 class AcceptanceScriptTests(TempDir):

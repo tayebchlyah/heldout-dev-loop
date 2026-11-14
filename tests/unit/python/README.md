@@ -25,6 +25,7 @@ One file per subject. A new test file adds its line here.
 - `test_metrics.py`, `test_metrics_cli.py`, `test_ci.py`, `test_ci_skip.py`, `test_kit_reference.py`: `metrics`; `ci wait` (stub `gh`), `ci-skip`; `kit_reference`, `kit_matches`, kit-source flows.
 - `test_gardener.py`, `test_retro.py`, `test_feature_gate.py`: `garden` skill, kit text, harness names; `review_due`, `sessions`; `review-merge`, `acceptance`.
 - `test_case_floor.py`: case floor.
+- `test_stale_check.py`: the `acceptance` stale check: the compose lookup of today, `commands.compose_project`, `project`.
 - `test_verify_playwright.py`: `verify.playwright`: validation, the `verify-init` lookup, the `drive` lookup and the `drive.mjs` input.
 - `test_capabilities.py`: `capabilities.py`: validator, proposal, the `check_setup.py` capabilities and `commands.acceptance` lines.
 - `test_presets.py`: `presets.json` schema, order and pinned values, the presets reader.
