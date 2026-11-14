@@ -93,11 +93,10 @@ test('#316: no feature in progress: the logo and the empty text, no stage cells 
   assert.ok(!/need/.test(text(head(h))))
 })
 
-test('#316: a count and its words are separated by a space in the plain text, with no tag spacing', () => {
+test('#316: a count and its words are separated by a space in the markup itself, not only by layout', () => {
   const h = html(busy)
-  const plain = (s) => s.replace(/<[^>]+>/g, '')
-  assert.equal(plain(h.match(/<span class="tot[^>]*>[\s\S]*?<\/span>/)[0]), '3 need you')
-  assert.match(plain(h.match(/data-stage-count="2">[\s\S]*?<\/span>/)[0]), /2 need you$/)
+  assert.match(h, /<span class="tot"><b>3<\/b> need you<\/span>/)
+  assert.match(h, /data-stage-count="2"><span class="ny"><i class="rb">2<\/i> <em>need you<\/em><\/span>/)
 })
 
 test('#316: the board page title is Heldout Dev Loop', () => {
