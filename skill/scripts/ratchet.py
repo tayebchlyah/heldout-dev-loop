@@ -6,13 +6,12 @@ import json
 import math
 import re
 import statistics
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
 from autonomy import write_atomic
 from devloop import git
-from gate import case_id
+from gate import case_id, junit_cases
 from merge_check import read_config
 
 DEFAULTS = {
@@ -23,6 +22,7 @@ KEEP = 50
 LOOKBACK = 200
 MIN_SHARED = 10
 SHARED_FLOOR = 0.1
+GROWTH_RATIO = 1.5
 SLOW = re.compile(r"(?<![a-z])slow(?![a-z])", re.IGNORECASE)
 
 
@@ -54,11 +54,7 @@ def limits(top: Path, main_ref: str, kind: str) -> dict | None:
 def read_times(top: Path, report_dir: Path) -> dict[str, float]:
     times: dict[str, float] = {}
     for path in sorted(report_dir.glob("*.xml")):
-        try:
-            root = ET.parse(path).getroot()
-        except ET.ParseError:
-            continue
-        for case in root.iter("testcase"):
+        for case in junit_cases(path) or []:
             if case.find("skipped") is not None:
                 continue
             try:
@@ -125,7 +121,7 @@ def new_rule(cid: str, seconds: float, limit: dict) -> tuple[str, float] | None:
 
 
 def grown(seconds: float, baseline: float) -> bool:
-    return seconds >= 1.5 * baseline and seconds >= baseline + 5
+    return seconds >= GROWTH_RATIO * baseline and seconds >= baseline + 5
 
 
 def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
@@ -170,7 +166,7 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
                 payload["waived"].append({"id": cid, "seconds": round(t, 1), "baseline": round(old, 1), "reason": waiver})
             else:
                 payload["red"].append({"id": cid, "seconds": round(t, 1), "baseline": round(old, 1), "rule": "grown",
-                                       "limit": round(1.5 * old, 1)})
+                                       "limit": round(GROWTH_RATIO * old, 1)})
         hit = ("max", limit["max"]) if t > limit["max"] else new_rule(cid, t, limit) if old is None else None
         if hit:
             payload["attention"].append({"id": cid, "seconds": round(t, 1), "rule": hit[0], "limit": hit[1]})
@@ -192,9 +188,9 @@ def clean(top: Path) -> bool:
     return git(top, "status", "--porcelain") == ""
 
 
-def write_record(kind: str, top: Path, report_dir: Path) -> str | None:
-    """Write the times of this run as the record of the HEAD tree, keep the newest 50 of `kind`; its path, or None."""
-    times = read_times(top, report_dir)
+def write_record(kind: str, top: Path, report_dir: Path, factor: float = 1.0) -> str | None:
+    """Write the times of this run, divided by `factor`, as the record of the HEAD tree, keep the newest 50 of `kind`; its path, or None."""
+    times = {i: t / factor for i, t in read_times(top, report_dir).items()}
     tree, head = git(top, "rev-parse", "HEAD^{tree}"), git(top, "rev-parse", "HEAD")
     if not times or not tree or not head:
         return None
@@ -202,7 +198,12 @@ def write_record(kind: str, top: Path, report_dir: Path) -> str | None:
     path = folder / f"{tree}.json"
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     write_atomic(path, json.dumps({"tree": tree, "head": head, "at": at, "times": times}, sort_keys=True) + "\n")
-    old = sorted(folder.glob("*.json"), key=lambda p: (p.stat().st_mtime_ns, p.name))
-    for stale in old[:-KEEP]:
+    stamped = []
+    for p in folder.glob("*.json"):
+        try:
+            stamped.append((p.stat().st_mtime_ns, p.name, p))
+        except FileNotFoundError:
+            continue
+    for _, _, stale in sorted(stamped)[:-KEEP]:
         stale.unlink(missing_ok=True)
     return str(path)

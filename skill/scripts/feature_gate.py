@@ -393,7 +393,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     else:
         times = ratchet.check("acceptance", top, reports, ref)
         if times["ok"] and times["state"] in ("checked", "no-baseline") and ratchet.clean(top):
-            times["record"] = ratchet.write_record("acceptance", top, reports)
+            times["record"] = ratchet.write_record("acceptance", top, reports, times["factor"] or 1.0)
     payload.update(mode=this["mode"], head=head, failing=failing, ids=ids, cases=cases, tests=tests, floor=floor,
                    short=this["short"], stale=stale, counted=counted, guard=verdict, record=str(record),
                    ratchet=times)
