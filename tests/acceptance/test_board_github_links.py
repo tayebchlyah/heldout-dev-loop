@@ -239,7 +239,7 @@ class BoardLinkFlows(LinkBoard):
         self.assertIn("Wall Gaps", text(row))
         self.assertNotIn("294 Wall Gaps", text(row))
         self.assertEqual(github_links(row), [])
-        self.assertNotIn("github.com", row)
+        self.assertNotRegex(row, r"github\.com")
 
 
 if __name__ == "__main__":

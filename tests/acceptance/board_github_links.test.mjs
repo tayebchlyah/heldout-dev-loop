@@ -150,7 +150,7 @@ test('O17: only an issue or only a PR gives one link; neither, or repo "", gives
   for (const feature of ['neither', 'no-repo']) {
     const row = rowSummary(html, feature)
     assert.deepEqual(githubLinks(row), [], feature)
-    assert.ok(!row.includes('github.com'), feature)
+    assert.doesNotMatch(row, /github\.com/, feature)
     assert.ok(!hasGhl(row), `${feature} has a ghl element`)
   }
 })
@@ -164,7 +164,7 @@ test('O18, D6: a repo or number outside the guard gives no link for that value',
   ])
   badRepos.forEach((repo, n) => {
     const row = rowSummary(html, `repo-${n}`)
-    assert.deepEqual(links(row).filter((l) => /\/(issues|pull)\//.test(l.attrs.href || '') || (l.attrs.href || '').startsWith('javascript:')), [], repo)
+    assert.deepEqual(links(row).filter((l) => /\/(issues|pull)\//.test(l.attrs.href || '') || /^\s*(javascript|data|vbscript):/i.test(l.attrs.href || '')), [], repo)
   })
   assert.ok(!/href\s*=\s*["']\s*javascript:/i.test(html), 'a javascript: href')
   for (const feature of ['text-issue', 'fraction-issue']) {
