@@ -444,7 +444,19 @@ class AcceptanceMainRefTests(RepoCase):
             ("commands not an object", "sh x", "sh x", (), "commands.acceptance"),
             ("no main ref", {"acceptance": "./run.sh"}, {"acceptance": "./run.sh"}, (), "main"),
         ]
-        for name, main, change, args, needle in rows:
+        a = {"acceptance": "./run.sh"}
+        compose = [
+            ("compose key only here", a, {**a, "compose_project": "echo a"}),
+            ("compose key only on main", {**a, "compose_project": "echo a"}, a),
+            ("compose key differs", {**a, "compose_project": "echo a"}, {**a, "compose_project": "echo b"}),
+            ("compose key a number on main", {**a, "compose_project": 3}, {**a, "compose_project": 3}),
+            ("compose key empty on main", {**a, "compose_project": ""}, {**a, "compose_project": ""}),
+        ]
+        named = {**os.environ, "COMPOSE_PROJECT_NAME": "acme-env"}
+        rows = [(name, main, change, args, needle, None) for name, main, change, args, needle in rows]
+        rows += [(f"{name}, {label}", main, change, (), "commands.compose_project", env)
+                 for name, main, change in compose for label, env in (("no variable", None), ("variable", named))]
+        for name, main, change, args, needle, env in rows:
             with self.subTest(name):
                 shutil.rmtree(self.tmp)
                 self.tmp.mkdir()
@@ -459,7 +471,7 @@ class AcceptanceMainRefTests(RepoCase):
                 record = self.record(wt)
                 record.parent.mkdir(parents=True, exist_ok=True)
                 record.write_text(json.dumps(self.RECORD))
-                code, out, _ = self.devloop("acceptance", *args, cwd=wt)
+                code, out, _ = self.devloop("acceptance", *args, cwd=wt, env=env)
                 self.assertEqual(code, 1, out)
                 self.assertIn(needle, out["error"])
                 self.assertIn("refs/heads/main", out["error"])
@@ -472,6 +484,12 @@ class AcceptanceMainRefTests(RepoCase):
         repo = self.make_repo({"acceptance": "./run.sh"})
         wt = self.linked(repo)
         (wt / "fixture.xml").write_text(junit([]))
+        code, out, _ = self.devloop("acceptance", cwd=wt)
+        self.assertEqual(code, 0, out)
+        self.assertTrue((wt / "ran.marker").exists())
+        (wt / "ran.marker").unlink()
+        (wt / "dev-loop.json").write_text(json.dumps({"version": "2.1.1", "harnesses": ["claude"],
+                                                      "commands": {"acceptance": "./run.sh", "compose_project": ""}}))
         code, out, _ = self.devloop("acceptance", cwd=wt)
         self.assertEqual(code, 0, out)
         self.assertTrue((wt / "ran.marker").exists())

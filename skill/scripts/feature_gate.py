@@ -355,6 +355,11 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
         return {"error": f"no commands.{key} in dev-loop.json at {ref}"}, 1
     if gate.mapped_command(top, key) != command:
         return {"error": f"commands.{key} in dev-loop.json differs from {ref}"}, 1
+    compose = trusted.get("compose_project")
+    if compose is not None and (not isinstance(compose, str) or not compose):
+        return {"error": f"commands.compose_project in dev-loop.json at {ref} must be a non-empty string"}, 1
+    if gate.mapped_command(top, "compose_project") != compose:
+        return {"error": f"commands.compose_project in dev-loop.json differs from {ref}"}, 1
     record = Path(git_dir) / "dev-loop" / "acceptance.json"
     runs = read_record(record)
     if runs is None:
@@ -367,7 +372,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
     payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
     failing, ids, cases, tests = gate.junit_failures(reports, top)
-    stale = stale_check(top, env, trusted.get("compose_project"))
+    stale = stale_check(top, env, compose)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
     suite = devloop.git(top, "rev-parse", f"HEAD:{ACCEPTANCE_DIR}")
