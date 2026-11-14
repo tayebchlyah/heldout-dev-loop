@@ -90,6 +90,7 @@ RESULT = re.compile(r"\)\s+=\s+(-?\d+)")
 QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"')
 DIRFD = re.compile(r"(AT_FDCWD|\d+)(?:<([^>]*)>)?,\s*$")
 UNFINISHED = " <unfinished ...>"
+FORKS = ("clone", "clone3", "fork", "vfork")
 
 
 def unescape(text: str) -> str:
@@ -98,38 +99,53 @@ def unescape(text: str) -> str:
 
 
 def parse_trace(text: str, start_cwd: str, repo: str, tracked: set[str]) -> set[str]:
-    cwd: dict[str, str] = {}
+    cwd: dict[str, list[str]] = {}
     pending: dict[str, str] = {}
+    forking: list[tuple[str, bool]] = []
     seen: set[str] = set()
+
+    def inherit(child: str, parent: str, share: bool) -> None:
+        cell = cwd.setdefault(parent, [start_cwd])
+        cwd[child] = cell if share else [cell[0]]
+
     for raw in text.splitlines():
         match = PID_LINE.fullmatch(raw)
         if not match:
             continue
         pid, rest = match[1], match[2]
         if rest.endswith(UNFINISHED):
-            pending[pid] = rest[:-len(UNFINISHED)]
+            head = rest[:-len(UNFINISHED)]
+            pending[pid] = head
+            if head.split("(")[0] in FORKS:
+                forking.append((pid, "CLONE_FS" in head))
             continue
         resumed = RESUMED.fullmatch(rest)
         if resumed:
             head = pending.pop(pid, None)
             if head is None:
                 continue
+            forking = [f for f in forking if f[0] != pid]
             rest = head + resumed[2]
         call = CALL.fullmatch(rest)
         if not call:
             continue
         name, args = call[1], call[2]
-        here = cwd.setdefault(pid, start_cwd)
+        if pid not in cwd:
+            if forking:
+                inherit(pid, *forking[-1])
+            else:
+                cwd[pid] = [start_cwd]
+        here = cwd[pid][0]
         result = RESULT.search(args)
         ok = result is not None and not result[1].startswith("-")
-        if name in ("clone", "clone3", "fork", "vfork"):
-            if ok and result:
-                cwd[result[1]] = here
+        if name in FORKS:
+            if ok and result and result[1] not in cwd:
+                inherit(result[1], pid, "CLONE_FS" in args)
             continue
         if name == "fchdir":
             fd = re.match(r"\d+<([^>]*)>", args)
             if ok and fd:
-                cwd[pid] = fd[1]
+                cwd[pid][0] = fd[1]
             continue
         for quoted in QUOTED.finditer(args):
             dirfd = DIRFD.search(args[:quoted.start()])
@@ -141,7 +157,7 @@ def parse_trace(text: str, start_cwd: str, repo: str, tracked: set[str]) -> set[
             path = os.path.normpath(os.path.join(base, unescape(quoted[1])))
             if name == "chdir":
                 if ok:
-                    cwd[pid] = path
+                    cwd[pid][0] = path
                 break
             if path.startswith(repo + "/") and path[len(repo) + 1:] in tracked:
                 seen.add(path[len(repo) + 1:])
