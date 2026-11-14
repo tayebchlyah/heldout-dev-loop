@@ -26,9 +26,9 @@ if __name__ == "__main__" and sys.argv[1:2] == ["--discover"]:
 
     sys.exit(run_discover(__file__, sys.argv[2], (sys.argv[3:4] or [None])[0], job_count()))
 if __name__ == "__main__" and sys.argv[1:2] == ["--discover-chunk"]:
-    from junit_report import discover_path, run_chunk
+    from junit_report import run_chunk, set_discover_path
 
-    discover_path(sys.argv[2])
+    set_discover_path(sys.argv[2])
     sys.exit(run_chunk(sys.argv[3], sys.argv[4:]))
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
@@ -164,6 +164,19 @@ class JUnitReportTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(outcomes, {"test_no": ["failure"], "test_yes": [], "test_broken": ["error"]})
         self.assertIn("1 != 2", result.stderr)
+
+    def test_discover_shows_the_stdout_of_a_failing_test(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp, "suite")
+            folder.mkdir()
+            (folder / "test_noisy.py").write_text("import unittest\nclass Noisy(unittest.TestCase):\n"
+                                                  "    def test_no(self):\n"
+                                                  "        print('marker-before-the-assert')\n"
+                                                  "        self.assertEqual(1, 2)\n")
+            result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder)],
+                                    capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("marker-before-the-assert", result.stdout + result.stderr)
 
     def test_runner_loads_each_test_file_beside_it_but_not_itself(self) -> None:
         """A new `test_*.py` beside the runner runs with no edit of the runner, which never loads itself."""
