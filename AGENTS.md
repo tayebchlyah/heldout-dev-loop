@@ -9,7 +9,7 @@ dev-loop: stage-driven development loop skill for Claude Code and Codex, plus in
 Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, release or pre-release (`dev-loop.json` `version`). Never edit installed kit (`.agents/skills/` and `.claude/skills/` `dev-loop`, `pause`, `continue`; `.claude/agents/`, `.codex/agents/`, `.codex/rules/`, `.dev-loop/`): changes only by `upgrade` to the next tag. Kit source: `skill/`, `skills/`, `claude/`, `codex/` (installer: `bin/`, `lib/`).
 
 - `bin/install.mjs`: installer entry point (`init`, `upgrade`, `uninstall-global`).
-- `lib/`: installer internals; `lib/codex_fill.py`: fill and check of Codex kit copy, in each Codex hook command.
+- `lib/`: installer internals; `lib/codex_fill.py`: fill, check of Codex kit copy, in each Codex hook.
 - `skills/`: kit skills `pause`, `continue`, `release-audit`, `garden`, `release`, `release-notes` (user-invoked only, except `continue`).
 - `skill/SKILL.md`: the dev-loop skill payload.
 - `skill/references/`: harness routes (`claude.md`, `codex.md`), `bootstrap.md` (Stage 0), `building.md`, `coding-standards.md` (template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `deferred.md`; `skill/references/second-review.md`: second reviewer prompt.
@@ -31,7 +31,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md`. No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
-- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed`: modules `scripts/impact_map.py select` picks (`tests/impact-map.json`, weekly `impact-map.yml`).
+- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed`: modules `scripts/impact_map.py select` picks (`tests/impact-map.json`, `impact-map.yml`).
 - `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
@@ -110,7 +110,7 @@ Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP
 
 ## Conventions
 
-- Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in `$NOTES/Review Yield.md`.
+- Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in Review Yield.md (`$NOTES/Review Yield.md`).
 - Cost data rule: no process cut for cost (drop a reviewer, no `tdd`, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (`metrics --write`, Stage 7).
 - Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required.
 - Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
