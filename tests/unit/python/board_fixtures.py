@@ -23,7 +23,6 @@ import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, TypeVar
 
 from support import ROOT, codex_gate_env
 
@@ -40,15 +39,6 @@ OTHER = {"id": "fedcba9876543210", "machine": "bench-pc", "owner": "Casey"}
 BOARD_NOTE = "Dev Loop Board.md"
 ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 HOOK_NAMES = {"session-start": "SessionStart", "prompt": "UserPromptSubmit", "stop": "Stop", "subagent-stop": "SubagentStop"}
-
-# Cost marker (tests.md rule 6): `slow` only tags a test that runs over the 1 s cheap budget; nothing skips it.
-Test = TypeVar("Test", bound=Callable)
-
-
-def slow(test: Test) -> Test:
-    setattr(test, "slow", True)
-    return test
-
 
 GIT = ["git", "-c", "user.email=robin@example.invalid", "-c", "user.name=Robin Quill", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false"]

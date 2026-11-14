@@ -7,7 +7,7 @@ Read before writing a test.
 3. One table per function. Cases are rows, not new test functions.
 4. No change-detector tests. A test that only mirrors the code fails on every edit and proves nothing.
 5. One golden per output. A rendered or serialised output has one golden file.
-6. Cost markers: `proof` for a test that proves a claim, `slow` for a test over the cheap budget.
+6. Cost markers: `proof` for a test that proves a claim; the slow mark, the word `slow` in the test id (case ignored, a whole word between non-letters: `test_slow_import`, `slow: import`), for a test over the cheap budget. Time ratchet of `gate --summary` (limits `test_time.gate` in `dev-loop.json`): a new test over 2 s without the mark, a new test over 10 s with it, a new or grown test over 30 s, or suite growth over 3%: red.
 7. A mutation fix test proves the kill: commit it only when a rerun on the listed units (`devloop.py mutation --entry <path> --only <unit> ...`) lists fewer mutants under its unit and no more inconclusive mutants.
 8. A test budget per plan task: the plan states the number of tests. Stay inside it.
 9. Synthetic fixtures for moved acceptance details. A detail moved out of `tests/acceptance` gets a small made-up fixture in its unit test, never a copy of production data.

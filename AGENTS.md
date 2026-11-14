@@ -14,10 +14,10 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/SKILL.md`: the dev-loop skill payload.
 - `skill/references/`: harness routes (`claude.md`, `codex.md`), `bootstrap.md` (Stage 0), `building.md`, `coding-standards.md` (template), `tests.md`, `spec.md`, `mutation.md`, `benchmark.md`, `maps.md`, `verify.md`, `deferred.md`; `skill/references/second-review.md`: second reviewer prompt.
 - `skill/scripts/devloop.py`: `devloop` CLI: parser, dispatch, shared git helpers.
-- `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `cleanup.py`: `cleanup`; `gate.py`: `logged`, `gate`.
+- `skill/scripts/status.py`: `status`; `merge_check.py`: `merge-check`; `cleanup.py`: `cleanup`; `gate.py`: `logged`, `gate`; `ratchet.py`: time ratchet.
 - `skill/scripts/check_setup.py`: post-install verifier; `security_skill.py`: its security-audit skill check; `capabilities.py`: its `capabilities` and `commands.acceptance` lines; `notes_path.py`: notes path resolver.
 - `skill/scripts/source_dirs.py`: `source_dirs` key: validator, matcher, main ref read, setup lines; `source_wall.py`: `source-wall`; `stacks.py`: `stack-detect`, the `stacks` lines; `skill/presets.json`: build tool presets.
-- `skill/scripts/autonomy.py`: `decide`, `pause`, the pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
+- `skill/scripts/autonomy.py`: `decide`, `pause`, pause note in `status`; `verify.py`, `drive.mjs`, `capture.py`: `verify-init`, `drive`, `capture`.
 - `skill/scripts/ci.py`: `ci wait`, the GitHub settings check; `ci_skip.py`: `ci-skip`, the rules `release-check` reuses.
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
 - `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry; `release_rulings.py`: `## Deferred` parser; `sandbox-run.py`: audit sandbox (Docker).
@@ -28,13 +28,13 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/seal/`: seal package: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board (`board/cli.py`: `board`).
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
-- `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md` (a new test file adds its line there, not here). No test file under `skill/`.
+- `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md` (new test file: its line there). No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
 - `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
-- `scripts/canary.sh`: live canary before a release (this repo only). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
+- `scripts/canary.sh`: live canary before a release (this repo). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
 - `scripts/repo_rules.py`: repo checks `comments`, `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source, `package.json` beyond `version` included).
 - `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes. `reference/upstream.md`
@@ -44,7 +44,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md`.
 - `dev-loop.json`: this repo's project marker, kit version.
-- `assets/`: README logo, icon, The loop diagram (`the-loop.archify.json` source).
+- `assets/`: README logo, icon, loop diagram (`the-loop.archify.json` source).
 - `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`.
 - `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.
 - `.github/rulesets/`: ruleset bodies for `gh api`, contexts: `ci.yml` non-shard job ids.
