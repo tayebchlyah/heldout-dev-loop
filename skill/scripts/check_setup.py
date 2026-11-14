@@ -42,7 +42,7 @@ PROJECT_SKILL_DENIES = [
     "Skill(superpowers:finishing-a-development-branch)",
 ]
 SAFE_OPS = ("rm", "cp", "mv", "ln")
-COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed",
+COMMAND_KEYS = ("gate", "stack_up", "stack_reset", "acceptance", "acceptance_failed", "compose_project",
                 "release_prepare", "release_check", "release_verify")
 MERGE_VALUES = ("auto", "human")
 
