@@ -25,12 +25,12 @@ if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
     --test-reporter=junit --test-reporter-destination="$DEVLOOP_REPORT_DIR/acceptance-node.xml")
 fi
 
-{ TMPDIR="$scratch" DEVLOOP_RUN_DIR="$out" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"} >"$out/py" 2>&1; echo $? >"$out/py.exit"; } 9>&- &
+{ TMPDIR="$scratch" DEVLOOP_RUN_DIR="$out" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"}; echo $? >"$out/py.exit"; } 9>&- &
 { TMPDIR="$scratch" node --test ${node_report[@]+"${node_report[@]}"} "$folder"/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } 9>&- &
 wait
 status=0
+cat "$out/node"
 for part in py node; do
-  cat "$out/$part"
   [ "$(cat "$out/$part.exit")" = 0 ] || status=1
 done
 left=$(temp_leak "$scratch")
