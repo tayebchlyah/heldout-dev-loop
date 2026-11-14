@@ -13,7 +13,7 @@ from pathlib import Path
 import devloop
 from ci_skip import MERGED
 from devloop import emit
-from seal import merge_base, run_git
+from seal import ACCEPTANCE_DIR, merge_base, run_git
 
 LIMIT = 40000
 EXEMPT_ERROR = "file_size_exempt in dev-loop.json must be a list of non-empty strings"
@@ -146,7 +146,8 @@ def run_check(top: Path, mode: str) -> dict:
         paths += names(top, "ls-files", "--others", "--exclude-standard")
     for path in sorted(set(paths)):
         backup = any(path.startswith(f"{m}.bak-") and len(path) > len(m) + 5 for m in MERGED)
-        if path in kit or path in MERGED or backup or any(fnmatch.fnmatchcase(path, p) for p in patterns):
+        held_out = path.startswith(ACCEPTANCE_DIR + "/")
+        if path in kit or path in MERGED or backup or held_out or any(fnmatch.fnmatchcase(path, p) for p in patterns):
             continue
         if mode == "committed":
             if path not in head or head[path][0] in ("120000", "160000"):
