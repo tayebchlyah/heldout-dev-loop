@@ -7,6 +7,7 @@ Name each acceptance file or folder after the feature slug, - replaced by _: tes
 
 Commit with `python3 .agents/skills/dev-loop/scripts/devloop.py seal --feature <slug> --message <subject>`. The seal command runs alone: no pipe, no redirect, no `cd`. A plain `git commit` is blocked for you. Rebase conflict under `tests/acceptance/`: resolve the file, run `devloop.py seal --rebase-continue`. Taint remedy: `git revert --no-commit <sha>`, then `devloop.py seal --feature <slug> --reverts <sha> --message <subject>` with only the revert staged, then write the tests again and run `devloop.py seal --feature <slug> --message <subject>`.
 Keep each acceptance file at or under 40,000 bytes: split by flow. `seal` refuses a bigger file.
+A held-out test over 10 s gets the word `slow` in its id (`test_slow_checkout`). Keep each under 60 s: `acceptance` reports a new slow held-out test, and fails on one that grows.
 Run the acceptance suite only with tracebacks off: `pytest --tb=no`. A tool output that shows implementation source is a read of what you must not read.
 
 Work only from the specification and the glossary (GLOSSARY.md, else CONTEXT.md). Do not read implementation. Call only declared interfaces. Stop and name any missing interface.

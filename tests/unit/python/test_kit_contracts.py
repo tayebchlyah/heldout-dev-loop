@@ -45,6 +45,31 @@ class SkillContractTests(unittest.TestCase):
         cls.skill = SKILL.read_text()
         cls.instructions = all_instructions()
 
+    def test_time_ratchet_kit_text(self) -> None:
+        def section(title: str) -> str:
+            return self.skill.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
+
+        rule = next(line for line in (SKILL_ROOT / "references" / "tests.md").read_text().splitlines()
+                    if line.startswith("6. "))
+        for phrase in ("the word `slow` in the test id", "2 s", "10 s", "30 s", "3%"):
+            self.assertIn(phrase, rule)
+        for title, phrases in (("6 Feature gate", ("grown held-out test", "fix round", "new slow held-out test",
+                                                   "Attention item")),
+                               ("5 Build", ("`Test-Time: <reason>`", "decide --risk")),
+                               ("7 Ship", ("time ratchet record",))):
+            for phrase in phrases:
+                self.assertIn(phrase, section(title), title)
+        for agent in (ROOT / "claude" / "agents" / "spec-tester.md", ROOT / "codex" / "agents" / "spec-tester.toml"):
+            self.assertIn("`slow`", agent.read_text(), agent)
+            self.assertIn("60 s", agent.read_text(), agent)
+        glossary = (ROOT / "GLOSSARY.md").read_text()
+        for term in ("**Time ratchet**", "**Load factor**", "**Slow mark**"):
+            self.assertIn(term, glossary)
+        self.assertIn("`test_time`", (ROOT / "docs" / "configuration.md").read_text())
+        self.assertIn("Test time ratchet upgrade (#325)", (ROOT / "reference" / "kit.md").read_text())
+        self.assertNotIn("def slow", (ROOT / "tests" / "unit" / "python" / "board_fixtures.py").read_text())
+        self.assertLessEqual(len(SKILL.read_bytes()), 39945)
+
     def test_route_files_name_the_tool_walls(self) -> None:
         claude = (SKILL_ROOT / "references" / "claude.md").read_text()
         codex = (SKILL_ROOT / "references" / "codex.md").read_text()

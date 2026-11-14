@@ -15,7 +15,7 @@ from support import ROOT  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from board import state as board_state  # noqa: E402
-from board_fixtures import BoardHookFixture, RobustBoard, RobustnessHookFixture, epoch, put, set_time, slow  # noqa: E402
+from board_fixtures import BoardHookFixture, RobustBoard, RobustnessHookFixture, epoch, put, set_time  # noqa: E402
 
 
 class BoardTaskStateTests(RobustBoard):
@@ -127,8 +127,7 @@ class BoardTaskStateTests(RobustBoard):
 class HookFilterTests(RobustnessHookFixture, unittest.TestCase):
     """D11: `board.sh post-tool` filter, in the oracle hook sandbox (a fake devloop.py logs each call)."""
 
-    @slow
-    def test_git_dash_c_commit_and_worktree_add_start_board(self) -> None:
+    def test_slow_git_dash_c_commit_and_worktree_add_start_board(self) -> None:
         """`git -C <path> commit` and `git -C <path> worktree add` start one `board --event post-tool` run."""
         for harness in ("claude", "codex"):
             for command in ("git -C ../w commit -m 'Task 2'", "git -C /tmp/r worktree add ../r-x -b feat/x"):
@@ -230,8 +229,7 @@ class BoardSubagentTests(RobustBoard):
 class SnapshotBoardHookTests(BoardHookFixture, unittest.TestCase):
     """gate-snapshot.sh (Claude SubagentStart) runs `board --event subagent-start`. Fixture of the board hook tests."""
 
-    @slow
-    def test_subagent_start_runs_board(self) -> None:
+    def test_slow_subagent_start_runs_board(self) -> None:
         result = self.hook("claude", "gate-snapshot.sh", "SubagentStart")
         self.assertEqual((result.returncode, result.stdout), (0, ""))
         self.assert_board_event(self.calls(wait=6), "subagent-start")
@@ -240,8 +238,7 @@ class SnapshotBoardHookTests(BoardHookFixture, unittest.TestCase):
 class CodexGateBoardHookTests(BoardHookFixture, unittest.TestCase):
     """The Codex gate.sh hook runs a passing fixture gate in its sandbox, then logs the board stop event."""
 
-    @slow
-    def test_codex_gate_runs_then_logs_board_event(self) -> None:
+    def test_slow_codex_gate_runs_then_logs_board_event(self) -> None:
         for script, event in (("Stop", "stop"), ("SubagentStop", "subagent-stop")):
             with self.subTest(event=script):
                 self.log.unlink(missing_ok=True)

@@ -79,6 +79,16 @@ _Avoid_: e2e tests, integration tests
 The project's fast check that must pass before a stage ends.
 _Avoid_: CI, test run
 
+**Time ratchet**:
+The check of `gate --summary` and `acceptance` that fails when a branch makes its tests slower than a green run of an ancestor.
+_Avoid_: speed check
+
+**Load factor**:
+The median ratio of branch to baseline test times, at least 1, that each time is divided by to remove machine load.
+
+**Slow mark**:
+The word `slow` in a test id, which raises the limit of a new test.
+
 **Feature gate**:
 Stage 6: one review wave, the fixes it calls for, and the held-out suite run to green.
 

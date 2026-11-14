@@ -13,7 +13,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from board_fixtures import slow  # noqa: E402
 from mutation_fixtures import DEVLOOP, adapter_script, commit, make_repo, run_mutation  # noqa: E402
 
 ENTRY = {"path": "app/", "command": "./adapt", "critical": ["core/**"]}
@@ -51,8 +50,7 @@ class MutationRun(unittest.TestCase):
         self.count += 1
         return self.root / f"{name}{self.count}"
 
-    @slow
-    def test_request_and_cwd(self) -> None:
+    def test_slow_request_and_cwd(self) -> None:
         record, cwd = self.record(), self.record("cwd")
         script = adapter_script(record, output([], [], [{"file": "core/a.py", "start": 3, "end": 4, "reason": "r"}]))
         script = script.replace("#!/bin/sh\n", f"#!/bin/sh\npwd > {shlex.quote(str(cwd))}\n", 1)
@@ -95,8 +93,7 @@ class MutationRun(unittest.TestCase):
         report = out["report"].replace(out["base"], "<base>").replace(out["head"], "<head>")
         self.assertEqual(report + "\n", (HERE / "fixtures" / "mutation" / "report.txt").read_text())
 
-    @slow
-    def test_classification_through_the_report(self) -> None:
+    def test_slow_classification_through_the_report(self) -> None:
         rows = {
             "a.py": [("py", '-        raise ValueError("bad")\n+        raise ValueError("XXbadXX")')],
             "b.go": [("go-message", '-\treturn fmt.Errorf("bad")\n+\treturn fmt.Errorf("")'),
@@ -122,8 +119,7 @@ class MutationRun(unittest.TestCase):
                                      {"a.py": "b\n"})
         self.assertEqual((code, out["status"]), (0, "pass"))
 
-    @slow
-    def test_exit_codes(self) -> None:
+    def test_slow_exit_codes(self) -> None:
         cases = [
             ("exit 2", adapter_script(self.record(), "{}", 2, "x"), "setup", "x"),
             ("exit 127", adapter_script(self.record(), "{}", 127), "setup", "exit 127"),
@@ -140,8 +136,7 @@ class MutationRun(unittest.TestCase):
                 self.assertEqual((code, out["status"], out["entries"][0]["status"]), (1, status, status))
                 self.assertEqual(out["entries"][0]["cause"], cause)
 
-    @slow
-    def test_output_faults(self) -> None:
+    def test_slow_output_faults(self) -> None:
         good = mutant("u1", "core/a.py", 1, "survived", "-a\n+b")
         gap = {"file": "core/b.py", "start": 1, "end": 1, "reason": "r"}
 
@@ -197,8 +192,7 @@ class MutationRun(unittest.TestCase):
         self.assertEqual((done.returncode, out["status"]), (1, "setup"))
         self.assertIn("JSON", out["entries"][0]["cause"])
 
-    @slow
-    def test_two_entries_one_fails(self) -> None:
+    def test_slow_two_entries_one_fails(self) -> None:
         a, b = self.record(), self.record()
         entries = [{"path": "a/", "command": "./adapt", "critical": ["**"]},
                    {"path": "b/", "command": "./adapt", "critical": ["**"]}]
@@ -213,8 +207,7 @@ class MutationRun(unittest.TestCase):
         self.assertIn("\na/ failed: broke\n", out["report"])
         self.assertIn("entry b/: ./adapt survivors\nb/ mutants run: 1\n", out["report"])
 
-    @slow
-    def test_control_characters(self) -> None:
+    def test_slow_control_characters(self) -> None:
         mutants = [mutant("u1", "core/a.py", 3, "inconclusive", detail="time\nout")]
         not_covered = [{"file": "core/a.py", "start": 4, "end": 4, "reason": "no\tcode"}]
         script = adapter_script(self.record(), output(mutants, ["u1"], not_covered))
