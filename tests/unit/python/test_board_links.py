@@ -239,7 +239,7 @@ class LinkedSpecTests(Board):
         """`writer.merge` of one feature, as the hook runs it after the specs were listed."""
         ctx = writer.Context(dl=devloop, repo=self.repo, notes=self.notes, folder=self.board_dir, state=self.root,
                              state_fd=-1, machine=MACHINE, project="p", data={"sessions": {}},
-                             claude=self.root / "claude", shipped_kept=5)
+                             claude=self.root / "claude", shipped_kept=5, github="")
         found = {"stage": stage, "track": "M", "worktree": str(worktree) if worktree else None}
         return writer.merge(ctx, {}, "leak", found, spec, "2026-11-04T00:00:00Z", "")
 
