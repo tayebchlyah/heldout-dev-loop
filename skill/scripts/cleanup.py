@@ -36,7 +36,7 @@ def worktree_entries(repo: str) -> list[dict[str, str]]:
 
 
 def merged(main: str, branch: str) -> bool:
-    result = run(main, "cherry", "origin/main", branch)
+    result = run(main, "cherry", "origin/main", f"refs/heads/{branch}")
     return result.returncode == 0 and not any(line.startswith("+") for line in result.stdout.splitlines())
 
 
