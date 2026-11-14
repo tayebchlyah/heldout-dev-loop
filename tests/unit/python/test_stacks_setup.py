@@ -77,6 +77,27 @@ class StacksSetupTests(unittest.TestCase):
                 self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": preset}], "source_dirs": []}, ("src/",))), [])
         self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": "uv"}], "source_dirs": []}, files=("src",))), [])
 
+    def test_cargo_held_out_target(self) -> None:
+        line = stacks.CARGO_SUITE
+        entry = '[[test]]\nname = "acceptance"\npath = "tests/acceptance/main.rs"\n'
+        rows = [
+            (".", '[package]\nname = "p"\n', True, [line]),
+            (".", '[package]\nname = "p"\n' + entry, True, [line]),
+            (".", '[package]\nname = "p"\n' + entry + "test = false\n", True, []),
+            (".", '[package]\nname = "p"\nautotests = false\n', True, []),
+            (".", '[package]\nname = "p"\nautotests = false\n' + entry, True, [line]),
+            (".", "[package\n", True, [line]),
+            (".", '[package]\nname = "p"\n', False, []),
+            ("api/", '[package]\nname = "p"\n', True, []),
+        ]
+        for path, cargo, suite, want in rows:
+            with self.subTest(path=path, cargo=cargo, suite=suite):
+                files = ("tests/acceptance/main.rs",) if suite else ()
+                repo = self.repo({"stacks": [{"path": path, "preset": "cargo"}], "source_dirs": ["src/", "api/"]},
+                                 ("src/", "api/"), files)
+                write(repo / path / "Cargo.toml", cargo)
+                self.assertEqual(stacks.setup(repo), want)
+
     def test_no_check_without_valid_source_dirs(self) -> None:
         for config in ({"stacks": [{"path": "api/", "preset": "go"}]}, {"stacks": [{"path": "api/", "preset": "go"}], "source_dirs": "x"}):
             with self.subTest(config=config):
