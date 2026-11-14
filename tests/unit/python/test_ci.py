@@ -471,8 +471,9 @@ class CiGithubTests(StubGh):
                 self.assertEqual(self.calls(), calls)
 
     def test_delete_branch_waiver(self) -> None:
-        def commit_config(text: str) -> None:
-            (self.repo / "dev-loop.json").write_text(text)
+        def commit_config(text: str | bytes) -> None:
+            data = text if isinstance(text, bytes) else text.encode()
+            (self.repo / "dev-loop.json").write_bytes(data)
             self.git("add", "dev-loop.json")
             self.git("commit", "-q", "-m", "config")
 
@@ -485,6 +486,12 @@ class CiGithubTests(StubGh):
             self.git("branch", "-m", "main", "trunk")
             (self.repo / "dev-loop.json").write_text('{"delete_branch_on_merge": false}\n')
 
+        non_utf8 = b'{"delete_branch_on_merge": false, "x": "\xff"}'
+
+        def no_main_ref_non_utf8() -> None:
+            self.git("branch", "-m", "main", "trunk")
+            (self.repo / "dev-loop.json").write_bytes(non_utf8)
+
         rows = (
             ("no config", lambda: None, [self.DELETE]),
             ("waived on main", lambda: commit_config('{"delete_branch_on_merge": false}\n'), []),
@@ -494,6 +501,8 @@ class CiGithubTests(StubGh):
             ("waived on a branch only", on_branch, [self.DELETE]),
             ("invalid JSON on main", lambda: commit_config("{not json\n"), [self.DELETE]),
             ("no main ref, working tree file", no_main_ref, []),
+            ("non-UTF-8 on main", lambda: commit_config(non_utf8), [self.DELETE]),
+            ("no main ref, non-UTF-8 working tree file", no_main_ref_non_utf8, [self.DELETE]),
         )
         for name, setup, want in rows:
             with self.subTest(state=name):
