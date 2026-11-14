@@ -28,10 +28,10 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/seal/`: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board (`board/cli.py`: `board`).
 - `claude/`: Claude Code payload: agents, hooks, `settings.fragment.json`.
 - `codex/`: Codex payload: agents, hooks, `config.permissions.toml`, `hooks.fragment.json`, `rules/default.rules`.
-- `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md`. No test file under `skill/`.
+- `tests/unit/python/`: skill suite, one file per subject. File index: `tests/unit/python/README.md` (new test file: its line there). No test file under `skill/`.
 - `tests/unit/node/`: installer suite (`project-init`, `project-upgrade`, `project-hooks`, shared `helpers.mjs`), board render and `drive.mjs` tests.
 - `tests/acceptance/`: held-out suite. Written only by `spec-tester`, through `devloop.py seal`. Run by `commands.acceptance` (CI job `acceptance`), never the gate. Implementers never read, list or run it.
-- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed`: modules `scripts/impact_map.py select` picks (`tests/impact-map.json`, `impact-map.yml`).
+- `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed`: `impact_map.py select` modules (`tests/impact-map.json`).
 - `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
 - `scripts/canary.sh`: live canary before a release (this repo only). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
