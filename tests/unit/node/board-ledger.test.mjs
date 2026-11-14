@@ -226,7 +226,7 @@ test('O20: shipped features stay out of the header, its need-you total and the s
   const head = text(h.slice(0, h.indexOf('data-key="project:')))
   assert.ok(head.includes('1 needs you'), head)
   assert.ok(!head.includes('old') && !head.includes('Shipped'), head)
-  assert.ok(/1 needs you 1 5\. Build/.test(head) && /0 7\. Ship/.test(head), head)
+  assert.ok(/1 1 5\. Build/.test(head) && /0 7\. Ship/.test(head), head)
 })
 
 test('O21: only shipped features: the empty text, the hint, then the project folds', () => {
