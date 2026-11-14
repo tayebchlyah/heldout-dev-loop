@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -129,8 +130,8 @@ class TraceCommandTests(unittest.TestCase):
         def run(module: str, traced: bool) -> tuple[bool, str]:
             self.calls.append((module, traced))
             return results.get((module, traced), (True, reads(self.root, "a.py") if traced else ""))
-        with mock.patch("sys.stdout", new_callable=lambda: __import__("io").StringIO()) as out, \
-                mock.patch("sys.stderr", new_callable=lambda: __import__("io").StringIO()) as err:
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as out, \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
             code = impact_map.trace_command(self.root, self.out, 2, run)
         return code, out.getvalue(), err.getvalue()
 
