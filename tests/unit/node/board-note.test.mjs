@@ -85,6 +85,12 @@ test('Review Focus 3: bad JSON or a non-array in dlb-open renders with no open f
   }
 })
 
+test('oracle 21: the dataviewjs block shows both links', () => {
+  const { el } = run({ notes: [status({ repo: 'https://github.com/o/r', issue: 316, pr: 318 })] })
+  assert.ok(el.innerHTML.includes('aria-label="Issue #316, open"'))
+  assert.ok(el.innerHTML.includes('aria-label="Pull request #318, open"'))
+})
+
 test('O26: the note template holds no status data', () => {
   assert.ok(!/dev-loop-status"?\s*\n|stage_times:|machine_id:/.test(TEMPLATE.replace(/```dataviewjs[\s\S]*```/, '')))
 })
