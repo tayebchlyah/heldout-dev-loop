@@ -21,6 +21,7 @@ NAMES_ERROR = "walled_skills in dev-loop.json must be a list of names, each ^[a-
 FRONT_KEY = re.compile(r"""(?:^|[{,])\s*["']?(context|hooks)["']?\s*:""", re.MULTILINE)
 FENCE = re.compile(r"---[\s\ufeff]*\n([\s\S]*?)---")
 PLAIN_KEY = re.compile(r"[A-Za-z0-9_-]+[ \t]*:(?:\s|$)")
+PLACEHOLDER_BANG = re.compile(rb"\$(?:ARGUMENTS(?:\[\d+\])?|\d+|[A-Za-z_]\w*|\{[^}]*\})!")
 LINK_MODE = "120000"
 TREE_MODE = "040000"
 FILE_MODES = ("100644", "100755")
@@ -115,7 +116,7 @@ def scan(text: bytes) -> str | None:
     keys = {found.group(1) for found in FRONT_KEY.finditer(front)}
     if "context" in keys:
         return "context: fork"
-    if b"!`" in text or b"```!" in text or b"!$" in text:
+    if b"!`" in text or b"```!" in text or b"!$" in text or PLACEHOLDER_BANG.search(text):
         return "shell line"
     if "hooks" in keys:
         return "hooks key"
