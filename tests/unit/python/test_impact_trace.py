@@ -72,6 +72,34 @@ class ParseTraceTests(unittest.TestCase):
         text = '102 openat(AT_FDCWD</r/sub>, "c.py", O_RDONLY) = 3'
         self.assertEqual(parse(text, {"sub/c.py", "c.py"}), {"sub/c.py"})
 
+    def test_vfork_child_keeps_its_own_chdir(self) -> None:
+        text = "\n".join([
+            '100 chdir("pdir") = 0',
+            "100 clone(child_stack=0x1, flags=CLONE_VM|CLONE_VFORK|SIGCHLD <unfinished ...>",
+            '101 access("f", R_OK) = 0',
+            '101 chdir("/r/sub") = 0',
+            '101 execve("/usr/bin/cat", ["cat", "f"], 0x1 /* 10 vars */ <unfinished ...>',
+            "100 <... clone resumed>) = 101",
+            "101 <... execve resumed>) = 0",
+            '101 access("f", R_OK) = 0',
+        ])
+        self.assertEqual(parse(text, {"pdir/f"}), {"pdir/f"})
+        self.assertEqual(parse(text, {"sub/f"}), {"sub/f"})
+
+    def test_threads_share_the_cwd(self) -> None:
+        flags = "CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM"
+        text = "\n".join([f"100 clone(child_stack=0x1, flags={flags}) = 101", '100 chdir("sub") = 0',
+                          '101 access("f", R_OK) = 0'])
+        self.assertEqual(parse(text, {"sub/f", "f"}), {"sub/f"})
+        text = "\n".join([f"100 clone(child_stack=0x1, flags={flags}) = 101", '101 chdir("sub") = 0',
+                          '100 access("f", R_OK) = 0'])
+        self.assertEqual(parse(text, {"sub/f", "f"}), {"sub/f"})
+
+    def test_forked_child_does_not_see_a_later_parent_chdir(self) -> None:
+        text = "\n".join(["100 clone(child_stack=NULL, flags=CLONE_CHILD_SETTID|SIGCHLD) = 101", '100 chdir("sub") = 0',
+                          '101 access("f", R_OK) = 0'])
+        self.assertEqual(parse(text, {"sub/f", "f"}), {"f"})
+
 
 def scratch_repo(root: Path) -> str:
     for path in ("a.py", impact_map.MAP, HELD_OUT, *MODULES, "tests/unit/python/test_dev_loop.py"):
