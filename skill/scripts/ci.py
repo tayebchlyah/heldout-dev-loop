@@ -14,6 +14,7 @@ from pathlib import Path
 
 from board import store
 from devloop import emit
+from notes_path import main_ref
 
 POLL_SECONDS = 30
 GH_TIMEOUT = 60
@@ -206,17 +207,40 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
 
 
 def check_github(repo: Path) -> list[str]:
-    """A "User actions required" line when the GitHub repo of `origin` does not allow a rebase merge."""
+    """The "User actions required" lines of the GitHub repo of `origin`: rebase merge off, head branch delete off."""
     origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=repo, capture_output=True, text=True)
     match = re.match(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/([^/]+?)(?:\.git)?/?$",
                      origin.stdout.strip()) if origin.returncode == 0 else None
     if not match:
         return []
     slug = "/".join(match.groups())
+    lines = []
     allowed = gh("api", f"repos/{slug}", "--jq", ".allow_rebase_merge", timeout=10)
     if allowed.returncode == 0 and allowed.stdout.strip() == "false":
-        return [f"allow rebase merging in the GitHub settings of {slug} (Stage 7 runs gh pr merge --rebase)"]
-    return []
+        lines.append(f"allow rebase merging in the GitHub settings of {slug} (Stage 7 runs gh pr merge --rebase)")
+    if delete_waived(repo):
+        return lines
+    delete = gh("api", f"repos/{slug}", "--jq", ".delete_branch_on_merge", timeout=10)
+    if delete.returncode == 0 and delete.stdout.strip() == "false":
+        lines.append(f'turn on "Automatically delete head branches" in the GitHub settings of {slug} (Stage 7 leaves '
+                     f"the merged branch on GitHub): gh api -X PATCH repos/{slug} -F delete_branch_on_merge=true, "
+                     f'or waive it with "delete_branch_on_merge": false in dev-loop.json')
+    return lines
+
+
+def delete_waived(repo: Path) -> bool:
+    ref = main_ref(repo)
+    if ref:
+        shown = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:dev-loop.json"], capture_output=True, text=True)
+        text = shown.stdout if shown.returncode == 0 else ""
+    else:
+        path = repo / "dev-loop.json"
+        text = path.read_text() if path.is_file() else ""
+    try:
+        config = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(config, dict) and config.get("delete_branch_on_merge") is False
 
 
 def cmd_ci_wait(args: argparse.Namespace) -> int:

@@ -286,6 +286,8 @@ def check_project_config(repo: Path) -> list[str]:
         failures.append(NAMES_ERROR)
     if "security_audit" in config and audit_images(config) is None:
         failures.append(AUDIT_SHAPE)
+    if "delete_branch_on_merge" in config and not isinstance(config["delete_branch_on_merge"], bool):
+        failures.append("delete_branch_on_merge in dev-loop.json must be true or false")
     if config.get("release_notes", "cliff") not in ("cliff", "written"):
         failures.append("release_notes in dev-loop.json must be cliff or written")
     if "version_files" in config:

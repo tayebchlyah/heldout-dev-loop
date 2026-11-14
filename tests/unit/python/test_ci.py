@@ -437,25 +437,71 @@ class CiWaitTests(StubGh):
 class CiGithubTests(StubGh):
     LINE = "allow rebase merging in the GitHub settings of o/r (Stage 7 runs gh pr merge --rebase)"
 
-    def check(self, origin: str | None, answer: dict) -> list[str]:
+    DELETE = ('turn on "Automatically delete head branches" in the GitHub settings of o/r (Stage 7 leaves the merged '
+              'branch on GitHub): gh api -X PATCH repos/o/r -F delete_branch_on_merge=true, or waive it with '
+              '"delete_branch_on_merge": false in dev-loop.json')
+    REBASE_CALL = ["api", "repos/o/r", "--jq", ".allow_rebase_merge"]
+    DELETE_CALL = ["api", "repos/o/r", "--jq", ".delete_branch_on_merge"]
+
+    def check(self, origin: str | None, answers: list[dict]) -> list[str]:
         subprocess.run(["git", "remote", "remove", "origin"], cwd=self.repo, capture_output=True)
         if origin:
             subprocess.run(["git", "remote", "add", "origin", origin], cwd=self.repo, check=True)
-        with mock.patch.dict(os.environ, self.env({"repo": [answer]})):
+        with mock.patch.dict(os.environ, self.env({"repo": answers})):
             return ci.check_github(self.repo)
 
+    def git(self, *args: str) -> None:
+        subprocess.run([*GIT, *args], cwd=self.repo, check=True, capture_output=True)
+
     def test_check_github(self) -> None:
-        rows = [(url, out("false"), [self.LINE], True) for url in
+        both = [self.REBASE_CALL, self.DELETE_CALL]
+        rows = [(url, [out("false"), out("false")], [self.LINE, self.DELETE], both) for url in
                 ("git@github.com:o/r.git", "https://github.com/o/r", "https://github.com/o/r.git",
                  "ssh://git@github.com/o/r.git")]
-        rows += [("git@github.com:o/r.git", out("true"), [], True),
-                 ("git@github.com:o/r.git", BUSY, [], True),
-                 ("https://gitlab.com/o/r.git", out("false"), [], False),
-                 (None, out("false"), [], False)]
-        for origin, answer, want, called in rows:
-            with self.subTest(origin=origin, answer=answer):
-                self.assertEqual(self.check(origin, answer), want)
-                calls = [["api", "repos/o/r", "--jq", ".allow_rebase_merge"]] if called else []
+        rows += [("git@github.com:o/r.git", [out("true"), out("true")], [], both),
+                 ("git@github.com:o/r.git", [out("true"), out("false")], [self.DELETE], both),
+                 ("git@github.com:o/r.git", [out("false"), out("true")], [self.LINE], both),
+                 ("git@github.com:o/r.git", [BUSY, BUSY], [], both),
+                 ("git@github.com:o/r.git", [out("true"), out("False")], [], both),
+                 ("https://gitlab.com/o/r.git", [out("false")], [], []),
+                 (None, [out("false")], [], [])]
+        for origin, answers, want, calls in rows:
+            with self.subTest(origin=origin, answers=answers):
+                self.assertEqual(self.check(origin, answers), want)
+                self.assertEqual(self.calls(), calls)
+
+    def test_delete_branch_waiver(self) -> None:
+        def commit_config(text: str) -> None:
+            (self.repo / "dev-loop.json").write_text(text)
+            self.git("add", "dev-loop.json")
+            self.git("commit", "-q", "-m", "config")
+
+        def on_branch() -> None:
+            commit_config("{}\n")
+            self.git("checkout", "-q", "-b", "feat/x")
+            commit_config('{"delete_branch_on_merge": false}\n')
+
+        def no_main_ref() -> None:
+            self.git("branch", "-m", "main", "trunk")
+            (self.repo / "dev-loop.json").write_text('{"delete_branch_on_merge": false}\n')
+
+        rows = (
+            ("no config", lambda: None, [self.DELETE]),
+            ("waived on main", lambda: commit_config('{"delete_branch_on_merge": false}\n'), []),
+            ("true on main", lambda: commit_config('{"delete_branch_on_merge": true}\n'), [self.DELETE]),
+            ("zero on main", lambda: commit_config('{"delete_branch_on_merge": 0}\n'), [self.DELETE]),
+            ("string on main", lambda: commit_config('{"delete_branch_on_merge": "false"}\n'), [self.DELETE]),
+            ("waived on a branch only", on_branch, [self.DELETE]),
+            ("invalid JSON on main", lambda: commit_config("{not json\n"), [self.DELETE]),
+            ("no main ref, working tree file", no_main_ref, []),
+        )
+        for name, setup, want in rows:
+            with self.subTest(state=name):
+                self.tearDown()
+                self.setUp()
+                setup()
+                self.assertEqual(self.check("git@github.com:o/r.git", [out("true"), out("false")]), want)
+                calls = [self.REBASE_CALL] + ([self.DELETE_CALL] if want else [])
                 self.assertEqual(self.calls(), calls)
 
 
