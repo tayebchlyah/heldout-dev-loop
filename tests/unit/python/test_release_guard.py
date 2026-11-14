@@ -536,7 +536,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_a_retarget_runs_ci_again_on_the_new_base(self) -> None:
         ci = self.workflow("ci.yml")
         self.assertIn("  pull_request:\n    types: [opened, synchronize, reopened, edited]\n", ci)
-        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'edited' }}\n", ci)
+        cancel = "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'edited' }}\n"
+        self.assertIn(cancel, ci)
+        self.assertNotIn("github.event.action", ci.replace(cancel, ""))
         for path in ("reference/kit.md", "skills/release/SKILL.md"):
             with self.subTest(path=path):
                 self.assertIn("List `edited` in the `pull_request` types", (ROOT / path).read_text())

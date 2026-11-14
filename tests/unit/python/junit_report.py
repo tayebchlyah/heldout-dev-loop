@@ -46,7 +46,6 @@ def flat(suite: unittest.TestSuite):
 
 
 def chunk_report(outcomes: Path, chunk: list[str]) -> Path:
-    """Where the `--chunk` process of `chunk` writes its outcomes."""
     return outcomes / f"{chunk[0]}.json"
 
 
@@ -81,6 +80,7 @@ def run_chunks(command: list[str], chunks: list[list[str]], ids: list[str], jobs
     ran = sum(test_id in cases for test_id in ids)
     failed = [r for r in results if r.returncode != 0]
     for result in failed:
+        print(result.stdout, end="")
         print(without_summary(result.stderr), file=sys.stderr)
     ok = not failed and ran == len(ids) and not any(case["outcome"] in ("failure", "error") for case in cases.values())
     print(f"Ran {ran} of {len(ids)} tests in {time.monotonic() - start:.1f}s, {jobs} jobs: {'OK' if ok else 'FAILED'}")
@@ -88,7 +88,6 @@ def run_chunks(command: list[str], chunks: list[list[str]], ids: list[str], jobs
 
 
 def run_chunk(report: str, ids: list[str]) -> int:
-    """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
     suite = unittest.TestLoader().loadTestsFromNames(ids)
     tests = list(flat(suite))
     result = unittest.TextTestRunner(resultclass=TimedResult).run(suite)
@@ -107,13 +106,13 @@ def run_chunk(report: str, ids: list[str]) -> int:
     return 0 if result.wasSuccessful() else 1
 
 
-def discover_path(folder: str) -> None:
+def set_discover_path(folder: str) -> None:
     sys.path[0] = ""
     sys.path.insert(0, str(Path(folder).resolve()))
 
 
 def run_discover(runner: str, folder: str, xml: str | None, jobs: int) -> int:
-    discover_path(folder)
+    set_discover_path(folder)
     tests = list(flat(unittest.TestLoader().discover(folder, pattern="test_*.py")))
     broken = [test for test in tests if test.id().startswith("unittest.loader.")]
     classes = list(dict.fromkeys(test.id().rpartition(".")[0] for test in tests if test not in broken))
