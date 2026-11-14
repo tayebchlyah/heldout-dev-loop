@@ -34,7 +34,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `scripts/gate.sh`: repo gate, node and skill suites at once; `GATE_SCOPE=changed` picks the suites by path.
 - `scripts/temp_leak.sh`, `scripts/suite_lock.sh`: leak rule of `gate.sh`, `acceptance.sh` (empty `TMPDIR`, leftover fails); one suite run at a time.
 - `scripts/acceptance.sh [<folder>]`: held-out suite runner (`commands.acceptance`), leak guard.
-- `scripts/canary.sh`: live canary before a release (this repo). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
+- `scripts/canary.sh`: live canary before a release (this repo only). `scripts/mutation_canary.sh`, `mutation-canary.yml`: weekly adapter canary.
 - `scripts/release-check.sh`, `scripts/release-verify.sh`: `commands.release_check` (canary, `promoted --sha`), `release_verify` (`npx` upgrade of `main`, no diff).
 - `scripts/repo_rules.py`: repo checks `comments`, `subjects` (gitmoji), `promoted` (final tag, or `--sha` commit, ships last rc kit source, `package.json` beyond `version` included).
 - `scripts/upstream_watch.py`, `upstream.json`: weekly watch of outside sources dev-loop copies or invokes. `reference/upstream.md`
@@ -43,7 +43,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `reference/release.md`: the release steps.
 - `GLOSSARY.md`: domain terms (Stage 0).
 - `CODING_STANDARDS.md`: this repo's standards, `## Comments` equal to `skill/references/coding-standards.md`.
-- `dev-loop.json`: this repo's project marker, kit version.
+- `dev-loop.json`: this repo's marker, kit version.
 - `assets/`: README logo, icon, loop diagram (`the-loop.archify.json` source).
 - `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`.
 - `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.

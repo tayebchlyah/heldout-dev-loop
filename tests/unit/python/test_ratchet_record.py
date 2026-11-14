@@ -68,3 +68,11 @@ class RecordTests(RatchetRepo):
         code, out = self.gate({**BASE, "a": 1.2})
         self.assertEqual((code, self.files()), (0, {f"{self.tree('HEAD')}.json"}))
         self.assertEqual(json.loads((self.store("gate") / f"{self.tree('HEAD')}.json").read_text())["times"]["a"], 1.2)
+
+    def test_record_holds_normalized_times(self) -> None:
+        self.seed("gate", BASE, "main")
+        self.branch()
+        code, out = self.gate({i: t * 2 for i, t in BASE.items()})
+        self.assertEqual((code, out["ratchet"]["factor"]), (0, 2.0))
+        record = json.loads((self.store("gate") / f"{self.tree('HEAD')}.json").read_text())
+        self.assertEqual(record["times"], BASE)
