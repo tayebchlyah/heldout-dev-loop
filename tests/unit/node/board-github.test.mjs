@@ -71,7 +71,8 @@ test('oracle 17: one link, or none and no ghl element', () => {
   assert.equal(links(none).length, 0)
   assert.ok(!none.includes('class="ghl"'))
   const norepo = html([{ ...live, repo: '' }])
-  assert.ok(!summary(norepo).includes('github.com') && !norepo.includes('class="ghl"'))
+  assert.doesNotMatch(summary(norepo), /github\.com/)
+  assert.ok(!norepo.includes('class="ghl"'))
 })
 
 test('oracle 18: guard', () => {
