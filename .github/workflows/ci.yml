@@ -86,7 +86,7 @@ jobs:
 
   test:
     needs: [changes, test-shards]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Every shard passed, or changes skipped the suites
@@ -134,7 +134,7 @@ jobs:
 
   acceptance:
     needs: [changes, acceptance-shards]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Every shard passed, or changes skipped the suites
