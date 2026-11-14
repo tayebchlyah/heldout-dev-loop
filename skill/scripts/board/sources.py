@@ -75,10 +75,10 @@ def pull_request(dl: ModuleType, worktree: Path) -> int | None:
     worktree branch."""
     git_dir = dl.git(worktree, "rev-parse", "--absolute-git-dir")
     branch = dl.git(worktree, "symbolic-ref", "--quiet", "--short", "HEAD")
-    data = dl.read_below(Path(git_dir), "dev-loop", "pr.json") if git_dir and branch else None
     try:
+        data = dl.read_below(Path(git_dir), "dev-loop", "pr.json") if git_dir and branch else None
         record = json.loads(data) if data else None
-    except ValueError:
+    except (OSError, ValueError):
         return None
     if not isinstance(record, dict) or record.get("branch") != branch:
         return None
