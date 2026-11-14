@@ -222,6 +222,7 @@ THREAD_NODE = {"isResolved": False, "path": "skill/x.py", "line": 12,
                                        "url": "https://github.com/o/r/pull/7#r1", "authorAssociation": "MEMBER"}]}}
 FAIL_LINK = "https://github.com/o/r/actions/runs/99/job/5"
 BUSY = {"err": "HTTP 502", "code": 1}
+PR_RECORD = {"number": 7, "url": "https://github.com/o/r/pull/7", "branch": "feat/x"}
 
 
 class CiWaitTests(StubGh):
@@ -370,6 +371,67 @@ class CiWaitTests(StubGh):
                 contextlib.chdir(self.repo):
             code, got = ci.wait(None, 1)
         self.assertEqual((code, got["state"]), (1, "error"))
+
+    def record(self, cwd: Path | None = None) -> Path:
+        git_dir = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=cwd or self.repo,
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        return Path(git_dir) / "dev-loop" / "pr.json"
+
+    def test_pr_record_on_every_final_state(self) -> None:
+        rows = [("pass", {"view": [self.pr(headRefName="feat/x")]}, ()),
+                ("fail", {"view": [self.pr(headRefName="feat/x", statusCheckRollup=[FAILED])], "run": [out(LOG)]}, ()),
+                ("conflicts", {"view": [self.pr(headRefName="feat/x", mergeable="CONFLICTING")]}, ()),
+                ("threads", {"view": [self.pr(headRefName="feat/x")], "graphql": [graphql(THREAD_NODE)]}, ()),
+                ("blocked", {"view": [self.pr(headRefName="feat/x", mergeStateStatus="BEHIND")]}, ()),
+                ("timeout", {"view": [self.pr(headRefName="feat/x", isDraft=True, statusCheckRollup=[PENDING])]},
+                 ("--timeout", "0.001"))]
+        for state, script, args in rows:
+            with self.subTest(state):
+                self.record().unlink(missing_ok=True)
+                _, got = self.wait(script, *args, DEVLOOP_TEST_CI_POLL="0.05" if args else "0")
+                self.assertEqual(got["state"], state)
+                self.assertEqual(json.loads(self.record().read_text()), PR_RECORD)
+
+    def test_pr_record_goes_to_the_worktree_git_dir(self) -> None:
+        tree = self.root / "wt"
+        subprocess.run([*GIT, "worktree", "add", "-q", "-b", "feat/x", str(tree)], cwd=self.repo, check=True)
+        code, _ = self.wait({"view": [self.pr(headRefName="feat/x")]}, cwd=tree)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.record(tree).read_text()), PR_RECORD)
+        self.assertFalse((self.repo / ".git" / "dev-loop" / "pr.json").exists())
+
+    def test_no_pr_record_without_a_pr_number(self) -> None:
+        rows = [("no pr", {"err": 'no pull requests found for branch "feat/x"', "code": 1}), ("pr view fails", BUSY),
+                ("not json", out("not json")), ("number text", self.pr(number="7")), ("number 0", self.pr(number=0)),
+                ("number true", self.pr(number=True))]
+        for name, answer in rows:
+            for before in (None, "keep\n"):
+                with self.subTest(name, before=before):
+                    self.record().unlink(missing_ok=True)
+                    if before:
+                        self.record().parent.mkdir(exist_ok=True)
+                        self.record().write_text(before)
+                    self.wait({"view": [answer]})
+                    self.assertEqual(self.record().read_text() if self.record().exists() else None, before)
+
+    def test_link_at_the_pr_record_is_not_written_through(self) -> None:
+        script = {"view": [self.pr(headRefName="feat/x")]}
+        clean = self.wait(script)
+        self.record().unlink()
+        victim, elsewhere = self.root / "victim", self.root / "elsewhere"
+        victim.write_text("keep\n")
+        elsewhere.mkdir()
+        self.record().symlink_to(victim)
+        for name, link in (("pr.json", self.record()), ("dev-loop", self.record().parent)):
+            with self.subTest(name):
+                if name == "dev-loop":
+                    self.record().unlink()
+                    self.record().parent.rmdir()
+                    self.record().parent.symlink_to(elsewhere)
+                self.assertEqual(self.wait(script)[0], clean[0])
+                self.assertEqual(victim.read_text(), "keep\n")
+                self.assertEqual(list(elsewhere.iterdir()), [])
+                self.assertTrue(link.is_symlink())
 
 
 class CiGithubTests(StubGh):
