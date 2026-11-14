@@ -23,7 +23,8 @@
   },
   "file_size_exempt": [
     "CHANGELOG.md",
-    "tests/unit/python/fixtures/git-guard-asks.json"
+    "tests/unit/python/fixtures/git-guard-asks.json",
+    "tests/impact-map.json"
   ],
   "source_dirs": [
     "skill/",
