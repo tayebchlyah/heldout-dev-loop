@@ -231,13 +231,13 @@ def check_github(repo: Path) -> list[str]:
 def delete_waived(repo: Path) -> bool:
     ref = main_ref(repo)
     if ref:
-        shown = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:dev-loop.json"], capture_output=True, text=True)
-        text = shown.stdout if shown.returncode == 0 else ""
+        shown = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:dev-loop.json"], capture_output=True)
+        data = shown.stdout if shown.returncode == 0 else b""
     else:
         path = repo / "dev-loop.json"
-        text = path.read_text() if path.is_file() else ""
+        data = path.read_bytes() if path.is_file() else b""
     try:
-        config = json.loads(text)
+        config = json.loads(data)
     except ValueError:
         return False
     return isinstance(config, dict) and config.get("delete_branch_on_merge") is False
