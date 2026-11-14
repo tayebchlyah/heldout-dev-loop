@@ -178,7 +178,7 @@ def run_module(repo: Path, module: str, traced: bool) -> tuple[bool, str]:
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-            return False, ""
+            ok = False
         return ok, trace.read_text(errors="replace") if traced and trace.exists() else ""
 
 
