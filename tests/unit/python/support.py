@@ -45,18 +45,19 @@ CLAUDE_HOOKS = SKILL_ROOT.parent / "claude" / "hooks"
 NOTES_PATH = SKILL_ROOT / "scripts" / "notes_path.py"
 GUARD_ASKS = Path(__file__).resolve().parent / "fixtures" / "git-guard-asks.json"
 
-_spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
-if _spec is None or _spec.loader is None:
-    # spec_from_file_location does not itself validate that CHECKER exists,
-    # so this guard is here only to satisfy the type checker (_spec.loader
-    # is Optional[Loader]); a missing CHECKER surfaces below instead, as
-    # FileNotFoundError, once exec_module actually tries to read it.
-    raise ImportError(f"cannot load check_setup module: {CHECKER}")
-check_setup = importlib.util.module_from_spec(_spec)
-try:
-    _spec.loader.exec_module(check_setup)
-except FileNotFoundError as exc:
-    raise FileNotFoundError(f"cannot load check_setup module: missing {CHECKER}") from exc
+def __getattr__(name: str):
+    if name != "check_setup":
+        raise AttributeError(f"module 'support' has no attribute {name!r}")
+    spec = importlib.util.spec_from_file_location("check_setup", CHECKER)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load check_setup module: {CHECKER}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"cannot load check_setup module: missing {CHECKER}") from exc
+    globals()["check_setup"] = module
+    return module
 
 
 _notes_spec = importlib.util.spec_from_file_location("notes_path", NOTES_PATH)
