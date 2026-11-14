@@ -79,16 +79,23 @@ class StacksSetupTests(unittest.TestCase):
 
     def test_cargo_held_out_target(self) -> None:
         line = stacks.CARGO_SUITE
-        entry = '[[test]]\nname = "acceptance"\npath = "tests/acceptance/main.rs"\n'
+        pkg = '[package]\nname = "p"\n'
+        full = '[[test]]\nname = "acceptance"\npath = "tests/acceptance/main.rs"\ntest = false\n'
         rows = [
-            (".", '[package]\nname = "p"\n', True, [line]),
-            (".", '[package]\nname = "p"\n' + entry, True, [line]),
-            (".", '[package]\nname = "p"\n' + entry + "test = false\n", True, []),
-            (".", '[package]\nname = "p"\nautotests = false\n', True, []),
-            (".", '[package]\nname = "p"\nautotests = false\n' + entry, True, [line]),
+            (".", pkg, True, [line]),
+            (".", pkg, False, [line]),
+            (".", pkg + full, True, []),
+            (".", pkg + full, False, []),
+            (".", pkg + 'autotests = false\n[[test]]\nname = "acceptance"\ntest = false\n', True, []),
+            (".", pkg + 'autotests = false\n[[test]]\nname = "acceptance"\n', True, [line]),
+            (".", pkg + '[[test]]\nname = "acceptance"\npath = "./tests/acceptance/main.rs"\ntest = false\n', True, []),
+            (".", pkg + full + '[[test]]\nname = "acceptance"\npath = "./tests/acceptance/main.rs"\n', True, [line]),
+            (".", pkg + full.replace('"acceptance"\npath', '"other"\npath'), True, [line]),
+            (".", '[workspace]\nmembers = ["a"]\n', True, []),
+            (".", "package = 1\n", True, [line]),
+            (".", pkg + "test = 1\n", True, [line]),
             (".", "[package\n", True, [line]),
-            (".", '[package]\nname = "p"\n', False, []),
-            ("api/", '[package]\nname = "p"\n', True, []),
+            ("api/", pkg, True, []),
         ]
         for path, cargo, suite, want in rows:
             with self.subTest(path=path, cargo=cargo, suite=suite):
