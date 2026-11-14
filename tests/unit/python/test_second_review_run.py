@@ -249,7 +249,7 @@ class SecondReviewRunTests(unittest.TestCase):
                 [entry] = json.loads(taint.read_text())["records"]
                 self.assertEqual((entry["agent_type"], entry["agent_id"], entry["commits"]), ("second-review", record.name, []))
                 self.assertEqual(sorted(entry["lines"]), sorted(HELD))
-                self.assertIn(entry, check(tree, False)["warnings"])
+                self.assertIn({k: v for k, v in entry.items() if k != "lines"}, check(tree, False)["warnings"])
 
     def test_record_dir_and_tokens(self) -> None:
         import datetime
