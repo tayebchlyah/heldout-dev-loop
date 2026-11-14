@@ -2,10 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -34,17 +40,93 @@ def case_outcomes(result: TimedResult) -> dict:
     return cases
 
 
-def run_discover(folder: str, xml: str | None) -> int:
-    """One serial unittest discover of `folder` (`test_*.py`), as `python3 -m unittest discover -s` runs it.
-    With `xml`: the JUnit report there. For the held-out suite, `scripts/acceptance.sh`."""
-    sys.path[0] = ""
-    suite = unittest.TestLoader().discover(folder, pattern="test_*.py")
-    result = unittest.TextTestRunner(resultclass=TimedResult).run(suite)
+def flat(suite: unittest.TestSuite):
+    for test in suite:
+        yield from flat(test) if isinstance(test, unittest.TestSuite) else [test]
+
+
+def chunk_report(outcomes: Path, chunk: list[str]) -> Path:
+    """Where the `--chunk` process of `chunk` writes its outcomes."""
+    return outcomes / f"{chunk[0]}.json"
+
+
+def record_dead_chunks(outcomes: Path, chunks: list[list[str]], stderrs: list[str]) -> None:
+    """Every id of a chunk whose process wrote no report becomes an error carrying the tail of its stderr."""
+    for chunk, stderr in zip(chunks, stderrs):
+        if not chunk_report(outcomes, chunk).exists():
+            text = "\n".join(stderr.splitlines()[-20:])
+            cases = {test_id: {"seconds": 0.0, "outcome": "error", "text": text} for test_id in chunk}
+            chunk_report(outcomes, chunk).write_text(json.dumps(cases))
+
+
+def without_summary(stderr: str) -> str:
+    """`stderr` minus unittest's own `FAILED (failures=N)` lines, which `devloop.py gate` would list as failures."""
+    return "".join(line for line in stderr.splitlines(keepends=True) if not re.fullmatch(r"FAILED \(.*\)\n?", line))
+
+
+def run_chunks(command: list[str], chunks: list[list[str]], ids: list[str], jobs: int, cwd: Path,
+               xml: Path | None, name: str, outcomes: Path) -> int:
+    def run(chunk: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([*command, str(chunk_report(outcomes, chunk)), *chunk],
+                              cwd=cwd, capture_output=True, text=True)
+    start = time.monotonic()
+    with ThreadPoolExecutor(jobs) as pool:
+        results = list(pool.map(run, chunks))
+    record_dead_chunks(outcomes, chunks, [r.stderr for r in results])
+    cases = {}
+    for report in outcomes.glob("*.json"):
+        cases.update(json.loads(report.read_text()))
     if xml:
-        with tempfile.TemporaryDirectory() as outcomes:
-            Path(outcomes, "discover.json").write_text(json.dumps(case_outcomes(result)))
-            write_junit(Path(xml), Path(outcomes), "acceptance-python")
+        write_junit(xml, outcomes, name)
+    ran = sum(test_id in cases for test_id in ids)
+    failed = [r for r in results if r.returncode != 0]
+    for result in failed:
+        print(without_summary(result.stderr), file=sys.stderr)
+    ok = not failed and ran == len(ids) and not any(case["outcome"] in ("failure", "error") for case in cases.values())
+    print(f"Ran {ran} of {len(ids)} tests in {time.monotonic() - start:.1f}s, {jobs} jobs: {'OK' if ok else 'FAILED'}")
+    return 0 if ok else 1
+
+
+def run_chunk(report: str, ids: list[str]) -> int:
+    """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
+    suite = unittest.TestLoader().loadTestsFromNames(ids)
+    tests = list(flat(suite))
+    result = unittest.TextTestRunner(resultclass=TimedResult).run(suite)
+    cases = case_outcomes(result)
+    fixtures = set()
+    for test in tests:
+        cls = type(test)
+        for setup, scope in (("setUpClass", cls.__module__ + "." + cls.__qualname__), ("setUpModule", cls.__module__)):
+            fixture = f"{setup} ({scope})"
+            if fixture in cases and cases[fixture]["outcome"] == "skipped":
+                cases.setdefault(test.id(), dict(cases[fixture]))
+                fixtures.add(fixture)
+    for fixture in fixtures:
+        del cases[fixture]
+    Path(report).write_text(json.dumps(cases))
     return 0 if result.wasSuccessful() else 1
+
+
+def discover_path(folder: str) -> None:
+    sys.path[0] = ""
+    sys.path.insert(0, str(Path(folder).resolve()))
+
+
+def run_discover(runner: str, folder: str, xml: str | None, jobs: int) -> int:
+    discover_path(folder)
+    tests = list(flat(unittest.TestLoader().discover(folder, pattern="test_*.py")))
+    broken = [test for test in tests if test.id().startswith("unittest.loader.")]
+    classes = list(dict.fromkeys(test.id().rpartition(".")[0] for test in tests if test not in broken))
+    outcomes = Path(tempfile.mkdtemp(dir=os.environ.get("DEVLOOP_RUN_DIR")))
+    try:
+        if broken:
+            result = unittest.TextTestRunner(resultclass=TimedResult).run(unittest.TestSuite(broken))
+            Path(outcomes, "broken.json").write_text(json.dumps(case_outcomes(result)))
+        ids = [test.id() for test in tests]
+        return run_chunks([sys.executable, runner, "--discover-chunk", folder], [[name] for name in classes], ids,
+                          jobs, Path.cwd(), Path(xml) if xml else None, "acceptance-python", outcomes)
+    finally:
+        shutil.rmtree(outcomes, ignore_errors=True)
 
 
 def write_junit(path: Path, outcomes: Path, name: str = "skill") -> None:
