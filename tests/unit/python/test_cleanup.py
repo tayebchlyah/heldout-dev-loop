@@ -164,6 +164,16 @@ class CleanupTests(Sandbox):
         self.assertEqual((code, payload["worktree"], payload["branch"], payload["reasons"]),
                          (0, "absent", "absent", []), payload)
 
+    def test_same_name_tag_does_not_make_the_branch_merged(self) -> None:
+        path = self.worktree("feat/tagged")
+        self.commit(path, "tagged.txt", "unmerged\n")
+        git(self.repo, "worktree", "remove", str(path))
+        git(self.repo, "tag", "feat/tagged", "origin/main")
+        code, payload = self.cleanup("feat/tagged")
+        self.assertEqual((code, payload["worktree"], payload["branch"], payload["reasons"]),
+                         (1, "absent", "skipped", ["branch: not-merged"]), payload)
+        self.assertTrue(self.has_ref("refs/heads/feat/tagged"))
+
     def test_main_checkout_states(self) -> None:
         start = self.head()
 
