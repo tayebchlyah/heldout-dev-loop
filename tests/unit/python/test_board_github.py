@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -105,6 +106,15 @@ class BoardGithubTests(Board):
         path.parent.rmdir()
         put(self.root / "linked" / "pr.json", good)
         path.parent.symlink_to(self.root / "linked")
+        self.ok()
+        self.assertIsNone(self.note("x")["pr"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads any file")
+    def test_unreadable_pr_record_gives_null(self) -> None:
+        wt = self.worktree("x")
+        path = self.pr_file(wt, {"number": 318, "url": "u", "branch": "feat/x"})
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o644)
         self.ok()
         self.assertIsNone(self.note("x")["pr"])
 
