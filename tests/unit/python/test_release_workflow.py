@@ -62,39 +62,35 @@ class ReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, changes)
         jobs = self.jobs(ci)
-        self.assertEqual(list(jobs), ["changes", "test-shards", "test", "acceptance-shards", "acceptance"])
-        for name in ("test-shards", "acceptance-shards"):
+        self.assertEqual(list(jobs), ["changes", "test-shards", "test", "acceptance"])
+        for name in ("test-shards", "acceptance"):
             with self.subTest(job=name):
                 self.assertIn("    needs: changes\n", jobs[name])
                 self.assertIn("    if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}\n", jobs[name])
-                self.assertIn("      fail-fast: false\n", jobs[name])
+        self.assertIn("      fail-fast: false\n", jobs["test-shards"])
 
     @staticmethod
     def jobs(ci: str) -> dict[str, str]:
         parts = re.split(r"^  ([\w-]+):\n", ci.split("\njobs:\n", 1)[1], flags=re.M)
         return dict(zip(parts[1::2], parts[2::2]))
 
-    def test_an_aggregate_job_passes_only_on_a_skip_or_every_shard_green(self) -> None:
-        jobs = self.jobs(self.workflow("ci.yml"))
-        for name in ("test", "acceptance"):
-            job = jobs[name]
-            self.assertIn(f"    needs: [changes, {name}-shards]\n    if: ${{{{ always() }}}}\n", job)
-            self.assertIn(f"SHARDS: ${{{{ needs.{name}-shards.result }}}}\n", job)
-            self.assertIn("SKIP: ${{ needs.changes.outputs.skip }}\n", job)
-            run = job.split("        run: ", 1)[1].strip().strip("'")
-            for skip, shards, code in (("true", "skipped", 0), ("false", "success", 0), ("", "skipped", 1),
-                                       ("false", "failure", 1), ("false", "cancelled", 1), ("false", "skipped", 1)):
-                with self.subTest(job=name, skip=skip, shards=shards):
-                    result = subprocess.run(["bash", "-c", run], env={"SKIP": skip, "SHARDS": shards})
-                    self.assertEqual(result.returncode, code)
+    def test_the_test_job_passes_only_on_a_skip_or_every_shard_green(self) -> None:
+        job = self.jobs(self.workflow("ci.yml"))["test"]
+        self.assertIn("    needs: [changes, test-shards]\n    if: ${{ always() }}\n", job)
+        self.assertIn("SHARDS: ${{ needs.test-shards.result }}\n", job)
+        self.assertIn("SKIP: ${{ needs.changes.outputs.skip }}\n", job)
+        run = job.split("        run: ", 1)[1].strip().strip("'")
+        for skip, shards, code in (("true", "skipped", 0), ("false", "success", 0), ("", "skipped", 1),
+                                   ("false", "failure", 1), ("false", "cancelled", 1), ("false", "skipped", 1)):
+            with self.subTest(skip=skip, shards=shards):
+                result = subprocess.run(["bash", "-c", run], env={"SKIP": skip, "SHARDS": shards})
+                self.assertEqual(result.returncode, code)
 
     def test_the_shard_jobs_pass_their_part_to_the_runner(self) -> None:
         jobs = self.jobs(self.workflow("ci.yml"))
         self.assertIn("        part: [installer, 1/4, 2/4, 3/4, 4/4]\n", jobs["test-shards"])
-        self.assertIn("        part: [1/2, 2/2]\n", jobs["acceptance-shards"])
-        for name, step in (("test-shards", "Skill suite"), ("acceptance-shards", "Held-out acceptance suite")):
-            with self.subTest(job=name):
-                self.assertIn("DEVLOOP_TEST_SHARD: ${{ matrix.part }}\n", self.step(jobs[name], step))
+        self.assertIn("DEVLOOP_TEST_SHARD: ${{ matrix.part }}\n", self.step(jobs["test-shards"], "Skill suite"))
+        self.assertNotIn("DEVLOOP_TEST_SHARD", jobs["acceptance"])
         self.assertIn("if: ${{ matrix.part == 'installer' }}\n", self.step(jobs["test-shards"], "Installer suite"))
 
     def test_a_retarget_runs_ci_again_on_the_new_base(self) -> None:
@@ -200,7 +196,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_test_and_acceptance_jobs_install_git_cliff_before_the_suite(self) -> None:
         ci = self.workflow("ci.yml")
         jobs = self.jobs(ci)
-        test_job, acceptance_job = jobs["test-shards"], jobs["acceptance-shards"]
+        test_job, acceptance_job = jobs["test-shards"], jobs["acceptance"]
         for job, suite in ((test_job, "run: npm test"), (acceptance_job, "run: scripts/acceptance.sh")):
             self.assertIn("git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz", job)
             self.assertIn("24f397c733add5390fdceee3a2088588ab0d5f944ce00d34cb7029b888cf2db4  git-cliff.tar.gz", job)

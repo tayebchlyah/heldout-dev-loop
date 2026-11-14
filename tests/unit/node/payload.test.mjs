@@ -235,7 +235,7 @@ test('dev-loop.json maps commands.acceptance to the script that runs both runner
 test('the ruleset files hold the CI job ids and the release tags', () => {
   const read = (path) => readFileSync(join(packageRoot, path), 'utf8')
   const jobs = [...read('.github/workflows/ci.yml').split(/^jobs:$/m)[1].matchAll(/^ {2}([\w-]+):\s*$/gm)].map((m) => m[1])
-  assert.deepEqual(jobs, ['changes', 'test-shards', 'test', 'acceptance-shards', 'acceptance'])
+  assert.deepEqual(jobs, ['changes', 'test-shards', 'test', 'acceptance'])
   const required = jobs.filter((job) => !job.endsWith('-shards'))
   const rule = (set, type) => set.rules.find((r) => r.type === type)
   const main = JSON.parse(read('.github/rulesets/main.json'))

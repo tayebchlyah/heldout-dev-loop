@@ -95,13 +95,9 @@ jobs:
           SHARDS: ${{ needs.test-shards.result }}
         run: '[ "$SKIP" = true ] || [ "$SHARDS" = success ]'
 
-  acceptance-shards:
+  acceptance:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [1/2, 2/2]
     runs-on: ubuntu-latest
     env:
       DEVLOOP_REQUIRE_DOCKER: "1"
@@ -128,17 +124,4 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Held-out acceptance suite
-        env:
-          DEVLOOP_TEST_SHARD: ${{ matrix.part }}
         run: scripts/acceptance.sh
-
-  acceptance:
-    needs: [changes, acceptance-shards]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Every shard passed, or changes skipped the suites
-        env:
-          SKIP: ${{ needs.changes.outputs.skip }}
-          SHARDS: ${{ needs.acceptance-shards.result }}
-        run: '[ "$SKIP" = true ] || [ "$SHARDS" = success ]'
