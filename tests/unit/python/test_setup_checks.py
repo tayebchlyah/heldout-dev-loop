@@ -31,6 +31,23 @@ class WalledSkillsConfigTests(unittest.TestCase):
             self.assertIn("walled_skills", (ROOT / doc).read_text())
 
 
+class ComposeProjectConfigTests(unittest.TestCase):
+    def test_shape(self) -> None:
+        message = "commands.compose_project in dev-loop.json must be a non-empty string"
+        for value, failures in (("echo acme-wt", []), ("", [message]), (" ", [message]), (3, [message])):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
+                write(Path(tmp) / "dev-loop.json", json.dumps({"commands": {"compose_project": value}}))
+                self.assertEqual(check_setup.check_project_config(Path(tmp)), failures)
+
+    def test_the_docs_name_the_key(self) -> None:
+        contract = (ROOT / "reference/cli/acceptance.md").read_text()
+        for needle in ("`commands.compose_project`", "com.docker.compose.project", "`project`", "--no-trunc",
+                       "com.docker.compose.oneoff", "reset the stack", "one name for each worktree"):
+            self.assertIn(needle, contract)
+        for doc in ("reference/kit.md", "docs/configuration.md"):
+            self.assertIn("compose_project", (ROOT / doc).read_text())
+
+
 class BoardVaultCheckTests(unittest.TestCase):
     GITIGNORE_LINE = "add Dev Loop Board/ to the vault .gitignore, unless a partner receives the notes by git"
 
