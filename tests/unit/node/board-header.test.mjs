@@ -66,11 +66,16 @@ test('#316: one cell per stage in order, with its count; an empty stage is marke
   assert.match(c[0].text, /^0 1\. Frame/)
 })
 
-test('#316: a cell with waiting features shows their number and need you; shipped features never count', () => {
-  const c = cells(head(html(busy)))
-  assert.match(c[1].text, /^2 need you 2 2\. Spec/)
-  assert.match(c[5].text, /^1 needs you 1 6\. Gate/)
-  assert.ok(!/need/.test(c[4].text) && !/need/.test(c[6].text))
+test('#316: a cell with waiting features shows their number in a badge, no words; shipped features never count', () => {
+  const h = head(html(busy))
+  const c = cells(h)
+  assert.match(c[1].text, /^2 2 2\. Spec/)
+  assert.match(c[5].text, /^1 1 6\. Gate/)
+  assert.match(c[4].text, /^2 5\. Build/)
+  assert.match(c[6].text, /^0 7\. Ship/)
+  assert.ok(c.every((x) => !/need/.test(x.text)))
+  assert.match(h, /data-stage-count="2"><span class="ny"><i class="rb" title="2 need you">2<\/i><\/span>/)
+  assert.match(h, /data-stage-count="6"><span class="ny"><i class="rb" title="1 needs you">1<\/i><\/span>/)
 })
 
 test('#316: the header gives the total that need you, active features only', () => {
@@ -95,8 +100,7 @@ test('#316: no feature in progress: the logo and the empty text, no stage cells 
 
 test('#316: a count and its words are separated by a space in the markup itself, not only by layout', () => {
   const h = html(busy)
-  assert.match(h, /<span class="tot"><b>3<\/b> need you<\/span>/)
-  assert.match(h, /data-stage-count="2"><span class="ny"><i class="rb">2<\/i> <em>need you<\/em><\/span>/)
+  assert.match(h, /<span class="tot"><strong>3<\/strong> need you<\/span>/)
 })
 
 test('#316: the board page title is Heldout Dev Loop', () => {
