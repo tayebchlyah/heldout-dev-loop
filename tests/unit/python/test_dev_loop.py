@@ -7,23 +7,29 @@ import contextlib
 import importlib.util
 import io
 import json
-import re
 import shutil
 import os
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 import uuid
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+def job_count() -> int:
+    return max(int(os.environ.get("DEVLOOP_TEST_JOBS") or os.cpu_count() or 1), 1)
+
 
 if __name__ == "__main__" and sys.argv[1:2] == ["--discover"]:
     from junit_report import run_discover
 
-    sys.exit(run_discover(sys.argv[2], (sys.argv[3:4] or [None])[0]))
+    sys.exit(run_discover(__file__, sys.argv[2], (sys.argv[3:4] or [None])[0], job_count()))
+if __name__ == "__main__" and sys.argv[1:2] == ["--discover-chunk"]:
+    from junit_report import discover_path, run_chunk
+
+    discover_path(sys.argv[2])
+    sys.exit(run_chunk(sys.argv[3], sys.argv[4:]))
 
 # core.fsmonitor in a user or repo config starts a daemon in every throwaway repo these tests make.
 # The override wins over every config file, appends to the caller's GIT_CONFIG_* entries, skips if already set.
@@ -46,7 +52,8 @@ from support import SKILL_ROOT  # noqa: E402
 # The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
 # never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
-from junit_report import TimedResult, case_outcomes, write_junit  # noqa: E402
+from junit_report import (chunk_report, flat, record_dead_chunks, run_chunk, run_chunks,  # noqa: E402
+                          without_summary, write_junit)
 
 
 def wire(name: str) -> None:
@@ -104,6 +111,59 @@ class JUnitReportTests(unittest.TestCase):
             result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(folder / "r.xml")],
                                     capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_discover_runs_each_class_in_its_own_process(self) -> None:
+        probe = ("import os, unittest\nfrom pathlib import Path\n"
+                 "def pid(test): Path(os.environ['PIDS'], test.id()).write_text(str(os.getpid()))\n")
+        for jobs in ("1", "3"):
+            with self.subTest(jobs=jobs), tempfile.TemporaryDirectory() as tmp:
+                folder, pids = Path(tmp, "suite"), Path(tmp, "pids")
+                folder.mkdir()
+                pids.mkdir()
+                (folder / "test_a.py").write_text(probe + "".join(
+                    f"class {name}(unittest.TestCase):\n    def test_1(self): pid(self)\n    def test_2(self): pid(self)\n"
+                    for name in ("A", "C")))
+                (folder / "test_b.py").write_text(probe + "class B(unittest.TestCase):\n    def test_1(self): pid(self)\n")
+                report = Path(tmp, "r.xml")
+                result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(report)],
+                                        capture_output=True, text=True,
+                                        env={**os.environ, "PIDS": str(pids), "DEVLOOP_TEST_JOBS": jobs})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                ran = {p.name: p.read_text() for p in pids.iterdir()}
+                cases = sorted((c.get("classname"), c.get("name")) for c in ET.parse(report).getroot().iter("testcase"))
+            self.assertEqual(cases, [("test_a.A", "test_1"), ("test_a.A", "test_2"), ("test_a.C", "test_1"),
+                                     ("test_a.C", "test_2"), ("test_b.B", "test_1")])
+            self.assertEqual(ran["test_a.A.test_1"], ran["test_a.A.test_2"])
+            self.assertEqual(len({ran["test_a.A.test_1"], ran["test_a.C.test_1"], ran["test_b.B.test_1"]}), 3)
+
+    def test_discover_keeps_its_chunk_reports_in_the_run_dir_not_in_tmpdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder, scratch, run_dir, seen = (Path(tmp, name) for name in ("suite", "scratch", "run", "seen"))
+            for path in (folder, scratch, run_dir):
+                path.mkdir()
+            (folder / "test_a.py").write_text(
+                "import os, tempfile, unittest\nclass A(unittest.TestCase):\n"
+                f"    def test_1(self): open({str(seen)!r}, 'w').write(repr(os.listdir(tempfile.gettempdir())))\n")
+            result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder)], capture_output=True,
+                                    text=True, env={**os.environ, "TMPDIR": str(scratch), "DEVLOOP_RUN_DIR": str(run_dir)})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(seen.read_text(), "[]")
+
+    def test_discover_reports_a_failure_and_a_module_that_does_not_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp, "suite")
+            folder.mkdir()
+            (folder / "test_bad.py").write_text("import unittest\nclass Bad(unittest.TestCase):\n"
+                                                "    def test_no(self): self.assertEqual(1, 2)\n"
+                                                "    def test_yes(self): pass\n")
+            (folder / "test_broken.py").write_text("import no_such_module_here\n")
+            report = Path(tmp, "r.xml")
+            result = subprocess.run([sys.executable, "-B", __file__, "--discover", str(folder), str(report)],
+                                    capture_output=True, text=True)
+            outcomes = {c.get("name"): [e.tag for e in c] for c in ET.parse(report).getroot().iter("testcase")}
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(outcomes, {"test_no": ["failure"], "test_yes": [], "test_broken": ["error"]})
+        self.assertIn("1 != 2", result.stderr)
 
     def test_runner_loads_each_test_file_beside_it_but_not_itself(self) -> None:
         """A new `test_*.py` beside the runner runs with no edit of the runner, which never loads itself."""
@@ -248,30 +308,6 @@ class JUnitReportTests(unittest.TestCase):
         self.assertEqual(without_summary(text), "boom\nRan 5 of 9 tests in 1.0s: FAILED\n")
 
 
-def flat(suite: unittest.TestSuite):
-    for test in suite:
-        yield from flat(test) if isinstance(test, unittest.TestSuite) else [test]
-
-
-def chunk_report(outcomes: Path, chunk: list[str]) -> Path:
-    """Where the `--chunk` process of `chunk` writes its outcomes."""
-    return outcomes / f"{chunk[0]}.json"
-
-
-def record_dead_chunks(outcomes: Path, chunks: list[list[str]], stderrs: list[str]) -> None:
-    """Every id of a chunk whose process wrote no report becomes an error carrying the tail of its stderr."""
-    for chunk, stderr in zip(chunks, stderrs):
-        if not chunk_report(outcomes, chunk).exists():
-            text = "\n".join(stderr.splitlines()[-20:])
-            cases = {test_id: {"seconds": 0.0, "outcome": "error", "text": text} for test_id in chunk}
-            chunk_report(outcomes, chunk).write_text(json.dumps(cases))
-
-
-def without_summary(stderr: str) -> str:
-    """`stderr` minus unittest's own `FAILED (failures=N)` lines, which `devloop.py gate` would list as failures."""
-    return "".join(line for line in stderr.splitlines(keepends=True) if not re.fullmatch(r"FAILED \(.*\)\n?", line))
-
-
 def run_parallel(jobs: int) -> int:
     """Every test id of this suite, five per `--chunk` process of this file, `jobs` processes at a time.
 
@@ -284,50 +320,13 @@ def run_parallel(jobs: int) -> int:
         return 1
     ids = list(dict.fromkeys(test.id().replace("__main__.", "test_dev_loop.", 1) for test in flat(suite)))
     chunks = [ids[i:i + 5] for i in range(0, len(ids), 5)]
-
+    reports = os.environ.get("DEVLOOP_REPORT_DIR")
     outcomes = Path(tempfile.mkdtemp())
-
-    def run(chunk: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, __file__, "--chunk", str(chunk_report(outcomes, chunk)), *chunk],
-                              cwd=Path(__file__).parent, capture_output=True, text=True)
-
-    start = time.monotonic()
-    with ThreadPoolExecutor(jobs) as pool:
-        results = list(pool.map(run, chunks))
-    record_dead_chunks(outcomes, chunks, [r.stderr for r in results])
-    cases = {}
-    for report in outcomes.glob("*.json"):
-        cases.update(json.loads(report.read_text()))
-    if os.environ.get("DEVLOOP_REPORT_DIR"):
-        write_junit(Path(os.environ["DEVLOOP_REPORT_DIR"]) / "skill.xml", outcomes)
-    shutil.rmtree(outcomes, ignore_errors=True)
-    ran = sum(test_id in cases for test_id in ids)
-    failed = [r for r in results if r.returncode != 0]
-    for result in failed:
-        print(without_summary(result.stderr), file=sys.stderr)
-    ok = not failed and ran == len(ids) and not any(case["outcome"] in ("failure", "error") for case in cases.values())
-    print(f"Ran {ran} of {len(ids)} tests in {time.monotonic() - start:.1f}s, {jobs} jobs: {'OK' if ok else 'FAILED'}")
-    return 0 if ok else 1
-
-
-def run_chunk(report: str, ids: list[str]) -> int:
-    """One run_parallel process: plain unittest output on stderr, each test's outcome and time as JSON in `report`."""
-    suite = unittest.TestLoader().loadTestsFromNames(ids)
-    tests = list(flat(suite))
-    result = unittest.TextTestRunner(resultclass=TimedResult).run(suite)
-    cases = case_outcomes(result)
-    fixtures = set()
-    for test in tests:
-        cls = type(test)
-        for setup, scope in (("setUpClass", cls.__module__ + "." + cls.__qualname__), ("setUpModule", cls.__module__)):
-            fixture = f"{setup} ({scope})"
-            if fixture in cases and cases[fixture]["outcome"] == "skipped":
-                cases.setdefault(test.id(), dict(cases[fixture]))
-                fixtures.add(fixture)
-    for fixture in fixtures:
-        del cases[fixture]
-    Path(report).write_text(json.dumps(cases))
-    return 0 if result.wasSuccessful() else 1
+    try:
+        return run_chunks([sys.executable, __file__, "--chunk"], chunks, ids, jobs, Path(__file__).parent,
+                          Path(reports) / "skill.xml" if reports else None, "skill", outcomes)
+    finally:
+        shutil.rmtree(outcomes, ignore_errors=True)
 
 
 if __name__ == "__main__":
@@ -337,4 +336,4 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         unittest.main(verbosity=2)
     else:
-        sys.exit(run_parallel(max(int(os.environ.get("DEVLOOP_TEST_JOBS") or os.cpu_count() or 1), 1)))
+        sys.exit(run_parallel(job_count()))

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Held-out acceptance suite of this repo (commands.acceptance, CI job `acceptance`): the Python tests and the
-# Node tests of <folder> (default tests/acceptance), both always run, in an empty TMPDIR: a leftover fails the
+# Node tests of <folder> (default tests/acceptance), both always run, at the same time (the Python tests one class
+# per process, DEVLOOP_TEST_JOBS at once), in an empty TMPDIR: a leftover fails the
 # run and is listed (rule in scripts/temp_leak.sh). DEVLOOP_REPORT_DIR set: JUnit XML there, acceptance-python.xml,
 # acceptance-node.xml and acceptance-temp-leak.xml (one case temp-leak TMPDIR, failing on a leak).
 # Exit 1 when one part fails, the tests leave a temp leak, or (reports on) no held-out test ran.
@@ -14,8 +15,8 @@ if [ -f scripts/suite_lock.sh ]; then
   suite_lock || exit 1
 fi
 folder=${1:-tests/acceptance}
-scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
+scratch=$(mktemp -d) out=$(mktemp -d)
+trap 'rm -rf "$scratch" "$out"' EXIT
 
 py_report=() node_report=()
 if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
@@ -24,9 +25,14 @@ if [ -n "${DEVLOOP_REPORT_DIR:-}" ]; then
     --test-reporter=junit --test-reporter-destination="$DEVLOOP_REPORT_DIR/acceptance-node.xml")
 fi
 
+{ TMPDIR="$scratch" DEVLOOP_RUN_DIR="$out" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"} >"$out/py" 2>&1; echo $? >"$out/py.exit"; } 9>&- &
+{ TMPDIR="$scratch" node --test ${node_report[@]+"${node_report[@]}"} "$folder"/*.test.mjs >"$out/node" 2>&1; echo $? >"$out/node.exit"; } 9>&- &
+wait
 status=0
-TMPDIR="$scratch" python3 tests/unit/python/test_dev_loop.py --discover "$folder" ${py_report[@]+"${py_report[@]}"} 9>&- || status=1
-TMPDIR="$scratch" node --test ${node_report[@]+"${node_report[@]}"} "$folder"/*.test.mjs 9>&- || status=1
+for part in py node; do
+  cat "$out/$part"
+  [ "$(cat "$out/$part.exit")" = 0 ] || status=1
+done
 left=$(temp_leak "$scratch")
 if [ -n "$left" ]; then
   printf 'temp leak, the tests left in TMPDIR:\n%s\n' "$left"
