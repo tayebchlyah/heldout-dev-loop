@@ -48,8 +48,8 @@ def seam(data: bytes, path: str) -> tuple[dict | None, list[dict]]:
     return (None if best is None else {"line": best[0], "name": best[2]}), found
 
 
-def violation(path: str, data: bytes, base_bytes: int | None, reason: str) -> dict:
-    found, units = seam(data, path)
+def violation(path: str, data: bytes, base_bytes: int | None, reason: str, quote: bool = True) -> dict:
+    found, units = seam(data, path) if quote else (None, [])
     hint = (f"split {path} at line {found['line']} ({found['name']}), or by responsibility" if found
             else f"split {path} by responsibility")
     return {"path": path, "reason": reason, "bytes": len(data), "base_bytes": base_bytes, "seam": found,
@@ -146,8 +146,7 @@ def run_check(top: Path, mode: str) -> dict:
         paths += names(top, "ls-files", "--others", "--exclude-standard")
     for path in sorted(set(paths)):
         backup = any(path.startswith(f"{m}.bak-") and len(path) > len(m) + 5 for m in MERGED)
-        held_out = path.startswith(ACCEPTANCE_DIR + "/")
-        if path in kit or path in MERGED or backup or held_out or any(fnmatch.fnmatchcase(path, p) for p in patterns):
+        if path in kit or path in MERGED or backup or any(fnmatch.fnmatchcase(path, p) for p in patterns):
             continue
         if mode == "committed":
             if path not in head or head[path][0] in ("120000", "160000"):
@@ -168,7 +167,8 @@ def run_check(top: Path, mode: str) -> dict:
         data = (cat(top, head[path][1]) if mode == "committed"
                 else (top / path).read_bytes())
         if not binary(data):
-            out["violations"].append(violation(path, data, None if mode == "all" else base_bytes, why))
+            out["violations"].append(violation(path, data, None if mode == "all" else base_bytes, why,
+                                                    not path.startswith(ACCEPTANCE_DIR + "/")))
     out["ok"] = not out["violations"]
     return out
 
