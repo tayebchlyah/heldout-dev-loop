@@ -11,11 +11,17 @@ from __future__ import annotations
 
 import argparse
 import codecs
+import functools
 import json
 import os
 import re
+import shutil
+import signal
+import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatchcase
 from pathlib import Path
 
@@ -142,6 +148,80 @@ def parse_trace(text: str, start_cwd: str, repo: str, tracked: set[str]) -> set[
     return seen
 
 
+TIMEOUT = 900
+HELD_OUT = "tests/acceptance/"
+STRACE = ["strace", "-f", "--seccomp-bpf", "-qq", "-y", "-s", "1000", "-e", "trace=%file,fchdir,clone,clone3,fork,vfork"]
+
+
+def test_modules(tracked: set[str]) -> list[str]:
+    return sorted(p for p in tracked if (PY_MODULE.fullmatch(p) or NODE_MODULE.fullmatch(p))
+                  and p != "tests/unit/python/test_dev_loop.py")
+
+
+def run_module(repo: Path, module: str, traced: bool) -> tuple[bool, str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp, "tmp")
+        scratch.mkdir()
+        trace = Path(tmp, "trace.txt")
+        if PY_MODULE.fullmatch(module):
+            command, cwd = [sys.executable, "-m", "unittest", Path(module).stem], repo / "tests" / "unit" / "python"
+        else:
+            command, cwd = ["node", "--test", module], repo
+        if traced:
+            command = [*STRACE, "-o", str(trace), *command]
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "KIT_ROOT", "KIT_MAIN")}
+        env.update(PYTHONPATH=f"{repo}/skill/scripts:{repo}/tests/unit/python", TMPDIR=str(scratch))
+        process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, start_new_session=True)
+        try:
+            ok = process.wait(timeout=TIMEOUT) == 0
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            return False, ""
+        return ok, trace.read_text(errors="replace") if traced and trace.exists() else ""
+
+
+def write_map(out: Path, source: str, paths: dict[str, list[str]]) -> bool:
+    if load_map(out) == paths:
+        return False
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"source": source, "paths": paths}, indent=1, sort_keys=True) + "\n")
+    return True
+
+
+def trace_command(repo: Path, out: Path, jobs: int, run: Callable[[str, bool], tuple[bool, str]]) -> int:
+    listing = subprocess.run(["git", "-C", str(repo), "ls-files", "-z"], capture_output=True, text=True, check=True)
+    tracked = {p for p in listing.stdout.split("\0") if p and p != MAP and not p.startswith(HELD_OUT)}
+    source = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True,
+                            check=True).stdout.strip()
+    top = str(repo.resolve())
+
+    def one(module: str) -> tuple[str, str, set[str]]:
+        ok, text = run(module, True)
+        start = f"{top}/tests/unit/python" if PY_MODULE.fullmatch(module) else top
+        seen = parse_trace(text, start, top, tracked)
+        if ok:
+            return module, "ok", seen
+        return module, ("trace-only" if run(module, False)[0] else "failed"), seen
+
+    with ThreadPoolExecutor(max(jobs, 1)) as pool:
+        results = list(pool.map(one, test_modules(tracked)))
+    failed = sorted(m for m, state, _ in results if state == "failed")
+    if failed:
+        print("".join(f"failed: {m}\n" for m in failed), end="", file=sys.stderr)
+        return 1
+    paths: dict[str, list[str]] = {}
+    for module, _, seen in results:
+        for path in seen:
+            paths.setdefault(path, []).append(module)
+    paths = {path: sorted(modules) for path, modules in sorted(paths.items())}
+    for module in sorted(m for m, state, _ in results if state == "trace-only"):
+        print(f"trace-only: {module}")
+    print("written" if write_map(out, source, paths) else "unchanged")
+    return 0
+
+
 def line(name: str, words: list[str] | str) -> str:
     return " ".join([name, *([words] if isinstance(words, str) else words)])
 
@@ -151,7 +231,18 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     pick = commands.add_parser("select")
     pick.add_argument("--map", type=Path, default=ROOT / MAP)
+    traced = commands.add_parser("trace")
+    traced.add_argument("--out", type=Path, default=ROOT / MAP)
+    traced.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     args = parser.parse_args(argv)
+    if args.command == "trace":
+        if shutil.which("strace") is None:
+            print("trace needs strace on PATH", file=sys.stderr)
+            return 2
+        if not sys.platform.startswith("linux"):
+            print("trace runs only on Linux", file=sys.stderr)
+            return 2
+        return trace_command(ROOT, args.out, args.jobs, functools.partial(run_module, ROOT))
     paths = [p for p in sys.stdin.read().splitlines() if p.strip()]
     py, node = select(paths, load_map(args.map), lambda p: (ROOT / p).is_file())
     print(line("py", py))
