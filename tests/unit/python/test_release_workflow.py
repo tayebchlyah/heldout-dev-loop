@@ -233,6 +233,10 @@ class ImpactMapWorkflowTests(unittest.TestCase):
                                  ReleaseWorkflowTests.step(self, shards, name).strip())
         self.assertIn("sudo apt-get install -y strace", text)
 
+    def test_the_checkout_is_main(self) -> None:
+        text, _ = self.files()
+        self.assertRegex(text, r"actions/checkout@\S+ # \S+\n\s+with:\n\s+ref: main\n")
+
     def test_trace_and_push_steps(self) -> None:
         text, _ = self.files()
         trace = ReleaseWorkflowTests.step(self, text, "Trace the suites")
