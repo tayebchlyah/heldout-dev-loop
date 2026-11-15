@@ -265,7 +265,8 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         path = self.repo / "dev-loop.json"
         path.write_text(json.dumps({**json.loads(path.read_text()), "walled_skills": ["pg-guide"]}))
         subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
-        subprocess.run(["git", "commit", "-qm", "x"], cwd=self.repo, check=True)
+        subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-qm", "x"],
+                       cwd=self.repo, check=True)
         subprocess.run(["git", "branch", "-M", "main"], cwd=self.repo, check=True)
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
