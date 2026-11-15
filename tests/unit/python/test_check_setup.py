@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import CHECKER, PACKAGE_ROOT, check_setup, checker_env, ready_config, write
+from support import CHECKER, PACKAGE_ROOT, check_setup, checker_env, git_in, ready_config, write
 
 
 class NotesCheckTests(unittest.TestCase):
@@ -265,8 +265,7 @@ class ProjectSetupCheckerTests(unittest.TestCase):
         path = self.repo / "dev-loop.json"
         path.write_text(json.dumps({**json.loads(path.read_text()), "walled_skills": ["pg-guide"]}))
         subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
-        subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-qm", "x"],
-                       cwd=self.repo, check=True)
+        git_in(self.repo, "commit", "-qm", "x")
         subprocess.run(["git", "branch", "-M", "main"], cwd=self.repo, check=True)
         result = self.run_checker("claude")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
