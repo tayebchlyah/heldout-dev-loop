@@ -1,6 +1,6 @@
 """The `## Deferred` parser of the project note: item and ruling lines, sections.
 
-Public API: `release.py` imports it and re-exports it, `release_carry.py` reaches it through `release`. Imports only `re`.
+Public API: `release.py` imports it and re-exports it, `release_carry.py` reaches it through `release`; `ci_skip.py` and `board/writer.py` import `VERSION`, the one spelling of the `x.y.z[-rc.n]` version grammar (the hooks, `repo_rules.py`, `lib/project.mjs` and `board/store.py` keep pinned copies). Imports only `re`.
 """
 
 from __future__ import annotations
@@ -15,9 +15,8 @@ SHAPE_RE = re.compile(r"(?i)^[ \t]+[-*+][\s*_+-]*ruling")
 FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 FINGERPRINT_RE = re.compile(r"Fingerprint `([^`]+)`")
 SECURITY_RE = re.compile(r"(?i)\bsecurity\b")
-VERSION_CORE = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
-RC_SUFFIX = r"-rc\.[1-9]\d*"
-VERSION = f"{VERSION_CORE}(?:{RC_SUFFIX})?"
+VERSION_CORE = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+VERSION = rf"{VERSION_CORE}(?:-rc\.[1-9][0-9]*)?"
 TAG_RE = re.compile(f"v({VERSION})")
 WAIVE_RE = re.compile(f"({TAG_RE.pattern}) +\\S")
 CHECKBOX_RE = re.compile(r"^\[[ x]\] ")

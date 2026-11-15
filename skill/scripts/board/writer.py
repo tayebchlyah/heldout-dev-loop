@@ -15,8 +15,8 @@ from types import ModuleType
 from typing import Callable
 
 import autonomy  # the scripts folder, on sys.path wherever the board package loads
+import release_rulings
 from notes_path import main_ref
-from release_rulings import VERSION
 from status import cherry, detect_feature, rebasing
 
 from . import sources, state, store
@@ -447,7 +447,7 @@ def kit_version(top: Path) -> str:
         version = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return "0.0.0"
-    return version if re.fullmatch(VERSION, version) else "0.0.0"
+    return version if re.fullmatch(release_rulings.VERSION, version) else "0.0.0"
 
 
 def board_text(kit: str) -> str:

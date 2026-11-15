@@ -285,9 +285,10 @@ class CliffBodyTests(unittest.TestCase):
 
 
 class VersionGrammarTests(unittest.TestCase):
-    MARKERS = ("-rc\\.", "[1-9]\\d*)\\.", "[1-9][0-9]*)\\.")
+    MARKERS = ("-rc\\.", "[1-9]\\d*)\\.", "[1-9][0-9]*)\\.", "\\d+)\\.(\\d+", "\\d+\\.\\d+\\.\\d+", "[0-9]+\\.")
     SPELLED = {"skill/scripts/release_rulings.py": 2, "claude/hooks/git-guard.py": 1, "codex/hooks/git-guard.py": 1,
                "scripts/repo_rules.py": 2, "lib/project.mjs": 1, "skill/scripts/board/store.py": 1}
+    OTHER_GRAMMARS = {"skill/scripts/verify.py": 1, "skill/scripts/mutation/setup.py": 3, "codex/hooks/sandbox.py": 1}
     SAMPLES = ["0.0.0", "1.2.3", "10.20.30", "1.2.3-rc.1", "1.2.3-rc.12", "01.2.3", "1.02.3", "1.2.03", "1.2.3-rc.0",
                "1.2.3-rc.01", "1.2.3-rc.", "1.2", "1.2.3.4", "1.2.3-beta", "v1.2.3", ""]
 
@@ -300,9 +301,14 @@ class VersionGrammarTests(unittest.TestCase):
                              if any(marker in line for marker in self.MARKERS)]
                     if lines:
                         found[str(path.relative_to(ROOT))] = len(lines)
-        self.assertEqual(found, self.SPELLED)
+        self.assertEqual(found, {**self.SPELLED, **self.OTHER_GRAMMARS})
 
-    def test_the_copies_that_cannot_import_it_agree_with_it(self) -> None:
+    def test_the_shared_grammar_is_ascii_only(self) -> None:
+        import release_rulings
+        self.assertIsNone(re.fullmatch(release_rulings.VERSION, "1.2.1٣"))
+        self.assertIsNone(release_rulings.TAG_RE.fullmatch("v1.2.1٣"))
+
+    def test_the_pinned_copies_agree_with_it(self) -> None:
         import release_rulings
         version = re.compile(release_rulings.VERSION)
         expected = {
@@ -323,10 +329,14 @@ class VersionGrammarTests(unittest.TestCase):
         from board.store import version_key
         for sample in self.SAMPLES:
             with self.subTest(copy="skill/scripts/board/store.py version_key", sample=sample):
-                key = version_key(sample)
-                self.assertEqual(bool(key), bool(re.match(release_rulings.VERSION_CORE, sample)))
+                core, _, rc = sample.partition("-rc.")
                 if version.fullmatch(sample):
-                    self.assertEqual(key[3], 0 if "-rc." in sample else 1)
+                    expected_key = (*map(int, core.split(".")), 0, int(rc)) if rc else (*map(int, core.split(".")), 1, 0)
+                elif sample in ("01.2.3", "1.02.3", "1.2.03"):
+                    expected_key = ()
+                else:
+                    continue
+                self.assertEqual(version_key(sample), expected_key)
 
 
 if __name__ == "__main__":
