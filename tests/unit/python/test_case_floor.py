@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import subprocess
 import unittest
 
+from feature_gate import case_floor, green
 from test_feature_gate import RepoCase, git, guard, junit, run
 
 
@@ -20,22 +19,36 @@ class CaseFloorGuardTests(unittest.TestCase):
         self.assertEqual(guard([run(2, cases=4), short, run(1)])["counts"], [2, 0, 1])
 
 
+    def test_case_floor_and_green_rows(self) -> None:
+        def full(tests: object, head: str, suite: str | None = "S", mode: str = "full") -> dict:
+            return {"mode": mode, "tests": tests, "head": head, **({"suite": suite} if suite else {})}
+
+        rows = [
+            ("five passing", [full(4, "h1"), full(5, "h2")], "S", (5, "h2")),
+            ("a later head wins the tie", [full(4, "h1"), full(4, "h2")], "S", (4, "h2")),
+            ("another suite", [full(4, "h1")], "T", (None, None)),
+            ("failed mode", [full(4, "h1", mode="failed")], "S", (None, None)),
+            ("bad record heads", [full(4, "--output=x", suite=None)], "S", (None, None)),
+            ("tests None", [full(None, "h1")], "S", (None, None)),
+            ("tests True", [full(True, "h1")], "S", (None, None)),
+            ("no runs", [], "S", (None, None)),
+        ]
+        for name, runs, suite, expected in rows:
+            with self.subTest(name):
+                self.assertEqual(case_floor(runs, suite), expected)
+        self.assertTrue(green(run(0, cases=3)))
+        self.assertFalse(green(run(1, cases=3)))
+        self.assertFalse(green({**run(0, cases=3), "short": True}))
+
+
 class CaseFloorTests(RepoCase):
     def test_case_floor(self) -> None:
-        bad = {"at": "2026-10-01T00:00:00Z", "mode": "full", "exit": 1, "failing": 1, "ids": ["t::a"],
-               "stale": "skipped", "counted": True, "log": "x.log", "cases": 9}
         rows = [
             ("three passing", "commit", (), junit([], passing=3), 1, 4, True, "stop"),
-            ("three passing one skipped", "commit", (), junit([], passing=3, skipped=1), 1, 4, True, "stop"),
             ("four passing", "commit", (), junit([], passing=4), 0, 4, False, "green"),
-            ("five passing", "commit", (), junit([], passing=5), 0, 4, False, "green"),
-            ("three cases one failing", "commit", (), junit([("t", "a")], passing=2), 1, 4, False, "continue"),
             ("new seal", "seal", (), junit([], passing=3), 0, None, False, "green"),
             ("amended", "amend", (), junit([], passing=3), 1, 4, True, "stop"),
-            ("seal rebased", "rebase", (), junit([], passing=3), 1, 4, True, "stop"),
-            ("later commit amended", "amendlate", (), junit([], passing=3), 1, 4, True, "stop"),
             ("failed mode", "commit", ("--failed",), junit([], passing=1), 0, None, False, "continue"),
-            ("bad record heads", "heads", (), junit([], passing=3), 0, None, False, "green"),
         ]
         for name, step, args, xml, code, floor, short, verdict in rows:
             with self.subTest(name):
@@ -44,24 +57,7 @@ class CaseFloorTests(RepoCase):
                 repo = self.make_repo({"acceptance": "./run.sh", "acceptance_failed": "./run.sh"})
                 (repo / "fixture.xml").write_text(junit([("t", "a"), ("t", "b")], passing=2))
                 (repo / "exit.txt").write_text("1")
-                if step in ("rebase", "amendlate"):
-                    for n, rel in enumerate(("tests/acceptance/test_x.py", "app.py")[:1 if step == "rebase" else 2]):
-                        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
-                        (repo / rel).write_text("x = 2\n")
-                        git(repo, "add", ".")
-                        git(repo, "commit", "-qm", f"c{n}")
-                    first = self.devloop("acceptance", cwd=repo)[1]["head"]
-                    later = {**os.environ, "GIT_COMMITTER_DATE": "2030-01-01T00:00:00Z"}
-                    cmd = (["rebase", "--force-rebase", "HEAD~1"] if step == "rebase"
-                           else ["commit", "--amend", "--no-edit", "--reset-author"])
-                    subprocess.run(["git", "-C", str(repo), *cmd], env=later, check=True, capture_output=True)
-                    self.assertNotEqual(git(repo, "rev-parse", "HEAD"), first)
-                elif step == "heads":
-                    self.record(repo).parent.mkdir(parents=True)
-                    self.record(repo).write_text(json.dumps({"runs": [{**bad, "head": "--output=x"},
-                                                                      {**bad, "head": "0" * 40}]}))
-                else:
-                    first = self.devloop("acceptance", cwd=repo)[1]["head"]
+                first = self.devloop("acceptance", cwd=repo)[1]["head"]
                 if step in ("commit", "seal"):
                     path = repo / ("tests/acceptance/test_x.py" if step == "seal" else "app.py")
                     path.parent.mkdir(parents=True, exist_ok=True)

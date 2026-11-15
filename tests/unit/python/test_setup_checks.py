@@ -329,6 +329,19 @@ class AgentShellCheckTests(unittest.TestCase):
             self.assertNotIn("noclobber", head)
 
 
+class HarnessMinimumVersionTests(unittest.TestCase):
+    def test_claude_and_codex_minimum_rows(self) -> None:
+        rows = [("claude", "2.1.294", False), ("claude", "2.1.295", True), ("claude", "2.2.0", True),
+                ("claude", "2.1.309", True), ("claude", "1.9.999", False), ("codex", "0.161.0", False),
+                ("codex", "0.164.0", False), ("codex", "0.164.9", False), ("codex", "0.165.0", False),
+                ("codex", "0.165.9", False), ("codex", "0.166.0", True), ("codex", "0.200.0", True),
+                ("codex", "0.99.9", False)]
+        for exe, found, ok in rows:
+            with self.subTest(exe=exe, found=found), mock.patch.object(
+                    check_setup, "read_version", return_value=(tuple(map(int, found.split("."))), [])):
+                self.assertEqual(check_setup.check_version(exe) == [], ok)
+
+
 class GitLazyFetchVersionTests(unittest.TestCase):
     def test_versions_that_honour_no_lazy_fetch(self) -> None:
         rows = [("2.45.0", True), ("2.56.0", True), ("3.0.0", True), ("2.39.4", True), ("2.39.5", True), ("2.40.2", True), ("2.41.1", True),
