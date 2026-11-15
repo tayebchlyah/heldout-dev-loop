@@ -263,7 +263,6 @@ class CiSkipTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("error", out)
 
-
     def inert_base(self, globs: object, **files: str | None) -> dict[str, str | None]:
         return {"dev-loop.json": config(inert_paths=globs), "assets/logo.svg": "a\n", **files}
 
@@ -288,10 +287,15 @@ class CiSkipTests(unittest.TestCase):
                 self.assertEqual(code, 1)
                 self.assertIn("error", out)
 
-    def test_bad_inert_paths_only_at_the_head_blocks(self) -> None:
+    def test_bad_inert_paths_only_at_the_head_is_an_error(self) -> None:
         code, out = self.check({"dev-loop.json": config(inert_paths="assets/*"), "assets/logo.svg": "b\n"},
                                self.inert_base(["assets/*"]))
-        self.assertEqual((code, out["skip"], out["blocking"]), (0, False, ["dev-loop.json"]))
+        self.assertEqual(code, 1)
+        self.assertIn("error", out)
+
+    def test_inert_entry_with_surrounding_spaces_matches_stripped(self) -> None:
+        _, out = self.check({"assets/logo.svg": "b\n"}, self.inert_base([" assets/* "]))
+        self.assertEqual((out["skip"], out["kind"]), (True, "inert"))
 
     def test_unreadable_config_at_the_merge_base_has_no_inert_path(self) -> None:
         for text in ("{", "[]"):

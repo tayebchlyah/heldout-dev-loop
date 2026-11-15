@@ -53,7 +53,7 @@ console.log(JSON.stringify(Object.fromEntries(fragments.map((action) => {
 
 class ConfigError(Exception):
     """`version_files` in `dev-loop.json` at the head is not a list of repo-relative paths, or `inert_paths` at the
-    merge base is not a list of non-empty strings, none ending in `/`."""
+    merge base or the head is not a list of non-empty strings, none ending in `/`."""
 
 
 def changed(repo: Path, base: str, head: str) -> list[str]:
@@ -73,9 +73,9 @@ def version_files(repo: Path, head: str) -> list[str]:
 
 def inert_globs(repo: Path, rev: str) -> list[str]:
     globs = (read_config(repo, rev) or {}).get("inert_paths", [])
-    if not (isinstance(globs, list) and all(isinstance(g, str) and g.strip() and not g.endswith("/") for g in globs)):
+    if not (isinstance(globs, list) and all(isinstance(g, str) and g.strip() and not g.strip().endswith("/") for g in globs)):
         raise ConfigError("inert_paths is not a list of non-empty strings, none ending in /")
-    return globs
+    return [g.strip() for g in globs]
 
 
 def is_inert(path: str, globs: list[str]) -> bool:
@@ -222,6 +222,7 @@ def cmd_ci_skip(args: argparse.Namespace) -> int:
     base, head = shas
     paths = changed(repo, base, head)
     try:
+        inert_globs(repo, head)
         block = blocking(repo, base, head, paths, inert=True)
         skip = bool(paths) and not block
         kind = None
