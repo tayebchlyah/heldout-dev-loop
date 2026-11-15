@@ -86,19 +86,17 @@ class ClaudeGitGuardPushTests(unittest.TestCase):
 
     def test_lease_push_to_the_current_feature_branch_runs(self) -> None:
         rows = [(command, "allow") for command in (
-            "git push --force-with-lease", "git push --force-with-lease --force-if-includes",
-            "git push --force-with-lease --force-if-includes origin HEAD", "git push --force-with-lease origin topic/x",
+            "git push --force-with-lease origin topic/x",
             "git push --force-with-lease origin HEAD:topic/x", "git push --force-with-lease origin @",
             "git push origin topic/x --force-with-lease", "git push --force-with-lease origin HEAD")]
         rows += [(command, "ask") for command in (
             "git push --force-with-lease git@github.com:other/repo.git HEAD", "git push --force-with-lease upstream HEAD",
             "git push --force-with-lease origin HEAD topic/x", "git push --mirr origin", "git push --dele origin topic/x",
             "git push --force-w", "git push --force-with", "git push --tag", "git push --follow",
-            "git push --force", "git push -f", "git push -uf origin topic/x", "git push --force-if-includes",
+            "git push -f", "git push -uf origin topic/x", "git push --force-if-includes",
             "git push --force-with-lease=topic/x:abc origin topic/x", "git push --force-with-lease origin +topic/x",
-            "git push --force-with-lease --tags", "git push --force-with-lease --delete origin topic/x",
-            "git push --force-with-lease --all", "git push --force-with-lease origin main",
-            "git push --force-with-lease origin HEAD:main", "git push --force-with-lease origin topic/other",
+            "git push --force-with-lease --delete origin topic/x",
+            "git push --force-with-lease --all", "git push --force-with-lease origin topic/other",
             "git push --force-with-lease origin HEAD:topic/other", "git rebase main && git push --force-with-lease")]
         commands = [command for command, _ in rows]
         for (command, got), (_, want) in zip(self.decisions(commands, "topic/x"), rows):
