@@ -51,7 +51,7 @@ Stage 4 planner: custom agent `planner` (`model_reasoning_effort = "high"`), wit
 
 ## Feature gate
 
-Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
+Six phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` = HEAD (SKILL.md Stage 6).
 
 1. **Review wave, once.** First the second review (SKILL.md Stage 6), a background run watched to its end: `python3 .agents/skills/dev-loop/scripts/devloop.py logged --name second-review -- python3 .agents/skills/dev-loop/scripts/devloop.py second-review --harness codex` (reviewer `claude`). Then three reviewers, in parallel where the session allows it, otherwise in sequence. Each works in the feature worktree on `origin/main...GATE_SHA`: whole branch, report only, and returns its table (SKILL.md Stage 6 table contract). The reviewers are read-only: the controller saves each table with `python3 .agents/skills/dev-loop/scripts/devloop.py review-save --reviewer <reviewer>` from the feature worktree, table on stdin, to `<git-dir>/dev-loop/review/<reviewer>.md` (`<reviewer>`: `final-reviewer`, `code-review`, `security-reviewer`).
    - Custom read-only agent `final_reviewer`. In the CLI, Codex `/review` is the interactive equivalent.
@@ -63,6 +63,7 @@ Five phases, in order. First rebase onto `origin/main`, fresh stack, `GATE_SHA` 
 3. **Fix wave.** A new custom agent `implementer` per round, one file cluster at a time, for the Act On list: every defect, plus optional items the lead picks. Each passes `scripts/devloop.py gate --summary`: the process exits 0 (the project gate, `seal` and `size`).
 4. **Drive.** SKILL.md Stage 6, `references/verify.md` section Stage 6. `scripts/devloop.py drive`, then the layout check: one fresh generic worker with the `drive.json` path. After the final full acceptance run: the closing drive (`references/verify.md` Stage 6 step 7).
 5. **Acceptance loop.** SKILL.md Stage 6. Spec `acceptance: none`: skipped. `python3 .agents/skills/dev-loop/scripts/devloop.py logged --name acceptance-run -- python3 .agents/skills/dev-loop/scripts/devloop.py acceptance [--failed]`, a background run watched to its end; read `guard` and `stale` from the JSON. `commands.acceptance` absent, or changed by the branch: a stop item (SKILL.md Stage 6), no other runner.
+6. **Oracle copies.** Controller, Tracks M and L, after the acceptance loop and the closing drive: the oracle copy step, `references/tests.md` section Oracle copy step. One `python3 .agents/skills/dev-loop/scripts/devloop.py decide --kind decision` row per copy, then one fresh custom agent `implementer`, its brief the unit test ids only. Spec `acceptance: none`, or no copy: no `implementer`.
 
 Do not substitute Claude-only review, security, or verification slash commands in the Codex branch. Do not invoke `superpowers:verification-before-completion`. The Stop gate owns routine verification.
 
