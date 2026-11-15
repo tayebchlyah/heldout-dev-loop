@@ -112,7 +112,6 @@ class CaptureTests(unittest.TestCase):
         return [argv[i + 1] for i, a in enumerate(argv) if a == "--attach"]
 
     def test_same_second_captures_get_own_folders(self) -> None:
-        sys.path.insert(0, str(DEVLOOP.parent))
         import capture
         first = capture.new_capture_folder(self.evidence, "20260101T000000Z")
         second = capture.new_capture_folder(self.evidence, "20260101T000000Z")

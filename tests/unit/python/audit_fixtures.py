@@ -13,7 +13,7 @@ from typing import Callable
 
 from support import ROOT
 
-from audit import common  # noqa: E402
+from audit import common
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
