@@ -213,10 +213,11 @@ class ImpactMapWorkflowTests(unittest.TestCase):
 
     def test_triggers_permissions_and_limits(self) -> None:
         text, _ = self.files()
-        for needle in ('cron: "0 5 * * 1"', "workflow_dispatch:", "contents: write", "issues: write",
-                       "timeout-minutes: 120", "group: impact-map", 'DEVLOOP_REQUIRE_DOCKER: "1"'):
+        for needle in ('cron: "0 5 * * 1"', "workflow_dispatch:", "contents: write", "pull-requests: write",
+                       "actions: write", "timeout-minutes: 120", "group: impact-map", 'DEVLOOP_REQUIRE_DOCKER: "1"'):
             with self.subTest(needle=needle):
                 self.assertIn(needle, text)
+        self.assertNotIn("issues: write", text)
 
     def test_installs_what_the_shards_install(self) -> None:
         text, ci = self.files()
@@ -237,9 +238,17 @@ class ImpactMapWorkflowTests(unittest.TestCase):
         text, _ = self.files()
         self.assertRegex(text, r"actions/checkout@\S+ # \S+\n\s+with:\n\s+ref: main\n")
 
-    def test_the_issue_lookup_is_the_bots_own(self) -> None:
-        text, _ = self.files()
-        self.assertRegex(text, r"gh issue list [^\n]*--app github-actions")
+    def test_the_refresh_opens_a_pr_and_starts_ci(self) -> None:
+        text, ci = self.files()
+        push = ReleaseWorkflowTests.step(self, text, "Push the new map")
+        steps = ("git push --force origin chore/impact-map", "gh pr list --head chore/impact-map --state open",
+                 "gh pr create --base main --head chore/impact-map", "gh workflow run ci.yml --ref chore/impact-map")
+        for needle in steps:
+            with self.subTest(needle=needle):
+                self.assertIn(needle, push)
+        self.assertEqual([push.index(s) for s in steps], sorted(push.index(s) for s in steps))
+        self.assertNotIn("gh issue", text)
+        self.assertRegex(ci, r"\non:\n(  \S.*\n(    .*\n)*)*  workflow_dispatch:\n")
 
     def test_trace_and_push_steps(self) -> None:
         text, _ = self.files()
@@ -248,7 +257,7 @@ class ImpactMapWorkflowTests(unittest.TestCase):
         push = ReleaseWorkflowTests.step(self, text, "Push the new map")
         for needle in ("git status --porcelain -- tests/impact-map.json", "git switch -c chore/impact-map",
                        "🔧(tests) #327: Refresh the impact map", "git push --force origin chore/impact-map",
-                       "Impact map refresh", "compare/main...chore/impact-map", "GH_TOKEN: ${{ github.token }}"):
+                       "GH_TOKEN: ${{ github.token }}"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, push)
         self.assertLess(text.index(trace), text.index(push))
