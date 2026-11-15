@@ -32,7 +32,7 @@ The rest of the loop keeps the agent honest in the same way: three reviewers rea
 - **3 Acceptance tests**: `spec-tester` writes the held-out suite from the spec and seals it.
 - **4 Plan**: a planner subagent writes a plan of small tasks.
 - **5 Build**: test-first, task by task, in the feature worktree.
-- **6 Feature gate**: review wave, triage, fix wave, a drive of the real app, the acceptance loop.
+- **6 Feature gate**: review wave, triage, fix wave, a drive of the real app, the acceptance loop, the oracle copy step.
 - **7 Ship**: push, pull request, CI, then a merge or a wait for you.
 
 ## Quick start
@@ -83,6 +83,7 @@ Stage 6 runs once per feature, at one commit:
 3. **Fix wave**: one fresh implementer per group of files.
 4. **Drive**: in a project with a UI, the verify skill drives the changed routes in Chromium and keeps screenshots.
 5. **Acceptance loop**: the held-out suite runs, and each failure is classified as product, test or environment before the next round. A round must reduce the failing count, or the loop stops.
+6. **Oracle copies**: in Tracks M and L, the unit tests that repeat a held-out test are removed by one fresh implementer, from a brief that names only the unit test ids.
 
 ### The autonomy grant
 
