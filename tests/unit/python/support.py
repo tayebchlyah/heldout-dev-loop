@@ -260,7 +260,6 @@ class GuardRepo:
 
     def assert_refused(self, commands: list[str], *parts: str, env: dict[str, str] | None = None,
                        every_harness: bool = False) -> None:
-        """Claude main asks with every part in the reason, a Claude subagent is denied, Codex denies both."""
         wired, rest = self.split("refused", commands, every_harness)
         for command in wired:
             for harness, extra, (decision, reason, _) in self.runs(command, env):
@@ -301,6 +300,7 @@ class GuardRepo:
     def main_runs(self, commands: list[str], env: dict[str, str] | None) -> list[tuple[str, tuple[str, str, float]]]:
         with ThreadPoolExecutor(8) as pool:
             return list(zip(commands, pool.map(lambda command: self.guard("claude", command, env), commands)))
+
 
 MODULE_BASE = """LIMIT = 1
 
