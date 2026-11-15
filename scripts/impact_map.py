@@ -165,6 +165,7 @@ def parse_trace(text: str, start_cwd: str, repo: str, tracked: set[str]) -> set[
 
 
 TIMEOUT = 900
+TAIL = 40
 HELD_OUT = "tests/acceptance/"
 STRACE = ["strace", "-f", "--seccomp-bpf", "-qq", "-y", "-s", "1000", "-e", "trace=%file,fchdir,clone,clone3,fork,vfork"]
 
@@ -178,7 +179,7 @@ def run_module(repo: Path, module: str, traced: bool) -> tuple[bool, str]:
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp, "tmp")
         scratch.mkdir()
-        trace = Path(tmp, "trace.txt")
+        trace, output = Path(tmp, "trace.txt"), Path(tmp, "output.txt")
         if PY_MODULE.fullmatch(module):
             command, cwd = [sys.executable, "-m", "unittest", Path(module).stem], repo / "tests" / "unit" / "python"
         else:
@@ -187,15 +188,22 @@ def run_module(repo: Path, module: str, traced: bool) -> tuple[bool, str]:
             command = [*STRACE, "-o", str(trace), *command]
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "KIT_ROOT", "KIT_MAIN")}
         env.update(PYTHONPATH=f"{repo}/skill/scripts:{repo}/tests/unit/python", TMPDIR=str(scratch))
-        process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, start_new_session=True)
-        try:
-            ok = process.wait(timeout=TIMEOUT) == 0
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
-            ok = False
-        return ok, trace.read_text(errors="replace") if traced and trace.exists() else ""
+        timed_out = False
+        with output.open("wb") as sink:
+            process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=sink,
+                                       stderr=subprocess.STDOUT, start_new_session=True)
+            try:
+                ok = process.wait(timeout=TIMEOUT) == 0
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                ok, timed_out = False, True
+        if traced:
+            return ok, trace.read_text(errors="replace") if trace.exists() else ""
+        if ok:
+            return ok, ""
+        tail = output.read_text(errors="replace").splitlines()[-TAIL:]
+        return ok, "\n".join([*tail, f"timeout: {TIMEOUT} s"] if timed_out else tail)
 
 
 def write_map(out: Path, source: str, paths: dict[str, list[str]]) -> bool:
@@ -219,13 +227,17 @@ def trace_command(repo: Path, out: Path, jobs: int, run: Callable[[str, bool], t
         seen = parse_trace(text, start, top, tracked)
         if ok:
             return module, "ok", seen
-        return module, ("trace-only" if run(module, False)[0] else "failed"), seen
+        ok, tail = run(module, False)
+        tails[module] = tail
+        return module, ("trace-only" if ok else "failed"), seen
 
+    tails: dict[str, str] = {}
     with ThreadPoolExecutor(max(jobs, 1)) as pool:
         results = list(pool.map(one, test_modules(tracked)))
     failed = sorted(m for m, state, _ in results if state == "failed")
     if failed:
-        print("".join(f"failed: {m}\n" for m in failed), end="", file=sys.stderr)
+        print("".join(f"failed: {m}\n" + "".join(f"  {line}\n" for line in tails[m].splitlines()) for m in failed),
+              end="", file=sys.stderr)
         return 1
     paths: dict[str, list[str]] = {}
     for module, _, seen in results:

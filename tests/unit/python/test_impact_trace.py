@@ -164,6 +164,12 @@ class TraceCommandTests(unittest.TestCase):
                 self.assertEqual(self.out.read_text() if self.out.exists() else None, existing)
                 self.assertIn(("tests/unit/python/test_b.py", False), self.calls)
 
+    def test_red_module_prints_its_output_tail(self) -> None:
+        red = {("tests/unit/python/test_b.py", True): (False, ""),
+               ("tests/unit/python/test_b.py", False): (False, "ERROR: test_x\nFAILED (errors=1)")}
+        code, _, err = self.trace(red)
+        self.assertEqual((code, err), (1, "failed: tests/unit/python/test_b.py\n  ERROR: test_x\n  FAILED (errors=1)\n"))
+
     def test_trace_only_failure_keeps_its_reads(self) -> None:
         code, out, _ = self.trace({("tests/unit/python/test_b.py", True): (False, reads(self.root, "a.py")),
                                    ("tests/unit/python/test_b.py", False): (True, "")})
@@ -213,7 +219,16 @@ class RunModuleTests(unittest.TestCase):
         self.assertEqual(seen["pythonpath"], f"{self.root}/skill/scripts:{self.root}/tests/unit/python")
         red = self.module("tests/unit/python/test_red.py",
                           "import unittest\nclass T(unittest.TestCase):\n    def test_red(self):\n        self.fail()\n")
-        self.assertEqual(impact_map.run_module(self.root, red, False), (False, ""))
+        ok, tail = impact_map.run_module(self.root, red, False)
+        self.assertFalse(ok)
+        self.assertEqual(tail.splitlines()[-1], "FAILED (failures=1)")
+        self.assertIn("AssertionError", tail)
+        noisy = self.module("tests/unit/python/test_noisy.py", (
+            "import sys, unittest\nclass T(unittest.TestCase):\n    def test_red(self):\n"
+            "        print('\\n'.join(f'line {i}' for i in range(100)), file=sys.stderr)\n        self.fail()\n"))
+        tail = impact_map.run_module(self.root, noisy, False)[1].splitlines()
+        self.assertEqual((len(tail), tail[-1]), (impact_map.TAIL, "FAILED (failures=1)"))
+        self.assertNotIn("line 0", tail)
         ok = self.module("tests/unit/node/ok.test.mjs", "import test from 'node:test';\ntest('ok', () => {});\n")
         self.assertEqual(impact_map.run_module(self.root, ok, False), (True, ""))
 
@@ -222,7 +237,7 @@ class RunModuleTests(unittest.TestCase):
                            "class T(unittest.TestCase):\n    def test_sleep(self):\n        time.sleep(30)\n")
         start = time.monotonic()
         with mock.patch.object(impact_map, "TIMEOUT", 1):
-            self.assertEqual(impact_map.run_module(self.root, slow, False), (False, ""))
+            self.assertEqual(impact_map.run_module(self.root, slow, False), (False, "timeout: 1 s"))
         self.assertLess(time.monotonic() - start, 10)
 
     def test_run_module_timeout_keeps_the_partial_trace(self) -> None:
