@@ -37,7 +37,7 @@ for _key, _value in (("GIT_AUTHOR_NAME", "dev-loop test"), ("GIT_AUTHOR_EMAIL", 
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT, SKILL_ROOT  # noqa: E402
+from support import ROOT, SKILL_ROOT, copy_sandbox  # noqa: E402
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 
@@ -100,17 +100,7 @@ class Sandbox(unittest.TestCase):
         self.notes = self.root / "notes"
         (self.notes / "specs").mkdir(parents=True)
         (self.notes / "plans").mkdir()
-        self.origin = self.root / "origin.git"
-        git(self.root, "init", "-q", "--bare", str(self.origin))
-        self.repo = self.root / "repo"
-        self.repo.mkdir()
-        git(self.repo, "init", "-q")
-        put(self.repo / "GLOSSARY.md", "# Glossary\n")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "base")
-        git(self.repo, "remote", "add", "origin", str(self.origin))
-        git(self.repo, "push", "-q", "origin", "main")
-        git(self.repo, "fetch", "-q", "origin")
+        self.repo, self.origin = copy_sandbox(self.root)
         self.home = self.root / "home"
         self.home.mkdir()
         self.env = {**os.environ, "HOME": str(self.home), "DEV_LOOP_NOTES": str(self.notes)}
@@ -127,6 +117,20 @@ class Sandbox(unittest.TestCase):
         put(cwd / path, text)
         git(cwd, "add", "-A")
         git(cwd, "commit", "-q", "-m", message or path)
+
+
+class SandboxStateTests(Sandbox):
+    def test_a_sandbox_starts_clean_on_main_with_its_own_origin(self) -> None:
+        self.assertEqual(self.origin, self.root / "origin.git")
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+        self.assertEqual(git(self.repo, "branch", "--show-current"), "main\n")
+        self.assertEqual(git(self.repo, "log", "--format=%s"), "base\n")
+        self.assertEqual(git(self.repo, "remote", "get-url", "origin"), f"{self.origin}\n")
+        self.assertEqual(git(self.repo, "rev-parse", "origin/main"), git(self.repo, "rev-parse", "HEAD"))
+        self.assertTrue((self.notes / "specs").is_dir())
+        self.assertTrue((self.notes / "plans").is_dir())
+        self.assertTrue(self.home.is_dir())
+        self.assertEqual(self.env["DEV_LOOP_NOTES"], str(self.notes))
 
 
 class LoggedTests(Sandbox):
