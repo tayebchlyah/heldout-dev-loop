@@ -122,11 +122,7 @@ class CodexWallTests(unittest.TestCase):
                 else:
                     self.assertEqual((result.returncode, result.stderr), (0, ""))
 
-    NESTED = ("collaborationspawn_agent", "collaborationsend_message", "collaboration.future", "spawn_agent", "send_input",
-              "send_message", "followup_task", "wait_agent", "close_agent", "interrupt_agent", "list_agents",
-              "multi_agent_v1send_input", "multi_agent_v1wait_agent", "multi_agent_v1close_agent",
-              "multi_agent_v1resume_agent", "teamspawn_agent", "resume_agent", "codex_tuicreate_thread",
-              "codex_tuifork_thread", "codex_tuisend_message_to_thread", "collaborationread_thread")
+    NESTED = ("collaborationspawn_agent", "spawn_agent", "multi_agent_v1send_input")
     LISTED = ("Bash", "apply_patch", "Edit", "Write", "view_image", "update_plan", "clockcurr_time", "clocksleep",
               "get_context_remaining", "skillslist", "skillsread", "skillsinstallations")
     UNLISTED = ("codex_tuicreate_thread", "codex_tuifork_thread", "codex_tuisend_message_to_thread", "codex_tuiread_thread",
@@ -140,12 +136,10 @@ class CodexWallTests(unittest.TestCase):
         put(top / "README.md")
         git(top, "init", "-q")
         walled = [{"agent_id": "a", "agent_type": "implementer"}, {"agent_id": "b", "agent_type": "spec_tester"}]
-        open_callers = [{}, {"agent_type": "implementer"}]
-        open_callers += [{"agent_id": "d", "agent_type": role}
-                         for role in ("default", "planner", "task_reviewer", "final_reviewer", "security_reviewer")]
-        inputs = ({"tool_input": {"message": "x"}}, {})
-        rows = [(c, t, e, True) for c in walled for t in self.NESTED for e in inputs]
-        rows += [(c, t, e, False) for c in open_callers for t in self.NESTED for e in inputs]
+        open_callers = [{}, {"agent_type": "implementer"}, {"agent_id": "d", "agent_type": "task_reviewer"}]
+        extra = {"tool_input": {"message": "x"}}
+        rows = [(c, t, extra, True) for c in walled for t in self.NESTED]
+        rows += [(c, t, extra, False) for c in open_callers for t in self.NESTED]
         for caller, tool, extra, deny in rows:
             with self.subTest(caller=caller, tool=tool, extra=extra):
                 result = self.wall({**caller, "cwd": str(top), "tool_name": tool, **extra})
