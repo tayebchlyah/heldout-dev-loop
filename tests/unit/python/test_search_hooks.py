@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from test_devloop import git
@@ -33,23 +34,25 @@ class SearchHookTests(unittest.TestCase):
         self.tmp = Path(tmp.name)
 
     def check(self, rows: list[tuple]) -> None:
-        for walls, caller, tool, tool_input, cwd, env, outcome in rows:
-            for wall in walls:
-                payload = {**caller, "tool_name": tool, "tool_input": tool_input, **({"cwd": str(cwd)} if cwd else {})}
-                with self.subTest(wall=wall[1], caller=caller.get("agent_type", "main"), tool_input=tool_input,
-                                  cwd=str(cwd), outcome=outcome):
-                    result = run_wall(wall, payload, env)
-                    if outcome == "ok":
-                        self.assertEqual((result.returncode, result.stderr), (0, ""))
-                    elif outcome == "d8":
-                        self.assertEqual((result.returncode, result.stderr), (2, D8 + "\n"))
-                    elif outcome == "guard":
-                        self.assertEqual((result.returncode, result.stderr), (2, GUARD))
-                    elif outcome == "name":
-                        self.assertEqual(result.returncode, 2, result.stderr)
-                        self.assertNotIn(D8, result.stderr)
-                    else:
-                        self.assertNotIn(D8, result.stderr)
+        calls = [(wall, {**caller, "tool_name": tool, "tool_input": tool_input, **({"cwd": str(cwd)} if cwd else {})},
+                  env, caller, tool_input, cwd, outcome)
+                 for walls, caller, tool, tool_input, cwd, env, outcome in rows for wall in walls]
+        with ThreadPoolExecutor(8) as pool:
+            results = list(pool.map(lambda call: run_wall(*call[:3]), calls))
+        for (wall, _, _, caller, tool_input, cwd, outcome), result in zip(calls, results):
+            with self.subTest(wall=wall[1], caller=caller.get("agent_type", "main"), tool_input=tool_input,
+                              cwd=str(cwd), outcome=outcome):
+                if outcome == "ok":
+                    self.assertEqual((result.returncode, result.stderr), (0, ""))
+                elif outcome == "d8":
+                    self.assertEqual((result.returncode, result.stderr), (2, D8 + "\n"))
+                elif outcome == "guard":
+                    self.assertEqual((result.returncode, result.stderr), (2, GUARD))
+                elif outcome == "name":
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertNotIn(D8, result.stderr)
+                else:
+                    self.assertNotIn(D8, result.stderr)
 
     def test_search_rule_through_each_wall(self) -> None:
         top = search_repo(self.tmp / "repo")
@@ -58,40 +61,18 @@ class SearchHookTests(unittest.TestCase):
             walls, caller, "Bash", {"command": command}, top, home, outcome)
         tool = lambda name, tool_input, outcome, caller=IMPLEMENTER, walls=CLAUDE: (  # noqa: E731
             walls, caller, name, tool_input, top, home, outcome)
-        rows = [bash(both, c, "d8") for c in (
-            "grep -rn make .", "grep -Rn make", "grep -rn make tests", "egrep -r make .", "rgrep make .", "rg -n make",
-            "rg make .", "rg --files", "git grep -n make", "git -C tests grep make", "find . -name '*.py'",
-            "find tests -name x", "find", "cd tests && grep -rn make .", "grep -rn make ..", "grep -rn make ~")]
-        rows += [tool("Grep", {"pattern": "make"}, "d8"), tool("Grep", {"pattern": "make", "path": "TESTS"}, "d8"),
-                 tool("Glob", {"pattern": "**/*.py"}, "d8"), tool("Glob", {"pattern": "tests/{unit,acceptance}/*.py"}, "d8")]
+        rows = [bash(both, "grep -rn make .", "d8"), bash(both, "rg make src", "ok"),
+                tool("Grep", {"pattern": "make"}, "d8"), tool("Glob", {"pattern": "src/**/*.py"}, "ok"),
+                bash(both, f"rg make {HELD}", "name")]
         rows += [bash(both, c, "ok") for c in (
-            "grep -rn make src tests/unit", "rg make src", "git grep make -- src", "find src -name x",
-            "cd src && grep -rn make .", "grep -n make src/app.py", "grep make README.md",
-            f"grep -rn make {HELD}/../../src", "grep -rn --exclude-dir=acceptance make .",
-            "grep -rn --exclude-dir acceptance make tests", f"rg -g '!{HELD}/**' make", "rg --glob='!**/acceptance/**' make .",
-            f"git grep make -- . ':!{HELD}'", f"git grep make -- ':(exclude){HELD}'",
-            f"find . -path ./{HELD} -prune -o -name '*.py' -print", f"find . -not -path '*/{HELD}/*' -name '*.py'")]
-        rows += [tool("Grep", {"pattern": "make", "path": "src"}, "ok"),
-                 tool("Glob", {"pattern": "src/**/*.py"}, "ok"),
-                 tool("Glob", {"pattern": "**/*.py", "path": "tests/unit"}, "ok"),
-                 tool("Glob", {"pattern": "*.md"}, "ok"),
-                 tool("Grep", {"pattern": "make", "path": ".", "glob": f"!{HELD}/**"}, "ok")]
-        rows += [bash(both, c, "d8") for c in (
-            f"grep -rn --exclude-dir={HELD} make .", f"grep -rn make . | grep -v {HELD}", "grep -rn --include='*.py' make .",
-            "rg -g '*.py' make", "rg -t py make", "find . -path ./tests -o -name x", "find . -name acceptance -o -name '*.py'")]
-        rows += [tool("Grep", {"pattern": "make", "path": ".", "glob": "*.py"}, "d8")]
-        rows += [bash(both, f"cat {HELD}/test_x.py", "name"), bash(both, f"rg make {HELD}", "name")]
-        rows += [bash(CLAUDE[:1], "grep -rn make .", "d8", {"agent_id": "a", "agent_type": "general-purpose"}),
-                 bash(CODEX, "grep -rn make .", "d8", {"agent_id": "a", "agent_type": "task-reviewer"})]
-        rows += [tool("Grep", {"pattern": "make"}, "ok", {}, CLAUDE[:1]), tool("Glob", {"pattern": "**/*.py"}, "ok", {}, CLAUDE[:1]),
-                 bash(CLAUDE[:1], "grep -rn make .", "ok", {}), bash(CODEX, "rg make", "ok", {})]
+            f"rg -g '!{HELD}/**' make", "rg --glob='!**/acceptance/**' make .", f"git grep make -- . ':!{HELD}'",
+            f"git grep make -- ':(exclude){HELD}'", f"find . -path ./{HELD} -prune -o -name '*.py' -print",
+            f"find . -not -path '*/{HELD}/*' -name '*.py'")]
+        rows += [bash(both, c, "d8") for c in (f"grep -rn --exclude-dir={HELD} make .", f"grep -rn make . | grep -v {HELD}")]
+        rows += [bash(CLAUDE[:1], "grep -rn make .", "ok", {}), bash(CODEX, "rg make", "ok", {})]
         rows += [bash(CLAUDE[:1], "grep -rn make .", "no-d8", {"agent_id": "a", "agent_type": "spec-tester"}),
-                 tool("Grep", {"pattern": "make"}, "no-d8", {"agent_id": "a", "agent_type": "spec-tester"}, CLAUDE[:1]),
                  bash(CODEX, "grep -rn make .", "no-d8", {"agent_id": "a", "agent_type": "spec_tester"})]
-        rows += [tool("Monitor", {"command": c}, "d8") for c in ("grep -rn make .", "rg -n make", "cd tests && grep -rn make .")]
-        rows += [tool("Monitor", {"command": c}, "ok") for c in ("grep -rn make src", "tail -f build.log")]
-        rows += [tool("Monitor", {"command": "grep -rn make ."}, "d8", {"agent_id": "a", "agent_type": "general-purpose"}, CLAUDE[:1]),
-                 tool("Monitor", {"command": "grep -rn make ."}, "ok", {}, CLAUDE[:1])]
+        rows += [tool("Monitor", {"command": "grep -rn make ."}, "d8"), tool("Monitor", {"command": "tail -f build.log"}, "ok")]
         self.check(rows)
 
     def test_cli_location_and_failure(self) -> None:

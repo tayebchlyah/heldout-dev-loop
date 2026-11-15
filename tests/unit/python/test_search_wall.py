@@ -131,6 +131,7 @@ class SearchWallTests(unittest.TestCase):
         monitor = lambda command, **caller: payload(self.top, "Monitor", {"command": command, "description": "d"}, **caller)  # noqa: E731
         self.assertEqual(decide(monitor("grep -rn make ."), env), DENY)
         self.assertEqual(decide(monitor("rg -n make"), env), DENY)
+        self.assertEqual(decide(monitor("cd tests && grep -rn make ."), env), DENY)
         self.assertEqual(decide(monitor("grep -rn make src"), env), ALLOW)
         self.assertEqual(decide(monitor("tail -f build.log"), env), ALLOW)
         self.assertEqual(decide(monitor("grep -rn make .", agent_id="a", agent_type="spec-tester"), env), ALLOW)
