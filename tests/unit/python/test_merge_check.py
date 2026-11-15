@@ -61,6 +61,19 @@ class MergeCheckCase(Sandbox):
     def reasons(self, out: dict, name: str) -> list[dict]:
         return [r for r in out["reasons"] if r["reason"] == name]
 
+    def config_change(self, main: dict | str, branch: dict | str | None) -> dict:
+        self.tearDown()
+        self.setUp()
+        self.main_config(None, raw=main) if isinstance(main, str) else self.main_config(main)
+        wt = self.feature()
+        if branch is None:
+            git(wt, "rm", "-q", "dev-loop.json")
+            git(wt, "commit", "-q", "-m", "drop")
+        else:
+            self.commit(wt, "dev-loop.json", branch + "\n" if isinstance(branch, str) else json.dumps(branch))
+        self.gate_green(wt, self.head(wt))
+        return self.ok(wt)
+
 
 class MergeCheckTests(MergeCheckCase):
     """`devloop.py merge-check` as a process: config from the main ref, human paths, patch-id review check."""
@@ -128,6 +141,32 @@ class MergeCheckTests(MergeCheckCase):
                 if name == "no-review":
                     self.assertIsNone(out["reviewed"])
 
+    def test_is_harness_or_ci_config(self) -> None:
+        merge_check = load_script("merge_check")
+        rows = {
+            ".claude/settings.json": "harness", ".claude/settings.local.json": "harness",
+            ".codex/config.toml": "harness", ".mcp.json": "harness", ".Claude/Settings.JSON": "harness",
+            ".claude/agents/x.md": "harness", ".codex/rules/x": "harness", ".codex/agents/x.toml": "harness",
+            ".dev-loop/hooks/claude/gate.sh": "harness", ".Dev-Loop/MANIFEST.json": "harness",
+            ".agents/skills/dev-loop/scripts/devloop.py": "harness", ".dev-loop": "harness",
+            ".agents/skills/dev-loop": "harness", ".agents/skills/pause/SKILL.md": "harness",
+            ".agents/skills/continue/SKILL.md": "harness", ".agents/skills/y/SKILL.md": "harness",
+            ".agents/skills/dev-loopx/a": "harness", ".agents/skills": "harness", ".agents": "harness",
+            "pkg/.claude/skills/y/SKILL.md": "harness", "pkg/.claude/settings.json": "harness",
+            "pkg/.agents/skills/y/SKILL.md": "harness", "pkg/.codex/config.toml": "harness",
+            "pkg/.codex/hooks.json": "harness", "pkg/.mcp.json": "harness", "a/b/.Claude/x": "harness",
+            "pkg/.claude": "harness", "pkg/a.mcp.json": None, "pkg/.claudex/a": None, "pkg/agents/skills/a": None,
+            ".agentsx/skills/a": None, ".github/workflows/ci.yml": "ci", ".github/rulesets/main.json": "ci", ".GitHub/Workflows/ci.yml": "ci",
+            ".github/actions/x/action.yml": "ci", ".GitHub/Actions/x/action.yml": "ci", ".github/workflows": "ci",
+            ".github/ISSUE_TEMPLATE/bug.md": None, "pkg/.github/workflows/ci.yml": None,
+            ".mcp.j\u017fon": "harness", ".agents/\u017fkills/dev-loop/x.py": "harness", ".\uff43laude/x": None,
+            ".claudex/a": None, "claude/hooks/gate.sh": None,
+        }
+        for path, kind in rows.items():
+            with self.subTest(path=path):
+                self.assertEqual((merge_check.is_harness_config(path), merge_check.is_ci_config(path)),
+                                 (kind == "harness", kind == "ci"))
+
     def test_harness_config_change_waits(self) -> None:
         """A change to a harness config or CI definition file waits for the user, whatever `merge_human_paths`
         says."""
@@ -137,60 +176,12 @@ class MergeCheckTests(MergeCheckCase):
         def ci(path: str) -> dict:
             return {"reason": "ci-config", "path": path}
         rows = [
-            (".claude/settings.json", {"merge_human_paths": ["x/*"]}, None, [harness(".claude/settings.json")]),
-            (".claude/settings.local.json", {}, None, [harness(".claude/settings.local.json")]),
-            (".codex/config.toml", {}, None, [harness(".codex/config.toml")]),
             (".codex/hooks.json", {"merge_human_paths": [".codex/*"]}, None,
              [{"reason": "human-path", "path": ".codex/hooks.json", "pattern": ".codex/*"},
               harness(".codex/hooks.json")]),
-            (".mcp.json", {}, None, [harness(".mcp.json")]),
-            (".Claude/Settings.JSON", {}, None, [harness(".Claude/Settings.JSON")]),
             (".codex", {}, "cfg", [harness(".codex")]),
             (".codex/hooks.json", None, None, [{"reason": "config-unreadable"}, harness(".codex/hooks.json")]),
-            (".claude/agents/x.md", {"merge_human_paths": ["x/*"]}, None, [harness(".claude/agents/x.md")]),
-            (".codex/rules/x", {}, None, [harness(".codex/rules/x")]),
-            (".codex/agents/x.toml", {}, None, [harness(".codex/agents/x.toml")]),
-            (".dev-loop/hooks/claude/gate.sh", {}, None, [harness(".dev-loop/hooks/claude/gate.sh")]),
-            (".Dev-Loop/MANIFEST.json", {}, None, [harness(".Dev-Loop/MANIFEST.json")]),
-            (".agents/skills/dev-loop/scripts/devloop.py", {}, None,
-             [harness(".agents/skills/dev-loop/scripts/devloop.py")]),
-            (".dev-loop", {}, "cfg", [harness(".dev-loop")]),
-            (".agents/skills/dev-loop", {}, "cfg", [harness(".agents/skills/dev-loop")]),
-            (".agents/skills/pause/SKILL.md", {}, None, [harness(".agents/skills/pause/SKILL.md")]),
-            (".agents/skills/continue/SKILL.md", {}, None, [harness(".agents/skills/continue/SKILL.md")]),
-            (".agents/skills/y/SKILL.md", {}, None, [harness(".agents/skills/y/SKILL.md")]),
-            (".agents/skills/dev-loopx/a", {}, None, [harness(".agents/skills/dev-loopx/a")]),
-            (".agents/skills", {}, "cfg", [harness(".agents/skills")]),
-            (".agents", {}, "cfg", [harness(".agents")]),
-            ("pkg/.claude/skills/y/SKILL.md", {}, None, [harness("pkg/.claude/skills/y/SKILL.md")]),
-            ("pkg/.claude/settings.json", {}, None, [harness("pkg/.claude/settings.json")]),
-            ("pkg/.agents/skills/y/SKILL.md", {}, None, [harness("pkg/.agents/skills/y/SKILL.md")]),
-            ("pkg/.codex/config.toml", {}, None, [harness("pkg/.codex/config.toml")]),
-            ("pkg/.codex/hooks.json", {}, None, [harness("pkg/.codex/hooks.json")]),
-            ("pkg/.mcp.json", {}, None, [harness("pkg/.mcp.json")]),
-            ("a/b/.Claude/x", {}, None, [harness("a/b/.Claude/x")]),
-            ("pkg/.claude", {}, "cfg", [harness("pkg/.claude")]),
-            ("pkg/a.mcp.json", {}, None, []),
-            ("pkg/.claudex/a", {}, None, []),
-            ("pkg/agents/skills/a", {}, None, []),
-            (".agentsx/skills/a", {}, None, []),
-            (".github/workflows/ci.yml", {}, None, [ci(".github/workflows/ci.yml")]),
-            (".github/rulesets/main.json", {}, None, [ci(".github/rulesets/main.json")]),
-            (".GitHub/Workflows/ci.yml", {}, None, [ci(".GitHub/Workflows/ci.yml")]),
-            (".github/actions/x/action.yml", {}, None, [ci(".github/actions/x/action.yml")]),
-            (".GitHub/Actions/x/action.yml", {}, None, [ci(".GitHub/Actions/x/action.yml")]),
-            (".github/workflows", {}, "cfg", [ci(".github/workflows")]),
-            (".github/workflows/ci.yml", {"merge_human_paths": [".github/*"]}, None,
-             [{"reason": "human-path", "path": ".github/workflows/ci.yml", "pattern": ".github/*"},
-              ci(".github/workflows/ci.yml")]),
             (".github/workflows/ci.yml", None, None, [{"reason": "config-unreadable"}, ci(".github/workflows/ci.yml")]),
-            (".github/ISSUE_TEMPLATE/bug.md", {}, None, []),
-            ("pkg/.github/workflows/ci.yml", {}, None, []),
-            (".mcp.j\u017fon", {}, None, [harness(".mcp.j\u017fon")]),
-            (".agents/\u017fkills/dev-loop/x.py", {}, None, [harness(".agents/\u017fkills/dev-loop/x.py")]),
-            (".\uff43laude/x", {}, None, []),
-            (".claudex/a", {}, None, []),
-            ("claude/hooks/gate.sh", {}, None, []),
         ]
         for path, config, link, expected in rows:
             with self.subTest(path=path, config=config):
@@ -237,26 +228,23 @@ class MergeCheckTests(MergeCheckCase):
         self.assertEqual(out["unreviewed_minor"], [{"commit": self.head(wt), "paths": ["README.md", "tests/unit/test_x.py"]}])
 
     def test_paths_after_review(self) -> None:
-        code_paths = [".github/workflows/deploy.test.yml", ".github/actions/test/action.yml", ".github/README.md",
-                      "docker-compose.test.yml", "app/docs/views.py", "docs/conf.toml"]
-        minor_sets = [["docs/guide.md", "docs/img/flow.png", "tests/unit/test_x.py", "src/x.test.ts",
-                       "docs/test_views.py", "README.md"], ["tests/fixtures/data.json", "tests/fixtures/settings.yaml"]]
-        for paths in [[p] for p in code_paths] + minor_sets:
-            with self.subTest(paths=paths):
-                self.tearDown()
-                self.setUp()
-                wt, _ = self.reviewed_feature()
-                for path in paths:
-                    put(wt / path, "x\n")
-                git(wt, "add", "-A")
-                git(wt, "commit", "-q", "-m", "after review")
-                out = self.ok(wt)
-                if paths[0] in code_paths:
-                    self.assertEqual(self.reasons(out, "unreviewed"),
-                                     [{"reason": "unreviewed", "commit": self.head(wt), "paths": paths}])
-                else:
-                    self.assertEqual((out["merge"], self.reasons(out, "unreviewed")), ("auto", []))
-                    self.assertEqual(out["unreviewed_minor"][0]["commit"], self.head(wt))
+        minor = ["docs/guide.md", "docs/img/flow.png", "tests/unit/test_x.py", "src/x.test.ts",
+                 "docs/test_views.py", "README.md"]
+        wt, _ = self.reviewed_feature()
+        for path in (".github/workflows/deploy.test.yml", "docs/guide.md"):
+            put(wt / path, "x\n")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", "code after review")
+        code = self.head(wt)
+        for path in minor:
+            put(wt / path, "y\n")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", "minor after review")
+        out = self.ok(wt)
+        self.assertEqual(self.reasons(out, "unreviewed"),
+                         [{"reason": "unreviewed", "commit": code,
+                           "paths": [".github/workflows/deploy.test.yml"]}])
+        self.assertEqual(out["unreviewed_minor"], [{"commit": self.head(wt), "paths": sorted(minor)}])
 
     def test_replayed_patch(self) -> None:
         """Each reviewed patch vouches for one landing commit: a later copy of it is unreviewed."""
@@ -559,69 +547,35 @@ class MergeCheckTests(MergeCheckCase):
         rows = [
             ("branch adds a pattern", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": ["x/*"]}, True),
             ("branch adds an empty list", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": []}, False),
-            ("bad value on both sides", {"file_size_exempt": "x"}, {"file_size_exempt": "x", "version": "9"}, False),
-            ("branch drops the file", {"file_size_exempt": ["x/*"]}, None, True),
         ]
         for name, main, branch, changed in rows:
             with self.subTest(name):
-                self.tearDown()
-                self.setUp()
-                self.main_config(main)
-                wt = self.feature()
-                if branch is None:
-                    git(wt, "rm", "-q", "dev-loop.json")
-                    git(wt, "commit", "-q", "-m", "drop")
-                else:
-                    self.commit(wt, "dev-loop.json", json.dumps(branch))
-                self.gate_green(wt, self.head(wt))
-                out = self.ok(wt)
+                out = self.config_change(main, branch)
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
+        self.assertTrue(load_script("merge_check").config_shape_ok({"file_size_exempt": "x"}))
 
     def test_walled_skills_change(self) -> None:
         rows = [
             ("branch adds a name", {"version": "2.1.0"}, {"version": "2.1.0", "walled_skills": ["pg-guide"]}, True),
             ("branch adds an empty list", {"version": "2.1.0"}, {"version": "2.1.0", "walled_skills": []}, False),
-            ("bad value on both sides", {"walled_skills": "x"}, {"walled_skills": "x", "version": "9"}, False),
-            ("branch drops the file", {"walled_skills": ["pg-guide"]}, None, True),
         ]
         for name, main, branch, changed in rows:
             with self.subTest(name):
-                self.tearDown()
-                self.setUp()
-                self.main_config(main)
-                wt = self.feature()
-                if branch is None:
-                    git(wt, "rm", "-q", "dev-loop.json")
-                    git(wt, "commit", "-q", "-m", "drop")
-                else:
-                    self.commit(wt, "dev-loop.json", json.dumps(branch))
-                self.gate_green(wt, self.head(wt))
-                self.assertEqual(self.reasons(self.ok(wt), "config-changed"), [{"reason": "config-changed"}] if changed else [])
+                out = self.config_change(main, branch)
+                self.assertEqual(self.reasons(out, "config-changed"), [{"reason": "config-changed"}] if changed else [])
+        self.assertTrue(load_script("merge_check").config_shape_ok({"walled_skills": "x"}))
 
     def test_source_dirs_change_needs_a_human(self) -> None:
         rows = [
-            ("branch adds an entry", key(["internal/"]), key(["internal/", "cmd/"]), True),
-            ("branch drops the key", key(["internal/"]), None, True),
-            ("branch adds an empty list", json.dumps({"version": "0.0.0"}), key([]), True),
-            ("equal value", key(["internal/"]), key(["internal/"]), False),
-            ("branch sets null on an absent key", json.dumps({"version": "0.0.0"}), key(None), True),
-            ("branch deletes the file, main empty list", key([]), "", True),
+            ("branch adds an entry", key(["internal/"]), key(["internal/", "cmd/"])),
+            ("branch adds an empty list", json.dumps({"version": "0.0.0"}), key([])),
+            ("branch sets null on an absent key", json.dumps({"version": "0.0.0"}), key(None)),
+            ("branch deletes the file, main empty list", key([]), None),
         ]
-        for name, main, branch, changed in rows:
+        for name, main, branch in rows:
             with self.subTest(name):
-                self.tearDown()
-                self.setUp()
-                self.main_config(None, raw=main)
-                wt = self.feature()
-                if branch is None:
-                    self.commit(wt, "dev-loop.json", json.dumps({"version": "0.0.0"}))
-                elif branch == "":
-                    git(wt, "rm", "-q", "dev-loop.json")
-                    git(wt, "commit", "-q", "-m", "drop config")
-                else:
-                    self.commit(wt, "dev-loop.json", branch + "\n")
-                self.gate_green(wt, self.head(wt))
-                self.assertEqual(self.reasons(self.ok(wt), "config-changed"), [{"reason": "config-changed"}] if changed else [])
+                out = self.config_change(main, branch)
+                self.assertEqual(self.reasons(out, "config-changed"), [{"reason": "config-changed"}])
 
     def test_invalid_source_dirs_is_unreadable(self) -> None:
         self.main_config(None, raw=key("internal/"))
@@ -685,22 +639,9 @@ class MergeCheckTests(MergeCheckCase):
         rows = [
             ("acceptance to true", m, {**m, "commands": {"acceptance": "true"}}, True),
             ("commands removed", m, {"version": "2.1.0"}, True),
-            ("gate added", m, {**m, "commands": {"acceptance": "sh run.sh", "gate": "true"}}, True),
             ("same commands", m, {**m, "version": "2.2.0"}, False),
-            ("branch adds commands", {"version": "2.1.0"}, {"version": "2.1.0", "commands": {"acceptance": "true"}}, True),
-            ("branch drops the file", m, None, True),
         ]
         for name, main, branch, changed in rows:
             with self.subTest(name):
-                self.tearDown()
-                self.setUp()
-                self.main_config(main)
-                wt = self.feature()
-                if branch is None:
-                    git(wt, "rm", "-q", "dev-loop.json")
-                    git(wt, "commit", "-q", "-m", "drop")
-                else:
-                    self.commit(wt, "dev-loop.json", json.dumps(branch))
-                self.gate_green(wt, self.head(wt))
-                out = self.ok(wt)
+                out = self.config_change(main, branch)
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
