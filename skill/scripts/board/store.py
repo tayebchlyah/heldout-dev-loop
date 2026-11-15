@@ -73,7 +73,7 @@ def root_of(notes: Path) -> Path:
 
 def version_key(text: object) -> tuple[int, ...]:
     """D2: `(X, Y, Z, 0, N)` for `X.Y.Z-rc.N`, `(X, Y, Z, 1, 0)` for a final or any other continuation, `()` with no `X.Y.Z`."""
-    found = re.match(r"(\d+)\.(\d+)\.(\d+)(-rc\.([1-9]\d*))?", text if isinstance(text, str) else "")
+    found = re.match(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.([1-9]\d*))?", text if isinstance(text, str) else "")
     if not found:
         return ()
     core = tuple(int(part) for part in found.groups()[:3])

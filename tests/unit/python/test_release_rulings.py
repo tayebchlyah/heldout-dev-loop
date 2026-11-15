@@ -284,5 +284,50 @@ class CliffBodyTests(unittest.TestCase):
         self.assertIn("before `git tag -a`", text.split("\n8. ")[1])
 
 
+class VersionGrammarTests(unittest.TestCase):
+    MARKERS = ("-rc\\.", "[1-9]\\d*)\\.", "[1-9][0-9]*)\\.")
+    SPELLED = {"skill/scripts/release_rulings.py": 2, "claude/hooks/git-guard.py": 1, "codex/hooks/git-guard.py": 1,
+               "scripts/repo_rules.py": 2, "lib/project.mjs": 1, "skill/scripts/board/store.py": 1}
+    SAMPLES = ["0.0.0", "1.2.3", "10.20.30", "1.2.3-rc.1", "1.2.3-rc.12", "01.2.3", "1.02.3", "1.2.03", "1.2.3-rc.0",
+               "1.2.3-rc.01", "1.2.3-rc.", "1.2", "1.2.3.4", "1.2.3-beta", "v1.2.3", ""]
+
+    def test_the_version_grammar_is_spelled_in_release_rulings_and_the_pinned_copies_only(self) -> None:
+        found = {}
+        for top in ("skill", "skills", "claude", "codex", "lib", "bin", "scripts"):
+            for path in sorted((ROOT / top).rglob("*")):
+                if path.suffix in (".py", ".mjs", ".js", ".sh"):
+                    lines = [n for n, line in enumerate(path.read_text().splitlines(), 1)
+                             if any(marker in line for marker in self.MARKERS)]
+                    if lines:
+                        found[str(path.relative_to(ROOT))] = len(lines)
+        self.assertEqual(found, self.SPELLED)
+
+    def test_the_copies_that_cannot_import_it_agree_with_it(self) -> None:
+        import release_rulings
+        version = re.compile(release_rulings.VERSION)
+        expected = {
+            "RELEASE_TAG": lambda s: bool(version.fullmatch(s)),
+            "FINAL_TAG": lambda s: bool(version.fullmatch(s)) and "-rc." not in s,
+            "CANDIDATE_TAG": lambda s: bool(version.fullmatch(s)) and "-rc." in s,
+        }
+        for name, path in (("RELEASE_TAG", "claude/hooks/git-guard.py"), ("RELEASE_TAG", "codex/hooks/git-guard.py"),
+                           ("FINAL_TAG", "scripts/repo_rules.py"), ("CANDIDATE_TAG", "scripts/repo_rules.py")):
+            pattern = re.compile(re.search(rf'^{name} = re\.compile\(r"(.+)"\)$', (ROOT / path).read_text(), re.M).group(1))
+            for sample in self.SAMPLES:
+                with self.subTest(copy=f"{path} {name}", sample=sample):
+                    self.assertEqual(bool(pattern.fullmatch(f"v{sample}")), expected[name](sample))
+        installer = re.compile(re.search(r"^const VERSION = /(.+)/$", (ROOT / "lib" / "project.mjs").read_text(), re.M).group(1))
+        for sample in self.SAMPLES:
+            with self.subTest(copy="lib/project.mjs VERSION", sample=sample):
+                self.assertEqual(bool(installer.search(sample)), bool(version.fullmatch(sample)))
+        from board.store import version_key
+        for sample in self.SAMPLES:
+            with self.subTest(copy="skill/scripts/board/store.py version_key", sample=sample):
+                key = version_key(sample)
+                self.assertEqual(bool(key), bool(re.match(release_rulings.VERSION_CORE, sample)))
+                if version.fullmatch(sample):
+                    self.assertEqual(key[3], 0 if "-rc." in sample else 1)
+
+
 if __name__ == "__main__":
     unittest.main()
