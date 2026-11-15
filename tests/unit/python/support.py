@@ -156,8 +156,13 @@ def build_sandbox_template(folder: Path) -> Path:
     folder = folder.resolve()
     repo = folder / "repo"
     repo.mkdir(parents=True)
-    git_in(folder, "init", "-q", "--bare", str(folder / "origin.git"))
+    bare = folder / "origin.git"
+    git_in(folder, "init", "-q", "--bare", str(bare))
+    git_in(bare, "config", "receive.autogc", "false")
+    git_in(bare, "config", "gc.auto", "0")
     git_in(repo, "init", "-q")
+    git_in(repo, "config", "maintenance.auto", "false")
+    git_in(repo, "config", "gc.auto", "0")
     write(repo / "GLOSSARY.md", "# Glossary\n")
     git_in(repo, "add", "-A")
     git_in(repo, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "base")
