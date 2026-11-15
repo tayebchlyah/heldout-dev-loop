@@ -111,6 +111,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         for source, text in sources.items():
             step = text.split("      - id: skip\n", 1)[1].split("\n```", 1)[0].split("\n\n", 1)[0]
             env_block, run = step.split("        run: |\n", 1)
+            env_block = "\n" + env_block.split("        env:\n", 1)[1]
             for event, target, skip in (("pull_request", "trunk", "true"), ("push", "trunk", "true"),
                                         ("push", "feature", "false"), ("pull_request", "other", "false")):
                 with self.subTest(source=source, event=event, target=target), tempfile.TemporaryDirectory() as tmp:
@@ -213,51 +214,84 @@ class ImpactMapWorkflowTests(unittest.TestCase):
 
     def test_triggers_permissions_and_limits(self) -> None:
         text, _ = self.files()
-        for needle in ('cron: "0 5 * * 1"', "workflow_dispatch:", "contents: write", "pull-requests: write",
-                       "actions: write", "timeout-minutes: 120", "group: impact-map", 'DEVLOOP_REQUIRE_DOCKER: "1"'):
+        for needle in ('cron: "0 5 * * 1"', "workflow_dispatch:", "group: impact-map"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, text)
+        self.assertIn("\npermissions:\n  contents: read\n\n", text)
+        jobs = ReleaseWorkflowTests.jobs(text)
+        self.assertEqual(sorted(jobs), ["publish", "trace"])
+        self.assertNotIn("permissions:", jobs["trace"])
+        for needle in ("timeout-minutes: 120", 'DEVLOOP_REQUIRE_DOCKER: "1"', "persist-credentials: false"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, jobs["trace"])
+        self.assertIn("    needs: trace\n    permissions:\n      actions: write\n      contents: write\n"
+                      "      pull-requests: write\n", jobs["publish"])
         self.assertNotIn("issues: write", text)
 
     def test_installs_what_the_shards_install(self) -> None:
         text, ci = self.files()
+        trace = ReleaseWorkflowTests.jobs(text)["trace"]
         shards = ReleaseWorkflowTests.jobs(ci)["test-shards"]
         for action in ("actions/checkout", "actions/setup-node", "actions/setup-python"):
             with self.subTest(action=action):
                 uses = re.compile(rf"uses: {action}@\S+ # \S+")
-                self.assertEqual(uses.findall(text), uses.findall(shards))
-        self.assertIn("node-version: 24", text)
-        self.assertIn('python-version: "3.14"', text)
+                self.assertEqual(uses.findall(trace), uses.findall(shards))
+        self.assertIn("node-version: 24", trace)
+        self.assertIn('python-version: "3.14"', trace)
         for name in ("Install Playwright and Chromium", "Install git-cliff"):
             with self.subTest(step=name):
-                self.assertEqual(ReleaseWorkflowTests.step(self, text, name).strip(),
+                self.assertEqual(ReleaseWorkflowTests.step(self, trace, name).strip(),
                                  ReleaseWorkflowTests.step(self, shards, name).strip())
-        self.assertIn("sudo apt-get install -y strace", text)
+        self.assertIn("sudo apt-get install -y strace", trace)
 
-    def test_the_checkout_is_main(self) -> None:
+    def test_both_jobs_check_out_main(self) -> None:
         text, _ = self.files()
-        self.assertRegex(text, r"actions/checkout@\S+ # \S+\n\s+with:\n\s+ref: main\n")
+        for name, job in ReleaseWorkflowTests.jobs(text).items():
+            with self.subTest(job=name):
+                self.assertRegex(job, r"actions/checkout@\S+ # \S+\n\s+with:\n\s+ref: main\n")
 
-    def test_the_refresh_opens_a_pr_and_starts_ci(self) -> None:
+    def test_the_map_goes_from_trace_to_publish_as_an_artifact(self) -> None:
+        text, _ = self.files()
+        jobs = ReleaseWorkflowTests.jobs(text)
+        self.assertRegex(jobs["trace"], r"uses: actions/upload-artifact@\S+ # \S+\n\s+with:\n\s+name: impact-map\n"
+                                        r"\s+path: tests/impact-map.json\n")
+        self.assertRegex(jobs["publish"], r"uses: actions/download-artifact@\S+ # \S+\n\s+with:\n"
+                                          r"\s+name: impact-map\n\s+path: tests\n")
+        self.assertLess(jobs["trace"].index("Trace the suites"), jobs["trace"].index("upload-artifact"))
+
+    def test_the_refresh_starts_ci_then_opens_a_pr(self) -> None:
         text, ci = self.files()
         push = ReleaseWorkflowTests.step(self, text, "Push the new map")
-        steps = ("git push --force origin chore/impact-map", "gh pr list --head chore/impact-map --state open",
-                 "gh pr create --base main --head chore/impact-map", "gh workflow run ci.yml --ref chore/impact-map")
+        steps = ("gh pr list --app github-actions --head chore/impact-map --state open",
+                 "git push --force origin chore/impact-map", "gh workflow run ci.yml --ref chore/impact-map",
+                 "gh pr create --base main --head chore/impact-map")
         for needle in steps:
             with self.subTest(needle=needle):
                 self.assertIn(needle, push)
         self.assertEqual([push.index(s) for s in steps], sorted(push.index(s) for s in steps))
+        self.assertIn('--body "Closes #327', push)
         self.assertNotIn("gh issue", text)
         self.assertRegex(ci, r"\non:\n(  \S.*\n(    .*\n)*)*  workflow_dispatch:\n")
 
+    def test_an_unchanged_map_closes_the_open_refresh_pr(self) -> None:
+        text, _ = self.files()
+        push = ReleaseWorkflowTests.step(self, text, "Push the new map")
+        unchanged = push.split("git status --porcelain -- tests/impact-map.json", 1)[1].split("exit 0", 1)[0]
+        self.assertIn('gh pr close "$pr"', unchanged)
+        self.assertIn("--delete-branch", unchanged)
+
+    def test_a_dispatched_ci_run_never_calls_ci_skip(self) -> None:
+        _, ci = self.files()
+        self.assertIn("      - id: skip\n        if: github.event_name != 'workflow_dispatch'\n", ci)
+
     def test_trace_and_push_steps(self) -> None:
         text, _ = self.files()
-        trace = ReleaseWorkflowTests.step(self, text, "Trace the suites")
+        jobs = ReleaseWorkflowTests.jobs(text)
+        trace = ReleaseWorkflowTests.step(self, jobs["trace"], "Trace the suites")
         self.assertIn("python3 scripts/impact_map.py trace --jobs 4", trace)
-        push = ReleaseWorkflowTests.step(self, text, "Push the new map")
+        push = ReleaseWorkflowTests.step(self, jobs["publish"], "Push the new map")
         for needle in ("git status --porcelain -- tests/impact-map.json", "git switch -c chore/impact-map",
                        "🔧(tests) #327: Refresh the impact map", "git push --force origin chore/impact-map",
                        "GH_TOKEN: ${{ github.token }}"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, push)
-        self.assertLess(text.index(trace), text.index(push))

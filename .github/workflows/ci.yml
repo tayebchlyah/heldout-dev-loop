@@ -33,6 +33,7 @@ jobs:
         with:
           python-version: "3.14"
       - id: skip
+        if: github.event_name != 'workflow_dispatch'
         env:
           TARGET: ${{ github.base_ref || github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
