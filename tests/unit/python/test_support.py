@@ -77,6 +77,16 @@ class SandboxTemplateTests(unittest.TestCase):
             self.assertEqual(git_in(root, "--git-dir", "origin.git", "rev-parse", "main"),
                              git_in(repo, "rev-parse", "HEAD"))
 
+    def test_the_template_stops_git_auto_maintenance(self) -> None:
+        import support
+        from support import git_in
+        with tempfile.TemporaryDirectory() as tmp:
+            template = support.build_sandbox_template(Path(tmp, "t"))
+            for repo, key in ((template / "repo", "maintenance.auto"), (template / "repo", "gc.auto"),
+                              (template / "origin.git", "receive.autogc"), (template / "origin.git", "gc.auto")):
+                expected = "0\n" if key == "gc.auto" else "false\n"
+                self.assertEqual(git_in(repo, "config", "--get", key), expected, key)
+
     def test_the_template_comes_from_the_env_or_once_per_process(self) -> None:
         import support
         env = {k: v for k, v in os.environ.items() if k != support.TEMPLATE_ENV}
