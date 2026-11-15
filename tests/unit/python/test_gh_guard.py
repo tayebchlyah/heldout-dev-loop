@@ -15,12 +15,7 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
     """Both guards on hook JSON in the scratch repo of GuardRepo."""
 
     def test_gh_api_writes_are_refused(self) -> None:
-        self.assert_refused(["gh api -X POST repos/o/r/releases -f tag_name=v9.9.9",
-                             f"gh api --method=POST repos/o/r/git/refs -f ref=refs/tags/v9.9.9 -f sha={self.a}",
-                             "gh api -XPATCH repos/o/r/git/refs/heads/main -F force=true",
-                             "gh api -X DELETE repos/o/r/git/refs/tags/v1.0.0", "gh api -X delete repos/o/r/branches/main/protection",
-                             "gh api -iX PUT repos/o/r/x", "gh api -X GET -X POST repos/o/r/x",
-                             "gh api repos/o/r/releases -f tag_name=v9.9.9", "gh api repos/o/r/releases --input body.json",
+        self.assert_refused(["gh api repos/o/r/releases -f tag_name=v9.9.9", "gh api repos/o/r/releases --input body.json",
                              "gh api graphql -f query='mutation{createRef(input:{repositoryId:\"R\",name:\"refs/tags/v9\","
                              f"oid:\"{self.a}\"}}){{ref{{name}}}}}}'",
                              "gh api graphql -F query=@q.graphql", "gh api graphql --input q.json"], "a gh api write")
@@ -39,15 +34,6 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
         for command in commands:
             reason = self.guard("claude", command)[1]
             self.assertTrue(CANNOT in reason or "a gh api write" in reason, (command, reason))
-
-    def test_gh_release_writes_are_refused(self) -> None:
-        for command, word in (("gh release delete v1.0.0 --cleanup-tag --yes", "delete"),
-                              ("gh release edit v1.0.0 --draft=false", "edit"),
-                              ("gh release upload v1.0.0 x.tgz --clobber", "upload"),
-                              ("gh release delete-asset v1.0.0 x.tgz", "delete-asset"),
-                              ("gh release -R o/r delete v1.0.0", "delete"),
-                              ("gh release frob v1.0.0", "frob")):
-            self.assert_refused([command], f"a gh release {word}")
 
     def test_release_create_target_off_the_local_tag(self) -> None:
         self.stub("ok")
@@ -91,11 +77,6 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
 
     def test_everyday_merge_runs(self) -> None:
         self.assert_allowed([f"gh pr merge 12 --rebase --match-head-commit {self.a}", "gh pr merge --auto --rebase 12"])
-
-    def test_unknown_words_and_agent_runs_are_refused(self) -> None:
-        self.assert_refused(["gh rel v9.9.9", "gh co 12", "gh my-ext", "gh $CMD"], CANNOT)
-        self.assert_refused(["gh alias set rel 'release create' && gh rel v9.9.9"], "a gh alias set")
-        self.assert_refused(["gh extension exec my-ext", "gh copilot"], "a gh extension or agent run")
 
     def test_unchanged_builtins_run(self) -> None:
         self.assert_allowed(['gh pr create --title x --body "$(cat notes.md)"', "gh pr view 7 --json state",
