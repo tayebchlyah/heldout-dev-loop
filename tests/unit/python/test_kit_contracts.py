@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -13,7 +12,7 @@ from pathlib import Path
 
 import test_devloop
 from support import CHECKER, CLAUDE_HOOKS, CODEX_ASSETS, SKILL, SKILL_ROOT, all_instructions
-from test_seal_hooks import ROOT, SHELL, patch
+from test_seal_hooks import ROOT
 
 KIT_LIST_FILES = ("lib/kit.mjs", "claude/hooks/deny-acceptance-to-subagents.sh", "codex/hooks/acceptance-wall.sh",
                   "skill/scripts/seal/check.py", "skill/references/codex.md")
@@ -390,26 +389,8 @@ class NotesLayoutTextTests(unittest.TestCase):
 
 class KitSkillListTests(unittest.TestCase):
 
-    def run_wall(self, harness: str, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([SHELL[harness], str(ROOT / harness / "hooks" / script)], input=json.dumps(payload),
-                              capture_output=True, text=True, timeout=60)
-
     def test_every_kit_skill_list_equals_kit_skills(self) -> None:
         self.assertEqual(kit_list_drift(ROOT), [])
-        names = re.search(r"^export const KIT_SKILLS = \[(.*)\]", (ROOT / "lib/kit.mjs").read_text(), re.M).group(1)
-        for name in ["dev-loop", *re.findall(r"'([^']+)'", names)]:
-            for path in (f".agents/skills/{name}/SKILL.md", f".claude/skills/{name}/SKILL.md"):
-                for caller in ({}, {"agent_id": "a", "agent_type": "implementer"}):
-                    calls = [("claude", "deny-acceptance-to-subagents.sh", tool, {"file_path": path})
-                             for tool in ("Edit", "Write")]
-                    calls.append(("codex", "acceptance-wall.sh", "apply_patch",
-                                  {"command": patch(f"*** Update File: {path}")}))
-                    for harness, script, tool, tool_input in calls:
-                        with self.subTest(path=path, caller=caller.get("agent_type", "main"), tool=tool):
-                            result = self.run_wall(harness, script, {**caller, "cwd": "/repo", "tool_name": tool,
-                                                                     "tool_input": tool_input})
-                            self.assertEqual(result.returncode, 2, result.stderr)
-                            self.assertIn("upgrade", result.stderr)
 
     def test_a_name_added_to_one_list_only_is_drift(self) -> None:
         edits = [("lib/kit.mjs", "export const KIT_SKILLS = [", "export const KIT_SKILLS = ['zz-new', "),

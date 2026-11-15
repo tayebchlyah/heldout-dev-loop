@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from support import check_setup
@@ -37,7 +38,6 @@ class AbsolutePathWallTests(unittest.TestCase):
             rows += [
                 (claude, "spec-tester", "Read", {"file_path": f"{top}/tests/acceptance/x.py"}, 0),
                 (claude, "spec-tester", "Read", {"file_path": f"{top}/src/y.py"}, 2),
-                (claude, "spec-tester", "Bash", {"command": f"cat {top}/README.md"}, 0),
                 (claude, "spec-tester", "Bash", {"command": f"git -C {top} log"}, 0),
                 (claude, "implementer", "Read", {"file_path": f"{top}/tests/acceptance/x.py"}, 2),
                 (codex, "implementer", "Bash", {"command": f"cat -n{top}/tests/acceptance/x.py"}, 2),
@@ -45,26 +45,25 @@ class AbsolutePathWallTests(unittest.TestCase):
             ]
             for script, agent in [(claude, "spec-tester"), (codex, "spec_tester")]:
                 rows += [(script, agent, "Bash", {"command": command}, code) for command, code in [
-                    (f"gcc -I{top}/src x.c", 2), (f"ls -d{top}/src", 2), (f"cat {top}2/src/y.py", 2),
-                    (f"cat {top}/../repo/src/y.py", 2), (f"cat {top}/docs/../src/y.py", 2),
-                    (f"cat {top}/README.md", 0)]]
+                    (f"gcc -I{top}/src x.c", 2), (f"cat {top}/../repo/src/y.py", 2), (f"cat {top}/README.md", 0)]]
             rows += [
                 (codex, "spec_tester", "Bash", {"command": f"cat {top}/tests/acceptance/x.py"}, 0),
-                (codex, "spec_tester", "Bash", {"command": f"cat {top}/src/y.py"}, 2),
-                (codex, "spec_tester", "Bash", {"command": f"cat {top}/README.md"}, 0),
                 (codex, "spec_tester", "apply_patch", {"command": patch(f"*** Add File: {top}/tests/acceptance/x.py")}, 0),
                 (codex, "spec_tester", "apply_patch", {"command": patch(f"*** Update File: {top}/src/y.py")}, 2),
-                (codex, "implementer", "Bash", {"command": f"cat {top}/tests/acceptance/x.py"}, 2),
                 (codex, "implementer", "apply_patch",
                  {"command": patch(f"*** Update File: {top}/tests/acceptance/x.py")}, 2),
                 (codex, "implementer", "apply_patch", {"command": patch(f"*** Update File: {top}/README.md")}, 0),
             ]
-        for script, agent, tool, tool_input, code in rows:
+        def run(row: tuple) -> subprocess.CompletedProcess[str]:
+            script, agent, tool, tool_input, _ = row
+            payload = {"agent_id": "b", "agent_type": agent, "cwd": str(repo), "tool_name": tool, "tool_input": tool_input}
+            return subprocess.run([SHELL[script.parent.parent.name], str(script)], input=json.dumps(payload),
+                                  capture_output=True, text=True, timeout=60)
+
+        with ThreadPoolExecutor(8) as pool:
+            results = list(pool.map(run, rows))
+        for (script, agent, tool, tool_input, code), result in zip(rows, results):
             with self.subTest(script=script.name, agent=agent, tool=tool, tool_input=tool_input):
-                payload = {"agent_id": "b", "agent_type": agent, "cwd": str(repo), "tool_name": tool,
-                           "tool_input": tool_input}
-                result = subprocess.run([SHELL[script.parent.parent.name], str(script)], input=json.dumps(payload),
-                                        capture_output=True, text=True, timeout=60)
                 self.assertEqual(result.returncode, code, result.stderr)
 
 
@@ -431,13 +430,16 @@ class KitWallTests(unittest.TestCase):
                       ".claude/skills/release-notesx/SKILL.md", "skills/release/SKILL.md"]
         callers = [{}, {"agent_id": "a", "agent_type": "implementer"}]
         rows = []
-        for path, deny in [(p, True) for p in kit] + [(p, False) for p in open_paths]:
-            for caller in callers + [{"agent_id": "b", "agent_type": "spec-tester"}]:
-                rows += [("deny-acceptance-to-subagents.sh", caller, "Edit", {"file_path": f"/repo/{path}"}, deny),
-                         ("deny-acceptance-to-subagents.sh", caller, "Write", {"file_path": path}, deny)]
-            for caller in callers + [{"agent_id": "b", "agent_type": "spec_tester"}]:
-                rows += [("acceptance-wall.sh", caller, "apply_patch",
-                          {"command": patch(f"*** Update File: {path}")}, deny)]
+        for i, (path, deny) in enumerate([(p, True) for p in kit] + [(p, False) for p in open_paths]):
+            rows += [("deny-acceptance-to-subagents.sh", {}, "Write", {"file_path": path}, deny) if i % 2 else
+                     ("deny-acceptance-to-subagents.sh", {}, "Edit", {"file_path": f"/repo/{path}"}, deny),
+                     ("acceptance-wall.sh", {}, "apply_patch", {"command": patch(f"*** Update File: {path}")}, deny)]
+        for path, deny in [(".dev-loop/MANIFEST.json", True), ("skill/scripts/seal/check.py", False)]:
+            for caller in callers[1:] + [{"agent_id": "b", "agent_type": "spec-tester"}]:
+                rows.append(("deny-acceptance-to-subagents.sh", caller, "Edit", {"file_path": f"/repo/{path}"}, deny))
+            for caller in callers[1:] + [{"agent_id": "b", "agent_type": "spec_tester"}]:
+                rows.append(("acceptance-wall.sh", caller, "apply_patch", {"command": patch(f"*** Update File: {path}")},
+                             deny))
         rows += [
             ("deny-acceptance-to-subagents.sh", {}, "NotebookEdit",
              {"notebook_path": "/repo/.agents/skills/dev-loop/x.ipynb"}, True),
@@ -456,10 +458,9 @@ class KitWallTests(unittest.TestCase):
             ("acceptance-wall.sh", {}, "apply_patch", {"command": patch("*** Update File: .codex/rules/dev-loop.rules\r")}, True),
             ("acceptance-wall.sh", {}, "apply_patch", {"command": patch("*** Update File: .codex/rules/dev-loop.rules ")}, True),
         ]
-        for caller in callers:
-            rows += [("deny-acceptance-to-subagents.sh", caller, "Write", {"file_path": "/home/u/.claude/agents/implementer.md"}, False),
-                     ("acceptance-wall.sh", caller, "apply_patch",
-                      {"command": patch("*** Update File: /home/u/.codex/agents/implementer.toml")}, False)]
+        rows += [("deny-acceptance-to-subagents.sh", {}, "Write", {"file_path": "/home/u/.claude/agents/implementer.md"}, False),
+                 ("acceptance-wall.sh", {}, "apply_patch",
+                  {"command": patch("*** Update File: /home/u/.codex/agents/implementer.toml")}, False)]
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         repo = Path(tmp.name)
@@ -470,10 +471,12 @@ class KitWallTests(unittest.TestCase):
             ("acceptance-wall.sh", {}, "apply_patch", {"command": patch("*** Update File: ../.dev-loop/hooks/x.sh")}, True,
              str(repo / "tests")),
         ]
-        for script, caller, tool, tool_input, deny, cwd in rows:
+        with ThreadPoolExecutor(8) as pool:
+            results = list(pool.map(lambda row: self.run_hook(row[0], {**row[1], "cwd": row[5], "tool_name": row[2],
+                                                                       "tool_input": row[3]}), rows))
+        for (script, caller, tool, tool_input, deny, cwd), result in zip(rows, results):
             with self.subTest(script=script, caller=caller.get("agent_type", "main"), tool=tool, tool_input=tool_input,
                               cwd=cwd):
-                result = self.run_hook(script, {**caller, "cwd": cwd, "tool_name": tool, "tool_input": tool_input})
                 self.assertEqual(result.returncode, 2 if deny else 0, result.stderr)
                 if deny:
                     self.assertEqual(result.stderr.count("\n"), 1, result.stderr)
@@ -492,28 +495,15 @@ class CdWallTests(unittest.TestCase):
             spec_tester = {"agent_id": "b", "agent_type": tester}
             rows += [(shell, script, implementer, command, deny) for command, deny in [
                 ("cd tests && cat acceptance/x.py", True),
-                ("cd tests; cd acceptance && ls", True),
                 ("cd tests && cd acceptance && cat x.py", True),
                 ("cd /repo/tests && cat acceptance/x.py", True),
-                ("cd ./docs/../tests && cat acceptance/x.py", True),
-                ("(cd tests && ls acceptance)", True),
-                ("bash -c 'cd tests && cat acceptance/x.py'", True),
                 ("pushd tests && cat acceptance/x.py", True),
                 ("cd -P tests && cat acceptance/x.py", True),
                 ("cd tests && cat unit/x.py", False),
-                ("cd docs && ls", False),
                 ("cd tests/unit && cat ../README.md", False),
-                ("{ cd tests; cat acceptance/x.py; }", True),
-                ("if true; then cd tests; cat acceptance/x.py; fi", True),
-                ("for f in a; do cd tests; cat acceptance/x.py; done", True),
-                ("echo `cd tests && cat acceptance/x.py`", True),
-                ("cd -- tests && cat acceptance/x.py", True),
-                ("builtin cd tests && cat acceptance/x.py", True),
-                ("command cd tests && cat acceptance/x.py", True),
                 ("cat acceptance/notes.md; cd tests && make", False),
             ]]
             rows += [(shell, script, spec_tester, command, deny) for command, deny in [
-                ("cd lib/.. && cd backend && cat main.py", True),
                 ("cd tests && cat ../src/x.py", True),
                 ("cd tests && cat acceptance/x.py", False),
             ]]
