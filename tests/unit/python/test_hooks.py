@@ -151,7 +151,6 @@ class HookGitPinTests(unittest.TestCase):
     HOOKS = {"claude": CLAUDE_HOOKS, "codex": CODEX_ASSETS / "hooks"}
 
     def test_each_hook_sources_the_pin_before_git(self) -> None:
-        sys.path.insert(0, str(CLAUDE_HOOKS.parent.parent / "skill" / "scripts"))
         from check_setup import GIT_CALL
 
         cli = re.compile(r"\bpython3\b|devloop\.py")

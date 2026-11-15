@@ -49,10 +49,7 @@ os.environ.pop("CLAUDE_PROJECT_DIR", None)
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import SKILL_ROOT  # noqa: E402
-# The board tests import `board` from skill/scripts and their fixtures from board_fixtures beside this file,
-# never from tests/acceptance (held out, run by the acceptance runner, not by this suite).
-sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+import support  # noqa: E402, F401
 from junit_report import (chunk_report, flat, in_modules, in_shard, record_dead_chunks, run_chunk,  # noqa: E402
                           run_chunks, without_summary, write_junit)
 

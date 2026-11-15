@@ -13,7 +13,6 @@ from typing import Callable
 
 from support import ROOT
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from audit import common  # noqa: E402
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"

@@ -15,7 +15,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT, budget_report  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from test_devloop import git, put, run_cli  # noqa: E402
 import size  # noqa: E402
 

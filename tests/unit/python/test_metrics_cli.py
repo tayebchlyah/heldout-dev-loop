@@ -16,7 +16,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import metrics  # noqa: E402
 from test_metrics import DEVLOOP, TempDir, record, result, tool_use, usage_msg, write_jsonl  # noqa: E402
 

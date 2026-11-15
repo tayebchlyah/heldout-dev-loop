@@ -41,7 +41,6 @@ class RepoDocsTests(unittest.TestCase):
         self.cli = self.agents.split("## devloop CLI", 1)[1].split("\n## ", 1)[0]
 
     def test_this_repo_walls_its_source(self) -> None:
-        sys.path.insert(0, str(ROOT / "skill" / "scripts"))
         import source_dirs
         value = json.loads((ROOT / "dev-loop.json").read_text())["source_dirs"]
         self.assertEqual(value, ["skill/", "skills/", "lib/", "bin/", "claude/", "codex/", "tests/unit/",
@@ -49,7 +48,6 @@ class RepoDocsTests(unittest.TestCase):
         self.assertIsNone(source_dirs.validate(value))
 
     def test_this_repo_declares_no_capability(self) -> None:
-        sys.path.insert(0, str(ROOT / "skill" / "scripts"))
         import capabilities
         value = json.loads((ROOT / "dev-loop.json").read_text())["capabilities"]
         self.assertEqual(value, [])
@@ -127,6 +125,14 @@ class RepoDocsTests(unittest.TestCase):
                 if path.name != helper:
                     with self.subTest(path=f"{folder}/{path.name}"):
                         self.assertEqual([line for line in path.read_text().splitlines() if re.search(climb, line)], [])
+
+    def test_only_the_suite_helper_puts_the_kit_scripts_on_sys_path(self) -> None:
+        kit_scripts = re.compile(r"sys\.path\.insert\(.*(?:\"skill\" / \"scripts\"|SKILL_ROOT / \"scripts\")")
+        for path in sorted((ROOT / "tests" / "unit" / "python").glob("*.py")):
+            if path.name != "support.py":
+                with self.subTest(path=path.name):
+                    self.assertEqual([f"{n}: {line.strip()}" for n, line in enumerate(path.read_text().splitlines(), 1)
+                                      if kit_scripts.search(line)], [])
 
     def test_cli_files_index_and_help_agree(self) -> None:
         commands = help_commands()

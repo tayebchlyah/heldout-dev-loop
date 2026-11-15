@@ -17,10 +17,9 @@ from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT  # noqa: E402
+import support  # noqa: E402, F401
 from test_second_review import SecondReviewDecisionTests, git  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 
 TABLE = "| file | line | finding | class | verdict |\n| --- | --- | --- | --- | --- |\n| a.txt | 1 | x | correctness | PLAUSIBLE |\n"
 HELD = ("assert held_out_value == 'first distinctive acceptance line'",
