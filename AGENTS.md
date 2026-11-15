@@ -83,7 +83,7 @@ Read `reference/cli/<command>.md` before you change, test or debug a command, or
 - `metrics [--repo <path>] [--feature <slug>] [--write]`: Token cost per stage from Claude transcripts; `--write` adds the Feature Metrics row. `reference/cli/metrics.md`
 - `sessions --since <days> [--repo <path>]`: List the Claude Code and Codex sessions of every worktree, for retro. `reference/cli/sessions.md`
 - `release-check [--repo <path>] [--no-build] (--tag <name> | --sha <rev> [--for <tag>])`: May a commit get a release tag: a current audit record and no open security item. `reference/cli/release-check.md`
-- `ci-skip --base <rev> [--head <rev>] [--repo <path>] [--github-output]`: May CI skip this diff: only a release (version files, `CHANGELOG.md`) or a kit upgrade. `reference/cli/ci-skip.md`
+- `ci-skip --base <rev> [--head <rev>] [--repo <path>] [--github-output]`: May CI skip this diff: only a release (version files, `CHANGELOG.md`), a kit upgrade or inert paths. `reference/cli/ci-skip.md`
 - `release-notes --tag <tag> [--repo <path>] [--output <file>]`: Write the `CHANGELOG.md` section of a tag to `--output`: the GitHub Release body. `reference/cli/release-notes.md`
 - `release-plan [--repo <path>] [--harness claude|codex] [--profile quick|standard|deep] [--budget <n>] [--require-sandbox]`: Plan a release audit run: folder, profile, budget, scope, sandbox; `--require-sandbox`: `no-sandbox` stop without image or engine. `reference/cli/release-plan.md`
 - `notes-migrate [--repo <path>] [--apply [--plan <hash>]]`: Move old notes layout to feature folders; dry run, then `--apply --plan <hash>`. `reference/cli/notes-migrate.md`
@@ -98,28 +98,28 @@ npm test                                    # node suite: installer, board rende
 python3 tests/unit/python/test_dev_loop.py  # skill suite
 ```
 
-Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU, `1`: serial). `DEVLOOP_REPORT_DIR`: JUnit `skill.xml` there; dead chunk errors its ids. Test name arg: plain unittest, no report. `DEVLOOP_TEST_MODULES`: those modules.
+Skill suite: ids in chunks of 5 per `test_dev_loop.py --chunk` process, `DEVLOOP_TEST_JOBS` at once (default per CPU; `1`: serial). `DEVLOOP_REPORT_DIR`: JUnit `skill.xml` there; dead chunk errors its ids. Test name arg: plain unittest, no report. `DEVLOOP_TEST_MODULES`: those modules (comma/space list).
 
-`scripts/gate.sh` (both suites) fails with `run npm ci && npx playwright install chromium` without `node_modules/playwright`; new worktree (Stage 3) runs it first. Both pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: release or kit upgrade PR skips the rest), `test` (both suites), `acceptance` (held-out suite), on every PR and `main`. Merge only when both green or skipped.
+`scripts/gate.sh` (both suites) fails with `run npm ci && npx playwright install chromium` without `node_modules/playwright`; new worktree (Stage 3) runs it first. Both pass before commit. `.github/workflows/ci.yml`: job `changes` (`ci-skip`: release, kit upgrade, inert-path PR skips suites), `hygiene` (on a skip), `test` (both suites; aggregates shards, `hygiene`), `acceptance` (held-out suite), on each PR and `main`. Merge only both green/skipped.
 
 ## Project kit
 
-- Kit files are never edited in a project: change the source here, then run `upgrade`.
+- Kit files never edited in a project: change source here, run `upgrade`.
 - The walls deny a file-tool edit of a kit file; `seal-check` reports any other route as `kit-changed`.
 - Kit table, MANIFEST rule, notes path, verify after install (R10), upgrade notes: `reference/kit.md`.
 
 ## Conventions
 
 - Data rule: no smaller wave, no removal of the Track L threat model and no second review pass until 5 features have a complete section in Review Yield.md (`$NOTES/Review Yield.md`).
-- Cost data rule: no process cut for cost (drop a reviewer, no `tdd`, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (`metrics --write`, Stage 7).
+- Cost data rule: no process cut for cost (drop reviewer, no `tdd`, shorter spec stages) until 5 features have a row with no `?` stage cell in `$NOTES/Feature Metrics.md` (`metrics --write`, Stage 7).
 - Commits: gitmoji, format `<emoji>(<scope>) #<issue>: <message>`, scope required.
-- Issues: each feature or fix starts from a GitHub issue, opened before the branch; each commit subject names it (`#<issue>:`). PR body: `Closes #<issue>`.
-- Changelog: `release_notes` `written`: prose `CHANGELOG.md` by `/release-notes`. `cliff.toml` kept for `repo_rules.py subjects`. Releases tag-driven (`vX.Y.Z`, `vX.Y.Z-rc.N`: pre-release) via `.github/workflows/release.yml`: version check (tag = `package.json`), `promoted`, `release-notes`, `ncipollo/release-action`.
-- Release: `reference/release.md`. Stage 7 after a merge: report line `rc: now|later: <reason>`.
-- Comments: `scripts/repo_rules.py comments` fails a new comment line, private docstring or trailing `.sh` comment of a kind `CODING_STANDARDS.md` disallows; mark a comment an outside dependency forces with `allow-comment: dependency`.
-- Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword in the Stage 7 rebase.
-- No tracked file holds an absolute home path: write a `~` path, never its expansion. Owner's name only as GitHub handle `tayebchlyah` (guard test, case-sensitive).
-- No tracked file names an internal client or project (employer, its customers, private projects): notes folder `Internal Names.md`, one `- <name>` line each; `tests/unit/node/payload.test.mjs` reads it (skipped: no notes path or note). New name: there, never in the repo.
+- Issues: feature or fix starts from a GitHub issue, opened before the branch; commit subjects name it (`#<issue>:`). PR body: `Closes #<issue>`.
+- Changelog: `release_notes` `written`: prose `CHANGELOG.md` by `/release-notes`. `cliff.toml`: kept for `repo_rules.py subjects`. Releases tag-driven (`vX.Y.Z`; `-rc.N`: pre-release) via `.github/workflows/release.yml`: version check (tag = `package.json`), `promoted`, `release-notes`, `ncipollo/release-action`.
+- Release: `reference/release.md`. Stage 7 after merge: report line `rc: now|later: <reason>`.
+- Comments: `scripts/repo_rules.py comments` fails a new comment line, private docstring or trailing `.sh` comment `CODING_STANDARDS.md` disallows; mark one an outside dependency forces with `allow-comment: dependency`.
+- Commit subjects: `scripts/repo_rules.py subjects` fails on a bad `HEAD` subject (fix: `git commit --amend`). `warnings` (older commits): reword at Stage 7 rebase.
+- No tracked file holds an absolute home path: write a `~` path, never its expansion. Owner's name only as handle `tayebchlyah` (guard test, case-sensitive).
+- No tracked file names an internal client or project (employer, customers, private ones): notes folder `Internal Names.md`, one `- <name>` line each; `tests/unit/node/payload.test.mjs` reads it (skipped: no notes path/note). New name: there only.
 - The 3 merged config files (`.claude/settings.json`, `.codex/hooks.json`, `.codex/config.toml`): merged, never copied whole.
 
 ## Gotchas
