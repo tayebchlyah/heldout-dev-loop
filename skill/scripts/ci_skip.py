@@ -1,4 +1,5 @@
-"""`ci-skip`: may CI skip a diff that is only a release (version files, `CHANGELOG.md`) or a kit upgrade.
+"""`ci-skip`: may CI skip a diff that is only a release (version files, `CHANGELOG.md`), a kit upgrade, or paths
+`inert_paths` of `dev-loop.json` at the merge base lists.
 
 Shared by `devloop.py` (`ci-skip`) and `release.py` (`release-check`).
 """
@@ -11,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import release
@@ -50,7 +52,8 @@ console.log(JSON.stringify(Object.fromEntries(fragments.map((action) => {
 
 
 class ConfigError(Exception):
-    """`version_files` in `dev-loop.json` at the head is not a list of repo-relative paths."""
+    """`version_files` in `dev-loop.json` at the head is not a list of repo-relative paths, or `inert_paths` at the
+    merge base is not a list of non-empty strings, none ending in `/`."""
 
 
 def changed(repo: Path, base: str, head: str) -> list[str]:
@@ -66,6 +69,18 @@ def version_files(repo: Path, head: str) -> list[str]:
             isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in files)):
         raise ConfigError("version_files is not a list of repo-relative paths")
     return files
+
+
+def inert_globs(repo: Path, rev: str) -> list[str]:
+    globs = (read_config(repo, rev) or {}).get("inert_paths", [])
+    if not (isinstance(globs, list) and all(isinstance(g, str) and g.strip() and not g.endswith("/") for g in globs)):
+        raise ConfigError("inert_paths is not a list of non-empty strings, none ending in /")
+    return globs
+
+
+def is_inert(path: str, globs: list[str]) -> bool:
+    return (path not in MERGED | {"dev-loop.json", release.MANIFEST} and not path.startswith(release.KIT_ROOTS)
+            and any(fnmatchcase(path, g) for g in globs))
 
 
 def version_pairs(repo: Path, mb: str, head: str, path: str) -> set[tuple[str, str]] | None:
@@ -151,18 +166,21 @@ def merged_allowed(repo: Path, base: str, head: str, paths: set[str], ref: dict[
     return {p for p in allowed if isinstance(merged.get(p), str) and after[p] == merged[p].encode()}
 
 
-def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = True) -> list[str]:
+def blocking(repo: Path, base: str, head: str, paths: list[str], build: bool = True, inert: bool = False) -> list[str]:
     """The sorted paths of `paths` that no rule allows: `CHANGELOG.md`, a version-only change of a `version_files`
     path, a `dev-loop.json` change of `version` only, a kit copy of a kit upgrade that equals the kit the merge
     base's own installer builds, and a merged config file of that upgrade equal to what that installer merges into
-    it (none in a repo without the kit source, or with `build` false). `base` and `head` are
-    commit shas; contents compare from their merge base. Raises ConfigError."""
+    it (none in a repo without the kit source, or with `build` false), and with `inert` an inert path of the merge
+    base's `inert_paths`. `base` and `head` are commit shas; contents compare from their merge base. Raises ConfigError."""
     listed = version_files(repo, head)
     merged = release.run_git(repo, "merge-base", base, head)
     if merged.returncode != 0:
         return sorted(paths)
     mb = merged.stdout.strip()
     allowed = {"CHANGELOG.md"}
+    if inert:
+        globs = inert_globs(repo, mb)
+        allowed.update(p for p in paths if is_inert(p, globs))
     pairs: set[tuple[str, str]] = set()
     versioned = []
     for path in (p for p in listed if p in paths):
@@ -204,11 +222,16 @@ def cmd_ci_skip(args: argparse.Namespace) -> int:
     base, head = shas
     paths = changed(repo, base, head)
     try:
-        block = blocking(repo, base, head, paths)
+        block = blocking(repo, base, head, paths, inert=True)
+        skip = bool(paths) and not block
+        kind = None
+        if skip and "CHANGELOG.md" in paths:
+            kind = "release"
+        elif skip:
+            globs = inert_globs(repo, release.run_git(repo, "merge-base", base, head).stdout.strip())
+            kind = "inert" if all(is_inert(p, globs) for p in paths) else "kit-upgrade"
     except ConfigError as exc:
         return emit({"error": str(exc)}, 1)
-    skip = bool(paths) and not block
-    kind = ("release" if "CHANGELOG.md" in paths else "kit-upgrade") if skip else None
     if args.github_output:
         with open(output, "a") as out:
             out.write(f"skip={'true' if skip else 'false'}\n")
