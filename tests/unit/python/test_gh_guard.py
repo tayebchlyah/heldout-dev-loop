@@ -131,8 +131,9 @@ class GhGuardTests(GuardRepo, unittest.TestCase):
         self.assert_refused([f"2>/dev/null {delete}", f">/dev/null {delete}", f"2> /dev/null {delete}", f"sudo -p x {delete}",
                              f"sudo -iu root {delete}", f"exec -a foo {delete}", f"env -P /usr/bin {delete}", f"op run -- {delete}",
                              f"direnv exec . {delete}", f"stdbuf -oL {delete}", f"caffeinate -i {delete}", f"doas {delete}",
-                             f"flock /tmp/l {delete}", f"time -o f {delete}", f"ssh box {delete}", "g''h release delete v1",
-                             '"g"h release delete v1', "\\gh release delete v1"], "a gh release delete")
+                             f"flock /tmp/l {delete}", f"time -o f {delete}", f"ssh box {delete}"], "a gh release delete")
+        self.assert_refused(["g''h release delete v1", '"g"h release delete v1', "\\gh release delete v1"],
+                            "a gh release delete", every_harness=True)
         self.assert_refused(["ssh box gh release create v9"], "a release create")
 
     def test_a_quoted_redirection_sign_is_an_argument(self) -> None:

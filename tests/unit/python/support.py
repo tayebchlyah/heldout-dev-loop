@@ -218,6 +218,7 @@ class GuardRepo:
         self.cli = self.repo / ".agents" / "skills" / "dev-loop" / "scripts" / "devloop.py"
         self.calls = Path(tmp.name) / "calls.txt"
         self.tmp = Path(tmp.name)
+        self.wired: set[str] = set()
 
     def git(self, *args: str) -> str:
         env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
@@ -257,9 +258,11 @@ class GuardRepo:
             results = list(pool.map(lambda case: self.guard(case[0], command, env, **case[1]), cases))
         return [(h, extra, r) for (h, extra), r in zip(cases, results)]
 
-    def assert_refused(self, commands: list[str], *parts: str, env: dict[str, str] | None = None) -> None:
+    def assert_refused(self, commands: list[str], *parts: str, env: dict[str, str] | None = None,
+                       every_harness: bool = False) -> None:
         """Claude main asks with every part in the reason, a Claude subagent is denied, Codex denies both."""
-        for command in commands:
+        wired, rest = self.split("refused", commands, every_harness)
+        for command in wired:
             for harness, extra, (decision, reason, _) in self.runs(command, env):
                 with self.subTest(command=command, harness=harness, **extra):
                     if harness == "claude" and not extra:
@@ -270,13 +273,34 @@ class GuardRepo:
                         self.assertEqual(decision, "deny", reason)
                         if harness == "claude":
                             self.assertIn("a subagent cannot ask for it", reason)
+        for command, (decision, reason, _) in self.main_runs(rest, env):
+            with self.subTest(command=command, harness="claude"):
+                self.assertEqual(decision, "ask", reason)
+                for part in parts:
+                    self.assertIn(part, reason)
 
-    def assert_allowed(self, commands: list[str], env: dict[str, str] | None = None) -> None:
-        for command in commands:
+    def assert_allowed(self, commands: list[str], env: dict[str, str] | None = None, every_harness: bool = False) -> None:
+        wired, rest = self.split("allowed", commands, every_harness)
+        for command in wired:
             for harness, extra, (decision, reason, _) in self.runs(command, env):
                 with self.subTest(command=command, harness=harness, **extra):
                     self.assertEqual(decision, "allow", reason)
+        for command, (decision, reason, _) in self.main_runs(rest, env):
+            with self.subTest(command=command, harness="claude"):
+                self.assertEqual(decision, "allow", reason)
 
+    def split(self, kind: str, commands: list[str], every_harness: bool) -> tuple[list[str], list[str]]:
+        if every_harness:
+            return commands, []
+        if kind in self.wired:
+            return [], commands
+        if commands:
+            self.wired.add(kind)
+        return commands[:1], commands[1:]
+
+    def main_runs(self, commands: list[str], env: dict[str, str] | None) -> list[tuple[str, tuple[str, str, float]]]:
+        with ThreadPoolExecutor(8) as pool:
+            return list(zip(commands, pool.map(lambda command: self.guard("claude", command, env), commands)))
 
 MODULE_BASE = """LIMIT = 1
 
