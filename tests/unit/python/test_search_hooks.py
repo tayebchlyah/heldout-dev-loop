@@ -63,7 +63,8 @@ class SearchHookTests(unittest.TestCase):
             walls, caller, name, tool_input, top, home, outcome)
         rows = [bash(both, "grep -rn make .", "d8"), bash(both, "rg make src", "ok"),
                 tool("Grep", {"pattern": "make"}, "d8"), tool("Glob", {"pattern": "src/**/*.py"}, "ok"),
-                bash(both, f"rg make {HELD}", "name")]
+                tool("Glob", {"pattern": "**/*.py"}, "d8"), bash(both, f"rg make {HELD}", "name")]
+        rows += [bash(both, c, "d8") for c in ("rg -n make", "egrep -r make .", "find . -name '*.py'")]
         rows += [bash(both, c, "ok") for c in (
             f"rg -g '!{HELD}/**' make", "rg --glob='!**/acceptance/**' make .", f"git grep make -- . ':!{HELD}'",
             f"git grep make -- ':(exclude){HELD}'", f"find . -path ./{HELD} -prune -o -name '*.py' -print",
@@ -72,7 +73,8 @@ class SearchHookTests(unittest.TestCase):
         rows += [bash(CLAUDE[:1], "grep -rn make .", "ok", {}), bash(CODEX, "rg make", "ok", {})]
         rows += [bash(CLAUDE[:1], "grep -rn make .", "no-d8", {"agent_id": "a", "agent_type": "spec-tester"}),
                  bash(CODEX, "grep -rn make .", "no-d8", {"agent_id": "a", "agent_type": "spec_tester"})]
-        rows += [tool("Monitor", {"command": "grep -rn make ."}, "d8"), tool("Monitor", {"command": "tail -f build.log"}, "ok")]
+        rows += [tool("Monitor", {"command": "grep -rn make ."}, "d8"), tool("Monitor", {"command": "rg -n make"}, "d8"),
+                 tool("Monitor", {"command": "tail -f build.log"}, "ok")]
         self.check(rows)
 
     def test_cli_location_and_failure(self) -> None:
