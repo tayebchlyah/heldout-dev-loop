@@ -547,23 +547,23 @@ class MergeCheckTests(MergeCheckCase):
         rows = [
             ("branch adds a pattern", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": ["x/*"]}, True),
             ("branch adds an empty list", {"version": "2.1.0"}, {"version": "2.1.0", "file_size_exempt": []}, False),
+            ("bad value on both sides", {"file_size_exempt": "x"}, {"file_size_exempt": "x", "version": "9"}, False),
         ]
         for name, main, branch, changed in rows:
             with self.subTest(name):
                 out = self.config_change(main, branch)
                 self.assertEqual(out["reasons"], [{"reason": "config-changed"}] if changed else [], out)
-        self.assertTrue(load_script("merge_check").config_shape_ok({"file_size_exempt": "x"}))
 
     def test_walled_skills_change(self) -> None:
         rows = [
             ("branch adds a name", {"version": "2.1.0"}, {"version": "2.1.0", "walled_skills": ["pg-guide"]}, True),
             ("branch adds an empty list", {"version": "2.1.0"}, {"version": "2.1.0", "walled_skills": []}, False),
+            ("bad value on both sides", {"walled_skills": "x"}, {"walled_skills": "x", "version": "9"}, False),
         ]
         for name, main, branch, changed in rows:
             with self.subTest(name):
                 out = self.config_change(main, branch)
                 self.assertEqual(self.reasons(out, "config-changed"), [{"reason": "config-changed"}] if changed else [])
-        self.assertTrue(load_script("merge_check").config_shape_ok({"walled_skills": "x"}))
 
     def test_source_dirs_change_needs_a_human(self) -> None:
         rows = [
@@ -576,6 +576,8 @@ class MergeCheckTests(MergeCheckCase):
             with self.subTest(name):
                 out = self.config_change(main, branch)
                 self.assertEqual(self.reasons(out, "config-changed"), [{"reason": "config-changed"}])
+        out = self.config_change(key(["internal/"]), key(["internal/"]))
+        self.assertEqual(self.reasons(out, "config-changed"), [])
 
     def test_invalid_source_dirs_is_unreadable(self) -> None:
         self.main_config(None, raw=key("internal/"))

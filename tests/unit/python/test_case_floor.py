@@ -7,8 +7,8 @@ import json
 import shutil
 import unittest
 
-from feature_gate import case_floor, green
 from test_feature_gate import RepoCase, git, guard, junit, run
+from feature_gate import case_floor, green
 
 
 class CaseFloorGuardTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class CaseFloorGuardTests(unittest.TestCase):
             ("a later head wins the tie", [full(4, "h1"), full(4, "h2")], "S", (4, "h2")),
             ("another suite", [full(4, "h1")], "T", (None, None)),
             ("failed mode", [full(4, "h1", mode="failed")], "S", (None, None)),
-            ("bad record heads", [full(4, "--output=x", suite=None)], "S", (None, None)),
+            ("old record without suite", [full(4, "--output=x", suite=None)], "S", (None, None)),
             ("tests None", [full(None, "h1")], "S", (None, None)),
             ("tests True", [full(True, "h1")], "S", (None, None)),
             ("no runs", [], "S", (None, None)),
