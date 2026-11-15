@@ -16,10 +16,11 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 import release
+import release_rulings
 from devloop import emit
 from merge_check import read_config
 
-VERSION = re.compile(rb"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.[1-9]\d*)?")
+VERSION = re.compile(release_rulings.VERSION.encode())
 HEADING = re.compile(rb"^## \[v?([^\]]+)\]", re.M)
 MERGED = {".claude/settings.json", ".codex/hooks.json", ".codex/config.toml"}
 MERGE_SCRIPT = """
