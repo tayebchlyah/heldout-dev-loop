@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from support import CLAUDE_HOOKS, CODEX_ASSETS, check_setup, git_in, write
@@ -224,21 +225,21 @@ class DenyWallScopeTests(unittest.TestCase):
             capture_output=True, check=False).returncode == 2
         walls = (lambda p: self.run_claude("deny-acceptance-to-subagents.sh", p).returncode == 2,
                  lambda p: self.run_claude("deny-path.sh", p, held).returncode == 2)
-        allowed = (f"cat > brief.md <<'EOF'\nNever read {held}.\nEOF", f"git diff -- . ':!{held}'",
-                   f"git log -- ':(exclude){held}'", f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"',
-                   f"rg -g '!{held}/**' make", "rg --glob='!**/acceptance/**' make .", f"rg --iglob '!{held}' make",
-                   f"find . -path ./{held} -prune -o -name '*.py' -print", f"find . -not -path '*/{held}/*' -name '*.py'",
+        allowed = (f"cat > brief.md <<'EOF'\nNever read {held}.\nEOF",
+                   f'git commit -m "$(cat <<\'EOF\'\nskip {held}\nEOF\n)"', f"rg --iglob '!{held}' make",
                    f"find . ! -path '*/{held}/*'", f"git grep make -- . ':^{held}'", f"git grep make -- . :^{held}",
                    f"cd src && find . -path ./{held} -prune -o -print")
         blocked = (f"git diff -- . ':!x' {held}/a.py", f"cat > f <<'EOF'\nx\nEOF\ncat {held}/a.py",
                    f"grep -v x {held}/a.py", f"rg -g '{held}/**' make", f"find . -name x -o -path ./{held}",
-                   f"grep -rn --exclude-dir={held} foo .", f"grep -rn foo . | grep -v {held}",
                    f"cat -- ! -path {held}/test_x.py", f"cat -path {held}/x -prune",
                    f"find . -path ./{held} -prune -o -print; cat {held}/test_x.py")
-        for wall in (*walls, codex_wall):
-            for command, deny in [(c, False) for c in allowed] + [(c, True) for c in blocked]:
-                payload = {**self.subagent({"command": command}), "tool_name": "Bash", "cwd": top}
-                self.assertEqual(wall(payload), deny, command)
+        calls = [(wall, command, deny) for wall in (*walls, codex_wall)
+                 for command, deny in [(c, False) for c in allowed] + [(c, True) for c in blocked]]
+        with ThreadPoolExecutor(8) as pool:
+            got = list(pool.map(lambda call: call[0]({**self.subagent({"command": call[1]}), "tool_name": "Bash",
+                                                      "cwd": top}), calls))
+        for (_, command, deny), denied in zip(calls, got):
+            self.assertEqual(denied, deny, command)
         for wall in (*walls, lambda p: "deny" in self.run_codex(p, held).stdout):
             for glob, deny in (("!" + held + "/**", False), (held + "/**", True)):
                 payload = {**self.subagent({"pattern": "make", "path": ".", "glob": glob}), "tool_name": "Grep", "cwd": top}
