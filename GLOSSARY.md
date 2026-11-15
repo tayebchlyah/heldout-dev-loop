@@ -75,6 +75,9 @@ The ordered tasks that build an approved spec, each small enough for one fresh a
 The acceptance tests written from the spec alone, which no implementer reads.
 _Avoid_: e2e tests, integration tests
 
+**Oracle copy**:
+A unit test row that checks the same input and outcome as a held-out test, no less strictly. The Stage 6 oracle copy step removes it.
+
 **Gate**:
 The project's fast check that must pass before a stage ends.
 _Avoid_: CI, test run
