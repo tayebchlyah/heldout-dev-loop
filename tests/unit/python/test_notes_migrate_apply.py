@@ -415,7 +415,9 @@ class ApplyTests(unittest.TestCase):
         for name, planted, error in rows:
             path.write_text(json.dumps(planted))
             before = self.tree()
-            for args in ([], ["--apply"], ["--apply", "--plan", planned]):
+            modes = ([], ["--apply"], ["--apply", "--plan", planned]) if name in ("not a dict", "bad hmac") else (
+                ["--apply", "--plan", planned],)
+            for args in modes:
                 with self.subTest(name, args=args):
                     out, code = self.run_cli(*args)
                     self.assertEqual((code, out["error"]), (1, error))

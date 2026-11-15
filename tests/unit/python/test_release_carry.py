@@ -109,18 +109,34 @@ class ReleaseCarryTests(unittest.TestCase):
             ("no record line", {"deferred": [ITEM.replace("Run 3", "Run 2"), ACCEPT]}, reopen("no-commit")),
             ("unknown prior sha", {"record_sha": "c" * 40, "base": None}, reopen("no-commit")),
         ]
-        bad = [[{"file": "/abs/a.py"}], [{"file": "src/../src/a.py"}], [{"file": ""}], [{"file": "src/gone.py"}], [{"file": "src"}],
-               None, [], "src/a.py", ["src/a.py"], [{"file": 3}], [{"file": "\ud800"}]]
-        for trace in bad:
-            finding = record(trace=trace)
-            if trace is None:
-                del finding["trace"]
-            rows.append((f"bad-trace {trace!r}", {"findings": [finding]}, reopen("bad-trace")))
+        rows.append(("bad-trace /abs/a.py", {"findings": [record(trace=[{"file": "/abs/a.py"}])]}, reopen("bad-trace")))
         rows.append(("symlink", {"change": True, "findings": [record(trace=[{"file": "src/l.py"}])]}, reopen("bad-trace")))
         for name, kw, reopened in rows:
             with self.subTest(name):
                 out, code, _, prints = self.case(**kw)
                 self.assertEqual((code, out["carried"], out["reopened"], "f-n1" in prints), (0, [], reopened, True))
+
+    def test_trace_files_rejects_bad_traces(self) -> None:
+        import release_carry
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name)
+        (repo / "src").mkdir()
+        (repo / "src" / "a.py").write_text("x = 1\n")
+        (repo / "src" / "l.py").symlink_to("a.py")
+        git = lambda *args: subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],  # noqa: E731
+                                           capture_output=True, text=True, check=True).stdout.strip()
+        git("init", "-q", "-b", "main")
+        git("add", "-A")
+        git("commit", "-q", "-m", "A")
+        sha = git("rev-parse", "HEAD")
+        bad = [[{"file": "/abs/a.py"}], [{"file": "src/../src/a.py"}], [{"file": ""}], None, [], "src/a.py", ["src/a.py"],
+               [{"file": 3}], [{"file": "src/gone.py"}], [{"file": "src"}], [{"file": "\ud800"}], [{"file": "src/l.py"}]]
+        for trace in bad:
+            with self.subTest(trace=trace):
+                self.assertIsNone(release_carry.trace_files(repo, trace, sha))
+        self.assertEqual(release_carry.trace_files(repo, TRACE, sha), ["src/a.py"])
 
     def test_waived_and_rc_scoped_items_are_skipped_never_carried(self) -> None:
         for sub in ("  - Ruling 2026-10-30: waive v3.0.0-rc.5 needs a live check", "  - Ruling 2026-10-30: accept for rc.4 only. Validate later."):
