@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import ast
+import contextlib
 import json
 import re
 import subprocess
@@ -127,12 +129,28 @@ class RepoDocsTests(unittest.TestCase):
                         self.assertEqual([line for line in path.read_text().splitlines() if re.search(climb, line)], [])
 
     def test_only_the_suite_helper_puts_the_kit_scripts_on_sys_path(self) -> None:
-        kit_scripts = re.compile(r"sys\.path\.insert\(.*(?:\"skill\" / \"scripts\"|SKILL_ROOT / \"scripts\")")
-        for path in sorted((ROOT / "tests" / "unit" / "python").glob("*.py")):
+        kit_scripts = (ROOT / "skill" / "scripts").resolve()
+        for path in sorted((ROOT / "tests" / "unit" / "python").rglob("*.py")):
             if path.name != "support.py":
-                with self.subTest(path=path.name):
-                    self.assertEqual([f"{n}: {line.strip()}" for n, line in enumerate(path.read_text().splitlines(), 1)
-                                      if kit_scripts.search(line)], [])
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    text = path.read_text()
+                    tree = ast.parse(text)
+                    names = {"Path": Path, "str": str, "ROOT": ROOT, "HERE": path.parent,
+                             "SKILL_ROOT": ROOT / "skill", "__file__": str(path)}
+                    for node in tree.body:
+                        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                            with contextlib.suppress(Exception):
+                                names[node.targets[0].id] = eval(compile(ast.Expression(node.value), str(path), "eval"),
+                                                                 {"__builtins__": {}}, names)
+                    found = []
+                    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+                        if ast.unparse(call.func) in ("sys.path.insert", "sys.path.append") and call.args:
+                            with contextlib.suppress(Exception):
+                                value = eval(compile(ast.Expression(call.args[-1]), str(path), "eval"),
+                                             {"__builtins__": {}}, names)
+                                if Path(value).resolve() == kit_scripts:
+                                    found.append(f"{call.lineno}: {text.splitlines()[call.lineno - 1].strip()}")
+                    self.assertEqual(found, [])
 
     def test_cli_files_index_and_help_agree(self) -> None:
         commands = help_commands()

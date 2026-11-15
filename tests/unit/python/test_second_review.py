@@ -20,7 +20,6 @@ from support import ROOT  # noqa: E402
 
 SCRIPTS = ROOT / "skill" / "scripts"
 DEVLOOP = SCRIPTS / "devloop.py"
-sys.path.insert(0, str(SCRIPTS))
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
 
 
