@@ -82,6 +82,10 @@ A unit test row that checks the same input and outcome as a held-out test, no le
 The project's fast check that must pass before a stage ends.
 _Avoid_: CI, test run
 
+**Inert path**:
+A path no test reads, listed in `inert_paths`: a pull request that changes only such paths skips the CI test suites.
+_Avoid_: ignored path, skip path
+
 **Time ratchet**:
 The check of `gate --summary` and `acceptance` that fails when a branch makes its tests slower than a green run of an ancestor.
 _Avoid_: speed check

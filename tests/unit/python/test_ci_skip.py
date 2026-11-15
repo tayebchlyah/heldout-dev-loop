@@ -16,6 +16,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "skill" / "scripts"))
+import ci_skip  # noqa: E402
+
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"
 GIT = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "init.defaultBranch=main"]
 
@@ -259,6 +262,55 @@ class CiSkipTests(unittest.TestCase):
         code, out = self.run_skip("--base", "HEAD", repo=empty, env=env)
         self.assertEqual(code, 1)
         self.assertIn("error", out)
+
+
+    def inert_base(self, globs: object, **files: str | None) -> dict[str, str | None]:
+        return {"dev-loop.json": config(inert_paths=globs), "assets/logo.svg": "a\n", **files}
+
+    def test_inert_path_skips_with_kind_inert(self) -> None:
+        code, out = self.check({"assets/logo.svg": "b\n"}, self.inert_base(["assets/*"]))
+        self.assertEqual((code, out["skip"], out["kind"], out["blocking"]), (0, True, "inert", []))
+
+    def test_inert_list_is_read_at_the_merge_base(self) -> None:
+        _, out = self.check({"dev-loop.json": config(inert_paths=["*"]), "src/app.py": "x = 1\n"}, self.inert_base(["assets/*"]))
+        self.assertEqual((out["skip"], out["blocking"]), (False, ["dev-loop.json", "src/app.py"]))
+
+    def test_never_inert_paths_block(self) -> None:
+        never = [".codex/config.toml", ".codex/rules/default.rules", ".dev-loop/MANIFEST.json", ".dev-loop/hooks/claude/x.sh"]
+        _, out = self.check({path: "changed\n" for path in never}, self.inert_base(["*"]))
+        self.assertEqual((out["skip"], out["blocking"]), (False, never))
+
+    def test_bad_inert_paths_at_the_merge_base_is_an_error(self) -> None:
+        for value in ("assets/*", ["assets/"], [""], ["  "], [1]):
+            with self.subTest(value=value):
+                self.setUp()
+                code, out = self.check({"assets/logo.svg": "b\n"}, self.inert_base(value))
+                self.assertEqual(code, 1)
+                self.assertIn("error", out)
+
+    def test_bad_inert_paths_only_at_the_head_blocks(self) -> None:
+        code, out = self.check({"dev-loop.json": config(inert_paths="assets/*"), "assets/logo.svg": "b\n"},
+                               self.inert_base(["assets/*"]))
+        self.assertEqual((code, out["skip"], out["blocking"]), (0, False, ["dev-loop.json"]))
+
+    def test_unreadable_config_at_the_merge_base_has_no_inert_path(self) -> None:
+        for text in ("{", "[]"):
+            with self.subTest(text=text):
+                self.setUp()
+                _, out = self.check({"assets/logo.svg": "b\n"}, {"dev-loop.json": text, "assets/logo.svg": "a\n"})
+                self.assertEqual((out["skip"], out["blocking"]), (False, ["assets/logo.svg"]))
+
+    def test_deleted_inert_path_skips(self) -> None:
+        _, out = self.check({"assets/old.svg": None}, self.inert_base(["assets/*"], **{"assets/old.svg": "o\n"}))
+        self.assertEqual((out["skip"], out["kind"]), (True, "inert"))
+
+    def test_release_and_inert_path_is_kind_release(self) -> None:
+        _, out = self.check({**RELEASE, "assets/logo.svg": "b\n"}, self.inert_base(["assets/*"]))
+        self.assertEqual((out["skip"], out["kind"]), (True, "release"))
+
+    def test_blocking_without_inert_never_reads_the_list(self) -> None:
+        self.check({"assets/logo.svg": "b\n"}, self.inert_base([""]))
+        self.assertEqual(ci_skip.blocking(self.repo, self.base, self.head, ["assets/logo.svg"]), ["assets/logo.svg"])
 
 
 if __name__ == "__main__":
