@@ -75,21 +75,27 @@ def subjects(repo: Path, base: str) -> tuple[dict, int]:
 CHECKED_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
 SKIPPED_PREFIXES = ("tests/acceptance/", ".agents/", ".claude/", ".codex/", ".dev-loop/", "node_modules/")
 KINDS = re.compile(
-    r"https?://|#\d+\b|\bRFC \d+|allow-comment: dependency"
+    r"allow-comment: dependency"
     r"|(?:#|//)\s*(?:shortcut: [^,]+, \S|SPDX-License-Identifier|Copyright|License(?::|d under|\s*$)"
     r"|(?i:noqa)|nosec|isort:|type:|pyright:|pylint:|pragma|fmt: (?:off|on|skip)|eslint-|biome-ignore|@ts-|shellcheck)"
 )
 DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 HEREDOC = re.compile(r"<<-?[ \t]*(?:\\(\w+)|(['\"])([^'\"]+)\2|([A-Za-z_]\w*))")
 CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
+LINK = r"\(?(?:#\d+|https?://\S+|RFC \d+)\)?"
+LINK_ONLY = re.compile(rf"(?:(?:#|//)\s*)?(?i:(?:see|fixes|closes|refs?|issue)\s+)?{LINK}(?:\s*(?:,|and)\s*{LINK})*\.?")
 
 
 def checked(path: str) -> bool:
     return path.endswith(CHECKED_SUFFIXES) and not path.startswith(SKIPPED_PREFIXES)
 
 
+def link_only(text: str) -> bool:
+    return LINK_ONLY.fullmatch(text.strip()) is not None
+
+
 def kind_ok(text: str) -> bool:
-    return KINDS.search(text) is not None
+    return KINDS.search(text) is not None or link_only(text)
 
 
 def python_tokens(text: str) -> list[tokenize.TokenInfo] | None:
@@ -260,7 +266,7 @@ def allowed_lines(path: str, text: str) -> set[int]:
             allowed.add(n)
         n += 1
     for n in sorted(comments):
-        if kind_ok(comments[n]) or (n - 1 in allowed and n - 1 in comments):
+        if kind_ok(comments[n]) or (n - 1 in allowed and n - 1 in comments and not link_only(comments[n - 1])):
             allowed.add(n)
     return allowed
 
