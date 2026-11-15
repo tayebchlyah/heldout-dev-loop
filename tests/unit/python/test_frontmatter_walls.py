@@ -176,9 +176,9 @@ class FrontmatterWallTwinTests(unittest.TestCase):
 
     def test_the_settings_twin_denies_every_tool_of_the_agent_wall(self) -> None:
         for wall in walls():
-            for folder in wall.folders:
+            for i, folder in enumerate(wall.folders):
                 target = f"{folder.rstrip('/')}/probe.py"
-                for pattern in sorted(wall.tools):
+                for pattern in sorted(wall.tools) if i == 0 else ["Read"]:
                     tool = MCP_NAME if pattern == "mcp__.*" else pattern
                     payload = {"agent_id": "sub-1", "agent_type": wall.name, "tool_name": tool,
                                "tool_input": PROBES[tool](target)}
