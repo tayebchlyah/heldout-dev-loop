@@ -94,7 +94,7 @@ Each other job:
     if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
 ```
 
-Inert paths. A project may list `inert_paths` in `dev-loop.json`: globs of paths no test reads, read at the merge base (rule (f) of `reference/cli/ci-skip.md`). A PR that changes only these skips every suite with `kind` `inert`, so add a short `hygiene` job that runs on a skip (`needs: changes`, `if: ${{ !cancelled() && needs.changes.outputs.skip == 'true' }}`) and runs the tests that read the inert paths. The required job passes only on a skip with a green `hygiene`, or on green suites.
+Inert paths: `inert_paths` in `dev-loop.json` lists globs no test reads (rule (f) of `reference/cli/ci-skip.md`). A PR of only these skips the suites (`kind` `inert`): add a `hygiene` job that runs on a skip and runs the tests that read them; the required job passes on a skip only with `hygiene` green.
 
 ## Upgrade
 

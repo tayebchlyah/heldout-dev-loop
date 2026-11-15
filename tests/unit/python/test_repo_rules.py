@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -330,6 +331,39 @@ class RepoCommentsTests(unittest.TestCase):
         code, out = run_rules(ROOT, "comments")
         self.assertEqual(code, 0, out)
         self.assertTrue(out["ok"])
+
+
+HYGIENE = {"tests/unit/node/payload.test.mjs", "tests/unit/python/test_repo_rules.py",
+           "tests/unit/python/test_stacks_setup.py"}
+
+
+class InertPathsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.globs = json.loads((ROOT / "dev-loop.json").read_text()).get("inert_paths", [])
+        self.tracked = [p for p in git(ROOT, "ls-files", "-z").split("\0") if p]
+        self.impact = json.loads((ROOT / "tests" / "impact-map.json").read_text())["paths"]
+
+    def test_each_glob_matches_a_tracked_file(self) -> None:
+        self.assertTrue(self.globs)
+        for glob in self.globs:
+            with self.subTest(glob=glob):
+                self.assertTrue([p for p in self.tracked if fnmatchcase(p, glob)], glob)
+
+    def test_each_inert_path_is_mapped_with_hygiene_readers_only(self) -> None:
+        for path in (p for p in self.tracked if any(fnmatchcase(p, g) for g in self.globs)):
+            with self.subTest(path=path):
+                self.assertIn(path, self.impact)
+                self.assertLessEqual(set(self.impact[path]), HYGIENE, path)
+
+    def test_the_hygiene_job_runs_the_hygiene_set(self) -> None:
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        parts = re.split(r"^  ([\w-]+):\n", ci.split("\njobs:\n", 1)[1], flags=re.M)
+        job = dict(zip(parts[1::2], parts[2::2]))["hygiene"]
+        node = re.findall(r"run: node --test (.+)\n", job)
+        modules = re.findall(r"DEVLOOP_TEST_MODULES: (.+)\n", job)
+        self.assertEqual(len(modules), 1)
+        python = {f"tests/unit/python/{m.strip()}.py" for m in modules[0].split(",")}
+        self.assertEqual({p for line in node for p in line.split()} | python, HYGIENE)
 
 
 class RepoAuditImageTests(unittest.TestCase):
