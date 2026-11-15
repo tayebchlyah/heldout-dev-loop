@@ -317,7 +317,7 @@ class GuardTests(unittest.TestCase):
             main = {"cwd": "/repo"}
             implementer = {"cwd": "/repo", "agent_id": "a", "agent_type": "implementer"}
             spec_tester = {"cwd": "/repo", "agent_id": "b", "agent_type": tester}
-            for caller, command, deny in [
+            rows = [
                 (main, seal, True),
                 (implementer, seal, True),
                 (main, "devloop.py 'seal' --feature x --message y", True),
@@ -359,7 +359,10 @@ class GuardTests(unittest.TestCase):
                 (spec_tester, "cat <<'EOF'\ngit commit\nEOF", False),
                 (spec_tester, "git status && git log", False),
                 (spec_tester, "git revert --no-commit abc", False),
-            ]:
+            ]
+            if harness == "codex":
+                rows = [(main, seal, True), (spec_tester, seal, False), (spec_tester, "git commit -m x", True)]
+            for caller, command, deny in rows:
                 with self.subTest(harness=harness, caller=caller.get("agent_type", "main"), command=command):
                     result = self.guard(harness, "git-guard.sh", {**caller, "tool_input": {"command": command}})
                     self.assertEqual(self.denied(result), deny, result.stderr)
