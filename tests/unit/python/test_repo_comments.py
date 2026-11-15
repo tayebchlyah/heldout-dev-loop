@@ -142,7 +142,6 @@ class CommentCommandTests(RulesRepo):
                 (self.repo / path).unlink()
 
 
-
 class CommentsRepo(RulesRepo):
     def assert_violations(self, expected: list[tuple[str, int, str]]) -> None:
         code, out = run_rules(self.repo, "comments")
