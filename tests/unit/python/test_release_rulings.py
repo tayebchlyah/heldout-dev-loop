@@ -18,7 +18,6 @@ sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 from test_devloop import git, put  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import release  # noqa: E402
 
 DEVLOOP = ROOT / "skill" / "scripts" / "devloop.py"

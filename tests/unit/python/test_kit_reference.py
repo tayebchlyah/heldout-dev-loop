@@ -21,7 +21,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from support import ROOT  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import ci_skip  # noqa: E402
 import release  # noqa: E402
 

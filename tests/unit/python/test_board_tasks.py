@@ -11,9 +11,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT  # noqa: E402
+import support  # noqa: E402, F401
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from board import state as board_state  # noqa: E402
 from board_fixtures import BoardHookFixture, RobustBoard, RobustnessHookFixture, epoch, put, set_time  # noqa: E402
 

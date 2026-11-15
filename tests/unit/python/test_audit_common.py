@@ -14,9 +14,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT  # noqa: E402
+import support  # noqa: E402, F401
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from audit import common  # noqa: E402
 from audit_fixtures import stub_skill, validator_calls, validator_exit  # noqa: E402
 from seal import ACCEPTANCE_DIR  # noqa: E402

@@ -14,9 +14,8 @@ from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT  # noqa: E402
+import support  # noqa: E402, F401
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 import devloop  # noqa: E402
 from board import server, state, writer  # noqa: E402
 from board_fixtures import MACHINE, Board, put  # noqa: E402

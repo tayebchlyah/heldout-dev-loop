@@ -10,9 +10,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from support import ROOT  # noqa: E402
+import support  # noqa: E402, F401
 
-sys.path.insert(0, str(ROOT / "skill" / "scripts"))
 from board import sources  # noqa: E402
 from board_fixtures import Board, git, note_text, put, read_note  # noqa: E402
 
