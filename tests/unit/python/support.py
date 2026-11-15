@@ -148,6 +148,46 @@ def make_git_repo(root: Path, files: dict[str, str]) -> Path:
     return repo
 
 
+TEMPLATE_ENV = "DEVLOOP_TEST_TEMPLATE"
+_template: Path | None = None
+
+
+def build_sandbox_template(folder: Path) -> Path:
+    folder = folder.resolve()
+    repo = folder / "repo"
+    repo.mkdir(parents=True)
+    git_in(folder, "init", "-q", "--bare", str(folder / "origin.git"))
+    git_in(repo, "init", "-q")
+    write(repo / "GLOSSARY.md", "# Glossary\n")
+    git_in(repo, "add", "-A")
+    git_in(repo, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "base")
+    git_in(repo, "remote", "add", "origin", str(folder / "origin.git"))
+    git_in(repo, "push", "-q", "origin", "main")
+    git_in(repo, "fetch", "-q", "origin")
+    return folder
+
+
+def sandbox_template() -> Path:
+    global _template
+    if os.environ.get(TEMPLATE_ENV):
+        return Path(os.environ[TEMPLATE_ENV]).resolve()
+    if _template is None:
+        folder = Path(tempfile.mkdtemp(prefix="devloop-template-"))
+        atexit.register(shutil.rmtree, folder, ignore_errors=True)
+        _template = build_sandbox_template(folder)
+    return _template
+
+
+def copy_sandbox(root: Path) -> tuple[Path, Path]:
+    template = sandbox_template()
+    repo, origin = root / "repo", root / "origin.git"
+    shutil.copytree(template / "repo", repo, symlinks=True)
+    shutil.copytree(template / "origin.git", origin, symlinks=True)
+    config = repo / ".git" / "config"
+    config.write_text(config.read_text().replace(str(template / "origin.git"), str(origin)))
+    return repo, origin
+
+
 SLOW_STUB_SECONDS = 30
 STUBS = {
     "ok": 'print(json.dumps({"ok": True, "reasons": []}))',

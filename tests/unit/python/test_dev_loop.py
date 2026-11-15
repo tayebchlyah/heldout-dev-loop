@@ -357,6 +357,7 @@ class JUnitReportTests(unittest.TestCase):
                         "original=runner.subprocess.run\n"
                         "def child(*args,**kwargs):\n"
                         " result=original(*args,**kwargs)\n"
+                        " if '--chunk' not in args[0]: return result\n"
                         " report=Path(args[0][args[0].index('--chunk')+1])\n"
                         f" if {damage!r}=='missing': report.unlink()\n"
                         f" if {damage!r}=='partial':\n"
@@ -386,6 +387,34 @@ class JUnitReportTests(unittest.TestCase):
         self.assertIn("line 99", cases["a"].find("error").text)
         self.assertNotIn("line 0\n", cases["a"].find("error").text)
 
+    def test_slow_run_parallel_lends_the_template_and_removes_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp, "scratch")
+            scratch.mkdir()
+            seen = Path(tmp, "seen")
+            module = "template_probe_" + uuid.uuid4().hex
+            Path(tmp, f"{module}.py").write_text(
+                "import os, unittest\nfrom pathlib import Path\nclass T(unittest.TestCase):\n"
+                " def test_sees(self):\n"
+                "  p = os.environ['DEVLOOP_TEST_TEMPLATE']\n"
+                f"  Path({str(seen)!r}).write_text(p)\n"
+                "  self.assertTrue(Path(p, 'repo', '.git').is_dir())\n"
+                " def test_red(self): self.fail('red')\n")
+            code = ("import unittest; import test_dev_loop as runner\n"
+                    f"import {module} as fixture\n"
+                    "for name,value in list(vars(runner).items()):\n"
+                    " if isinstance(value,type) and issubclass(value,unittest.TestCase): delattr(runner,name)\n"
+                    "runner.T=fixture.T\nraise SystemExit(runner.run_parallel(1))\n")
+            env = {**{k: v for k, v in os.environ.items() if k != "DEVLOOP_TEST_TEMPLATE"},
+                   "PYTHONPATH": os.pathsep.join((tmp, str(Path(__file__).parent))), "TMPDIR": str(scratch)}
+            result = subprocess.run([sys.executable, "-B", "-c", code], cwd=tmp, env=env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertTrue(seen.exists(), result.stdout + result.stderr)
+            used = Path(seen.read_text())
+            self.assertTrue(used.resolve().is_relative_to(scratch.resolve()), used)
+            self.assertFalse(used.exists())
+
     def test_unittest_summary_line_is_dropped_from_echoed_stderr(self) -> None:
         """`FAILED (failures=2)` would be listed by devloop.py as a failure; the runner's own line is not touched."""
         text = "boom\nFAILED (failures=2)\nFAILED (errors=1, skipped=3)\nRan 5 of 9 tests in 1.0s: FAILED\n"
@@ -406,12 +435,19 @@ def run_parallel(jobs: int) -> int:
                                                  for test in flat(suite)))))
     chunks = [ids[i:i + 5] for i in range(0, len(ids), 5)]
     reports = os.environ.get("DEVLOOP_REPORT_DIR")
+    from support import TEMPLATE_ENV, build_sandbox_template
+
     outcomes = Path(tempfile.mkdtemp())
+    template = Path(tempfile.mkdtemp())
     try:
+        build_sandbox_template(template)
+        os.environ[TEMPLATE_ENV] = str(template)
         return run_chunks([sys.executable, __file__, "--chunk"], chunks, ids, jobs, Path(__file__).parent,
                           Path(reports) / "skill.xml" if reports else None, "skill", outcomes)
     finally:
+        os.environ.pop(TEMPLATE_ENV, None)
         shutil.rmtree(outcomes, ignore_errors=True)
+        shutil.rmtree(template, ignore_errors=True)
 
 
 if __name__ == "__main__":
