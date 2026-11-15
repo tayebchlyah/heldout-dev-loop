@@ -83,7 +83,7 @@ Stage 6 runs once per feature, at one commit:
 3. **Fix wave**: one fresh implementer per group of files.
 4. **Drive**: in a project with a UI, the verify skill drives the changed routes in Chromium and keeps screenshots.
 5. **Acceptance loop**: the held-out suite runs, and each failure is classified as product, test or environment before the next round. A round must reduce the failing count, or the loop stops.
-6. **Oracle copies**: in Tracks M and L, the unit tests that repeat a held-out test are removed by one fresh implementer, from a brief that names only the unit test ids.
+6. **Oracle copies**: in Tracks M and L, the unit tests that repeat a held-out test are removed by one fresh implementer, from a brief that names the unit test ids and the row inputs, never a held-out name.
 
 ### The autonomy grant
 
