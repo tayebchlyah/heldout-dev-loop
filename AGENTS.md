@@ -47,7 +47,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `assets/`: README logo, icon, loop diagram (`the-loop.archify.json` source).
 - `docs/`: human guides `usage.md`, `configuration.md`, `commands.md`, `upgrade.md`.
 - `LICENSE`: MIT; `skill/LICENSE.txt` identical kit copy. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` issue and PR templates: community files.
-- `.github/rulesets/`: ruleset bodies for `gh api`, contexts: `ci.yml` non-shard job ids.
+- `.github/rulesets/`: `gh api` ruleset bodies, contexts `changes`, `test`, `acceptance`.
 
 ## devloop CLI
 

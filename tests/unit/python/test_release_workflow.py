@@ -62,7 +62,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, changes)
         jobs = self.jobs(ci)
-        self.assertEqual(list(jobs), ["changes", "test-shards", "test", "acceptance"])
+        self.assertEqual(list(jobs), ["changes", "test-shards", "hygiene", "test", "acceptance"])
         for name in ("test-shards", "acceptance"):
             with self.subTest(job=name):
                 self.assertIn("    needs: changes\n", jobs[name])
@@ -74,17 +74,32 @@ class ReleaseWorkflowTests(unittest.TestCase):
         parts = re.split(r"^  ([\w-]+):\n", ci.split("\njobs:\n", 1)[1], flags=re.M)
         return dict(zip(parts[1::2], parts[2::2]))
 
-    def test_the_test_job_passes_only_on_a_skip_or_every_shard_green(self) -> None:
+    def test_the_test_job_passes_only_on_a_skip_with_hygiene_or_every_shard_green(self) -> None:
         job = self.jobs(self.workflow("ci.yml"))["test"]
-        self.assertIn("    needs: [changes, test-shards]\n    if: ${{ always() }}\n", job)
+        self.assertIn("    needs: [changes, test-shards, hygiene]\n    if: ${{ always() }}\n", job)
         self.assertIn("SHARDS: ${{ needs.test-shards.result }}\n", job)
         self.assertIn("SKIP: ${{ needs.changes.outputs.skip }}\n", job)
+        self.assertIn("HYGIENE: ${{ needs.hygiene.result }}\n", job)
         run = job.split("        run: ", 1)[1].strip().strip("'")
-        for skip, shards, code in (("true", "skipped", 0), ("false", "success", 0), ("", "skipped", 1),
-                                   ("false", "failure", 1), ("false", "cancelled", 1), ("false", "skipped", 1)):
-            with self.subTest(skip=skip, shards=shards):
-                result = subprocess.run(["bash", "-c", run], env={"SKIP": skip, "SHARDS": shards})
-                self.assertEqual(result.returncode, code)
+        for skip, hygiene, shards, code in (("true", "success", "skipped", 0), ("false", "skipped", "success", 0),
+                                            ("true", "failure", "skipped", 1), ("true", "skipped", "skipped", 1),
+                                            ("false", "skipped", "failure", 1), ("", "skipped", "skipped", 1),
+                                            ("false", "skipped", "cancelled", 1)):
+            with self.subTest(skip=skip, hygiene=hygiene, shards=shards):
+                result = subprocess.run(["bash", "-c", run], env={"SKIP": skip, "HYGIENE": hygiene, "SHARDS": shards})
+                self.assertEqual(result.returncode == 0, code == 0)
+
+    def test_hygiene_job(self) -> None:
+        job = self.jobs(self.workflow("ci.yml"))["hygiene"]
+        for needle in ("    needs: changes\n", "    if: ${{ !cancelled() && needs.changes.outputs.skip == 'true' }}\n",
+                       "run: node --test tests/unit/node/payload.test.mjs\n",
+                       "DEVLOOP_TEST_MODULES: test_repo_rules,test_stacks_setup\n",
+                       "run: python3 tests/unit/python/test_dev_loop.py\n"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, job)
+        for needle in ("npm ci", "playwright", "git-cliff"):
+            with self.subTest(absent=needle):
+                self.assertNotIn(needle, job)
 
     def test_the_shard_jobs_pass_their_part_to_the_runner(self) -> None:
         jobs = self.jobs(self.workflow("ci.yml"))
