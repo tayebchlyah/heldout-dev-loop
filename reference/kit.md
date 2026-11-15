@@ -94,6 +94,8 @@ Each other job:
     if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
 ```
 
+Inert paths. A project may list `inert_paths` in `dev-loop.json`: globs of paths no test reads, read at the merge base (rule (f) of `reference/cli/ci-skip.md`). A PR that changes only these skips every suite with `kind` `inert`, so add a short `hygiene` job that runs on a skip (`needs: changes`, `if: ${{ !cancelled() && needs.changes.outputs.skip == 'true' }}`) and runs the tests that read the inert paths. The required job passes only on a skip with a green `hygiene`, or on green suites.
+
 ## Upgrade
 
 Upgrade: `npx github:tayebchlyah/heldout-dev-loop#<tag> upgrade` on a branch, diff goes into a PR. Rollback: `git revert` the upgrade commit; a machine back to 1.4: `npx github:tayebchlyah/heldout-dev-loop#v1.4.0`. Before the first `init` on a machine: `uninstall-global`, else Claude Code runs the global skill and Codex runs neither. `uninstall-global` removes a 1.4 install from its own frozen lists (files, 1.4 and 1.5 hook commands).

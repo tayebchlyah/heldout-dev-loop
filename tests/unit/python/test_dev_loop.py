@@ -82,7 +82,7 @@ class JUnitReportTests(unittest.TestCase):
     def test_in_modules_table(self) -> None:
         ids = ["test_dev_loop.JUnitReportTests.test_1", "test_x.A.test_1", "test_x.B.test_2", "test_y.C.test_1",
                "test_xy.D.test_1"]
-        rows = (("test_x", ids[:3]), ("test_x test_y", ids[:4]), ("", ids), (None, ids))
+        rows = (("test_x", ids[:3]), ("test_x test_y", ids[:4]), ("test_x,test_y", ids[:4]), ("", ids), (None, ids))
         for value, kept in rows:
             with self.subTest(value=value):
                 env = {} if value is None else {"DEVLOOP_TEST_MODULES": value}

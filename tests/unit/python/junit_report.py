@@ -57,7 +57,7 @@ def in_shard(keys: list[str]) -> list[str]:
 
 
 def in_modules(keys: list[str]) -> list[str]:
-    names = set((os.environ.pop("DEVLOOP_TEST_MODULES", None) or "").split())
+    names = set((os.environ.pop("DEVLOOP_TEST_MODULES", None) or "").replace(",", " ").split())
     if not names:
         return keys
     return [key for key in keys if key.split(".")[0] in names | {"test_dev_loop"}]
