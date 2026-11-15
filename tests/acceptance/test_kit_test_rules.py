@@ -7,7 +7,8 @@ acceptance flow; each docstring names its oracle line.
 Fixture choices the spec leaves open:
 - A numbered rule of `skill/references/tests.md` is the text from a line `<n>. ` to the next numbered line, heading
   or end of file, outside the `## Oracle copy step` section; rule 3 is the first `3. ` item.
-- A section runs from its `## ` heading to the next `## ` heading. A paragraph is a block between blank lines; it
+- A section runs from its `## ` heading to the next `## ` heading. A paragraph is a block between blank lines; in
+  `## 6 Feature gate` of `SKILL.md`, which writes each paragraph as one line, it is a non-empty line. A paragraph
   "starts with" a phrase after leading markup (`*`, `_`, `-`, spaces).
 - Phrase checks ignore line wraps (whitespace runs read as one space) and, where the oracle gives no exact casing,
   case.
@@ -63,8 +64,8 @@ def stage6() -> str:
 
 
 def stage6_paragraph(phrase: str) -> tuple[int, str]:
-    found = [(index, paragraph) for index, paragraph in enumerate(paragraphs(stage6()))
-             if starts_with(paragraph, phrase)]
+    lines = [line.strip() for line in stage6().splitlines() if line.strip()]
+    found = [(index, paragraph) for index, paragraph in enumerate(lines) if starts_with(paragraph, phrase)]
     if not found:
         raise AssertionError(f"no Stage 6 paragraph starts with `{phrase}`")
     return found[0]
