@@ -45,7 +45,8 @@ class AbsolutePathWallTests(unittest.TestCase):
             ]
             for script, agent in [(claude, "spec-tester"), (codex, "spec_tester")]:
                 rows += [(script, agent, "Bash", {"command": command}, code) for command, code in [
-                    (f"gcc -I{top}/src x.c", 2), (f"cat {top}/../repo/src/y.py", 2), (f"cat {top}/README.md", 0)]]
+                    (f"gcc -I{top}/src x.c", 2), (f"cat {top}/../repo/src/y.py", 2), (f"cat {top}2/src/y.py", 2),
+                    (f"cat {top}/README.md", 0)]]
             rows += [
                 (codex, "spec_tester", "Bash", {"command": f"cat {top}/tests/acceptance/x.py"}, 0),
                 (codex, "spec_tester", "apply_patch", {"command": patch(f"*** Add File: {top}/tests/acceptance/x.py")}, 0),
@@ -421,7 +422,8 @@ class KitWallTests(unittest.TestCase):
                ".codex/rules/dev-loop.rules", ".agents/skills/continue/SKILL.md", ".agents/skills/pause/agents/openai.yaml",
                ".claude/skills/pause/SKILL.md", ".claude/skills/continue", ".agents/skills/release-audit/SKILL.md",
                ".agents/skills/garden/SKILL.md", ".agents/skills/release/SKILL.md", ".agents/skills/release-notes/x.md",
-               ".claude/skills/release/SKILL.md", *[f"{folder}/{name}" for folder, name in KIT_AGENTS]]
+               ".claude/skills/release/SKILL.md", ".claude/skills/release-audit/SKILL.md",
+               ".claude/skills/garden/SKILL.md", ".claude/skills/release-notes/SKILL.md", *[f"{folder}/{name}" for folder, name in KIT_AGENTS]]
         open_paths = ["skill/scripts/seal/check.py", "claude/hooks/git-guard.sh", ".claude/agents/my-reviewer.md",
                       ".codex/agents/mine.toml", ".codex/rules/mine.rules", "docs/dev-loop/x.md",
                       ".agents/skills/verify-shop/SKILL.md", ".claude/skills/pauses/SKILL.md", "skills/pause/SKILL.md",
@@ -496,6 +498,10 @@ class CdWallTests(unittest.TestCase):
             rows += [(shell, script, implementer, command, deny) for command, deny in [
                 ("cd tests && cat acceptance/x.py", True),
                 ("cd tests && cd acceptance && cat x.py", True),
+                ("cd tests; cd acceptance && ls", True),
+                ("(cd tests && ls acceptance)", True),
+                ("bash -c 'cd tests && cat acceptance/x.py'", True),
+                ("echo `cd tests && cat acceptance/x.py`", True),
                 ("cd /repo/tests && cat acceptance/x.py", True),
                 ("pushd tests && cat acceptance/x.py", True),
                 ("cd -P tests && cat acceptance/x.py", True),
