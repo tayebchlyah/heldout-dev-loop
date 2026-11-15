@@ -250,7 +250,7 @@ class SkillWallTests(unittest.TestCase):
             ("Body\ncontext: fork\n", None), (front("name2: y") + "hooks: x\n", None), (b"Plain \xff text\n", None)]
         for text, reason in rows:
             with self.subTest(text=text):
-                self.assertEqual(verdict(self.repo(text=text)), denied(reason) if reason else ALLOW)
+                self.assertEqual(skills.scan(text if isinstance(text, bytes) else text.encode()), reason)
 
     def test_cli(self) -> None:
         top = self.repo()

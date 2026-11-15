@@ -136,7 +136,7 @@ class MutationRun(unittest.TestCase):
                 self.assertEqual((code, out["status"], out["entries"][0]["status"]), (1, status, status))
                 self.assertEqual(out["entries"][0]["cause"], cause)
 
-    def test_slow_output_faults(self) -> None:
+    def output_faults(self) -> list[tuple[str, str, str]]:
         good = mutant("u1", "core/a.py", 1, "survived", "-a\n+b")
         gap = {"file": "core/b.py", "start": 1, "end": 1, "reason": "r"}
 
@@ -144,7 +144,7 @@ class MutationRun(unittest.TestCase):
             return output([{**good, field: value}], ["u1"], [gap])
 
         no_unit = {k: v for k, v in good.items() if k != "unit"}
-        cases = [
+        return [
             ("not json", "not json", "JSON"),
             ("no unit", output([no_unit], ["u1"], [gap]), "unit"),
             ("status lived", bad("status", "lived"), "lived"),
@@ -161,14 +161,25 @@ class MutationRun(unittest.TestCase):
             ("diff row", bad("diff", "-a\nx"), "diff"),
             ("empty unit in units", output([good], ["u1", ""], [gap]), "units"),
         ]
-        for name, text, word in cases:
+
+    def test_slow_output_faults(self) -> None:
+        _, text, word = next(case for case in self.output_faults() if case[0] == "file not named")
+        script = adapter_script(self.record(), text)
+        code, out, _ = self.run_case([ENTRY], {"app/adapt": script, "app/core/a.py": "a\n", "app/core/b.py": "a\n"},
+                                     {"app/core/a.py": "b\n", "app/core/b.py": "b\n"})
+        self.assertEqual((code, out["entries"][0]["status"]), (1, "setup"))
+        self.assertIn(word, out["entries"][0]["cause"])
+
+    def test_check_output_faults(self) -> None:
+        from mutation.run import check_output
+
+        request = {"protocol": 1, "run": True, "base": "b", "head": "h",
+                   "files": {"core/a.py": [[1, 1]], "core/b.py": [[1, 1]]}, "only": None}
+        for name, text, word in self.output_faults():
             with self.subTest(name):
-                script = adapter_script(self.record(), text)
-                code, out, _ = self.run_case([ENTRY], {"app/adapt": script, "app/core/a.py": "a\n",
-                                                       "app/core/b.py": "a\n"},
-                                             {"app/core/a.py": "b\n", "app/core/b.py": "b\n"})
-                self.assertEqual((code, out["entries"][0]["status"]), (1, "setup"))
-                self.assertIn(word, out["entries"][0]["cause"])
+                data, fault = check_output(text, request)
+                self.assertIsNone(data)
+                self.assertIn(word, fault)
 
     def test_large_stdin_unread(self) -> None:
         lines = "".join(f"l{n}\n" for n in range(1, 12001))
