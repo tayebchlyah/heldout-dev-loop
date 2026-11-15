@@ -82,8 +82,10 @@ KINDS = re.compile(
 DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 HEREDOC = re.compile(r"<<-?[ \t]*(?:\\(\w+)|(['\"])([^'\"]+)\2|([A-Za-z_]\w*))")
 CODE_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
-LINK = r"\(?(?:#\d+|https?://\S+|RFC \d+)\)?"
-LINK_ONLY = re.compile(rf"(?:(?:#|//)\s*)?(?i:(?:see|fixes|closes|refs?|issue)\s+)?{LINK}(?:\s*(?:,|and)\s*{LINK})*\.?")
+LINK_CORE = r"(?:#\d+|https?://[^\s,()<>]+|RFC ?\d+(?:,? section \d+(?:\.\d+)*)?)"
+LINK = rf"(?:\({LINK_CORE}\)|<{LINK_CORE}>|{LINK_CORE})"
+LINK_LIST = rf"(?i:(?:see|refs?|issues?|fixes|closes|resolves):?\s+)?{LINK}(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+|\s+){LINK})*\.?"
+LINK_ONLY = re.compile(rf"(?:(?:#|//)\s*)?(?:\({LINK_LIST}\)|{LINK_LIST})")
 
 
 def checked(path: str) -> bool:
@@ -265,8 +267,13 @@ def allowed_lines(path: str, text: str) -> set[int]:
         if n in comments:
             allowed.add(n)
         n += 1
+    carriers = set(allowed)
     for n in sorted(comments):
-        if kind_ok(comments[n]) or (n - 1 in allowed and n - 1 in comments and not link_only(comments[n - 1])):
+        carried = n - 1 in carriers
+        if KINDS.search(comments[n]) or carried:
+            allowed.add(n)
+            carriers.add(n)
+        elif link_only(comments[n]):
             allowed.add(n)
     return allowed
 

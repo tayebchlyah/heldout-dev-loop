@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import unittest
 import warnings
 from pathlib import Path
@@ -21,8 +22,12 @@ ALLOWED = ["# shortcut: no lock, add one when two writers exist", "# see https:/
            "# fixes #123", "# RFC 3339", "# SPDX-License-Identifier: MIT", "# Copyright 2026",
            "# shellcheck disable=SC2086", "// @ts-expect-error", "# type: ignore", "# pragma: no cover",
            "# NOQA", "# nosec", "# isort: skip", "# #136", "// #136, #140", "# see #12.", "# (#111)",
-           "# https://example.invalid/a and https://example.invalid/b"]
-EXPLAINED = ["# #136: the pinned busybox image of the sandbox and network canaries",
+           "# https://example.invalid/a and https://example.invalid/b", "# Ref: #12", "# Issue: #12",
+           "# See: https://x.invalid/y", "# see: #12", "# Resolves #12", "# (see #12)", "# issues #12, #13",
+           "# RFC 3339, section 5.6", "# RFC9110", "# RFC 9110 section 4",
+           "# https://a.invalid/x https://b.invalid/y", "# <https://a.invalid/x>"]
+EXPLAINED = ["# (#111", "# https://example.invalid/x,because-the-lock-guards-two-writers",
+"# #136: the pinned busybox image of the sandbox and network canaries",
              '// #136: "github.com", \'github.com\' and github.com name the same key.',
              "# trust_edit add|forget <config> <path>: #111, Codex 0.165 ignores a projects trust override",
              "# see https://example.invalid/x for why the lock exists", "# RFC 3339 time"]
@@ -69,6 +74,17 @@ class CommentRuleTests(unittest.TestCase):
         self.assertEqual(repo_rules.allowed_lines("a.py", '"""Doc."""\n# x\n'), set())
         self.assertEqual(repo_rules.allowed_lines("a.py", "x = 1  # t\n# a\n# shortcut: x, y\n# b\n"), {3, 4})
         self.assertEqual(repo_rules.allowed_lines("a.sh", "set -u\n# #136\n# the reason\n# more\n"), {2})
+        for lead, link, tail in [("# allow-comment: dependency, gh drops the flag, see", "# https://example.invalid/issue/1",
+                                  "# for the release that drops it."),
+                                 ("# shortcut: no lock, add one when two writers exist", "# see #12",
+                                  "# the second writer lands in #13")]:
+            with self.subTest(lead=lead):
+                self.assertEqual(repo_rules.allowed_lines("a.sh", f"set -u\n{lead}\n{link}\n{tail}\n"), {2, 3, 4})
+
+    def test_link_kind_is_linear(self) -> None:
+        started = time.monotonic()
+        self.assertFalse(repo_rules.kind_ok("# " + ",".join(["https://a"] * 40) + " x"))
+        self.assertLess(time.monotonic() - started, 1)
 
 
 class CommentCommandTests(RulesRepo):
