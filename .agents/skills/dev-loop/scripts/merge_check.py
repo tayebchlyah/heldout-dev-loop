@@ -17,6 +17,7 @@ from devloop import emit, find_plan, frontmatter, git, specs
 from notes_path import NotesPathError, main_ref, resolve
 from seal.skills import listed_names, skill_roots
 from status import rebasing
+import source_dirs
 
 
 TEST_OR_DOC_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "README.md", "CHANGELOG.md")
@@ -86,11 +87,15 @@ def read_config(repo: Path, rev: str) -> dict | None:
 MERGE_VALUES = ("auto", "human")
 
 
+ABSENT = object()
+
+
 def config_shape_ok(config: dict) -> bool:
     """A known `merge`, and `merge_human_paths` items non-empty after strip and not ending in `/` (a directory
     pattern never matches under fnmatchcase: write `src/auth/*`)."""
     paths = config.get("merge_human_paths", [])
     return (config.get("merge", "auto") in MERGE_VALUES and isinstance(paths, list)
+            and ("source_dirs" not in config or source_dirs.validate(config["source_dirs"]) is None)
             and all(isinstance(p, str) and p.strip() and not p.endswith("/") for p in paths))
 
 
@@ -201,14 +206,16 @@ def merge_check(args: argparse.Namespace) -> int:
             if pattern is not None:
                 reasons.append({"reason": "human-path", "path": path, "pattern": pattern})
         trusted = (config.get("merge"), config.get("merge_human_paths"), config.get("file_size_exempt", []),
-                   config.get("commands"), config.get("walled_skills", []))
+                   config.get("commands"), config.get("walled_skills", []), config.get("source_dirs", ABSENT),
+                   config.get("test_time", ABSENT))
         branch_config = read_config(repo, head)
         if branch_config is None:
-            changed = trusted != (None, None, [], None, [])
+            changed = trusted != (None, None, [], None, [], ABSENT, ABSENT)
         else:
             changed = (branch_config.get("merge"), branch_config.get("merge_human_paths"),
                        branch_config.get("file_size_exempt", []), branch_config.get("commands"),
-                       branch_config.get("walled_skills", [])) != trusted
+                       branch_config.get("walled_skills", []), branch_config.get("source_dirs", ABSENT),
+                       branch_config.get("test_time", ABSENT)) != trusted
         if changed:
             reasons.append({"reason": "config-changed"})
         roots = [apfs_fold(root) for name in listed_names(config) for root in skill_roots(repo, ref, name)]
@@ -216,6 +223,10 @@ def merge_check(args: argparse.Namespace) -> int:
                        if any(apfs_fold(p) == root or apfs_fold(p).startswith(f"{root}/") for root in roots))
     reasons.extend({"reason": "harness-config", "path": p} for p in landing_paths if is_harness_config(p))
     reasons.extend({"reason": "ci-config", "path": p} for p in landing_paths if is_ci_config(p))
+    import ratchet
+
+    reasons.extend({"reason": "test-time-waived", "commit": w["commit"], "waiver": w["reason"]}
+                   for w in ratchet.waivers(repo, ref, head))
 
     reviewed = reviewed_head(worktree, notes, spec)
     # Only a sha counts, resolved to the full sha in the feature worktree: a ref name would follow later commits.

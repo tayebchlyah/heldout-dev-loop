@@ -7,6 +7,7 @@ function renderBoard(features, nowMs, opts) {
   opts = opts || {};
   const open = opts.open || new Set();
   const STAGES = ["Frame", "Spec", "Acceptance", "Plan", "Build", "Gate", "Ship"];
+  const SHORT = ["Frame", "Spec", "Accept", "Plan", "Build", "Gate", "Ship"];
 
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const str = (v) => (v == null ? "" : String(v));
@@ -36,7 +37,9 @@ function renderBoard(features, nowMs, opts) {
     const times = {};
     for (let n = 1; n <= 7; n++) if (isFinite(ms(st[n]))) times[n] = ms(st[n]);
     // #230: Title Case, as the feature folders. A title that is the slug shows its words.
-    const title = str(f.title) && str(f.title) !== str(f.feature) ? str(f.title) : str(f.feature).replace(/-/g, " ");
+    const issue = Number.isInteger(f.issue) && f.issue > 0 ? f.issue : null;
+    const slug = issue && str(f.feature).startsWith(`${issue}-`) ? str(f.feature).slice(`${issue}-`.length) : str(f.feature);
+    const title = str(f.title) && str(f.title) !== str(f.feature) ? str(f.title) : slug.replace(/-/g, " ");
     return {
       project: str(f.project), feature: str(f.feature), machine_id: str(f.machine_id),
       title: title.replace(/\S+/g, (w) => w.replace(/\p{L}/u, (c) => c.toUpperCase())) || "Untitled feature",
@@ -44,7 +47,8 @@ function renderBoard(features, nowMs, opts) {
       owner: str(f.owner) || "Unknown", machine: str(f.machine) || "unknown machine",
       track: str(f.track), acceptance: str(f.acceptance), stage: Math.min(Math.max(Math.floor(Number(f.stage)) || 1, 1), 7), times,
       tasks: Array.isArray(f.tasks) ? f.tasks.filter((t) => t && typeof t === "object") : [],
-      waiting: str(f.waiting), backfilled: f.backfilled === true,
+      waiting: str(f.waiting), backfilled: f.backfilled === true, issue, pr: Number.isInteger(f.pr) && f.pr > 0 ? f.pr : null,
+      repo: typeof f.repo === "string" && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(f.repo) ? f.repo : "",
       decisions: Array.isArray(f.decisions) ? f.decisions.filter((d) => typeof d === "string" && d) : [],
       shipped: str(f.shipped_at), updated: str(f.updated),
     };
@@ -138,6 +142,23 @@ function renderBoard(features, nowMs, opts) {
   };
 
   const num = (n) => (typeof n === "number" && isFinite(n) ? `${n}. ` : "");
+
+  // Octicons (https://github.com/primer/octicons), Copyright (c) GitHub Inc., MIT License.
+  const OCT = {
+    issue: '<path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>',
+    issueDone: '<path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/>',
+    pr: '<path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>',
+    prDone: '<path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .001V3.25Z"/>',
+  };
+  const gh = (f, kind, live) => {
+    const n = f[kind], issue = kind === "issue";
+    const name = `${issue ? "Issue" : "Pull request"} #${n}, ${live ? "open" : issue ? "closed" : "merged"}`;
+    return `<a class="gh" href="${esc(`${f.repo}/${issue ? "issues" : "pull"}/${n}`)}" target="_blank" rel="noopener" aria-label="${name}" title="${name}"><svg class="oc" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" style="color:var(--gh-${live ? "open" : "done"})">${OCT[kind + (live ? "" : "Done")]}</svg>#${n}</a>`;
+  };
+  const links = (f, live) => {
+    const a = ["issue", "pr"].filter((k) => f.repo && f[k]).map((k) => gh(f, k, live)).join("");
+    return a ? `<span class="ghl">${a}</span>` : "";
+  };
   const ledgerRow = (m) => {
     const f = m.f, live = !m.shipped, end = m.end;
     const first = Math.min(...Object.values(f.times));
@@ -170,17 +191,25 @@ function renderBoard(features, nowMs, opts) {
       : `<span class="when">${isFinite(end) ? new Date(end).toISOString().slice(0, 10) : ""}</span>`;
     const you = live && f.waiting;
     return `<details class="lg${live ? " act" : ""}${you ? " you" : ""}" data-key="${esc(m.key)}"${open.has(m.key) ? " open" : ""}>
-<summary><span class="t">${esc(f.title)}${you ? `<span class="flag">Needs you: ${esc(f.waiting)}</span>` : ""}</span><span class="trk"><span class="pill">Track ${esc(f.track || "?")}</span>${total}</span>${stage}<span class="who">${esc(f.owner)}, ${esc(f.machine)}${here && f.machine_id === here ? ' <span class="pill">this machine</span>' : ""}</span>${when}</summary>
+<summary><span class="t">${esc(f.title)}${you ? `<span class="flag">Needs you: ${esc(f.waiting)}</span>` : ""}${links(f, live)}</span><span class="trk"><span class="pill">Track ${esc(f.track || "?")}</span>${total}</span>${stage}<span class="who">${esc(f.owner)}, ${esc(f.machine)}${here && f.machine_id === here ? ' <span class="pill">this machine</span>' : ""}</span>${when}</summary>
 <div class="lg-body">${bar(m, end, live ? f.stage : 0)}<h3>Time per stage</h3><div class="chips">${chips}</div>${f.backfilled ? `<p class="na">Times are estimated</p>` : ""}${tasks}${decs}</div>
 </details>`;
   };
 
   const rows = active.map((f) => ({ ...model(f), shipped: false, end: nowMs }));
   const needs = rows.filter((m) => m.f.waiting);
-  const lede = rows.length
-    ? `${rows.length} ${rows.length === 1 ? "feature" : "features"} in progress. ${needs.length ? `${needs.length} ${needs.length === 1 ? "needs" : "need"} you.` : "Nothing needs you."}`
-    : "No feature in progress.";
-  const head = `<div class="hd"><p class="lede">${lede}</p><p class="stamp">Updated ${clock(nowMs)}</p></div>`;
+  // #316: assets/logo.svg with ids prefixed dlb- and its dark-only colours as theme tokens (--lg-*).
+  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 684" role="img" aria-label="Heldout Dev Loop"><defs><linearGradient id="dlb-upper-arrow" x1="33" y1="275" x2="351" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#00c6e9"/><stop offset=".42" stop-color="#008ff4"/><stop offset=".77" stop-color="#343ef5"/><stop offset="1" stop-color="#5723ea"/></linearGradient><linearGradient id="dlb-right-arrow" x1="430" y1="102" x2="449" y2="503" gradientUnits="userSpaceOnUse"><stop stop-color="#983cf2"/><stop offset=".43" stop-color="#642bf3"/><stop offset=".67" stop-color="#144cf4"/><stop offset="1" stop-color="#00c6eb"/></linearGradient><linearGradient id="dlb-lower-arrow" x1="82" y1="342" x2="146" y2="509" gradientUnits="userSpaceOnUse"><stop stop-color="#0057ff"/><stop offset="1" stop-color="#0034d8"/></linearGradient><linearGradient id="dlb-code-color" x1="178" y1="231" x2="382" y2="344" gradientUnits="userSpaceOnUse"><stop style="stop-color:var(--lg-code-a)"/><stop offset="1" style="stop-color:var(--lg-code-b)"/></linearGradient><linearGradient id="dlb-shield-edge" x1="241" y1="401" x2="330" y2="584" gradientUnits="userSpaceOnUse"><stop stop-color="#1bf2b7"/><stop offset=".58" stop-color="#09c798"/><stop offset="1" stop-color="#02a57e"/></linearGradient><linearGradient id="dlb-shield-face" x1="231" y1="410" x2="334" y2="580" gradientUnits="userSpaceOnUse"><stop stop-color="#00dc9c"/><stop offset=".56" stop-color="#009879"/><stop offset="1" stop-color="#007963"/></linearGradient><linearGradient id="dlb-check-color" x1="278" y1="449" x2="294" y2="529" gradientUnits="userSpaceOnUse"><stop stop-color="#f9ffff"/><stop offset="1" stop-color="#c5e9eb"/></linearGradient><linearGradient id="dlb-ink" x2="0" y2="1"><stop style="stop-color:var(--lg-ink-a)"/><stop offset="1" style="stop-color:var(--lg-ink-b)"/></linearGradient><linearGradient id="dlb-violet" x2="0" y2="1"><stop style="stop-color:var(--lg-violet-a)"/><stop offset="1" style="stop-color:var(--lg-violet-b)"/></linearGradient><filter id="dlb-halo" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="14"/></filter><filter id="dlb-rim-glow" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="3.5"/></filter><filter id="dlb-check-shadow" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="3"/></filter><path id="dlb-arrow-top" d="M33 316C30 248 54 185 101 137C149 89 214 62 286 66L286 44C286 32 295 27 303 33C306 35 309 38 312 42L361 98C367 105 367 112 360 118L296 166C287 173 277 169 278 159L282 126C231 122 183 142 148 177C113 213 96 258 98 310C98 317 91 319 85 314L76 306C70 301 63 301 57 306L45 321C40 327 33 324 33 316Z"/><path id="dlb-arrow-right" d="M402 102C468 146 510 206 517 277C529 373 483 451 403 505C397 509 389 515 390 504L392 430C392 426 395 424 399 421C440 385 458 333 452 280C447 230 419 184 373 158C364 153 365 148 371 144L383 137C393 131 395 122 392 111C389 102 394 96 402 102Z"/><path id="dlb-arrow-bottom" d="M27 409L56 345C60 337 66 335 74 338L146 363C157 367 157 379 147 382L125 390C141 412 161 431 184 445L184 478C184 494 185 505 188 514C190 519 187 521 181 519C132 499 90 460 65 412L39 422C29 426 23 419 27 409Z"/><path id="dlb-code" d="M215 249L165 294L215 340M306 219L253 368M344 249L393 294L344 340"/><path id="dlb-shield" d="M280 392C285 389 291 389 297 392C319 406 337 412 366 418C374 420 378 426 378 433V479C378 533 346 573 291 594C289 595 286 595 283 594C229 573 198 533 198 479V433C198 425 203 420 211 418C237 413 258 405 280 392Z"/><path id="dlb-shield-inset" d="M284 401C287 399 290 399 293 401C316 415 338 423 364 428C368 429 369 431 369 435V479C369 528 339 565 288 585C237 565 207 528 207 479V435C207 431 209 429 213 428C238 423 262 414 284 401Z"/><path id="dlb-check" d="M252 492L275 516L329 461"/><g id="dlb-heldout" fill-rule="evenodd"><path d="M639 96H677Q683 96 683 102V168H745V102Q745 96 751 96H792Q799 96 799 103V277Q799 284 792 284H752Q746 284 746 278V212H684V278Q684 284 678 284H640Q633 284 633 278V103Q633 96 639 96Z"/><path d="M882 139C928 139 959 169 959 215V222Q959 228 953 228H859C862 241 873 249 888 249C900 249 911 244 921 235Q925 231 930 235L951 253Q955 257 951 262C934 279 911 288 882 288C837 288 807 259 807 214C807 170 839 139 882 139ZM858 198H910C907 185 897 176 884 176C870 176 862 185 858 198Z"/><path d="M976 89H1012Q1019 89 1019 96V277Q1019 284 1013 284H975Q969 284 969 278V96Q969 89 976 89Z"/><path d="M1140 89H1179Q1186 89 1186 96V277Q1186 284 1179 284H1143Q1137 284 1137 278V269C1126 281 1112 288 1093 288C1054 288 1027 257 1027 213C1027 169 1055 139 1094 139C1110 139 1124 146 1133 157V96Q1133 89 1140 89ZM1107 181C1089 181 1077 194 1077 214C1077 233 1089 246 1107 246C1124 246 1136 233 1136 213C1136 194 1124 181 1107 181Z"/><path d="M1274 139C1320 139 1354 170 1354 213C1354 257 1320 288 1274 288C1227 288 1193 257 1193 213C1193 170 1227 139 1274 139ZM1273 181C1255 181 1243 194 1243 214C1243 234 1255 247 1273 247C1291 247 1303 234 1303 214C1303 194 1291 181 1273 181Z"/><path d="M1368 143H1407Q1413 143 1413 149V218C1413 236 1422 246 1436 246C1451 246 1459 235 1459 218V149Q1459 143 1465 143H1504Q1510 143 1510 149V278Q1510 285 1504 285H1466Q1460 285 1460 279V269C1449 281 1434 288 1416 288C1382 288 1362 266 1362 229V149Q1362 143 1368 143Z"/><path d="M1544 103H1581Q1588 103 1588 110V143H1615Q1621 143 1621 150V177Q1621 183 1615 183H1588V233C1588 244 1595 249 1605 247L1616 244Q1623 242 1623 249V274Q1623 281 1616 283C1608 286 1599 288 1587 288C1554 288 1538 272 1538 240V183H1522Q1516 183 1516 177V149Q1516 143 1522 143H1538V110Q1538 103 1544 103Z"/></g><g id="dlb-dev-loop" fill-rule="evenodd"><path d="M643 310H707C771 310 809 347 809 401C809 456 770 493 707 493H643Q637 493 637 487V316Q637 310 643 310ZM685 351V451H707C739 451 758 433 758 401C758 370 738 351 707 351Z"/><path d="M890 345C934 345 963 376 963 420V429Q963 435 957 435H863C867 450 878 458 892 458C905 458 915 453 925 445Q929 441 934 445L954 462Q959 467 954 472C938 489 916 497 888 497C843 497 814 467 814 422C814 378 846 345 890 345ZM863 405H916C913 391 903 383 890 383C877 383 867 391 863 405Z"/><path d="M963 350H999Q1006 350 1008 357L1033 440L1059 357Q1061 350 1068 350H1105Q1112 350 1109 357L1061 486Q1059 492 1052 492H1014Q1007 492 1005 486L957 358Q954 350 963 350Z"/><path d="M1164 309H1200Q1207 309 1207 316V449H1280Q1286 449 1286 456V486Q1286 492 1280 492H1164Q1158 492 1158 486V316Q1158 309 1164 309Z"/><path d="M1365 345C1411 345 1445 377 1445 421C1445 465 1411 497 1365 497C1319 497 1285 465 1285 421C1285 377 1319 345 1365 345ZM1365 385C1347 385 1334 399 1334 421C1334 442 1347 456 1365 456C1383 456 1396 442 1396 421C1396 399 1383 385 1365 385Z"/><path d="M1528 345C1574 345 1608 377 1608 421C1608 465 1574 497 1528 497C1482 497 1449 465 1449 421C1449 377 1482 345 1528 345ZM1528 386C1510 386 1497 400 1497 421C1497 442 1510 456 1528 456C1547 456 1559 442 1559 421C1559 400 1547 386 1528 386Z"/><path d="M1624 350H1661Q1667 350 1667 356V364C1678 352 1693 345 1712 345C1751 345 1778 377 1778 421C1778 465 1750 497 1711 497C1693 497 1678 490 1668 478V534Q1668 541 1661 541H1624Q1618 541 1618 534V357Q1618 350 1624 350ZM1697 386C1679 386 1666 400 1666 421C1666 442 1679 456 1697 456C1715 456 1728 442 1728 421C1728 400 1715 386 1697 386Z"/></g></defs><g filter="url(#dlb-halo)" opacity=".44"><use href="#dlb-arrow-top" fill="#498cff" stroke="#80a1ff" stroke-width="12"/><use href="#dlb-arrow-right" fill="#7b62ff" stroke="#95a3ff" stroke-width="12"/><use href="#dlb-arrow-bottom" fill="#5285ff" stroke="#7b9cff" stroke-width="12"/><use href="#dlb-code" fill="none" stroke="#9681ff" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/><use href="#dlb-shield" fill="#63efd4" stroke="#69f9dd" stroke-width="15"/><rect x="552" y="83" width="26" height="452" rx="13" fill="#ae9eff"/><use href="#dlb-dev-loop" fill="#5e30ed" stroke="#7755ff" stroke-width="8"/></g><g fill="none" stroke="#fff" stroke-width="5" style="opacity:var(--lg-rim)" filter="url(#dlb-rim-glow)"><use href="#dlb-arrow-top"/><use href="#dlb-arrow-right"/><use href="#dlb-arrow-bottom"/><use href="#dlb-shield"/></g><use href="#dlb-arrow-top" fill="url(#dlb-upper-arrow)"/><use href="#dlb-arrow-right" fill="url(#dlb-right-arrow)"/><use href="#dlb-arrow-bottom" fill="url(#dlb-lower-arrow)"/><use href="#dlb-code" fill="none" stroke="url(#dlb-code-color)" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/><use href="#dlb-shield" fill="url(#dlb-shield-edge)"/><use href="#dlb-shield-inset" fill="url(#dlb-shield-face)"/><use href="#dlb-check" transform="translate(0 4)" fill="none" stroke="#003c40" stroke-opacity=".42" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" filter="url(#dlb-check-shadow)"/><use href="#dlb-check" fill="none" stroke="url(#dlb-check-color)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/><rect x="558" y="85" width="15" height="448" rx="7.5" fill="#b9a9ff" opacity=".8"/><use href="#dlb-heldout" fill="url(#dlb-ink)"/><use href="#dlb-dev-loop" fill="url(#dlb-violet)"/></svg>';
+  const needYou = (n) => `${n === 1 ? "needs" : "need"} you`;
+  const total = rows.length
+    ? `<span class="tot${needs.length ? "" : " none"}">${needs.length ? `<strong>${needs.length}</strong> ${needYou(needs.length)}` : "Nothing needs you"}</span>`
+    : "";
+  const cell = (s, i) => {
+    const n = i + 1, inStage = rows.filter((m) => m.f.stage === n), w = inStage.filter((m) => m.f.waiting).length;
+    return `<div class="${inStage.length ? "on" : "zero"}" data-stage-count="${n}"><span class="ny">${w ? `<i class="rb" title="${w} ${needYou(w)}">${w}</i>` : ""}</span><strong>${inStage.length}</strong><span class="sl"><span class="full">${label(n)}</span><span class="short">${SHORT[i]}</span></span></div>`;
+  };
+  const head = `<div class="hd"><span class="logo">${logo}</span>${total}<p class="stamp">Updated ${clock(nowMs)}</p></div>`
+    + (rows.length ? `<div class="meter">${STAGES.map(cell).join("")}</div>` : `<p class="lede">No feature in progress.</p>`);
 
   const shipRows = [];
   for (const p of new Set(shipped.map((f) => f.project))) {
@@ -207,26 +236,16 @@ function renderBoard(features, nowMs, opts) {
   const ledger = (list) => `<div class="ledger">${list.map(ledgerRow).join("")}</div>`;
   const project = (p) => {
     const act = rows.filter((m) => m.f.project === p).sort(order), sh = shipRows.filter((m) => m.f.project === p).sort(byShip);
-    const you = act.filter((m) => m.f.waiting).length;
+    const waiting = act.filter((m) => m.f.waiting).length;
     const stages = perStage(act).map(([n, c]) => `${c} in ${label(n)}`).join(", ");
     const meta = [act.length ? `${act.length} in progress (${stages})` : "nothing in progress", sh.length ? `${sh.length} recently shipped` : ""].filter(Boolean).join(", ");
-    const head = `<span class="pn">${esc(p)}</span><span class="pc">${meta}</span>${you ? `<span class="pyou">${you} ${you === 1 ? "needs" : "need"} you</span>` : ""}`;
+    const head = `<span class="pn">${esc(p)}</span><span class="pc">${meta}</span>${waiting ? `<span class="pyou">${waiting} ${needYou(waiting)}</span>` : ""}`;
     return fold(`project:${p}`, "pg", head, (act.length ? `<h3 class="part">In progress</h3>${ledger(act)}` : "")
       + (sh.length ? fold(`shipped:${p}`, "shf", `Recently shipped <span class="pc">${sh.length}</span>`, ledger(sh)) : ""));
   };
 
-  let body;
-  if (!rows.length) {
-    body = `<p class="empty">Start one with the dev-loop skill in any repo that has a dev-loop.json. It shows up here at its first stage.</p>`;
-  } else {
-    const decs = rows.filter((m) => m.f.decisions.length);
-    const panel = needs.length || decs.length
-      ? `<div class="you-panel"><h2>Needs you</h2><ul>${needs.map((m) => `<li><strong>${esc(m.f.title)}</strong>: ${esc(m.f.waiting)}.</li>`).join("")}${decs.map((m) => m.f.decisions.map((d) => `<li><strong>${esc(m.f.title)}</strong> went on with a default: ${esc(d)}</li>`).join("")).join("")}</ul></div>`
-      : "";
-    const counts = perStage(rows).map(([n, c]) => `<span><strong>${c}</strong> in ${label(n)}</span>`).join("");
-    body = panel + `<p class="counts">${counts}</p>`;
-  }
-  body += projects.map(project).join("");
+  const body = (rows.length ? "" : `<p class="empty">Start one with the dev-loop skill in any repo that has a dev-loop.json. It shows up here at its first stage.</p>`)
+    + projects.map(project).join("");
 
   const newer = Math.floor(Number(opts.newerSchema)) || 0;
   const newerLine = newer > 0 ? `<p class="newer">${newer} ${newer === 1 ? "note needs" : "notes need"} a newer dev-loop</p>` : "";
@@ -253,12 +272,29 @@ body.theme-dark .dlb:not([data-theme]){${d(dark)};color-scheme:dark}
 .dlb summary::-webkit-details-marker{display:none}
 .dlb summary:focus-visible{outline:2px solid var(--active);outline-offset:2px;border-radius:4px}
 .dlb .decs p{border-inline-start:3px solid var(--you);padding:4px 10px;margin-top:6px}
-${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", surface: "#f3f5f8", active: "#0b6e79", done: "#2e7d4f", you: "#9b2f6a", idle: "#8a6a1f" },
-    { bg: "#1a1f26", fg: "#e4e8ed", muted: "#9aa5b1", line: "#36404c", surface: "#212833", active: "#5cc0ca", done: "#64c38a", you: "#e584b6", idle: "#d6ad55" })}
+${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", surface: "#f3f5f8", active: "#0b6e79", done: "#2e7d4f", you: "#9b2f6a", idle: "#8a6a1f",
+    "lg-code-a": "#2b0adb", "lg-code-b": "#3015e8", "lg-ink-a": "#080b2b", "lg-ink-b": "#040821", "lg-violet-a": "#4010e5", "lg-violet-b": "#3505d1", "lg-rim": ".84", "gh-open": "#1a7f37", "gh-done": "#8250df" },
+    { bg: "#1a1f26", fg: "#e4e8ed", muted: "#9aa5b1", line: "#36404c", surface: "#212833", active: "#5cc0ca", done: "#64c38a", you: "#e584b6", idle: "#d6ad55",
+      "lg-code-a": "#a48cff", "lg-code-b": "#8f74ff", "lg-ink-a": "#f5f7ff", "lg-ink-b": "#e6e9fb", "lg-violet-a": "#a48cff", "lg-violet-b": "#8f74ff", "lg-rim": ".25", "gh-open": "#3fb950", "gh-done": "#a371f7" })}
 .dlb{font:15px/1.45 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-variant-numeric:tabular-nums}
-.dlb .hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}
+.dlb .hd{display:flex;align-items:center;gap:8px 14px;margin-bottom:18px}
+.dlb .hd .logo{flex:none;margin-right:auto}
+.dlb .logo svg{display:block;height:72px;width:216px}
+.dlb .tot{display:flex;align-items:center;gap:6px;color:var(--you);border:1.5px solid var(--you);border-radius:999px;padding:2px 10px 2px 3px;font-size:13px;font-weight:600;line-height:1}
+.dlb .tot strong{background:var(--you);color:var(--bg);border-radius:50%;width:22px;height:22px;display:grid;place-items:center}
+.dlb .tot.none{color:var(--muted);border-color:var(--line);padding:5px 10px}
 .dlb .lede{font-size:20px;font-weight:600;letter-spacing:-.01em}
 .dlb .stamp{color:var(--muted);font-size:13px;white-space:nowrap}
+.dlb .meter{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
+.dlb .meter > div{display:flex;flex-direction:column;align-items:center;padding:8px 4px 10px;border-left:1px solid var(--line);min-width:0}
+.dlb .meter > div:first-child{border-left:0}
+.dlb .meter .on{background:var(--surface);box-shadow:inset 0 -4px 0 var(--active)}
+.dlb .meter strong{font-size:34px;line-height:1.1;font-weight:700}
+.dlb .meter .zero strong{color:var(--line)}
+.dlb .meter .sl{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.dlb .meter .short{display:none}
+.dlb .meter .ny{display:flex;align-items:center;min-height:22px;font-weight:700}
+.dlb .meter .rb{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--you);color:var(--bg);font-size:12px;font-style:normal}
 .dlb .t{font-weight:600;display:block;overflow-wrap:anywhere}
 .dlb .flag{font-size:13px;color:var(--you);font-weight:600;display:block;margin-top:2px}
 .dlb .stale{color:var(--idle)}
@@ -280,12 +316,6 @@ ${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", su
 .dlb .tb .split b.doing{opacity:.5}
 .dlb .tb .split b.todo{background:none;box-shadow:inset 0 0 0 1px var(--active)}
 .dlb .tb .segs i.split:not(.cur) b{background:var(--done);box-shadow:none;opacity:1}
-.dlb .you-panel{border-inline-start:3px solid var(--you);background:var(--surface);padding:10px 14px;margin-bottom:14px}
-.dlb .you-panel h2{font-size:14px;font-weight:600;color:var(--you);margin-bottom:4px}
-.dlb .you-panel ul{margin:0;padding-left:18px;font-size:14px}
-.dlb .you-panel li{padding:2px 0}
-.dlb .counts{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:13px;color:var(--muted);margin:0 0 6px}
-.dlb .counts strong{color:var(--fg);font-weight:600}
 .dlb .newer{font-size:13px;color:var(--idle);margin-top:16px}
 .dlb .pg{border-bottom:2px solid var(--fg);margin-top:18px}
 .dlb .pg > summary{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:8px 4px 10px}
@@ -318,6 +348,11 @@ ${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", su
 .dlb .lg .when{text-align:right}
 .dlb .lg .when.stale{color:var(--idle)}
 .dlb .lg-body{padding:8px 12px 16px}
+.dlb .ghl{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px}
+.dlb .gh{display:inline-flex;align-items:center;gap:4px;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600;white-space:nowrap}
+.dlb .gh:hover{text-decoration:underline}
+.dlb .gh:focus-visible{outline:2px solid var(--active);outline-offset:1px;border-radius:3px}
+.dlb .oc{width:14px;height:14px;flex:none}
 .dlb .lg-body h3{font-size:13px;font-weight:600;color:var(--muted);margin:12px 0 4px}
 .dlb .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .dlb .chip{font-size:12px;padding:2px 8px;border-radius:4px;background:var(--surface);color:var(--muted)}
@@ -337,6 +372,13 @@ ${themeCss({ bg: "#ffffff", fg: "#1c2430", muted: "#5d6876", line: "#d5dbe2", su
 .dlb .lt .lb b{display:block;height:100%;background:var(--done)}
 .dlb .lt .td{text-align:right;color:var(--muted)}
 @container (max-width: 720px){
+ .dlb .logo svg{height:56px;width:168px}
+ .dlb .hd .stamp{width:100%;order:3}
+ .dlb .meter strong{font-size:24px}
+ .dlb .meter .full{display:none}
+ .dlb .meter .short{display:inline;font-size:11px}
+ .dlb .meter .ny{min-height:18px}
+ .dlb .meter .rb{width:18px;height:18px;font-size:11px}
  .dlb .lg > summary{grid-template-columns:1fr auto;gap:6px 12px}
  .dlb .lg .stg,.dlb .lg .who{grid-column:1/-1}
  .dlb .lt li{grid-template-columns:16px 28px 1fr 90px}

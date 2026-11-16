@@ -3,8 +3,9 @@
 
   devloop.py status [--repo PATH] [--feature SLUG]   stage of the repo or of one feature
   devloop.py merge-check [--repo PATH] [--feature SLUG]   auto or human merge, with reasons
+  devloop.py cleanup --branch BRANCH [--repo PATH]    after a merge: fetch, remove the merged worktree, delete the branch, rebase main
   devloop.py logged [--name NAME] -- CMD...          run CMD, full output to a log file
-  devloop.py gate --summary                           run the gate through `logged`, summarize it
+  devloop.py gate --summary [--changed]               run the gate through `logged`, summarize it
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
   devloop.py board [--repo PATH] [--event E] [--claim SLUG] [--no-serve] [--stop-server]
                                                       write the status notes of this machine
@@ -15,6 +16,10 @@
   devloop.py seal-check [--uncommitted]               the acceptance tests on the branch against the seal commits
   devloop.py search-wall                              PreToolUse hook JSON on stdin: deny a subagent search that reaches the held-out suite
   devloop.py skill-wall                               PreToolUse hook JSON on stdin: may implementer load this project skill
+  devloop.py source-wall [--repo PATH]                PreToolUse hook JSON on stdin: decide a spec-tester call against source_dirs
+  devloop.py stack-detect [--repo PATH]               propose the stacks, capabilities and source_dirs of a repo from presets.json
+  devloop.py mutation --head REV [--base REV] [--main BRANCH] [--repo PATH] [--run] [--entry PATH] [--only UNIT ...]
+                                                      select the changed critical lines of each mutation entry; --run: run its adapter
   devloop.py size-check [--uncommitted | --all]       file-size ratchet: a new or grown file over 40,000 bytes fails
   devloop.py verify-init --base-url URL [--name SKILL]
                                                       write the verify skill skeleton and the verify key
@@ -318,6 +323,11 @@ def main() -> int:
     merge_check.add_argument("--feature")
     merge_check.set_defaults(run=("merge_check", "cmd_merge_check"))
 
+    cleanup = commands.add_parser("cleanup")
+    cleanup.add_argument("--branch", required=True)
+    cleanup.add_argument("--repo", default=".")
+    cleanup.set_defaults(run=("cleanup", "cmd_cleanup"))
+
     logged = commands.add_parser("logged")
     logged.add_argument("--name")
     logged.add_argument("cmd", nargs=argparse.REMAINDER)
@@ -325,6 +335,7 @@ def main() -> int:
 
     gate = commands.add_parser("gate")
     gate.add_argument("--summary", action="store_true", required=True)
+    gate.add_argument("--changed", action="store_true")
     gate.set_defaults(run=("gate", "cmd_gate"))
 
     ci = commands.add_parser("ci").add_subparsers(dest="ci_command", required=True)
@@ -360,6 +371,24 @@ def main() -> int:
 
     skill_wall = commands.add_parser("skill-wall")
     skill_wall.set_defaults(run=("seal.skills", "cmd_skill_wall"))
+
+    source_wall = commands.add_parser("source-wall")
+    source_wall.add_argument("--repo", default=".")
+    source_wall.set_defaults(run=("source_wall", "cmd_source_wall"))
+
+    stack_detect = commands.add_parser("stack-detect")
+    stack_detect.add_argument("--repo", default=".")
+    stack_detect.set_defaults(run=("stacks", "cmd_stack_detect"))
+
+    mutation = commands.add_parser("mutation")
+    mutation.add_argument("--head", required=True)
+    mutation.add_argument("--base")
+    mutation.add_argument("--main", default="main")
+    mutation.add_argument("--repo", default=".")
+    mutation.add_argument("--run", dest="run_adapters", action="store_true")
+    mutation.add_argument("--entry")
+    mutation.add_argument("--only", nargs="+")
+    mutation.set_defaults(run=("mutation.run", "cmd_mutation"))
 
     size_check = commands.add_parser("size-check")
     size_mode = size_check.add_mutually_exclusive_group()

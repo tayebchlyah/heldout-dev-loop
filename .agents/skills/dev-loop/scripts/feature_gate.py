@@ -23,10 +23,12 @@ import devloop
 from devloop import emit, git
 import gate
 import merge_check
+import ratchet
 from seal import ACCEPTANCE_DIR
 
 COLUMNS = ("file", "line", "finding", "class", "verdict")
 CLASSES = {"correctness", "security", "spec", "standards"}
+COMPOSE_LABEL = "com.docker.compose."
 ACCEPTANCE_HINT = ("No JUnit XML read in {folder}. The acceptance command writes JUnit XML into $DEVLOOP_REPORT_DIR "
                    "(the dev-loop JUnit standard).")
 SHORT_HINT = ("ran {tests} of {floor} cases (full run at {head}). A full run that executes fewer cases than an "
@@ -260,28 +262,82 @@ def docker(top: Path, env: Mapping[str, str], *args: str) -> str:
     return result.stdout
 
 
-def stale_check(top: Path, env: Mapping[str, str]) -> dict:
-    """Is a container of a compose build service older than the newest commit that changes code."""
+def stale_verdict(top: Path, created: dict[str, list[int]]) -> dict:
+    sha, reference = reference_commit(top)
+    stale = [svc for svc, times in created.items() if any(t < reference for t in times)]
+    return {"state": "stale" if stale else "fresh", "checked": sorted(created), "services": stale, "reference": sha}
+
+
+def service_check(top: Path, env: Mapping[str, str]) -> dict:
     names = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
     if not any((top / name).exists() for name in names) and not env.get("COMPOSE_FILE"):
         return {"state": "skipped", "reason": "no-compose"}
+    config = json.loads(docker(top, env, "compose", "--profile", "test", "config", "--format", "json"))
+    build = sorted(name for name, service in config["services"].items() if "build" in service)
+    if not build:
+        return {"state": "skipped", "reason": "no-build-service"}
+    ids = {svc: docker(top, env, "compose", "--profile", "test", "ps", "-a", "-q", svc).split() for svc in build}
+    if not any(ids.values()):
+        return {"state": "skipped", "reason": "no-container"}
+    inspected = json.loads(docker(top, env, "inspect", *(i for found in ids.values() for i in found)))
+    created = {svc: [created_seconds(c["Created"]) for c in inspected
+                     if any(c["Id"].startswith(i) for i in found)] for svc, found in ids.items() if found}
+    return stale_verdict(top, created)
+
+
+def project_check(top: Path, env: Mapping[str, str], command: str) -> tuple[str, dict]:
+    run = subprocess.run(["sh", "-c", command], cwd=top, env=dict(env), stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True)
+    if run.returncode != 0:
+        raise RuntimeError(f"commands.compose_project failed with exit {run.returncode}: {run.stderr.strip()[-300:]}")
+    name = run.stdout.strip()
+    if not name or "\n" in name:
+        raise RuntimeError("commands.compose_project must print the project name on one line")
+    ids = docker(top, env, "ps", "-a", "-q", "--no-trunc", "--filter", f"label={COMPOSE_LABEL}project={name}").split()
+    boxes = [(c, (c.get("Config") or {}).get("Labels") or {}) for c in
+             (json.loads(docker(top, env, "inspect", *ids)) if ids else [])]
+    boxes = [(c, labels) for c, labels in boxes if labels.get(f"{COMPOSE_LABEL}oneoff") != "True"]
+    if not boxes:
+        return name, {"state": "skipped", "reason": "no-container"}
+    dirs = {labels.get(f"{COMPOSE_LABEL}project.working_dir") for _, labels in boxes}
+    files = {labels.get(f"{COMPOSE_LABEL}project.config_files") for _, labels in boxes}
+    if len(dirs - {None}) > 1:
+        raise RuntimeError(f"the containers of compose project {name} come from {', '.join(sorted(dirs - {None}))}: "
+                           "commands.compose_project must print one name for each worktree")
+    if None in dirs or None in files or len(files) != 1:
+        raise RuntimeError(f"the containers of compose project {name} do not share one compose file set: "
+                           "reset the stack")
+    (folder,), (config_files,) = dirs, files
     try:
-        config = json.loads(docker(top, env, "compose", "--profile", "test", "config", "--format", "json"))
-        build = sorted(name for name, service in config["services"].items() if "build" in service)
-        if not build:
-            return {"state": "skipped", "reason": "no-build-service"}
-        ids = {svc: docker(top, env, "compose", "--profile", "test", "ps", "-a", "-q", svc).split() for svc in build}
-        if not any(ids.values()):
-            return {"state": "skipped", "reason": "no-container"}
-        inspected = json.loads(docker(top, env, "inspect", *(i for found in ids.values() for i in found)))
-        created = {svc: [created_seconds(c["Created"]) for c in inspected
-                         if any(c["Id"].startswith(i) for i in found)] for svc, found in ids.items() if found}
-        sha, reference = reference_commit(top)
+        config = json.loads(docker(top, env, "compose", "-p", name, "--project-directory", folder,
+                                   *(word for file in config_files.split(",") for word in ("-f", file)),
+                                   "--profile", "test", "config", "--format", "json"))
+    except RuntimeError as exc:
+        raise RuntimeError(f"docker compose config of project {name} failed ({exc}): reset the stack") from exc
+    build = {svc for svc, service in config["services"].items() if "build" in service}
+    if not build:
+        return name, {"state": "skipped", "reason": "no-build-service"}
+    created: dict[str, list[int]] = {}
+    for c, labels in boxes:
+        if labels.get(f"{COMPOSE_LABEL}service") in build:
+            created.setdefault(labels[f"{COMPOSE_LABEL}service"], []).append(created_seconds(c["Created"]))
+    if not created:
+        return name, {"state": "skipped", "reason": "no-container"}
+    return name, stale_verdict(top, created)
+
+
+def stale_check(top: Path, env: Mapping[str, str], compose_project: str | None) -> dict:
+    """Is a container of a compose build service older than the newest commit that changes code."""
+    named = env.get("COMPOSE_PROJECT_NAME") or None
+    try:
+        if named is None and compose_project is not None:
+            name, result = project_check(top, env, compose_project)
+        else:
+            name, result = named, service_check(top, env)
     except (RuntimeError, OSError, ValueError, KeyError, TypeError, AttributeError,
             subprocess.CalledProcessError) as exc:
-        return {"state": "error", "message": str(exc) or type(exc).__name__}
-    stale = [svc for svc, times in created.items() if any(t < reference for t in times)]
-    return {"state": "stale" if stale else "fresh", "checked": sorted(created), "services": stale, "reference": sha}
+        return {"state": "error", "message": str(exc) or type(exc).__name__, "project": None}
+    return {**result, "project": name}
 
 
 def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, int]:
@@ -300,6 +356,11 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
         return {"error": f"no commands.{key} in dev-loop.json at {ref}"}, 1
     if gate.mapped_command(top, key) != command:
         return {"error": f"commands.{key} in dev-loop.json differs from {ref}"}, 1
+    compose = trusted.get("compose_project")
+    if "compose_project" in trusted and (not isinstance(compose, str) or not compose):
+        return {"error": f"commands.compose_project in dev-loop.json at {ref} must be a non-empty string"}, 1
+    if gate.mapped_command(top, "compose_project") != compose:
+        return {"error": f"commands.compose_project in dev-loop.json differs from {ref}"}, 1
     record = Path(git_dir) / "dev-loop" / "acceptance.json"
     runs = read_record(record)
     if runs is None:
@@ -312,7 +373,7 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     print(f"acceptance log: {log}", file=sys.stderr, flush=True)
     payload = gate.run_logged(["sh", "-c", command], log, top, {**env, "DEVLOOP_REPORT_DIR": str(reports)})
     failing, ids, cases, tests = gate.junit_failures(reports, top)
-    stale = stale_check(top, env)
+    stale = stale_check(top, env, compose)
     counted = stale["state"] not in ("stale", "error")
     head = devloop.git(top, "rev-parse", "HEAD")
     suite = devloop.git(top, "rev-parse", f"HEAD:{ACCEPTANCE_DIR}")
@@ -324,15 +385,25 @@ def acceptance(cwd: Path, failed: bool, env: Mapping[str, str]) -> tuple[dict, i
     this["short"] = green(this) and floor is not None and tests < floor
     runs.append(this)
     write_record(record, runs)
+    verdict = guard(runs)
+    if failed:
+        times = ratchet.skipped("failed-mode")
+    elif not verdict or verdict["verdict"] != "green":
+        times = ratchet.skipped("not-green")
+    else:
+        times = ratchet.check("acceptance", top, reports, ref)
+        if times["ok"] and times["state"] in ("checked", "no-baseline") and ratchet.clean(top):
+            times["record"] = ratchet.write_record("acceptance", top, reports, times["factor"] or 1.0)
     payload.update(mode=this["mode"], head=head, failing=failing, ids=ids, cases=cases, tests=tests, floor=floor,
-                   short=this["short"], stale=stale, counted=counted, guard=guard(runs), record=str(record))
+                   short=this["short"], stale=stale, counted=counted, guard=verdict, record=str(record),
+                   ratchet=times)
     if this["short"]:
         payload["hint"] = SHORT_HINT.format(tests=tests, floor=floor, head=floor_head[:12])
     elif failing is None:
         payload["hint"] = ACCEPTANCE_HINT.format(folder=reports)
     elif cases == 0:
         payload["hint"] = CASES_HINT.format(folder=reports)
-    return payload, 0 if payload["exit"] == 0 and counted and cases and not this["short"] else 1
+    return payload, 0 if payload["exit"] == 0 and counted and cases and not this["short"] and times["ok"] else 1
 
 
 def cmd_review_merge(args: argparse.Namespace) -> int:

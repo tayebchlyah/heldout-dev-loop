@@ -4,8 +4,8 @@ A project with a UI holds its own verify skill, `.agents/skills/<skill>/`: how a
 
 ## When
 
-- `ui` in `stacks:` of the root `AGENTS.md`: required. `check_setup.py` fails until `dev-loop.json` has a `verify` key.
-- Other stacks: none, or opt in with the `verify` key. `"verify": false` opts out.
+- `ui` in `capabilities` of `dev-loop.json`: required. `check_setup.py` fails until `dev-loop.json` has a `verify` key.
+- No `ui`: none, or opt in with the `verify` key. `"verify": false` opts out.
 
 `verify` in `dev-loop.json`:
 
@@ -13,6 +13,7 @@ A project with a UI holds its own verify skill, `.agents/skills/<skill>/`: how a
 - `base_url`: `http://` or `https://`. A route `path` is joined to it.
 - `setup` (optional): shell commands `drive` runs once, in order, in the repo root, before the browser opens. A CLI login goes here.
 - `storage_state` (optional): repo-relative path to the Playwright storage state file `setup` writes. `drive` loads it into the browser context.
+- `playwright` (optional): the folder, from the repo root (`.` the root), whose `node_modules` holds `playwright` or `@playwright/test`. `verify-init` writes it; `drive` then looks only there.
 
 ## Stage 0: write the skill
 
@@ -90,7 +91,7 @@ Runs after the fix wave, before the acceptance loop. `verify` absent or `false`:
 
 1. Map pass. Add or update the entry of each route the spec declares (Track S: each route the diff changes). Commit it on the feature branch.
 2. The stack is up (Stage 6 start). Run the skill's Launch and Doctor.
-3. `python3 .agents/skills/dev-loop/scripts/devloop.py drive`. It selects each entry whose `paths` match `git diff --name-only <base>...HEAD` (or whose file changed), checks the readiness of `base_url` for 30 s, runs `setup`, then per route: HTTP status below 400, every name visible, no console error or uncaught page error, one full-page JPEG. JSON `ok`, `selected`, `routes`, `evidence` (`drive.json` inside). Exit 1 with `error`: an unreachable `base_url`, a failed `setup` command, no Playwright in the repo (`node_modules/playwright`, `node_modules/@playwright/test`, the same under `frontend/`), a bad config or entry.
+3. `python3 .agents/skills/dev-loop/scripts/devloop.py drive`. It selects each entry whose `paths` match `git diff --name-only <base>...HEAD` (or whose file changed), checks the readiness of `base_url` for 30 s, runs `setup`, then per route: HTTP status below 400, every name visible, no console error or uncaught page error, one full-page JPEG. JSON `ok`, `selected`, `routes`, `evidence` (`drive.json` inside). Exit 1 with `error`: an unreachable `base_url`, a failed `setup` command, no Playwright in the repo (`verify.playwright` set: only that folder; else `node_modules/playwright`, `node_modules/@playwright/test`, the same under `frontend/`), a bad config or entry.
 4. Layout check. One fresh subagent (the route names it) gets the `drive.json` path and this prompt: "Read <path>. For each route with `ok` true, open its `screenshot` and judge the layout only: overlapping or clipped elements, broken or empty regions, unreadable text, a layout that breaks at 1280 by 800. Return a table: entry, path, pass or fail, one-line reason. No other output."
 5. Each failure, drive or layout: product (a fix round through `implementer`), map (fix the entry), or environment (fix it once at its root). Rerun with `drive --since <sha of the fix round start>`: only what the fix touched. A rerun that selects nothing (the fix touched no mapped path, for example seed data) is not a pass: drive the failed entry again (`drive --all`, or rerun the full `drive`), and the report line stays `drive: fail` until that entry passes. The layout subagent then reads only the new screenshots. The Stage 6 progress guard and the stale image rule apply to each rerun.
 6. After the last drive: Cleanup. Report line `drive: pass` or `drive: fail`.
@@ -103,7 +104,7 @@ The PR shows a before and an after screen of each route with `ok` true in the St
 `verify` absent or `false`, or no route with `ok` true: skip this section.
 
 1. After set. In the feature worktree: `python3 .agents/skills/dev-loop/scripts/devloop.py capture --write-after <tmp>/after.json`. It reads the evidence folder: the newest drive with `mode` `diff` gives the entries, each newer `since` or `all` drive replaces the routes of an entry of that set it ran, and never adds one. The merged set is `<tmp>/after.json`; its `head` is `<after head>`. It calls no gh.
-2. Before run, right after the PR opens. `git fetch origin`. Temporary folder: `mktemp -d`, worktree folder `<main worktree basename>-before` inside it. `git worktree add --detach <folder> $(git merge-base <after head> origin/main)`. No `verify` object in its `dev-loop.json`, or no verify skill there: no before run. Else, in it: the base verify skill's Launch (it installs what a fresh checkout needs, Playwright too), then this feature worktree's CLI from the base worktree: `python3 <feature worktree>/.agents/skills/dev-loop/scripts/devloop.py drive --routes-from <tmp>/after.json`, then the base Cleanup. Its `drive.json` is `<before drive.json>`. A route entry runs with the kit runner and no accessible names; a journey runs its own script when the base has it.
+2. Before run, right after the PR opens. `git fetch origin`. Temporary folder: `mktemp -d`, worktree folder `<main worktree basename>-before` inside it. Run `git merge-base <after head> origin/main` in its own call: its output is `<base>`. Then, in its own call, `git worktree add --detach <folder> <base>`. No `verify` object in its `dev-loop.json`, or no verify skill there: no before run. Else, in it: the base verify skill's Launch (it installs what a fresh checkout needs, Playwright too), then this feature worktree's CLI from the base worktree: `python3 <feature worktree>/.agents/skills/dev-loop/scripts/devloop.py drive --routes-from <tmp>/after.json`, then the base Cleanup. Its `drive.json` is `<before drive.json>`. A route entry runs with the kit runner and no accessible names; a journey runs its own script when the base has it.
 3. From the feature worktree: `python3 .agents/skills/dev-loop/scripts/devloop.py capture --pr <n> --after <tmp>/after.json [--before <before drive.json>]`. It writes `<git-dir>/dev-loop/evidence/<timestamp>-capture/` (`body.md`, `before.json`, the copied files) and replaces the section between `<!-- dev-loop: captures -->` and `<!-- /dev-loop: captures -->` in the PR body. At most 50 files: the rest is one line that names the evidence folder. A file over 10 MB is left out; a journey video over 10 MB falls back to the screenshots.
 4. `git worktree remove --force <folder>`, then remove the temporary folder.
 5. Recapture. A push after the capture (a CI fix, a review fix) that changes a path of a captured entry: stack up, Launch, `drive --since <sha of the capture>` (the after head of the capture: the `after:` sha in the section, the `head` of the after file), Cleanup, then `capture --pr <n> --before <capture folder>/before.json`. `before.json` keeps the before files, so the temporary worktree is not needed again.

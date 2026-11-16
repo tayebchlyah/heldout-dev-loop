@@ -1,10 +1,10 @@
 # Building rules
 
-Read before writing code. Four parts: principles, code volume, scope for your harness, test rules in [tests.md](tests.md).
+Read before writing code. Four parts: principles, code volume, scope for your harness, test rules in [tests.md](tests.md). Section Merge danger is for the Stage 7 merge rule.
 
 ## Principles
 
-Source: pstack 0.15.36 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `c742dd6`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds. The Stage 7 merge danger ladder in SKILL.md is copied from `pstack/skills/blast-radius/SKILL.md`, same commit.
+Source: pstack 0.15.36 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `c742dd6`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds.
 
 1. **Prove it works.** Apply before you call a task done. Check the real thing (run it, read the actual value, read the diff), not a proxy, a self-report or "it compiles". Script the check when you can.
 2. **Fix root causes.** Apply when debugging. Trace the symptom to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate.
@@ -14,6 +14,12 @@ Source: pstack 0.15.36 principle skills (https://github.com/cursor/plugins/tree/
 6. **Boundary discipline.** Apply when you wire validation, error handling or a framework adapter. Validate at the boundary (CLI, config, network, external API), trust internal types, keep business logic in pure functions.
 7. **Separate before serializing shared state.** Apply when concurrent actors can write the same file, branch, key or state object. Give each actor its own target first. Use a lock only when one shared writer is a real invariant.
 8. **Explain the number.** Apply before you measure, and before you trust, report or act on a number you measured. Before the run, write down the result that would change a decision and the noise floor. Name what limits it and rule out that it measured something else. For a performance number, run [benchmark.md](benchmark.md).
+
+## Merge danger
+
+SKILL.md Stage 7. Merge danger: a one-way door, or a `human-path` reason. Before the PR waits for the user, find the one fact the change is safe because of. Prove it as far down this ladder as is cheap: 1 You said so (worthless alone). 2 You pointed at the line (`file:line`). 3 You showed the bad case cannot happen. 4 You ran it: a script or test that calls the real code and fails loud if the fact is false. 5 You reproduced it in the running app. Once the danger is known (a one-way door at PR time, `human-path` after `merge-check`), add the fact, the step reached, the proof, or `unproven` to the PR body with `gh pr edit`.
+
+Source: pstack 0.15.36 `pstack/skills/blast-radius/SKILL.md`, commit `c742dd6`, MIT: [pstack license](#pstack-license).
 
 ## pstack license
 

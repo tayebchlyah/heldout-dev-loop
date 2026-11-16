@@ -30,7 +30,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/git-guard.sh\"",
-            "timeout": 5,
+            "timeout": 15,
             "onFailure": "block"
           }
         ]
@@ -41,7 +41,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny-acceptance-to-subagents.sh\"",
-            "timeout": 5,
+            "timeout": 15,
             "onFailure": "block"
           }
         ]
@@ -52,7 +52,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/deny-ask.sh\"",
-            "timeout": 5
+            "timeout": 15
           }
         ]
       },
@@ -62,7 +62,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.dev-loop/hooks/claude/worktree-wall.sh\"",
-            "timeout": 5
+            "timeout": 15
           }
         ]
       }

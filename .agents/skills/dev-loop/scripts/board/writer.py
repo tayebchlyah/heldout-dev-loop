@@ -15,6 +15,7 @@ from types import ModuleType
 from typing import Callable
 
 import autonomy  # the scripts folder, on sys.path wherever the board package loads
+import release_rulings
 from notes_path import main_ref
 from status import cherry, detect_feature, rebasing
 
@@ -42,6 +43,7 @@ class Context:
     data: dict  # D1: the board state, loaded under the lock, saved once before it is released.
     claude: Path  # D10: the Claude config folder that holds the native task lists.
     shipped_kept: int
+    github: str  # D3 of #319: `https://github.com/<o>/<r>` from the origin remote, else "".
 
 
 def skip(reason: str, feature: str | None = None) -> dict:
@@ -156,6 +158,7 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
     times = dict(entry["stage_times"]) if isinstance(entry.get("stage_times"), dict) else {}
     seen_late = any(k.isdigit() and int(k) >= 3 for k in times)  # D18: a run already saw Stage 3 or later
     text = (ctx.dl.read_note(ctx.notes, spec) or b"").decode() if spec else ""
+    front = ctx.dl.parse_frontmatter(text)
     title = re.search(r"^# (.+)$", text, re.MULTILINE)
     goal = re.split(r"\n\s*\n", section(text, "Goal"))[0]
     assumptions = [a.strip() for a in re.findall(r"^[-*] (.+)$", section(text, "Assumptions"), re.MULTILINE)]
@@ -208,7 +211,10 @@ def merge(ctx: Context, entry: dict, slug: str, found: dict, spec: Path | None, 
         "owner": ctx.machine["owner"],
         "machine": ctx.machine["machine"],
         "track": found["track"] or "",
-        "acceptance": ctx.dl.parse_frontmatter(text).get("acceptance", "").lower() if spec else "",
+        "acceptance": front.get("acceptance", "").lower() if spec else "",
+        "issue": sources.issue(front.get("issue") if spec else None, slug),
+        "pr": sources.pull_request(ctx.dl, Path(worktree)) if worktree else None,
+        "repo": ctx.github,
         "stage": stage,
         "stage_times": times,
         "tasks": task_list,
@@ -350,7 +356,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
                   *([(event, hook_cwd.resolve(), hook_session, hook_agent, hook_transcript)] if event and hook_cwd else [])]
         claude = dl.claude_home(os.environ, home)
         ctx = Context(dl, repo, notes, folder, state_dir, state_fd, store.load_machine(home), store.project_name(repo),
-                      state.load(state_dir, state_fd), claude, shipped_kept(dl, repo))
+                      state.load(state_dir, state_fd), claude, shipped_kept(dl, repo),
+                      sources.github_repo(dl.git(repo, "remote", "get-url", "origin")))
         while True:
             write(ctx, specs, trees, claims, detect, payload, events)
             if evicted(dl, notes):
@@ -440,7 +447,7 @@ def kit_version(top: Path) -> str:
         version = str(json.loads((top / ".dev-loop" / "MANIFEST.json").read_text())["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return "0.0.0"
-    return version if re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?", version) else "0.0.0"
+    return version if re.fullmatch(release_rulings.VERSION, version) else "0.0.0"
 
 
 def board_text(kit: str) -> str:
