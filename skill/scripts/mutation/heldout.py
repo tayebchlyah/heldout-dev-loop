@@ -39,7 +39,13 @@ def _covers(outer: Path, inner: Path) -> bool:
                for p in (inner, *inner.parents))
 
 
+def _links(paths: list[Path]) -> list[Path]:
+    return [(Path(top) / name).resolve() for path in paths if path.is_dir()
+            for top, dirs, files in os.walk(path) for name in (*dirs, *files) if (Path(top) / name).is_symlink()]
+
+
 def _reaches(paths: list[Path], held: Path) -> bool:
+    paths = [*paths, *_links(paths)]
     return any(_covers(held, path) or _covers(path, held) for path in paths)
 
 
