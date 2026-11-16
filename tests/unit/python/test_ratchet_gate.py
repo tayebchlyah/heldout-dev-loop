@@ -123,3 +123,21 @@ class GateRatchetTests(RatchetRepo):
         retry = "<testsuite><testcase name='n_new' time='3'/></testsuite>"
         code, out = self.gate(BASE, raw=(skipped, retry))
         self.assertEqual(out["ratchet"]["red"], [item("n_new", 3.0, "unmarked", 2)])
+
+    def test_skipped_at_baseline_is_not_new(self) -> None:
+        self.seed("gate", BASE, "main", skipped=["d_one", "d_two"])
+        self.branch()
+        code, out = self.gate({**BASE, "d_one": 23.7, "d_two": 31.0, "n_new": 3.0})
+        ratchet = out["ratchet"]
+        self.assertEqual((code, ratchet["state"], ratchet["ok"]), (1, "checked", False))
+        self.assertEqual(ratchet["red"], [item("n_new", 3.0, "unmarked", 2)])
+        self.assertEqual(ratchet["attention"], [{"id": "d_two", "seconds": 31.0, "rule": "max", "limit": 30}])
+        self.assertEqual((ratchet["growth"]["share"], ratchet["growth"]["ok"]), (0.02, True))
+
+    def test_bad_skipped_passes_the_record_over(self) -> None:
+        self.branch()
+        for bad in ("d_one", [1]):
+            with self.subTest(skipped=bad):
+                self.seed("gate", BASE, "main", skipped=bad)
+                code, out = self.gate({**BASE, "d_one": 23.7})
+                self.assertEqual(out["ratchet"]["state"], "no-baseline")

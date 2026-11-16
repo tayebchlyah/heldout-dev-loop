@@ -51,6 +51,13 @@ class AcceptanceRatchetTests(RatchetRepo):
                 self.assertEqual(out["ratchet"]["attention"],
                                  [{"id": name, "seconds": seconds, "rule": rule, "limit": limit}])
 
+    def test_skipped_at_baseline_is_not_new(self) -> None:
+        self.seed("acceptance", ACCEPTANCE_BASE, "main", skipped=["d_one", "d_two"])
+        self.branch()
+        code, out = self.acceptance({**ACCEPTANCE_BASE, "d_one": 12.0, "d_two": 61.0})
+        self.assertEqual((code, out["ratchet"]["ok"], out["ratchet"]["red"]), (0, True, []))
+        self.assertEqual(out["ratchet"]["attention"], [{"id": "d_two", "seconds": 61.0, "rule": "max", "limit": 60}])
+
     def test_skipped_runs(self) -> None:
         self.main_config({"commands": COMMANDS})
         self.on_branch()

@@ -9,7 +9,7 @@ from ratchet_fixtures import BASE, RatchetRepo
 from test_devloop import git
 
 
-class RecordTests(RatchetRepo):
+class RatchetRecordTests(RatchetRepo):
     def files(self) -> set[str]:
         folder = self.store("gate")
         return {p.name for p in folder.glob("*.json")} if folder.is_dir() else set()
@@ -19,7 +19,7 @@ class RecordTests(RatchetRepo):
         path = self.store("gate") / f"{self.tree('HEAD')}.json"
         self.assertEqual((code, out["ratchet"]["state"], out["ratchet"]["record"]), (0, "no-baseline", str(path)))
         record = json.loads(path.read_text())
-        self.assertEqual((record["times"], record["tree"]), (BASE, self.tree("HEAD")))
+        self.assertEqual((record["times"], record["tree"], record["skipped"]), (BASE, self.tree("HEAD"), []))
         self.assertEqual(record["head"], git(self.repo, "rev-parse", "HEAD").strip())
         self.assertRegex(record["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.branch()
@@ -27,19 +27,27 @@ class RecordTests(RatchetRepo):
         self.assertEqual((code, out["ratchet"]["baseline"]["tree"], out["ratchet"]["record"]),
                          (1, self.tree("main"), None))
 
-    def test_record_writes(self) -> None:
-        rows = {
-            "scope": lambda: self.gate(BASE, env={"GATE_SCOPE": "changed"}),
-            "flag": lambda: self.gate(BASE, flags=("--changed",)),
-            "dirty": lambda: ((self.repo / "new.txt").write_text("x"), self.gate(BASE))[1],
-            "red gate": lambda: self.gate(BASE, exit=1),
-        }
+    def no_record(self, rows: dict) -> None:
         for name, run in rows.items():
             with self.subTest(name):
                 before = self.files()
                 code, out = run()
                 self.assertEqual((out["ratchet"]["record"], self.files()), (None, before))
                 (self.repo / "new.txt").unlink(missing_ok=True)
+
+    def test_no_record_on_a_changed_scope(self) -> None:
+        self.no_record({"scope": lambda: self.gate(BASE, env={"GATE_SCOPE": "changed"})})
+
+    def test_no_record_on_the_changed_flag(self) -> None:
+        self.no_record({"flag": lambda: self.gate(BASE, flags=("--changed",))})
+
+    def test_no_record_on_a_dirty_tree_or_red_gate(self) -> None:
+        self.no_record({
+            "dirty": lambda: ((self.repo / "new.txt").write_text("x"), self.gate(BASE))[1],
+            "red gate": lambda: self.gate(BASE, exit=1),
+        })
+
+    def test_no_record_when_off_or_red_ratchet(self) -> None:
         self.main_config({"test_time": False})
         before = self.files()
         code, out = self.gate(BASE)
@@ -69,6 +77,13 @@ class RecordTests(RatchetRepo):
         code, out = self.gate({**BASE, "a": 1.2})
         self.assertEqual((code, self.files()), (0, {f"{self.tree('HEAD')}.json"}))
         self.assertEqual(json.loads((self.store("gate") / f"{self.tree('HEAD')}.json").read_text())["times"]["a"], 1.2)
+
+    def test_record_lists_skipped_tests(self) -> None:
+        skipped = "<testsuite><testcase name='s_b' time='0'><skipped/></testcase>" \
+                  "<testcase name='s_a'><skipped/></testcase><testcase name='a'><skipped/></testcase></testsuite>"
+        code, out = self.gate(BASE, raw=(skipped,))
+        record = json.loads((self.store("gate") / f"{self.tree('HEAD')}.json").read_text())
+        self.assertEqual((code, record["skipped"], "s_a" in record["times"]), (0, ["s_a", "s_b"], False))
 
     def test_record_holds_normalized_times(self) -> None:
         self.seed("gate", BASE, "main")

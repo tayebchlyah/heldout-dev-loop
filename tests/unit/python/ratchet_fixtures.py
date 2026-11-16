@@ -72,12 +72,12 @@ class RatchetRepo(unittest.TestCase):
         common = git(self.repo, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
         return Path(common) / "dev-loop" / "test-times" / kind
 
-    def seed(self, kind: str, times: dict, rev: str = "HEAD") -> Path:
+    def seed(self, kind: str, times: dict, rev: str = "HEAD", **extra: object) -> Path:
         path = self.store(kind) / f"{self.tree(rev)}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         head = git(self.repo, "rev-parse", rev).strip()
         path.write_text(json.dumps({"tree": self.tree(rev), "head": head, "at": "2026-11-14T00:00:00Z",
-                                    "times": times}))
+                                    "times": times, **extra}))
         return path
 
     def branch(self, name: str = "feat/x") -> None:
