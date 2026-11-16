@@ -133,7 +133,7 @@ dev-loop takes ideas and text from these projects. **Invoked**: installed apart 
 | Doubt review | An adversarial reviewer gets the artifact and the contract, never the claim | `agent-skills` `doubt-driven-development` | adapted | `skill/references/spec.md` |
 | Code volume rules | Write less code, change only what the request needs | Ponytail (`ponytail`) `AGENTS.md` | adapted | `skill/references/building.md` |
 | Building principles | Prove it works, fix root causes, attack the premise | pstack (`pstack`) principle skills | adapted | `skill/references/building.md` |
-| Merge danger ladder | Prove the one fact a risky change is safe because of | `pstack` `blast-radius` | adapted | `skill/SKILL.md` |
+| Merge danger ladder | Prove the one fact a risky change is safe because of | `pstack` `blast-radius` | adapted | `skill/references/building.md` |
 | Benchmark checklist | Write the claim and the noise floor before you measure | `pstack` `benchmark-checklist` | adapted | `skill/references/benchmark.md` |
 | Verify skill | A project skill that launches, drives and cleans up the real app | `pstack` `create-verification-skill` | adapted | `skill/references/verify.md` |
 | Codex macOS sandbox | The Seatbelt policies that confine a Codex hook | OpenAI Codex (`codex-sandbox`) Seatbelt policies | adapted | `codex/hooks/macos_policy.py` |
