@@ -61,7 +61,7 @@ One file per subject. A new test file adds its line here.
 - `support.py`: shared constants, helpers.
 - `test_merge_test_time.py`: `merge-check` `test-time-waived`, `test_time` in `config-changed`.
 - `test_ratchet_acceptance.py`: `acceptance` `ratchet`: grown, waived, new slow flows, skipped runs.
-- `test_ratchet_record.py`: the time ratchet record a green full gate writes, prune to 50.
+- `test_ratchet_record.py`: the time ratchet record a green full gate writes, its skipped ids, prune to 50.
 - `test_ratchet_gate.py`, `ratchet_fixtures.py`: `gate --summary` `ratchet` (time ratchet read side, gate rules); the scratch repo with JUnit times.
 - `test_impact_map.py`: `scripts/impact_map.py select`, the map reader and shape, the committed map, the case list twin of `scripts/gate.sh`.
 - `test_impact_trace.py`: `scripts/impact_map.py` `parse_trace` and `trace`: strace text to tracked reads, module runs, the map write.
