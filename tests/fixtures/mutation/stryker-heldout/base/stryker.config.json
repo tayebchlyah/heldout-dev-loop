@@ -1,0 +1,4 @@
+{
+  "testRunner": "vitest",
+  "mutate": ["src/core/*.ts"]
+}
