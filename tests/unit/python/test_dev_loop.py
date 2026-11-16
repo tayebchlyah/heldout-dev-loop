@@ -77,9 +77,10 @@ for _path in sorted(HERE.glob("test_*.py")):
 
 class JUnitReportTests(unittest.TestCase):
     def test_in_modules_table(self) -> None:
-        ids = ["test_dev_loop.JUnitReportTests.test_1", "test_x.A.test_1", "test_x.B.test_2", "test_y.C.test_1",
-               "test_xy.D.test_1"]
-        rows = (("test_x", ids[:3]), ("test_x test_y", ids[:4]), ("test_x,test_y", ids[:4]), ("", ids), (None, ids))
+        ids = ["test_dev_loop.JUnitReportTests.test_1", "test_ci.A.test_1", "test_ci.B.test_2", "test_size.C.test_1",
+               "test_ci_skip.D.test_1"]
+        rows = (("test_ci", ids[:3]), ("test_ci test_size", ids[:4]), ("test_ci,test_size", ids[:4]), ("", ids),
+                (None, ids))
         for value, kept in rows:
             with self.subTest(value=value):
                 env = {} if value is None else {"DEVLOOP_TEST_MODULES": value}
@@ -88,6 +89,23 @@ class JUnitReportTests(unittest.TestCase):
                         os.environ.pop("DEVLOOP_TEST_MODULES", None)
                     self.assertEqual(in_modules(ids), kept)
                     self.assertNotIn("DEVLOOP_TEST_MODULES", os.environ)
+
+    def test_in_modules_refuses_a_name_with_no_module_file(self) -> None:
+        for value in ("test_ci_skipp", "test_ci test_nope", "test_ci.A"):
+            with self.subTest(value=value), mock.patch.dict(os.environ, {"DEVLOOP_TEST_MODULES": value}):
+                with self.assertRaisesRegex(SystemExit, "DEVLOOP_TEST_MODULES.*test_"):
+                    in_modules(["test_ci.A.test_1"])
+
+    def test_a_bare_module_argument_runs_that_module(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_TEST_MODULES", "DEVLOOP_TEST_SHARD")}
+        with mock.patch.object(sys.modules[__name__], "run_chunks", return_value=0) as run, \
+                mock.patch.dict(os.environ, env, clear=True), mock.patch.object(sys, "argv", ["x", "test_size"]):
+            self.assertEqual(main(), 0)
+        self.assertEqual({test_id.split(".")[0] for test_id in run.call_args.args[2]}, {"test_size", "test_dev_loop"})
+        result = subprocess.run([sys.executable, __file__, "test_ci_skipp"], capture_output=True, text=True,
+                                env={**env, "DEVLOOP_TEST_JOBS": "1"})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("test_ci_skipp", result.stderr)
 
     def test_run_parallel_keeps_the_listed_modules(self) -> None:
         with mock.patch.dict(os.environ, {"DEVLOOP_TEST_MODULES": "test_size", "DEVLOOP_TEST_SHARD": ""}), \
@@ -447,11 +465,15 @@ def run_parallel(jobs: int) -> int:
         shutil.rmtree(template, ignore_errors=True)
 
 
-if __name__ == "__main__":
+def main() -> int:
     if sys.argv[1:2] == ["--chunk"]:
-        sys.exit(run_chunk(sys.argv[2], sys.argv[3:]))
-    # Arguments (test names, -k, -v): plain unittest. DEVLOOP_TEST_JOBS=1: one chunk process at a time.
-    if len(sys.argv) > 1:
+        return run_chunk(sys.argv[2], sys.argv[3:])
+    if sys.argv[1:] and all(arg.startswith("test_") and "." not in arg for arg in sys.argv[1:]):
+        os.environ["DEVLOOP_TEST_MODULES"] = " ".join(sys.argv[1:])
+    elif len(sys.argv) > 1:
         unittest.main(verbosity=2)
-    else:
-        sys.exit(run_parallel(job_count()))
+    return run_parallel(job_count())
+
+
+if __name__ == "__main__":
+    sys.exit(main())
