@@ -53,7 +53,8 @@ def relative(folder: Path, root: Path) -> str | None:
 def stryker_refusals(config: dict) -> list[str]:
     gaps = []
     if config.get("inPlace") is True:
-        gaps.append('stryker.config.json sets "inPlace": true: the held-out suite then reaches the run')
+        gaps.append('TypeScript 7 runs without inPlace (references/mutation.md, Stryker): '
+                    'stryker.config.json sets "inPlace": true: the held-out suite then reaches the run')
     if "ignorePatterns" in config:
         patterns = config["ignorePatterns"]
         if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):

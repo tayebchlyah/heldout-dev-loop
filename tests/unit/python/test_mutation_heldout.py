@@ -39,7 +39,8 @@ class MutationHeldOut(unittest.TestCase):
         self.assertEqual(heldout.stryker_refusals({}), [])
         self.assertEqual(heldout.stryker_refusals({"inPlace": False, "ignorePatterns": ["dist"]}), [])
         self.assertEqual(heldout.stryker_refusals({"inPlace": True}),
-                         ['stryker.config.json sets "inPlace": true: the held-out suite then reaches the run'])
+                         ["TypeScript 7 runs without inPlace (references/mutation.md, Stryker): "
+                          'stryker.config.json sets "inPlace": true: the held-out suite then reaches the run'])
         for bad in ("dist", [1], None, {"a": 1}):
             self.assertEqual(heldout.stryker_refusals({"ignorePatterns": bad}),
                              ["stryker.config.json ignorePatterns is not a list of strings"])
