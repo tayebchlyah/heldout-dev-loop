@@ -129,6 +129,11 @@ class InstructionContractTests(unittest.TestCase):
                 with self.subTest(path=path.name, banned=banned):
                     self.assertNotIn(banned, path.read_text())
 
+    def test_url_host_check_line(self) -> None:
+        for path in (SKILL_ROOT / "references" / "tests.md", *SPEC_TESTERS):
+            with self.subTest(path=path.name):
+                self.assertIn("check a URL host with a prefix that ends in `/`, a regex, or a parsed host", path.read_text())
+
     def test_stage_6_tests_the_premise_before_a_third_fix(self) -> None:
         self.assertIn("test the premise before a third fix", stage_text(6))
 

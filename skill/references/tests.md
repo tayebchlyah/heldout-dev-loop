@@ -17,6 +17,8 @@ Read before writing a test.
 
 Plus: tests only at the seams the spec names.
 
+URL host checks: in a test, check a URL host with a prefix that ends in `/`, a regex, or a parsed host. A bare prefix such as `https://example.com` also matches `https://example.com.evil.net`, and CodeQL flags it.
+
 ## Seams
 
 Source: Pocock skills v1.3.2 `codebase-design` (`skills/engineering/codebase-design/SKILL.md` and `DEEPENING.md`, commit `d1478fc`). License: MIT, [spec.md](spec.md#licenses).
