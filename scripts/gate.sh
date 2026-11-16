@@ -1,6 +1,6 @@
 #!/bin/bash
 # dev-loop gate for this repo: the installer suite (node) and the skill suite (python), side by side.
-# GATE_SCOPE=changed (the Stop hook), #327: scripts/impact_map.py select picks the suites and test modules
+# GATE_SCOPE=changed (the Stop hook, or `devloop.py gate --summary --changed`), #327: scripts/impact_map.py select picks the suites and test modules
 # from the impact map tests/impact-map.json (#327); a select failure runs both suites (#327).
 # Without scripts/impact_map.py (#327): any change reaches the node suite, the skill suite only for a path
 # of the case list below (#327). No change: neither. Else both. A run of either suite waits for the suite

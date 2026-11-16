@@ -197,7 +197,8 @@ class GateTests(Sandbox):
         (self.repo / "scripts" / "gate.sh").chmod(0o755)
 
     def run_gate(self) -> tuple[int, dict]:
-        return run_cli("gate", "--summary", cwd=self.repo, env=self.env)
+        clean = {k: v for k, v in self.env.items() if k != "GATE_SCOPE"}
+        return run_cli("gate", "--summary", cwd=self.repo, env=clean)
 
     def test_passing_gate(self) -> None:
         self.gate("#!/bin/sh\necho all good\n")
@@ -270,6 +271,21 @@ class GateTests(Sandbox):
                 echoes = "".join(f'echo "{line}"\n' for line in log_lines)
                 self.gate(f"#!/bin/sh\n{copies}{echoes}exit {exit_code[0] if exit_code else 1}\n")
                 _, out = self.run_gate()
+                self.assertEqual(out["failures"], expected)
+
+    def test_report_missing_compares_full_runs_only(self) -> None:
+        bad = "<testsuite><testcase name='bad'><failure/></testcase></testsuite>"
+        put(self.root / "skill.xml", bad)
+        self.gate(f'#!/bin/sh\ncp "{self.root / "skill.xml"}" "$DEVLOOP_REPORT_DIR/skill.xml"\nexit 1\n')
+        logs = self.repo / ".git" / "dev-loop" / "logs"
+        for name in ("node.xml", "skill.xml", "temp-leak.xml"):
+            put(logs / "gate-20200101T000000-reports" / name, "<testsuite/>")
+        clean = {k: v for k, v in self.env.items() if k != "GATE_SCOPE"}
+        rows = [(("--changed",), ["FAILED bad"]),
+                ((), ["FAILED bad", "FAILED node.xml: report missing", "FAILED temp-leak.xml: report missing"])]
+        for flags, expected in rows:
+            with self.subTest(flags=flags):
+                _, out = run_cli("gate", "--summary", *flags, cwd=self.repo, env=clean)
                 self.assertEqual(out["failures"], expected)
 
     def test_junit_failures_ids_one_per_test(self) -> None:
