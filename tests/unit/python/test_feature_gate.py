@@ -614,8 +614,10 @@ class FeatureGateTextTests(unittest.TestCase):
     def test_repo_docs(self) -> None:
         agents, readme = (ROOT / "AGENTS.md").read_text(), (ROOT / "README.md").read_text()
         for needle in ("review-merge", "acceptance [--failed]", "scripts/acceptance.sh"):
-            self.assertIn(needle, agents)
             self.assertIn(needle, readme)
+        for needle in ("`reference/cli/review-merge.md`", "`reference/cli/acceptance.md`", "scripts/acceptance.sh"):
+            self.assertIn(needle, agents)
+        self.assertIn("acceptance [--failed]", (ROOT / "reference" / "cli" / "acceptance.md").read_text())
         self.assertIn("feature_gate.py", agents)
         self.assertIn("test_feature_gate.py", (ROOT / "tests" / "unit" / "python" / "README.md").read_text())
 
