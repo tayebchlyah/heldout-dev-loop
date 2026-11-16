@@ -122,7 +122,7 @@ class ClaudeGateTests(unittest.TestCase):
                 self.assertIn(f"red in {tree.resolve()}", json.loads(result.stdout or "{}").get("reason", ""),
                               result.stderr)
 
-    def test_a_worktree_subagent_that_wrote_nothing_runs_no_gate(self) -> None:
+    def test_a_worktree_subagent_runs_the_gate_only_when_it_wrote_a_file(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             main, tree = self.linked_worktree(root)
             write(tree / "red.txt", "red before the subagent\n")
@@ -133,6 +133,21 @@ class ClaudeGateTests(unittest.TestCase):
             self.hook("gate-snapshot.sh", main, {**start, "agent_id": "w2"})
             write(tree / "new.txt", "written\n")
             result = self.hook("gate.sh", main, {**start, "agent_id": "w2", "hook_event_name": "SubagentStop"})
+            self.assertIn("red in", json.loads(result.stdout or "{}").get("reason", ""))
+
+    def test_a_nested_repo_cwd_gates_the_project(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            main, _tree = self.linked_worktree(root)
+            write(main / "red.txt", "a red unit test\n")
+            nested = main / "vendor" / "clone"
+            nested.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", str(nested)], check=True, stderr=subprocess.DEVNULL)
+            start = {"hook_event_name": "SubagentStart", "agent_id": "n1", "agent_type": "implementer", "cwd": str(nested)}
+            result = self.hook("gate.sh", main, {"hook_event_name": "Stop", "cwd": str(nested)})
+            self.assertIn(f"red in {main.resolve()}", json.loads(result.stdout or "{}").get("reason", ""), result.stderr)
+            self.hook("gate-snapshot.sh", main, start)
+            write(main / "new.txt", "written\n")
+            result = self.hook("gate.sh", main, {**start, "hook_event_name": "SubagentStop"})
             self.assertIn("red in", json.loads(result.stdout or "{}").get("reason", ""))
 
     def test_stop_runs_the_mapped_gate_command_first(self) -> None:
