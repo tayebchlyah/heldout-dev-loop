@@ -41,7 +41,7 @@ Ruling R10: right after a correct install, `check_setup.py` still fails things n
    - `~/.zshrc`, after the Prezto `source`: `[[ ! -t 0 && ! -t 1 ]] && setopt CLOBBER`
 
    Other frameworks: the same test around their own option.
-5. `source_dirs missing in dev-loop.json` (both harnesses): no key in the checkout file or at the main ref, and a tracked file under a top-level folder that is not a dot folder. The line lists those folders. No installer can fix it: Stage 0 proposes the entries, the user confirms, the key reaches `<main-ref>` through a PR a human merges.
+5. `source_dirs missing in dev-loop.json` (both harnesses): no key in the checkout file or at the main ref, and a tracked file under a top-level folder that is not a dot folder. The line lists those folders. No installer can fix it: `devloop.py stack-detect` proposes the entries, the user confirms, the key reaches `<main-ref>` through a PR a human merges.
 6. `capabilities missing in dev-loop.json` (both harnesses): no `capabilities` key in the checkout file. The line proposes a value: `ui` when the `AGENTS.md` `stacks:` line holds `ui`, `backend` when a compose file is at the repo root. No installer can fix it: Stage 0, or the upgrade PR, writes the value the user confirms.
 7. `commands.acceptance missing in dev-loop.json` (both harnesses): no command runs the held-out suite. Stage 0, or the upgrade PR, maps it; it writes JUnit XML into `$DEVLOOP_REPORT_DIR`.
 
