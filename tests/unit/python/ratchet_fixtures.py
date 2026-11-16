@@ -56,9 +56,9 @@ class RatchetRepo(unittest.TestCase):
             (self.junit / f"r{n}.xml").write_text(text)
 
     def gate(self, times: dict | None, exit: int = 0, env: dict | None = None,
-             raw: tuple[str, ...] = ()) -> tuple[int, dict]:
+             raw: tuple[str, ...] = (), flags: tuple[str, ...] = ()) -> tuple[int, dict]:
         self.reports(times, raw)
-        return run_cli("gate", "--summary", cwd=self.repo,
+        return run_cli("gate", "--summary", *flags, cwd=self.repo,
                        env={**self.env, "RATCHET_EXIT": str(exit), **(env or {})}, timeout=120)
 
     def acceptance(self, times: dict, *flags: str, failing: tuple = (), exit: int = 0) -> tuple[int, dict]:

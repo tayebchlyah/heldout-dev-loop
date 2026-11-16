@@ -162,7 +162,11 @@ def cmd_gate(args: argparse.Namespace) -> int:
     cmd = ["sh", "-c", command] if command else [str(top / "scripts" / "gate.sh")]
     reports = log.parent / f"{log.stem}-reports"
     reports.mkdir()
-    payload = run_logged(cmd, log, top, {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)})
+    env = {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)}
+    if args.changed:
+        env["GATE_SCOPE"] = "changed"
+    payload = run_logged(cmd, log, top, env)
+    payload["scope"] = "changed" if env.get("GATE_SCOPE") == "changed" else "full"
     parsed = [(p, junit_cases(p)) for p in sorted(reports.glob("*.xml"))]
     ids = sorted({case_id(c, top) for _, found in parsed for c in found or [] if case_failed(c)})
     broken = [p.name for p, found in parsed if found is None]
@@ -189,7 +193,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     payload["size"] = size.check(top, "uncommitted")
     payload["ratchet"] = ratchet.check("gate", top, reports, main_ref(top))
     ok = payload["exit"] == 0 and payload["seal"]["ok"] and payload["size"]["ok"] and payload["ratchet"]["ok"]
-    if (ok and os.environ.get("GATE_SCOPE") != "changed" and payload["ratchet"]["state"] in ("checked", "no-baseline")
+    if (ok and payload["scope"] != "changed" and payload["ratchet"]["state"] in ("checked", "no-baseline")
             and ratchet.clean(top)):
         payload["ratchet"]["record"] = ratchet.write_record("gate", top, reports, payload["ratchet"]["factor"] or 1.0)
     return emit(payload, 0 if ok else 1)
