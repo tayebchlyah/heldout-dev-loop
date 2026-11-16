@@ -14,6 +14,8 @@ from pathlib import Path
 from devloop import emit, git
 
 
+SCOPED_MARK = "scope-changed"
+
 JUNIT_HINT = (
     "No JUnit XML in $DEVLOOP_REPORT_DIR. Make the gate write it there: "
     'pytest --junitxml="$DEVLOOP_REPORT_DIR/pytest.xml", '
@@ -147,7 +149,7 @@ def mapped_command(top: Path, key: str) -> str | None:
 def previous_reports(current: Path) -> set[str]:
     for folder in sorted(current.parent.glob("gate-*-reports"), reverse=True):
         names = {p.name for p in folder.glob("*.xml")}
-        if folder != current and names:
+        if folder != current and names and not (folder / SCOPED_MARK).exists():
             return names
     return set()
 
@@ -165,13 +167,16 @@ def cmd_gate(args: argparse.Namespace) -> int:
     env = {**os.environ, "DEVLOOP_REPORT_DIR": str(reports)}
     if args.changed:
         env["GATE_SCOPE"] = "changed"
+    scope = "changed" if env.get("GATE_SCOPE") == "changed" else "full"
+    if scope == "changed":
+        (reports / SCOPED_MARK).touch()
     payload = run_logged(cmd, log, top, env)
-    payload["scope"] = "changed" if env.get("GATE_SCOPE") == "changed" else "full"
+    payload["scope"] = scope
     parsed = [(p, junit_cases(p)) for p in sorted(reports.glob("*.xml"))]
     ids = sorted({case_id(c, top) for _, found in parsed for c in found or [] if case_failed(c)})
     broken = [p.name for p, found in parsed if found is None]
     missing = []
-    if payload["exit"] != 0:
+    if payload["exit"] != 0 and scope == "full":
         missing = sorted(previous_reports(reports) - {p.name for p, _ in parsed})
     failures = [f"FAILED {i}" for i in ids]
     failures += [f"FAILED {n}: report does not parse" for n in broken]
