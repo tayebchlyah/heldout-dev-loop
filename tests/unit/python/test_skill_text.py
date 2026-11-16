@@ -112,7 +112,7 @@ class InstructionContractTests(unittest.TestCase):
         brief = next(line for line in gate.splitlines() if line.startswith("1. **Review wave"))
         rows = [(worktree, ["One git command per Bash call", "a heredoc", "`$(...)`", "`&&`",
                             "`cd` or `source` before a command", "an environment prefix", "file under `$TMPDIR`",
-                            "then run the file"]),
+                            "then run the file", "a path under `.git`", "under the git dir (a `gate --summary` `log`) with `Read`"]),
                 *((desk, ["the absolute path the controller gives", "never search for it"]) for desk in desks),
                 (gate, ["Desk path:", "skills/engineering/code-review/SKILL.md"]),
                 (brief, ["`--exclude-dir=acceptance`", "one plain command per Bash call", "no script file"]),
