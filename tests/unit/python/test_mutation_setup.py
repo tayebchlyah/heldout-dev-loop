@@ -154,8 +154,11 @@ class MutationSetup(unittest.TestCase):
     def test_stryker_held_out(self) -> None:
         stryker = [entry(adapter="stryker", critical=["*.ts"])]
         self.assertEqual(self.failures(stryker, stryker_files(inPlace=True)),
-                         ['mutation entry a/: stryker.config.json sets "inPlace": true: '
-                          "the held-out suite then reaches the run"])
+                         ["mutation entry a/: TypeScript 7 runs without inPlace (references/mutation.md, Stryker): "
+                          'stryker.config.json sets "inPlace": true: the held-out suite then reaches the run'])
+        guide = (ROOT / "skill/references/mutation.md").read_text()
+        self.assertIn("TypeScript 7", guide)
+        self.assertIn('"tsconfigFile"', guide)
         self.assertEqual(self.failures(stryker, stryker_files(ignorePatterns="dist")),
                          ["mutation entry a/: stryker.config.json ignorePatterns is not a list of strings"])
         self.assertEqual(self.failures(stryker, stryker_files(ignorePatterns=["a,b"])),
