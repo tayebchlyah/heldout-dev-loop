@@ -98,6 +98,43 @@ class ClaudeGateTests(unittest.TestCase):
             )
             self.assertIn("scope=changed", json.loads(result.stdout)["reason"])
 
+    def linked_worktree(self, root: str) -> tuple[Path, Path]:
+        main = Path(root, "main")
+        main.mkdir()
+        subprocess.run(["git", "init", "-q", str(main)], check=True, stderr=subprocess.DEVNULL)
+        gate = main / "scripts" / "gate.sh"
+        write(gate, '#!/bin/sh\n[ ! -e red.txt ] || { echo "red in $(pwd)"; exit 1; }\n')
+        os.chmod(gate, 0o755)
+        subprocess.run(["git", "-C", str(main), "add", "."], check=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "-C", str(main), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                        "commit", "-qm", "fixture"], check=True, stderr=subprocess.DEVNULL)
+        tree = Path(root, "tree")
+        subprocess.run(["git", "-C", str(main), "worktree", "add", "-q", "-b", "fix/x", str(tree)],
+                       check=True, stderr=subprocess.DEVNULL)
+        return main, tree
+
+    def test_the_gate_tests_the_worktree_of_the_hook_cwd(self) -> None:
+        for sub in ("", "scripts"):
+            with self.subTest(cwd=sub or "top"), tempfile.TemporaryDirectory() as root:
+                main, tree = self.linked_worktree(root)
+                write(tree / "red.txt", "a red unit test\n")
+                result = self.hook("gate.sh", main, {"hook_event_name": "Stop", "cwd": str(tree / sub)})
+                self.assertIn(f"red in {tree.resolve()}", json.loads(result.stdout or "{}").get("reason", ""),
+                              result.stderr)
+
+    def test_a_worktree_subagent_that_wrote_nothing_runs_no_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            main, tree = self.linked_worktree(root)
+            write(tree / "red.txt", "red before the subagent\n")
+            start = {"hook_event_name": "SubagentStart", "agent_id": "w1", "agent_type": "implementer", "cwd": str(tree)}
+            self.hook("gate-snapshot.sh", main, start)
+            result = self.hook("gate.sh", main, {**start, "hook_event_name": "SubagentStop"})
+            self.assertEqual(result.stdout, "")
+            self.hook("gate-snapshot.sh", main, {**start, "agent_id": "w2"})
+            write(tree / "new.txt", "written\n")
+            result = self.hook("gate.sh", main, {**start, "agent_id": "w2", "hook_event_name": "SubagentStop"})
+            self.assertIn("red in", json.loads(result.stdout or "{}").get("reason", ""))
+
     def test_stop_runs_the_mapped_gate_command_first(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             repo = self.repo(root)
