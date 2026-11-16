@@ -610,7 +610,7 @@ class CapabilityTextTests(unittest.TestCase):
     def test_contract_task_and_stale_rule(self) -> None:
         text = (SKILL_ROOT / "SKILL.md").read_text()
         self.assertIn("`ui` and `backend` both in `capabilities`, or two or more `stacks` entries in `dev-loop.json`: plan task 1 is the contract", text)
-        self.assertIn("after any change to a code or build file (`merge-check` test-or-doc rule", text)
+        self.assertIn("after any change under a `source_dirs` entry", text)
 
     def test_verify_md_playwright(self) -> None:
         text = (SKILL_ROOT / "references" / "verify.md").read_text()
