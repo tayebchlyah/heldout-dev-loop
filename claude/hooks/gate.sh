@@ -6,6 +6,8 @@
 # record; one that does not runs in full. A full gate is a direct call.
 # SubagentStop runs no gate for a read-only subagent (Explore, Plan) or for a
 # subagent whose tree is unchanged since its SubagentStart snapshot.
+# It tests the worktree that holds the hook cwd (an EnterWorktree session, #347),
+# CLAUDE_PROJECT_DIR when the input has none.
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
@@ -15,7 +17,9 @@ board() {
   printf '%s' "$IN" | bash "$(dirname "$0")/board.sh" "$ev"
 }
 [ "$(echo "$IN" | jq -r '.stop_hook_active // false')" = "true" ] && { board; exit 0; }
-cd "${CLAUDE_PROJECT_DIR:-.}" || { board; exit 0; }
+CWD=$(echo "$IN" | jq -r '.cwd // empty')
+cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" || { board; exit 0; }
+TOP=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$TOP"
 GATE=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$GATE" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
 git_pin_repo .
