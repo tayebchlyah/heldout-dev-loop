@@ -139,7 +139,7 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
         return skipped(str(exc), ok=False)
     if limit is None:
         return skipped("off")
-    times, _ = read_times(top, report_dir)
+    times, run_skipped = read_times(top, report_dir)
     if not times:
         return skipped("no-junit")
     payload = {**skipped(""), "reason": None}
@@ -150,7 +150,7 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
                                 for i, t in sorted(times.items()) if t > limit["max"]]
         return payload
     base = {i: float(t) for i, t in record["times"].items()}
-    unknown = set(record.get("skipped", [])) - base.keys()
+    base_skipped = set(record.get("skipped", [])) - base.keys()
     factor = load_factor(times, base)
     head = git(top, "rev-parse", "HEAD") or ""
     found = waivers(top, main_ref, head)
@@ -159,7 +159,7 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
     payload.update(state="checked", baseline={k: record[k] for k in ("tree", "head", "at")}, factor=round(factor, 3))
     for cid, t in norm.items():
         old = base.get(cid)
-        if cid in unknown:
+        if cid in base_skipped:
             if t > limit["max"]:
                 payload["attention"].append({"id": cid, "seconds": round(t, 1), "rule": "max", "limit": limit["max"]})
             continue
@@ -180,8 +180,8 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
         hit = ("max", limit["max"]) if t > limit["max"] else new_rule(cid, t, limit) if old is None else None
         if hit:
             payload["attention"].append({"id": cid, "seconds": round(t, 1), "rule": hit[0], "limit": hit[1]})
-    total = sum(base.values())
-    share = (sum(t for i, t in norm.items() if i not in unknown) - total) / total if total else 0.0
+    total = sum(t for i, t in base.items() if i not in run_skipped)
+    share = (sum(t for i, t in norm.items() if i not in base_skipped) - total) / total if total else 0.0
     if kind == "gate":
         ok = share <= limit["growth"]
         payload["growth"] = {"share": round(share, 3), "limit": limit["growth"], "ok": ok,
