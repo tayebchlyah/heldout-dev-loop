@@ -49,6 +49,7 @@ class KitTextTests(unittest.TestCase):
         for value in [
             "license header", "outside dependency", "public API", "issue or an RFC", "tool directive",
             "shortcut: <the limit>, <when to upgrade>", "new and changed lines",
+            "a link to an issue or an RFC, with at most a short reason on the same line, never more lines;",
         ]:
             with self.subTest(value=value):
                 self.assertIn(value, section)

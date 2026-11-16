@@ -7,7 +7,7 @@ Write a comment only for one of these kinds:
 - a license header;
 - behaviour that an outside dependency forces;
 - a doc comment of a public API;
-- a link to an issue or an RFC;
+- a link to an issue or an RFC, with at most a short reason on the same line, never more lines;
 - a tool directive (for example a lint or type-checker pragma);
 - a known shortcut, in the form `shortcut: <the limit>, <when to upgrade>`.
 
