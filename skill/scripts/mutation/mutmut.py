@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 
 import adapter
+import heldout
 from adapter import SETUP
 
 HUNK = re.compile(r"^@@ -(\d+)")
@@ -117,6 +118,11 @@ def read_config(folder: Path) -> tuple[list[str], list[str], list[str]]:
     def strings(value: object) -> list[str]:
         return [str(item) for item in value] if isinstance(value, list) else []
 
+    root = adapter.repo_root(folder)
+    refusal = (heldout.selection_refusal(strings(config.get("pytest_add_cli_args_test_selection")), folder, root)
+               or heldout.cli_args_refusal(strings(config.get("pytest_add_cli_args")), folder, root))
+    if refusal:
+        adapter.setup_error(f"mutation setup broken: {refusal}. {SETUP}")
     paths = [str(PurePosixPath(str(p))).rstrip("/") for p in sources]
     return paths, strings(config.get("only_mutate")), strings(config.get("do_not_mutate"))
 
