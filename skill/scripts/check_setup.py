@@ -318,17 +318,38 @@ GUARD_AFTER_GIT = (
 )
 
 
-def check_gate_guard(repo: Path) -> list[str]:
-    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_* before its first git call.
+GATE_JUNIT = (
+    "scripts/gate.sh does not name DEVLOOP_REPORT_DIR: the time ratchet reads the gate JUnit XML there and is skipped. "
+    "Copy each JUnit file the gate writes to $DEVLOOP_REPORT_DIR (references/bootstrap.md)"
+)
 
-    Skipped when commands.gate maps a command that does not run scripts/gate.sh."""
+
+def gate_lines(repo: Path) -> list[str] | None:
+    """The non-comment lines of the project scripts/gate.sh.
+
+    None when there is no such file, or commands.gate maps a command that does not run it."""
     gate = repo / "scripts" / "gate.sh"
     config = load_json(repo / "dev-loop.json", [])
     commands = config.get("commands") if isinstance(config, dict) else None
     mapped = commands.get("gate") if isinstance(commands, dict) else None
     if (isinstance(mapped, str) and mapped and not GATE_SCRIPT_CALL.search(mapped)) or not gate.is_file():
+        return None
+    return [line for line in gate.read_text(errors="replace").splitlines() if not line.lstrip().startswith("#")]
+
+
+def check_gate_junit(repo: Path) -> list[str]:
+    """#363: the user action when the project scripts/gate.sh never names DEVLOOP_REPORT_DIR."""
+    lines = gate_lines(repo)
+    return [GATE_JUNIT] if lines is not None and not any("DEVLOOP_REPORT_DIR" in line for line in lines) else []
+
+
+def check_gate_guard(repo: Path) -> list[str]:
+    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_* before its first git call.
+
+    Skipped when commands.gate maps a command that does not run scripts/gate.sh."""
+    lines = gate_lines(repo)
+    if lines is None:
         return []
-    lines = [line for line in gate.read_text(errors="replace").splitlines() if not line.lstrip().startswith("#")]
     guard = next((i for i, line in enumerate(lines) if all(part.search(line) for part in GUARD_PARTS)), None)
     if guard is None:
         return [GUARD_MISSING]
@@ -673,6 +694,7 @@ def main() -> int:
     failures += gh_line(args.repo)
     action_groups += [(line, []) for line in check_board_vault(args.home, args.repo)]
     action_groups += [(line, []) for line in check_release_sandbox(args.repo)]
+    action_groups += [(line, []) for line in check_gate_junit(args.repo)]
     action_groups += [(line, []) for line in check_agent_shell(args.harness, os.environ)]
     action_groups += [(line, []) for line in ci.check_github(args.repo)]
     source_failures, source_actions, source_notices = source_dirs.setup(args.repo)
