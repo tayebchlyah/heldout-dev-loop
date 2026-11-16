@@ -37,7 +37,8 @@ class MutationKitTextTests(unittest.TestCase):
         text = MUTATION_MD.read_text()
         for value in ["devloop.py mutation", "protocol", "--entry", "mutago", "v2.10.42",
                       "timeout counts as killed", "opt in", "Node 22", "Go 1.26.6", "first word of the `command`",
-                      "lies fully inside a changed range", "`%w` to `%v`"]:
+                      "lies fully inside a changed range", "`%w` to `%v`", "--ignorePatterns", "inPlace",
+                      "a folder that holds `tests/acceptance`", "held-out test files ran"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
         tests = (REFERENCES / "tests.md").read_text()
