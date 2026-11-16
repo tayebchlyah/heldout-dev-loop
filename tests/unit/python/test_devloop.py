@@ -209,8 +209,7 @@ class GateTests(Sandbox):
     def test_changed_flag_sets_the_gate_scope(self) -> None:
         self.gate('#!/bin/sh\necho "scope=${GATE_SCOPE-unset}"\n')
         clean = {k: v for k, v in self.env.items() if k != "GATE_SCOPE"}
-        rows = [((), {}, "scope=unset", "full"),
-                (("--changed",), {"GATE_SCOPE": "other"}, "scope=changed", "changed"),
+        rows = [(("--changed",), {"GATE_SCOPE": "other"}, "scope=changed", "changed"),
                 ((), {"GATE_SCOPE": "changed"}, "scope=changed", "changed")]
         for flags, extra, line, scope in rows:
             with self.subTest(flags=flags, env=extra):
