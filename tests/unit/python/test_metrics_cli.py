@@ -190,13 +190,20 @@ class MetricsCommandTests(TempDir):
         state.write_text(json.dumps({"features": {slug: {"backfilled": not spec, "stage_times": {
             "5": "2026-01-01T10:00:00Z", "6": "2026-01-01T11:00:00Z", "7": "2026-01-01T12:00:00Z"}}}}))
         self.slug = slug
+        self.stub = self.root / "stub"
+        self.stub.mkdir()
+        gh = self.stub / "gh"
+        gh.write_text(f"#!{sys.executable}\nimport os, sys\nopen(os.path.join({str(self.stub)!r}, 'calls'), 'a')"
+                      ".write(' '.join(sys.argv[1:]) + '\\n')\n"
+                      "sys.stdout.write(os.environ.get('STUB_GH_OUT', ''))\nsys.exit(int(os.environ.get('STUB_GH_CODE', '1')))\n")
+        gh.chmod(0o755)
 
     def transcript(self, records: list) -> None:
         write_jsonl(self.project / "s1.jsonl", records)
 
-    def run_cli(self, *args: str, cwd: Path | None = None) -> tuple[int, dict]:
+    def run_cli(self, *args: str, cwd: Path | None = None, **extra: str) -> tuple[int, dict]:
         env = {**os.environ, "CLAUDE_CONFIG_DIR": str(self.config), "DEV_LOOP_NOTES": str(self.notes),
-               "HOME": str(self.root)}
+               "HOME": str(self.root), "PATH": f"{self.stub}{os.pathsep}{os.environ['PATH']}", **extra}
         done = subprocess.run([sys.executable, str(DEVLOOP), "metrics", *args], cwd=cwd or self.worktree, env=env,
                               capture_output=True, text=True)
         try:
@@ -312,6 +319,54 @@ class MetricsCommandTests(TempDir):
         self.assertEqual(code, 0, out)
         self.assertEqual((out["track"], out["unattributed"]), ("S", False))
         self.assertEqual(out["row"].split(" | ")[12:14], ["-", "-"])
+
+    def test_cli_write_shipped_cell(self) -> None:
+        merged = json.dumps({"state": "MERGED", "mergedAt": "2026-01-03T12:00:00Z"})
+        local = datetime(2026, 1, 3, 12, tzinfo=timezone.utc).astimezone().date().isoformat()
+        pr = {"number": 7, "url": "u", "branch": "fix/other"}
+        ok = {"STUB_GH_OUT": merged, "STUB_GH_CODE": "0"}
+        rows = [("track M, shipped", True, "", "", {}, "2026-01-02"),
+                ("track M, no shipped: empty cell", "no-shipped", "", "", {}, ""),
+                ("track S, merged", False, "fix/feat-x", "", ok, local),
+                ("track S, open", False, "fix/feat-x", "",
+                 {"STUB_GH_OUT": json.dumps({"state": "OPEN", "mergedAt": None}), "STUB_GH_CODE": "0"}, ""),
+                ("track S, gh fails", False, "fix/feat-x", "", {}, ""),
+                ("track S, not json", False, "fix/feat-x", "", {"STUB_GH_OUT": "x", "STUB_GH_CODE": "0"}, ""),
+                ("pr.json number first", False, "7", json.dumps(pr), ok, local),
+                ("pr.json bad number", False, "fix/feat-x", json.dumps({**pr, "number": True}), ok, local),
+                ("pr.json number, not merged", False, "7", json.dumps(pr), {}, ""),
+                ("detached, pr.json", "detached", "7", json.dumps(pr), ok, local),
+                ("detached, no pr.json", "detached", "", "", ok, ""),
+                ("track S, no transcript records: no gh call", "no-records", "", json.dumps(pr), ok, None)]
+        parent = self.tmp
+        for n, (name, spec, target, prfile, env, shipped) in enumerate(rows):
+            with self.subTest(name):
+                self.tmp = parent / str(n)
+                self.tmp.mkdir()
+                self.fixture(prefix="fix", spec=spec is True or spec == "no-shipped")
+                if spec == "no-shipped":
+                    (self.notes / "specs" / "20260101 Feat X.md").write_text("---\nfeature: feat-x\ntrack: M\n---\n")
+                if prfile:
+                    folder = self.repo / ".git" / "worktrees" / "wt" / "dev-loop"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    (folder / "pr.json").write_text(prfile)
+                args = ["--write"]
+                if spec == "detached":
+                    self.git(self.worktree, "checkout", "-q", "--detach")
+                    state = self.repo / ".git" / "worktrees" / "wt" / "rebase-merge"
+                    state.mkdir()
+                    (state / "head-name").write_text("refs/heads/fix/feat-x\n")
+                    args += ["--repo", str(self.repo), "--feature", "feat-x"]
+                self.transcript([record("1", "2026-01-01T10:30:00Z")] if spec == "no-records" else self.work())
+                got, out = self.run_cli(*args, **env)
+                calls = (self.stub / "calls").read_text().splitlines() if (self.stub / "calls").exists() else []
+                self.assertEqual(calls, [f"pr view {target} --json state,mergedAt"] if target else [])
+                if shipped is None:
+                    self.assertEqual((got, out), (1, {"error": "no transcript records for feat-x"}))
+                    continue
+                self.assertEqual(got, 0, out)
+                self.assertEqual(out["shipped"], shipped)
+                self.assertIn(f"| feat-x | {out['track']} | {shipped} |", (self.notes / "Feature Metrics.md").read_text())
 
 
 class MetricsTextTests(unittest.TestCase):
