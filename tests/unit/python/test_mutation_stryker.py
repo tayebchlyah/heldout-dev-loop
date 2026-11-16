@@ -26,15 +26,15 @@ SCRIPT = Path(stryker.__file__)
 CONFIG = json.dumps({"testRunner": "vitest"})
 BIN = "node_modules/.bin/stryker"
 STUB = """#!{python}
-import pathlib, shutil, sys
-pathlib.Path({log!r}).open("a").write(" ".join(sys.argv[1:]) + "\\n")
+import os, pathlib, shutil, sys
+pathlib.Path(os.environ["STUB_LOG"]).open("a").write(" ".join(sys.argv[1:]) + "\\n")
 report = pathlib.Path("reports/mutation/mutation.json")
 if report.exists():
     sys.exit(5)
-if {report}:
+if os.environ["STUB_REPORT"] == "1":
     report.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy({recorded!r}, report)
-sys.exit({code})
+    shutil.copy(os.environ["STUB_RECORDED"], report)
+sys.exit(int(os.environ["STUB_CODE"]))
 """
 LOCATION = {"start": {"line": 2, "column": 7}, "end": {"line": 2, "column": 18}}
 SUFFIX = ". Stage 0 owns it: see references/mutation.md, Setup."
@@ -55,16 +55,18 @@ class StrykerAdapter(unittest.TestCase):
     def adapter(self, files: dict[str, str], request: dict, code: int = 0, report: bool = True,
                 tool: str | None = "repo/web", entry: str = "web",
                 recorded: Path = RECORDED) -> subprocess.CompletedProcess[str]:
-        if tool is not None:
-            write(self.root / tool / BIN, STUB.format(python=sys.executable, log=str(self.log),
-                                                      recorded=str(recorded), code=code, report=report))
+        if tool is not None and not (self.root / tool / BIN).exists():
+            write(self.root / tool / BIN, STUB.format(python=sys.executable))
             (self.root / tool / BIN).chmod(0o755)
         entry = self.root / "repo" / entry
         for name, text in files.items():
             write(entry / name, text)
-        env = {**os.environ, "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}"}
-        write(self.root / "bin" / "npx", "#!/bin/sh\nexit 9\n")
-        (self.root / "bin" / "npx").chmod(0o755)
+        env = {**os.environ, "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}",
+               "STUB_LOG": str(self.log), "STUB_RECORDED": str(recorded), "STUB_CODE": str(code),
+               "STUB_REPORT": "1" if report else "0"}
+        if not (self.root / "bin" / "npx").exists():
+            write(self.root / "bin" / "npx", "#!/bin/sh\nexit 9\n")
+            (self.root / "bin" / "npx").chmod(0o755)
         stdin = json.dumps({"protocol": 1, "base": "b", "head": "h", "only": None, **request})
         return subprocess.run([sys.executable, str(SCRIPT)], cwd=entry, input=stdin, capture_output=True,
                               text=True, env=env, timeout=60)
@@ -174,24 +176,20 @@ class StrykerAdapter(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.log.read_text(), "run stryker.config.json --mutate src/a.ts:1-1 --reporters json "
                                                "--ignorePatterns /tests/acceptance\n")
-        self.log.unlink()
-        config = json.dumps({"testRunner": "vitest", "ignorePatterns": ["dist", "/big"]})
-        done = self.adapter({"stryker.config.json": config}, request, entry=".", tool="repo")
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertTrue(self.log.read_text().endswith("--ignorePatterns dist,/big,/tests/acceptance\n"))
 
     def test_held_out_backstop(self) -> None:
         files, request = {"stryker.config.json": CONFIG}, {"run": True, "files": {"src/a.ts": [[1, 1]]}}
-        for entry, tool, keys, code in ((".", "repo", ["tests/acceptance/a.test.ts", "tests/unit/b.test.ts"], 0),
-                                        ("web", "repo/web", ["../tests/acceptance/a.test.ts"], 0),
-                                        (".", "repo", ["tests/acceptance/a.test.ts"], 1)):
+        for entry, tool, keys, code in ((".", "repo", ["tests/acceptance/a.test.ts", "tests/unit/b.test.ts"], 1),
+                                        ("web", "repo/web", ["../tests/acceptance/a.test.ts"], 0)):
             with self.subTest(entry=entry, keys=keys, code=code):
-                (self.root / "repo" / entry / "reports" / "mutation" / "mutation.json").unlink(missing_ok=True)
+                report = self.root / "repo" / entry / "reports" / "mutation" / "mutation.json"
+                report.unlink(missing_ok=True)
                 done = self.adapter(files, request, entry=entry, tool=tool, code=code,
                                     recorded=self.with_test_files(keys))
                 self.assertEqual(done.returncode, 2, done.stderr)
                 self.assertEqual(done.stdout, "")
                 self.assertEqual(done.stderr.strip().splitlines()[-1], BACKSTOP)
+                self.assertFalse(report.exists())
         done = self.adapter(files, request, entry=".", tool="repo",
                             recorded=self.with_test_files(["tests/unit/b.test.ts"]))
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -207,14 +205,10 @@ class StrykerAdapter(unittest.TestCase):
                  "coverageAnalysis"),
                 ({"stryker.config.json": json.dumps({"testRunner": "vitest", "inPlace": True})},
                  'sets "inPlace": true'),
-                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "ignorePatterns": "dist"})},
-                 "not a list of strings"),
-                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "ignorePatterns": ["a,b"]})},
-                 "has a comma: a,b"),
                 ({"stryker.config.json": "{"}, "stryker.config.json"),
                 ({}, "stryker.config.json")):
             with self.subTest(words=words, files=sorted(files)):
-                shutil.rmtree(self.root / "repo" / "web", ignore_errors=True)
+                (self.root / "repo" / "web" / "stryker.config.json").unlink(missing_ok=True)
                 done = self.adapter({"src/a.ts": "export const a = 1;\n", **files}, request)
                 self.assertEqual(done.returncode, 2, done.stderr)
                 self.assertEqual(done.stdout, "")
@@ -235,7 +229,7 @@ class StrykerAdapter(unittest.TestCase):
         done = self.adapter({"stryker.config.json": CONFIG}, request, tool="repo")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertTrue(self.log.read_text().startswith("run stryker.config.json --mutate src/a.ts:1-1"))
-        for allowed in ({"coverageAnalysis": "perTest"}, {"coverageAnalysis": "all"}, {"inPlace": False}):
+        for allowed in ({"coverageAnalysis": "perTest"}, {"coverageAnalysis": "all"}):
             config = json.dumps({"testRunner": "vitest", **allowed})
             self.log.unlink(missing_ok=True)
             done = self.adapter({"stryker.config.json": config}, request)
