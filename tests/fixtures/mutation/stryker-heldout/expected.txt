@@ -1,0 +1,14 @@
+base: <base>
+head: <head>
+entry .: stryker survivors
+. mutants run: 5
+. units that need one unit test: 1
+  src/core/price.ts
+    src/core/price.ts:2 survived
+      -  if (total > 100) {
+      +  if (total >= 100) {
+. message-only survivors, to Deferred: 0
+. inconclusive: 0
+. not covered by the selection: 0
+outside the critical modules: 1
+  tests/unit/price.test.ts

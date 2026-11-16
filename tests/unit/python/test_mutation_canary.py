@@ -69,7 +69,8 @@ class MutationCanary(unittest.TestCase):
         for needle in ("schedule:", "cron:", "workflow_dispatch:", "pull_request:", "- skill/scripts/mutation/**",
                        "- tests/fixtures/mutation/**", "- scripts/mutation_canary.sh",
                        "- .github/workflows/mutation-canary.yml", "- skill/scripts/devloop.py",
-                       "adapter: [mutmut, stryker, mutago]",
+                       "adapter: [mutmut, stryker, mutago, stryker-heldout]",
+                       "if: startsWith(matrix.adapter, 'stryker')",
                        "scripts/mutation_canary.sh tests/fixtures/mutation/${{ matrix.adapter }}"):
             self.assertIn(needle, text)
         uses = re.findall(r"uses: (\S+)", text)
