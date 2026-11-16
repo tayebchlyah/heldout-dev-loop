@@ -283,9 +283,20 @@ class StackDetectTests(unittest.TestCase):
         os.symlink(repo / "real", repo / "linked")
         out = self.detect(repo)
         self.assertFalse([s for s in out["stacks"] if s["path"].startswith(("packages/", "linked/"))], out["stacks"])
-        repo = self.tree({**FIXTURES["uv"], "elsewhere/a.py": ""})
+
+    def test_symlinked_root_folder_counts(self) -> None:
+        repo = self.tree({**FIXTURES["uv"], "elsewhere/a.py": "", "tests/unit/test_a.py": ""})
         os.symlink(repo / "elsewhere", repo / "src")
-        self.assertNotIn("src/", self.detect(repo)["source_dirs"])
+        self.assertIn("src/", self.detect(repo)["source_dirs"])
+        repo = self.tree({**ws(["packages/*"], project=True), "packages/a/pyproject.toml": "", "real/a.py": ""})
+        os.symlink(repo / "real", repo / "src")
+        out = self.detect(repo)
+        self.assertEqual(self.units(out), [(".", "uv", "root"), ("packages/a/", "uv", "packages-a")])
+        self.assertIn("src/", out["source_dirs"])
+
+    def test_member_glob_case(self) -> None:
+        out = self.detect(self.tree({**ws(["Backend"]), "backend/pyproject.toml": ""}))
+        self.assertNotIn("Backend/", json.dumps(out))
 
     def test_ignored_member(self) -> None:
         repo = self.tree({".gitignore": "build/\n", **ws(["build", "backend"]), "build/pyproject.toml": "",

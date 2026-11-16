@@ -132,8 +132,21 @@ def _workspace(pyproject: dict | None) -> tuple[list[str], list[str]] | None:
     return table["members"], exclude if _strings(exclude) else []
 
 
-def _folder(repo: Path, rel: str) -> bool:
-    return (repo / rel).is_dir() and not (repo / rel.rstrip("/")).is_symlink()
+def _root_folders(repo: Path, preset: dict) -> list[str]:
+    return [d for d in preset["source_dirs"] + [preset["test_dir"]]
+            if d and (repo / d).is_dir() and not source_dirs.fold(d).startswith(source_dirs.HELD_OUT)]
+
+
+def _exact(repo: Path, rel: str) -> bool:
+    folder = repo
+    for part in rel.split("/"):
+        try:
+            if part not in os.listdir(folder):
+                return False
+        except OSError:
+            return False
+        folder = folder / part
+    return True
 
 
 def _globbed(repo: Path, patterns: list[str]) -> set[str]:
@@ -143,7 +156,8 @@ def _globbed(repo: Path, patterns: list[str]) -> set[str]:
             matches = list(repo.glob(pattern))
         except (ValueError, NotImplementedError, OSError):
             continue
-        found.update(Path(os.path.relpath(m, repo)).as_posix() for m in matches if m.is_dir())
+        rels = (Path(os.path.relpath(m, repo)).as_posix() for m in matches if m.is_dir())
+        found.update(rel for rel in rels if _exact(repo, rel))
     return found
 
 
@@ -156,7 +170,7 @@ def _members(repo: Path, members: list[str], exclude: list[str]) -> list[str]:
     excluded = _globbed(repo, exclude)
     kept = sorted(f"{rel}/" for rel in _globbed(repo, members) - excluded
                   if rel != "." and source_dirs.validate([f"{rel}/"]) is None
-                  and not any(p.startswith(".") or p == "node_modules" for p in rel.split("/"))
+                  and not any(_skipped("/".join(rel.split("/")[:i]) + "/") for i in range(1, rel.count("/") + 2))
                   and not _linked(repo, rel) and (repo / rel / "pyproject.toml").is_file())
     ignored = _ignored(repo, kept)
     return [rel for rel in kept if rel not in ignored]
@@ -181,8 +195,7 @@ def detect(repo: Path, data: dict) -> dict:
     ui_scan = list(matched)
     root = next((preset for path, preset in matched if path == "."), None)
     if workspace and root and root["family"] == "python":
-        code = [d for d in root["source_dirs"] + [root["test_dir"]] if d and _folder(repo, d)]
-        if not (isinstance(pyproject.get("project"), dict) and code):
+        if not (isinstance(pyproject.get("project"), dict) and _root_folders(repo, root)):
             matched = [(path, preset) for path, preset in matched if path != "."]
     units = [(path, preset) for path, preset in matched
              if path in members or not any(q != path and q_preset["family"] == preset["family"] and _holds(q, path)
@@ -198,7 +211,7 @@ def detect(repo: Path, data: dict) -> dict:
     dirs = {path for path, _ in matched if path != "."}
     for path, preset in units:
         if path == ".":
-            dirs.update(d for d in preset["source_dirs"] + [preset["test_dir"]] if d and _folder(repo, d))
+            dirs.update(_root_folders(repo, preset))
     walled = sorted(d for d in dirs if not d.startswith(HELD))
     claimed = [path for path, _ in matched if path != "."] + walled
     unknown = [folder for folder in _folders(repo, "")
@@ -285,8 +298,8 @@ def setup(repo: Path) -> list[str]:
             if not source_dirs.matches(covered, path):
                 lines.append(f'stacks path {path} is not in source_dirs: add "{path}"')
         elif preset:
-            for folder in preset["source_dirs"]:
-                if (repo / folder).is_dir() and not source_dirs.matches(covered, folder):
+            for folder in _root_folders(repo, preset):
+                if not source_dirs.matches(covered, folder):
                     lines.append(f'stacks path . preset {name}: {folder} is not in source_dirs: add "{folder}"')
     return lines
 

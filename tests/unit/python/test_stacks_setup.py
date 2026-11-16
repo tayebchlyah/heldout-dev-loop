@@ -70,6 +70,13 @@ class StacksSetupTests(unittest.TestCase):
         self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": "go"}], "source_dirs": ["cmd/"]}, ("cmd/", "internal/"))),
                          ['stacks path . preset go: internal/ is not in source_dirs: add "internal/"'])
         self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": "go"}], "source_dirs": ["cmd/"]}, ("cmd/",))), [])
+        self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": "uv"}], "source_dirs": ["src/"]},
+                                                ("src/", "tests/unit/"))),
+                         ['stacks path . preset uv: tests/unit/ is not in source_dirs: add "tests/unit/"'])
+        self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": "uv"}], "source_dirs": ["src/"]}, ("src/",))), [])
+        self.assertEqual(stacks.setup(self.repo({"stacks": [{"path": ".", "preset": "cargo"}], "source_dirs": ["src/"]},
+                                                ("src/", "tests/acceptance/"))),
+                         [stacks.CARGO_SUITE, 'stacks path . preset cargo: tests/ is not in source_dirs: add "tests/"'])
 
     def test_root_no_coverage(self) -> None:
         for preset in ("dotnet", None):
@@ -100,7 +107,7 @@ class StacksSetupTests(unittest.TestCase):
         for path, cargo, suite, want in rows:
             with self.subTest(path=path, cargo=cargo, suite=suite):
                 files = ("tests/acceptance/main.rs",) if suite else ()
-                repo = self.repo({"stacks": [{"path": path, "preset": "cargo"}], "source_dirs": ["src/", "api/"]},
+                repo = self.repo({"stacks": [{"path": path, "preset": "cargo"}], "source_dirs": ["src/", "api/", "tests/"]},
                                  ("src/", "api/"), files)
                 write(repo / path / "Cargo.toml", cargo)
                 self.assertEqual(stacks.setup(repo), want)
