@@ -34,6 +34,13 @@ def entry(path: str = "a/", critical: list[str] | None = None, **kind: str) -> d
     return {"path": path, **(kind or {"command": "sh x"}), "critical": ["*.py"] if critical is None else critical}
 
 
+def stryker_files(core: str = "10.1.1", runner: str = "10.1.1", gitignore: str = ".stryker-tmp/\nreports/\n",
+                  **settings: object) -> dict:
+    return {"a/m.ts": "x\n", ".gitignore": gitignore,
+            "a/stryker.config.json": json.dumps({"testRunner": "jest", **settings}),
+            "a/package.json": json.dumps({"devDependencies": {CORE: core, JEST: runner}})}
+
+
 def mutation_lines(lines: list[str]) -> list[str]:
     return [line for line in lines if "mutation" in line]
 
@@ -72,7 +79,7 @@ class MutationSetup(unittest.TestCase):
 
     def test_mutmut_setup(self) -> None:
         mutmut = [entry(adapter="mutmut")]
-        ignore = {".gitignore": "mutants/\n"}
+        ignore = {".gitignore": "mutants/\n", "a/tests/unit/test_m.py": ""}
         self.assertEqual(self.failures(mutmut, {"a/pyproject.toml": PINNED, **ignore}), [])
         unpinned = self.failures(mutmut, {"a/pyproject.toml": MUTMUT, **ignore})
         self.assertEqual(len(unpinned), 1, unpinned)
@@ -92,18 +99,13 @@ class MutationSetup(unittest.TestCase):
         for broken in (PINNED.replace('source_paths = ["src"]\n', ""), PINNED.replace("tests/unit", "tests/acceptance")):
             with self.subTest(broken=broken):
                 self.assertEqual(len(self.failures(mutmut, {"a/pyproject.toml": broken, **ignore})), 1)
-        not_ignored = self.failures(mutmut, {"a/pyproject.toml": PINNED})
+        not_ignored = self.failures(mutmut, {"a/pyproject.toml": PINNED, "a/tests/unit/test_m.py": ""})
         self.assertEqual(len(not_ignored), 1, not_ignored)
         self.assertIn("mutants/", not_ignored[0])
 
     def test_stryker_setup(self) -> None:
         stryker = [entry(adapter="stryker", critical=["*.ts"])]
-        ignore = ".stryker-tmp/\nreports/\n"
-
-        def files(core: str = "10.1.1", runner: str = "10.1.1", gitignore: str = ignore, **settings: object) -> dict:
-            return {"a/m.ts": "x\n", ".gitignore": gitignore,
-                    "a/stryker.config.json": json.dumps({"testRunner": "jest", **settings}),
-                    "a/package.json": json.dumps({"devDependencies": {CORE: core, JEST: runner}})}
+        files = stryker_files
 
         self.assertEqual(self.failures(stryker, files()), [])
         apart = self.failures(stryker, files(runner="10.1.0"))
@@ -119,6 +121,46 @@ class MutationSetup(unittest.TestCase):
                 found = self.failures(stryker, case)
                 self.assertEqual(len(found), 1, found)
                 self.assertIn(word, found[0])
+
+    def test_mutmut_held_out(self) -> None:
+        pyproject = '[dependency-groups]\ndev = ["mutmut==3.8.1"]\n\n[tool.mutmut]\nsource_paths = ["src"]\n'
+
+        def root_failures(selection: list[str], cli: list[str] | None = None) -> list[str]:
+            mutmut = pyproject + f"pytest_add_cli_args_test_selection = {json.dumps(selection)}\n"
+            if cli is not None:
+                mutmut += f"pytest_add_cli_args = {json.dumps(cli)}\n"
+            return self.failures([entry(".", adapter="mutmut", critical=["a/m.py"])],
+                                 {"pyproject.toml": mutmut, ".gitignore": "mutants/\n", "tests/unit/test_a.py": "",
+                                  "tests/acceptance/test_x.py": ""})
+
+        def app_failures(selection: list[str]) -> list[str]:
+            mutmut = pyproject + f"pytest_add_cli_args_test_selection = {json.dumps(selection)}\n"
+            return self.failures([entry("app/", adapter="mutmut", critical=["*.py"])],
+                                 {"app/pyproject.toml": mutmut, "app/m.py": "", "app/tests/test_b.py": "",
+                                  ".gitignore": "mutants/\n", "tests/acceptance/test_x.py": ""})
+
+        reaches = "mutation entry .: [tool.mutmut] test selection reaches tests/acceptance: run unit tests only"
+        no_path = "mutation entry .: [tool.mutmut] test selection names no test path: name the unit test folder"
+        cli = "mutation entry .: [tool.mutmut] pytest_add_cli_args reaches tests/acceptance: run unit tests only"
+        for selection in (["tests"], ["."], ["tests/acceptance/test_x.py::test_a"]):
+            self.assertEqual(root_failures(selection), [reaches], selection)
+        for selection in (["-x"], ["-k", "unit"], ["-x", "--tb", "short"]):
+            self.assertEqual(root_failures(selection), [no_path], selection)
+        for selection in (["tests/unit"], ["tests/unit", "--deselect", "tests/unit/test_slow.py::test_t"]):
+            self.assertEqual(root_failures(selection), [], selection)
+        self.assertEqual(root_failures(["tests/unit"], cli=["tests"]), [cli])
+        self.assertEqual(app_failures(["tests"]), [])
+
+    def test_stryker_held_out(self) -> None:
+        stryker = [entry(adapter="stryker", critical=["*.ts"])]
+        self.assertEqual(self.failures(stryker, stryker_files(inPlace=True)),
+                         ['mutation entry a/: stryker.config.json sets "inPlace": true: '
+                          "the held-out suite then reaches the run"])
+        self.assertEqual(self.failures(stryker, stryker_files(ignorePatterns="dist")),
+                         ["mutation entry a/: stryker.config.json ignorePatterns is not a list of strings"])
+        self.assertEqual(self.failures(stryker, stryker_files(ignorePatterns=["a,b"])),
+                         ["mutation entry a/: stryker.config.json ignorePatterns entry has a comma: a,b"])
+        self.assertEqual(self.failures(stryker, stryker_files(ignorePatterns=["dist"], inPlace=False)), [])
 
     def test_mutago_setup(self) -> None:
         mutago = [entry(adapter="mutago", critical=["*.go"])]

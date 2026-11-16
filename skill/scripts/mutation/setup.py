@@ -16,7 +16,7 @@ import tomllib
 from pathlib import Path, PurePosixPath
 
 import stacks
-from mutation import run
+from mutation import heldout, run
 
 FAMILIES = {"python": "mutmut", "js": "stryker", "go": "mutago"}
 STRYKER_CONFIGS = tuple(f"stryker.{kind}.{ext}" for kind in ("config", "conf") for ext in ("mjs", "js", "cjs", "json"))
@@ -90,8 +90,11 @@ def _mutmut(repo: Path, rel: str) -> list[str]:
         selection = mutmut.get("pytest_add_cli_args_test_selection")
         if not isinstance(selection, list) or not selection:
             gaps.append("[tool.mutmut] has no pytest_add_cli_args_test_selection")
-        elif any("acceptance" in str(arg) for arg in selection):
-            gaps.append("[tool.mutmut] test selection names acceptance: run unit tests only")
+        elif refusal := heldout.selection_refusal([str(arg) for arg in selection], repo / rel, repo):
+            gaps.append(refusal)
+        cli = mutmut.get("pytest_add_cli_args")
+        if isinstance(cli, list) and (refusal := heldout.cli_args_refusal([str(a) for a in cli], repo / rel, repo)):
+            gaps.append(refusal)
     if not _ignored(repo, f"{rel}mutants/probe"):
         gaps.append(f"{rel}mutants/ is not ignored by git")
     return gaps
@@ -113,6 +116,7 @@ def _stryker(repo: Path, rel: str) -> list[str]:
         gaps.append('stryker.config.json sets "incremental": true: a run never reuses results')
     if config.get("coverageAnalysis") == "off":
         gaps.append("stryker.config.json sets coverageAnalysis off: a report then has no test per mutant")
+    gaps += heldout.stryker_refusals(config)
     package = _json(folder / "package.json")
     deps = {k: v for key in ("dependencies", "devDependencies") if isinstance(d := _get(package, key), dict)
             for k, v in d.items()}
