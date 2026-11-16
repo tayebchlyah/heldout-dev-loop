@@ -109,15 +109,21 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_stage_7_proves_the_safety_fact_of_a_risky_merge(self) -> None:
         text = stage_text(7)
-        for value in ["Merge danger", "the one fact", "`human-path`", "You ran it", "gh pr edit"]:
+        for value in ["Merge danger", "the one fact", "`human-path`", "(references/building.md#merge-danger)"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
+        self.assertNotIn("Prove it as far down this ladder", text)
+        building = (SKILL_ROOT / "references" / "building.md").read_text()
+        section = building[building.index("\n## Merge danger\n"):building.index("\n## pstack license\n")]
+        for value in ["Prove it as far down this ladder", "You ran it", "gh pr edit"]:
+            with self.subTest(value=value):
+                self.assertIn(value, section)
 
     def test_copied_text_names_its_source_and_license(self) -> None:
-        stage = stage_text(7)
-        self.assertIn("Source: pstack 0.15.36 `pstack/skills/blast-radius/SKILL.md`", stage)
-        self.assertIn("(references/building.md#pstack-license)", stage)
-        self.assertIn("\n## pstack license\n", (SKILL_ROOT / "references" / "building.md").read_text())
+        building = (SKILL_ROOT / "references" / "building.md").read_text()
+        self.assertIn("Source: pstack 0.15.36 `pstack/skills/blast-radius/SKILL.md`", building)
+        self.assertIn("(#pstack-license)", building)
+        self.assertIn("\n## pstack license\n", building)
         self.assertIn("License: MIT, [spec.md](spec.md#licenses)", (SKILL_ROOT / "references" / "tests.md").read_text())
         self.assertIn("\n## Licenses\n", (SKILL_ROOT / "references" / "spec.md").read_text())
 
@@ -496,7 +502,7 @@ class TracksContractTests(unittest.TestCase):
             "git fetch origin", "git rebase origin/main", "scripts/devloop.py gate --summary",
             "scripts/devloop.py ci wait", "`merge: auto`", "`merge: human`", "two-way door", "blast radius",
             "Track L", "gh pr merge --rebase --match-head-commit <sha>", "git rev-parse HEAD", "security item in `## Deferred`",
-            "Right after the merge: write `shipped: <merge date>`", "`pr: <PR url>`",
+            "1. Write `shipped: <merge date>`", "`pr: <PR url>`",
             "into the spec frontmatter in the notes folder", "Track S: no spec, skip",
             "scripts/devloop.py merge-check", "`merge` `auto`", "merge_human_paths",
             "no `--feature`", "When `head` is not `<sha>`, the PR waits for the user",
@@ -595,6 +601,16 @@ class CleanupTextTests(unittest.TestCase):
         self.assertLess(stage.index("`ExitWorktree` with `keep`"), stage.index("cleanup --branch"))
         for banned in ("push --delete", "push origin --delete"):
             self.assertNotIn(banned, stage)
+
+    def test_post_merge_steps_are_a_numbered_list(self) -> None:
+        lines = [line for line in stage_text(7).splitlines() if re.match(r"\d\. ", line)]
+        rows = [("`shipped: ", "`pr: "), ("git fetch origin",), ("metrics --write",),
+                ("`ExitWorktree` with `keep`",), ("cleanup --branch",), ("`metrics: ", "`cleanup: done`")]
+        self.assertEqual([line[:2] for line in lines], [f"{n}." for n in range(1, len(rows) + 1)])
+        for line, needles in zip(lines, rows):
+            for needle in needles:
+                with self.subTest(step=line[:2], needle=needle):
+                    self.assertIn(needle, line)
 
     def test_routes_and_status_name_cleanup(self) -> None:
         claude = next(line for line in (REFERENCES / "claude.md").read_text().splitlines()

@@ -75,7 +75,7 @@
         "pstack/skills/principle-prove-it-works/SKILL.md",
         "pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md"
       ],
-      "local": ["skill/references/benchmark.md", "skill/references/building.md", "skill/references/verify.md", "skill/SKILL.md"]
+      "local": ["skill/references/benchmark.md", "skill/references/building.md", "skill/references/verify.md"]
     },
     {
       "name": "codex-sandbox",
