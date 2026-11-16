@@ -36,6 +36,8 @@ elif args[:1] == ["api"] and "/compare/" in args[1]:
     kind = "compare"
 elif args[:2] == ["run", "view"]:
     kind = "run"
+elif args[:1] == ["api"] and "/actions/jobs/" in args[1]:
+    kind = "job"
 elif args[:1] == ["api"]:
     kind = "repo"
 else:
@@ -103,6 +105,7 @@ PENDING = run(None, "IN_PROGRESS", "test")
 FAILED = run("FAILURE", name="acceptance", link="https://github.com/o/r/actions/runs/99/job/5")
 THREAD = {"path": "skill/x.py", "line": 12, "author": "bot", "url": "u", "text": "Line one"}
 CHANGES = [{"state": "CHANGES_REQUESTED"}]
+SCANNER = {**THREAD, "line": None, "author": "github-advanced-security", "text": None}
 
 
 class CiVerdictTests(unittest.TestCase):
@@ -152,6 +155,22 @@ class CiVerdictTests(unittest.TestCase):
             ("merge state unknown", view(mergeStateStatus="UNKNOWN"), [], None),
             ("draft with a pending check", view(isDraft=True, statusCheckRollup=[PENDING]), [], None),
             ("unknown rollup kind", view(statusCheckRollup=[{"name": "x"}]), [], None),
+            ("outdated scanner thread while a check runs", view(statusCheckRollup=[run(), PENDING]), [SCANNER], None),
+            ("outdated scanner thread, app login", view(statusCheckRollup=[PENDING]),
+             [{**SCANNER, "author": "github-advanced-security[bot]"}], None),
+            ("outdated scanner thread, no check yet", view(statusCheckRollup=[]), [SCANNER], None),
+            ("outdated scanner thread, mergeable unknown", view(mergeable="UNKNOWN"), [SCANNER], None),
+            ("outdated scanner thread, merge state unknown", view(mergeStateStatus="UNKNOWN"), [SCANNER], None),
+            ("outdated scanner thread, failed check, unknown", view(statusCheckRollup=[FAILED], mergeable="UNKNOWN"),
+             [SCANNER], ("fail", None, FAILED)),
+            ("outdated scanner thread, checks done", view(), [SCANNER], ("threads", None, None)),
+            ("scanner thread on a line", view(statusCheckRollup=[PENDING]), [{**SCANNER, "line": 3}],
+             ("threads", None, None)),
+            ("other author, no line", view(statusCheckRollup=[PENDING]), [{**THREAD, "line": None}],
+             ("threads", None, None)),
+            ("scanner and other thread", view(statusCheckRollup=[PENDING]), [SCANNER, THREAD], ("threads", None, None)),
+            ("outdated scanner thread, a check failed", view(statusCheckRollup=[FAILED, PENDING]), [SCANNER],
+             ("fail", None, FAILED)),
         ]
         for name, pr, threads, want in rows:
             with self.subTest(name):
@@ -219,6 +238,9 @@ LOG = "Setup\tinstalling\nRun\tERROR: test_widget failed\n" + "".join(f"Run\tdet
 THREAD_NODE = {"isResolved": False, "path": "skill/x.py", "line": 12,
                "comments": {"nodes": [{"author": {"login": "bot"}, "body": "Line one\nLine two",
                                        "url": "https://github.com/o/r/pull/7#r1", "authorAssociation": "MEMBER"}]}}
+SCANNER_NODE = {**THREAD_NODE, "line": None,
+                "comments": {"nodes": [{**THREAD_NODE["comments"]["nodes"][0], "authorAssociation": "NONE",
+                                        "author": {"login": "github-advanced-security"}}]}}
 FAIL_LINK = "https://github.com/o/r/actions/runs/99/job/5"
 BUSY = {"err": "HTTP 502", "code": 1}
 PR_RECORD = {"number": 7, "url": "https://github.com/o/r/pull/7", "branch": "feat/x"}
@@ -280,6 +302,9 @@ class CiWaitTests(StubGh):
              {"state": "pass"}, {"pr view": 2}),
             ("unknown, then green", {"view": [self.pr(mergeable="UNKNOWN", mergeStateStatus="UNKNOWN"), self.pr()]},
              (), {"state": "pass"}, {"pr view": 2}),
+            ("outdated scanner thread, pending, then green",
+             {"view": [self.pr(statusCheckRollup=[PENDING]), self.pr()], "graphql": [graphql(SCANNER_NODE), graphql()]},
+             (), {"state": "pass"}, {"pr view": 2}),
             ("old head, then green", {"view": [self.pr(headRefOid="b" * 40), self.pr()]}, (),
              {"state": "pass", "head": self.head}, {"pr view": 2, "api graphql": 1}),
             ("no pr", {"view": [{"err": 'no pull requests found for branch "feat/x"', "code": 1}]}, (),
@@ -318,6 +343,31 @@ class CiWaitTests(StubGh):
         self.assertIn(["run", "view", "99", "--log-failed"], self.calls())
         compare = [c for c in self.calls() if c[:1] == ["api"] and "/compare/" in c[1]]
         self.assertEqual(compare[0][1], f"repos/o/r/compare/main...{self.head}")
+
+    def test_first_error_falls_back_to_the_job_log(self) -> None:
+        failed = self.pr(statusCheckRollup=[run("FAILURE", name="acceptance", link=FAIL_LINK)])
+        stamp = "2026-11-15T20:53:31.8872856Z "
+        colored = f"{stamp}##[group]Run tests\n{stamp}\x1b[31;1mFAIL: test_x (mod.Class.test_x)\x1b[0m\n{stamp}##[error]exit 1\n"
+        passing_first = (f"{stamp}##[group]Run lint\n{stamp}checked 0 errors\n{stamp}##[group]Run tests\n"
+                         f"{stamp}FAIL: test_x (mod.Class.test_x)\n{stamp}##[error]Process completed with exit code 1.\n")
+        no_marker = f"{stamp}##[group]Run lint\n{stamp}checked 0 errors\n{stamp}ok\n"
+        rows = [("run log empty", {"run": [out("")], "job": [out(LOG)]}, "Run\tERROR: test_widget failed", 1),
+                ("run log without an error line", {"run": [out("ok\n")], "job": [out(LOG)]},
+                 "Run\tERROR: test_widget failed", 1),
+                ("job log fails too", {"run": [out("")], "job": [BUSY]}, None, 1),
+                ("run log has the error", {"run": [out(LOG)], "job": [out("")]}, "Run\tERROR: test_widget failed", 0),
+                ("escape sequences stripped", {"run": [out("")], "job": [out(colored)]},
+                 f"{stamp}FAIL: test_x (mod.Class.test_x)", 1),
+                ("cut to the failed step", {"run": [out("")], "job": [out(passing_first)]},
+                 f"{stamp}FAIL: test_x (mod.Class.test_x)", 1),
+                ("no error marker keeps the whole log", {"run": [out("")], "job": [out(no_marker)]},
+                 f"{stamp}checked 0 errors", 1)]
+        for name, logs, first, job_calls in rows:
+            with self.subTest(name):
+                _, got = self.wait({"view": [failed], **logs})
+                self.assertEqual((got["first_error"] or "").splitlines()[:1] or [None], [first])
+                jobs = [c for c in self.calls() if c[:1] == ["api"] and "/actions/jobs/" in c[1]]
+                self.assertEqual(jobs, [["api", "repos/o/r/actions/jobs/5/logs", "--allow-escape-sequences"]] * job_calls)
 
     def test_timeout_names_the_pending_checks(self) -> None:
         rows = [("draft, pending", self.pr(isDraft=True, statusCheckRollup=[PENDING]), ["test"]),
