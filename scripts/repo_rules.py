@@ -74,9 +74,10 @@ def subjects(repo: Path, base: str) -> tuple[dict, int]:
 
 CHECKED_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
 SKIPPED_PREFIXES = ("tests/acceptance/", ".agents/", ".claude/", ".codex/", ".dev-loop/", "node_modules/")
-KINDS = re.compile(
-    r"https?://|#\d+\b|\bRFC \d+|allow-comment: dependency"
-    r"|(?:#|//)\s*(?:shortcut: [^,]+, \S|SPDX-License-Identifier|Copyright|License(?::|d under|\s*$)"
+LINK_KINDS = re.compile(r"https?://|#\d+\b|\bRFC \d+")
+BLOCK_KINDS = re.compile(
+    r"allow-comment: dependency"
+    r"|^(?:#|//)\s*(?:shortcut: [^,]+, \S|SPDX-License-Identifier|Copyright|License(?::|d under|\s*$)"
     r"|(?i:noqa)|nosec|isort:|type:|pyright:|pylint:|pragma|fmt: (?:off|on|skip)|eslint-|biome-ignore|@ts-|shellcheck)"
 )
 DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
@@ -88,8 +89,16 @@ def checked(path: str) -> bool:
     return path.endswith(CHECKED_SUFFIXES) and not path.startswith(SKIPPED_PREFIXES)
 
 
+def link_kind(text: str) -> bool:
+    return LINK_KINDS.search(text) is not None
+
+
+def block_kind(text: str) -> bool:
+    return BLOCK_KINDS.search(text) is not None
+
+
 def kind_ok(text: str) -> bool:
-    return KINDS.search(text) is not None
+    return link_kind(text) or block_kind(text)
 
 
 def python_tokens(text: str) -> list[tokenize.TokenInfo] | None:
@@ -259,8 +268,12 @@ def allowed_lines(path: str, text: str) -> set[int]:
         if n in comments:
             allowed.add(n)
         n += 1
+    carriers = set(allowed)
     for n in sorted(comments):
-        if kind_ok(comments[n]) or (n - 1 in allowed and n - 1 in comments):
+        if block_kind(comments[n]) or n - 1 in carriers:
+            allowed.add(n)
+            carriers.add(n)
+        elif link_kind(comments[n]):
             allowed.add(n)
     return allowed
 

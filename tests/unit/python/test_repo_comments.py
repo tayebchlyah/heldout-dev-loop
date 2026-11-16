@@ -21,6 +21,9 @@ ALLOWED = ["# shortcut: no lock, add one when two writers exist", "# see https:/
            "# fixes #123", "# RFC 3339 time", "# SPDX-License-Identifier: MIT", "# Copyright 2026",
            "# shellcheck disable=SC2086", "// @ts-expect-error", "# type: ignore", "# pragma: no cover",
            "# NOQA", "# nosec", "# isort: skip"]
+LINK_LINES = ["# #136: the pinned image of the canary", "# RFC 3339 time, as the log writes it",
+              "# See https://example.invalid/palette for the range.", "// #263: root keys compare by lineKey",
+              "# see https://shellcheck.net/wiki/SC2086", "// see https://eslint-community.github.io/eslint-utils/"]
 
 
 class CommentRuleTests(unittest.TestCase):
@@ -30,6 +33,21 @@ class CommentRuleTests(unittest.TestCase):
                 self.assertTrue(repo_rules.kind_ok(text))
         for text in [SINCE, EXCEPTION, "# shortcut: no reason", "# plain words", "# 3. A plain push asks.",
                      "# record type: decision", "# License check first", "# no pragma here", "# fmt: see below"]:
+            with self.subTest(text=text):
+                self.assertFalse(repo_rules.kind_ok(text))
+
+    def test_link_and_block_kinds(self) -> None:
+        for text in LINK_LINES:
+            with self.subTest(text=text):
+                self.assertTrue(repo_rules.link_kind(text))
+                self.assertFalse(repo_rules.block_kind(text))
+                self.assertTrue(repo_rules.kind_ok(text))
+        for text in ["# shortcut: no lock, add one when two writers exist", "# noqa: E501", "#shellcheck disable=SC2086",
+                     "// eslint-disable-next-line no-console", "# SPDX-License-Identifier: MIT",
+                     "# the tool drops it, allow-comment: dependency"]:
+            with self.subTest(text=text):
+                self.assertTrue(repo_rules.block_kind(text))
+        for text in ["# plain words # noqa", "# see below // eslint-disable-line"]:
             with self.subTest(text=text):
                 self.assertFalse(repo_rules.kind_ok(text))
 
@@ -63,12 +81,41 @@ class CommentRuleTests(unittest.TestCase):
         self.assertEqual(repo_rules.allowed_lines("a.py", '"""Doc."""\n# x\n'), set())
         self.assertEqual(repo_rules.allowed_lines("a.py", "x = 1  # t\n# a\n# shortcut: x, y\n# b\n"), {3, 4})
 
+    def test_link_line_carries_nothing(self) -> None:
+        for path, text, expected in [
+            ("a.sh", "set -u\n# #136: the pinned image of the canary\n# it runs with no network\n", {2}),
+            ("a.sh", "set -u\n# RFC 3339 time, as the log writes it\n# it runs with no network\n", {2}),
+            ("a.sh", "set -u\n# See https://example.invalid/palette for the range.\n# it runs with no network\n", {2}),
+            ("a.sh", "set -u\n# see https://shellcheck.net/wiki/SC2086\n# prose\n", {2}),
+            ("a.mjs", "const a = 1\n// #263: root keys compare by lineKey\n// so quotes do not matter\n", {2}),
+            ("a.mjs", "const a = 1\n// see https://eslint-community.github.io/eslint-utils/\n// prose\n", {2}),
+            ("a.py", "x = 1\n# see #12\n# prose\n", {2}),
+            ("a.sh", "set -u\n# see #12\n# see #13\n", {2, 3}),
+            ("a.sh", "set -u\n# see #12\n# allow-comment: dependency, x\n# prose\n", {2, 3, 4}),
+        ]:
+            with self.subTest(path=path, text=text):
+                self.assertEqual(repo_rules.allowed_lines(path, text), expected)
+
+    def test_carriers(self) -> None:
+        for text, expected in [
+            ("set -u\n# allow-comment: dependency, the tool drops the flag\n# https://example.invalid/tool/issues/12\n"
+             "# until version 2 ships\n", {2, 3, 4}),
+            ("set -u\n# shortcut: no lock, add one when two writers exist\n# a prose line\n", {2, 3}),
+            ("set -u\n# shortcut: no lock, add one when two writers exist\n# see #12\n# the second writer lands in #13\n"
+             "# more\n", {2, 3, 4, 5}),
+            ("#!/bin/sh\n# see #12\n# prose\nset -u\n", {1, 2, 3}),
+            ("set -u\n# allow-comment: dependency, x\n\n# prose\n", {2}),
+        ]:
+            with self.subTest(text=text):
+                self.assertEqual(repo_rules.allowed_lines("a.sh", text), expected)
+
 
 class CommentCommandTests(RulesRepo):
     def base_files(self) -> None:
         put(self.repo / "a.sh", "#!/bin/bash\n# head\nset -u\n\n# 3. A plain push asks.\nhas x\n")
         put(self.repo / "m.py", '"""Mod."""\n\n\ndef f():\n    return 1\n')
         put(self.repo / "old.py", '"""Old."""\n\n\ndef g():\n    # moved words stay the same\n    return 2  # kept words\n')
+        put(self.repo / "links.sh", "set -u\n# see #12\n# the old prose\n")
 
     def comments(self) -> tuple[int, dict]:
         return run_rules(self.repo, "comments")
@@ -121,6 +168,20 @@ class CommentCommandTests(RulesRepo):
         self.assert_violations([])
         put(self.repo / "new.py", '"""New."""\n\n\ndef g():\n    # moved words changed\n    return 2\n')
         self.assert_violations([("new.py", 5, "# moved words changed")])
+
+    def test_link_line_with_a_reason(self) -> None:
+        link = "# #136: the pinned image of the canary"
+        for text, expected in [
+            (f"set -u\n{link}\n", []),
+            (f"set -u\n{link}\n# it runs with no network\n", [("l.sh", 3, "# it runs with no network")]),
+            ("set -u\n# see #12\n# see #13\n", []),
+            ("set -u\n# see #12\n# the old prose\n", []),
+            ("set -u\n# see #12\n# the new prose\n", [("l.sh", 3, "# the new prose")]),
+        ]:
+            with self.subTest(text=text):
+                put(self.repo / "l.sh", text)
+                self.assert_violations(expected)
+                (self.repo / "l.sh").unlink()
 
     def test_trailing_comments(self) -> None:
         head = '"""Mod."""\n\n\ndef f():\n'
