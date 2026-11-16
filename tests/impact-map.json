@@ -2189,6 +2189,7 @@
    "tests/unit/python/test_impact_gate.py",
    "tests/unit/python/test_impact_map.py",
    "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_setup_checks.py",
    "tests/unit/python/test_stacks_setup.py",
    "tests/unit/python/test_suite_lock.py"
   ],
@@ -2516,6 +2517,7 @@
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
+   "tests/unit/python/test_mutation_setup.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_review_text.py",
