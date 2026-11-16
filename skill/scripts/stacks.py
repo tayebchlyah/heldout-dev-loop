@@ -111,6 +111,57 @@ def _holds_a_file(repo: Path, folder: str, claimed: list[str]) -> bool:
     return False
 
 
+def _pyproject(repo: Path) -> dict | None:
+    try:
+        return tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _workspace(pyproject: dict | None) -> tuple[list[str], list[str]] | None:
+    tool = pyproject.get("tool") if pyproject else None
+    uv = tool.get("uv") if isinstance(tool, dict) else None
+    table = uv.get("workspace") if isinstance(uv, dict) else None
+    if not isinstance(table, dict) or not _strings(table.get("members")):
+        return None
+    exclude = table.get("exclude")
+    return table["members"], exclude if _strings(exclude) else []
+
+
+def _folder(repo: Path, rel: str) -> bool:
+    return (repo / rel).is_dir() and not (repo / rel.rstrip("/")).is_symlink()
+
+
+def _globbed(repo: Path, patterns: list[str]) -> set[str]:
+    found = set()
+    for pattern in patterns:
+        try:
+            matches = list(repo.glob(pattern))
+        except (ValueError, NotImplementedError, OSError):
+            continue
+        found.update(Path(os.path.relpath(m, repo)).as_posix() for m in matches if m.is_dir())
+    return found
+
+
+def _linked(repo: Path, rel: str) -> bool:
+    parts = rel.split("/")
+    return any((repo / "/".join(parts[:i])).is_symlink() for i in range(1, len(parts) + 1))
+
+
+def _members(repo: Path, members: list[str], exclude: list[str]) -> list[str]:
+    excluded = _globbed(repo, exclude)
+    kept = sorted(f"{rel}/" for rel in _globbed(repo, members) - excluded
+                  if rel != "." and source_dirs.validate([f"{rel}/"]) is None
+                  and not any(p.startswith(".") or p == "node_modules" for p in rel.split("/"))
+                  and not _linked(repo, rel) and (repo / rel / "pyproject.toml").is_file())
+    ignored = _ignored(repo, kept)
+    return [rel for rel in kept if rel not in ignored]
+
+
 def detect(repo: Path, data: dict) -> dict:
     presets = data["presets"]
     matched: list[tuple[str, dict]] = []
@@ -122,22 +173,32 @@ def detect(repo: Path, data: dict) -> dict:
         preset = next((p for p in presets if folder_matches(repo / path, p)), None)
         if preset:
             matched.append((path, preset))
+    pyproject = _pyproject(repo)
+    workspace = _workspace(pyproject)
+    members = _members(repo, *workspace) if workspace else []
+    matched = [(path, preset) for path, preset in matched if path not in members]
+    matched += [(member, by_name(data)["uv"]) for member in members]
+    ui_scan = list(matched)
+    root = next((preset for path, preset in matched if path == "."), None)
+    if workspace and root and root["family"] == "python":
+        code = [d for d in root["source_dirs"] + [root["test_dir"]] if d and _folder(repo, d)]
+        if not (isinstance(pyproject.get("project"), dict) and code):
+            matched = [(path, preset) for path, preset in matched if path != "."]
     units = [(path, preset) for path, preset in matched
-             if not any(q != path and q_preset["family"] == preset["family"] and _holds(q, path) for q, q_preset in matched)]
+             if path in members or not any(q != path and q_preset["family"] == preset["family"] and _holds(q, path)
+                                           for q, q_preset in matched)]
     units.sort(key=lambda item: (item[0] != ".", item[0]))
     stacks = [{"path": path, "preset": preset["name"], "unit": unit_name(path),
                "commands": {"lint": preset["lint"], "typecheck": preset["typecheck"], "test": preset["test"],
                             "junit": {key: preset["junit"][key] for key in ("command", "files", "package", "setup")}}}
               for path, preset in units]
     proposed = capabilities.proposal(repo)
-    if "ui" not in proposed and any(_ui(repo / path, data["ui_frameworks"]) for path, _ in matched):
+    if "ui" not in proposed and any(_ui(repo / path, data["ui_frameworks"]) for path, _ in ui_scan):
         proposed.insert(0, "ui")
     dirs = {path for path, _ in matched if path != "."}
     for path, preset in units:
         if path == ".":
-            dirs.update(preset["source_dirs"])
-            if preset["test_dir"]:
-                dirs.add(preset["test_dir"])
+            dirs.update(d for d in preset["source_dirs"] + [preset["test_dir"]] if d and _folder(repo, d))
     walled = sorted(d for d in dirs if not d.startswith(HELD))
     claimed = [path for path, _ in matched if path != "."] + walled
     unknown = [folder for folder in _folders(repo, "")
