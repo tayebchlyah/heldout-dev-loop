@@ -255,7 +255,8 @@ class RetroTextTests(TempDir):
         root = ROOT / "skill"
         stage = (root / "SKILL.md").read_text().split("\n## 1 Frame\n", 1)[1].split("\n## 2 ", 1)[0]
         texts = [(stage, ["`review_due`", "devloop.py sessions --since 7", "## Gardener", "/garden",
-                          "this session only", "the route's retro skill", "retro (<session ids, first 8 characters>)"]),
+                          "this session only", "the route's retro skill", "retro (<session ids, first 8 characters>)",
+                          "Still allowed: an open feature, Stage 0 (a kit upgrade PR too)"]),
                  ((root / "references" / "claude.md").read_text(), ["`/retro`"]),
                  ((root / "references" / "codex.md").read_text(), ["`$retro`", "`wayfinder`, `retro`."])]
         for text, values in texts:
