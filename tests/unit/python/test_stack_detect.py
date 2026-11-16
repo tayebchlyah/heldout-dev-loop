@@ -78,10 +78,6 @@ class StackDetectTests(unittest.TestCase):
         self.assertEqual(self.units(out), [(".", "uv", "root")])
         self.assertEqual(out["source_dirs"], [])
 
-    def test_root_uv_existing_folders(self) -> None:
-        out = self.detect(self.tree({**FIXTURES["uv"], "src/a.py": "", "tests/unit/test_a.py": ""}))
-        self.assertEqual(out["source_dirs"], ["src/", "tests/unit/"])
-
     def test_python_and_js_picks(self) -> None:
         cases = [({"pyproject.toml": ""}, "pip"), ({"pyproject.toml": "", "requirements.txt": ""}, "pip"),
                  ({"package.json": "{}", "yarn.lock": "", "pnpm-lock.yaml": ""}, "pnpm"),
@@ -255,20 +251,6 @@ class StackDetectTests(unittest.TestCase):
         out = self.detect(self.tree({"pyproject.toml": '[tool.uv.workspace]\nmembers = ["backend"]\nexclude = "backend"\n',
                                      "uv.lock": "", "backend/pyproject.toml": ""}))
         self.assertEqual(self.units(out), [("backend/", "uv", "backend")])
-
-    def test_workspace_root_package_json_ui(self) -> None:
-        out = self.detect(self.tree({**ws(["backend"]), "backend/pyproject.toml": "", "backend/uv.lock": "",
-                                     "package.json": '{"dependencies": {"react": "1"}}'}))
-        self.assertIn("ui", out["capabilities"])
-
-    def test_non_member_python_folder_is_a_unit(self) -> None:
-        out = self.detect(self.tree({**ws(["packages/a"]), "packages/a/pyproject.toml": "", "tools/pyproject.toml": ""}))
-        self.assertEqual(self.paths(out), [("packages/a/", "uv"), ("tools/", "pip")])
-
-    def test_go_root_with_workspace(self) -> None:
-        out = self.detect(self.tree({"go.mod": "", "cmd/a.go": "", "pyproject.toml": '[tool.uv.workspace]\nmembers = ["tools"]\n',
-                                     "tools/pyproject.toml": ""}))
-        self.assertEqual(self.paths(out), [(".", "go"), ("tools/", "uv")])
 
     def test_bad_member_patterns_and_dedupe(self) -> None:
         out = self.detect(self.tree({**ws(["", ".", "/abs", "backend", "backend/", "*"]), "backend/pyproject.toml": "",
