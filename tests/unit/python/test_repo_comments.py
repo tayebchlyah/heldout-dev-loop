@@ -371,6 +371,22 @@ class DocstringCommandTests(CommentsRepo):
                                       'def c():\n    """allow-comment: dependency, git drops it."""\n')
         self.assert_violations([])
 
+    def test_link_docstring_one_line_only(self) -> None:
+        first = "Work around the rounding of #215."
+        row = [("pkg/doc.py", 2, first)]
+        for doc, expected in [
+            (f'"""{first}"""', []),
+            ('"""See https://example.com for the row format."""', []),
+            (f'"""\n    {first}\n    """', []),
+            (f'"""{first}\n\n    The total drops a cent.\n    """', row),
+            (f'"""{first}\n    The total drops a cent.\n    """', row),
+            ('"""The tool drops the flag.\n\n    allow-comment: dependency, until version 2.\n    """', []),
+        ]:
+            with self.subTest(doc=doc):
+                put(self.repo / "pkg/doc.py", f"def _f():\n    {doc}\n")
+                self.assert_violations(expected)
+                (self.repo / "pkg/doc.py").unlink()
+
     def test_moved_docstring_is_not_new(self) -> None:
         moved = BASE_STATE.replace("State.", "Other.")
         put(self.repo / "pkg/other.py", moved)

@@ -357,7 +357,8 @@ def docstring_violations(path: str, text: str, rows: set[int] | None,
     public = {name for (owner, name), importers in pairs.items() if owner == stem and importers - {path}}
     found = []
     for first, last, doc in private_docstrings(tree, public):
-        if (rows is None or not rows.isdisjoint(range(first, last + 1))) and not kind_ok(doc) and doc not in old_docs:
+        escaped = block_kind(doc) or (link_kind(doc) and "\n" not in doc)
+        if (rows is None or not rows.isdisjoint(range(first, last + 1))) and not escaped and doc not in old_docs:
             line = next((part.strip() for part in doc.splitlines() if part.strip()), "")
             found.append({"path": path, "line": first, "text": line})
     return found
