@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 sys.dont_write_bytecode = True
@@ -33,8 +34,13 @@ def _paths(args: list[str], folder: Path) -> list[Path]:
     return paths
 
 
+def _covers(outer: Path, inner: Path) -> bool:
+    return any(outer == p or (outer.exists() and p.exists() and os.path.samefile(outer, p))
+               for p in (inner, *inner.parents))
+
+
 def _reaches(paths: list[Path], held: Path) -> bool:
-    return any(path == held or held in path.parents or path in held.parents for path in paths)
+    return any(_covers(held, path) or _covers(path, held) for path in paths)
 
 
 def relative(folder: Path, root: Path) -> str | None:
@@ -64,7 +70,7 @@ def ignore_patterns(config: dict, rel: str) -> str:
 def ran(keys: Iterable[str], folder: Path, root: Path) -> int:
     held = _held(root)
     paths = [(folder / key).resolve() for key in keys]
-    return sum(1 for path in paths if path == held or held in path.parents)
+    return sum(1 for path in paths if _covers(held, path))
 
 
 def selection_refusal(selection: list[str], folder: Path, root: Path) -> str | None:

@@ -59,6 +59,8 @@ class MutationHeldOut(unittest.TestCase):
         self.assertEqual(heldout.ran(["../tests/acceptance/a.test.ts"], root / "web", root), 1)
         self.assertEqual(heldout.ran([str(root / "tests/acceptance/x.ts"), "./tests/acceptance/y.ts"], root, root), 2)
         self.assertEqual(heldout.ran(["tests/acceptance-old/z.ts", "tests/unit/b.test.ts"], root, root), 0)
+        if (root / "TESTS").exists():
+            self.assertEqual(heldout.ran(["Tests/Acceptance/a.ts"], root, root), 1)
 
     def test_selection_refusal(self) -> None:
         root = self.root
@@ -70,6 +72,10 @@ class MutationHeldOut(unittest.TestCase):
         for selection in (["tests/unit"], ["tests/unit", "--deselect", "tests/unit/test_slow.py::test_t"],
                           ["tests/unit/test_a.py::test_a"]):
             self.assertIsNone(heldout.selection_refusal(selection, root, root), selection)
+        if (root / "TESTS").exists():
+            for selection in (["Tests"], ["TESTS/Acceptance"]):
+                self.assertEqual(heldout.selection_refusal(selection, root, root), heldout.SELECTION_REACHES,
+                                 selection)
         self.assertIsNone(heldout.selection_refusal(["tests"], root / "app", root))
         self.assertEqual(heldout.selection_refusal(["../tests"], root / "app", root), heldout.SELECTION_REACHES)
 
