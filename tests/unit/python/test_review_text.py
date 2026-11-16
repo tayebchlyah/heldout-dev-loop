@@ -141,7 +141,7 @@ class ReviewYieldContractTests(unittest.TestCase):
     def test_agents_md_documents_merge_check_and_the_data_rule(self) -> None:
         agents = (REPO_ROOT / "AGENTS.md").read_text()
         merge_check = (REPO_ROOT / "reference" / "cli" / "merge-check.md").read_text()
-        self.assertIn("merge-check [--repo <path>] [--feature <slug>]", agents)
+        self.assertIn("`reference/cli/merge-check.md`", agents)
         for value in [
             "merge-check [--repo <path>] [--feature <slug>]", "merge_human_paths", "`config-unreadable`",
             "`merge-human`", "`track-l`", "`human-path`", "`harness-config`", "`config-changed`", "`no-review`", "`unreviewed`",
@@ -189,7 +189,7 @@ class SpecGapContractTests(unittest.TestCase):
     def test_agents_md_documents_the_cli_as_built(self) -> None:
         agents = (REPO_ROOT / "AGENTS.md").read_text()
         cli = REPO_ROOT / "reference" / "cli"
-        for value in ["`status [--repo <path>] [--feature <slug>]`", "`logged [--name <name>] -- <cmd>`"]:
+        for value in ["`reference/cli/status.md`", "`reference/cli/logged.md`"]:
             with self.subTest(value=value):
                 self.assertIn(value, agents)
         for name, value in [("status", "`status [--repo <path>] [--feature <slug>]`"),

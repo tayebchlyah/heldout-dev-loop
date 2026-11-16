@@ -51,44 +51,44 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 
 ## devloop CLI
 
-`python3 .agents/skills/dev-loop/scripts/devloop.py <command>`. One JSON object on stdout. Exit 0 success, 1 failure JSON describes, 2 usage error.
+`python3 .agents/skills/dev-loop/scripts/devloop.py <command>`; a command newer than the installed tag (`invalid choice`): `python3 skill/scripts/devloop.py <command>`. One JSON object on stdout. Exit 0 success, 1 failure JSON describes, 2 usage error.
 
-Read `reference/cli/<command>.md` before you change, test or debug a command, or use an option its index line omits.
+Read `reference/cli/<command>.md` before you change, test or debug a command, or run it: usage, purpose, full contract.
 
-- `status [--repo <path>] [--feature <slug>]`: Detect the stage of a feature, or list the open features on `main`, with the next action. `reference/cli/status.md`
-- `logged [--name <name>] -- <cmd>`: Run a command with its full output in a log file; give its exit, log path, time and tail. `reference/cli/logged.md`
-- `gate --summary`: Run the project gate; report failures, slowest tests, seal check, weakened tests, size check. `reference/cli/gate.md`
-- `seal --feature <slug> --message <subject> [--reverts <sha> ...]`: Commit the staged held-out tests with the seal trailers (`spec-tester` only); `seal --rebase-continue` in a rebase. `reference/cli/seal.md`
-- `seal-check [--uncommitted]`: Check the branch seal commits, kit file changes and taint records. `reference/cli/seal-check.md`
-- `search-wall`: Deny a subagent search that reaches the held-out suite; hook JSON on stdin. `reference/cli/search-wall.md`
-- `skill-wall`: May `implementer` load this project skill: listed, equal to the main ref, no fork, shell line or hook; hook JSON on stdin. `reference/cli/skill-wall.md`
-- `source-wall [--repo <path>]`: Decide a spec-tester call against `source_dirs` at the main ref; hook JSON on stdin. `reference/cli/source-wall.md`
-- `stack-detect [--repo <path>]`: Propose the code units of a repo from `presets.json`. `reference/cli/stack-detect.md`
-- `mutation --head <rev> [--base <rev>] [--main <branch>] [--repo <path>] [--run] [--entry <path>] [--only <unit> ...]`: Changed critical lines of each `mutation` entry; `--run`: its adapter, classify survivors, report. `reference/cli/mutation.md`
-- `size-check [--uncommitted | --all]`: File-size ratchet: a new or grown file over 40,000 bytes fails, with a split seam. `reference/cli/size-check.md`
-- `verify-init --base-url <url> [--name <skill>]`: Write the project verify skill, feature map README and `verify` key. `reference/cli/verify-init.md`
-- `drive [--all | --since <sha> | --routes-from <file>]`: Drive verify map routes a branch touches in Chromium, save evidence. `reference/cli/drive.md`
-- `capture --write-after <file>`: After evidence to a file, no gh; `--pr <n>`: before and after shots and videos in the PR. `reference/cli/capture.md`
-- `audit`: SubagentStop hook: record a taint when a subagent read files it must not read. `reference/cli/audit.md`
-- `board [--repo <path>] [--event session-start|prompt|stop|subagent-start|subagent-stop|post-tool] [--claim <slug>] [--no-serve] [--stop-server]`: Write board notes, run board server. `reference/cli/board.md`
-- `decide --kind decision|discovery --what <text> --why <text> --evidence <text> [--result <text>] [--risk] [--feature <slug>] [--repo <path>]`: Append a decision log row. `reference/cli/decide.md`
-- `pause [--event] [--intent <t>] [--verified <t>] [--open <t>] [--next <t>] [--agent <id>=<task> ...] [--run <log> ...] [--feature <slug>] [--repo <path>]`: Write the worktree pause note; `--clear` removes it. `reference/cli/pause.md`
-- `second-review --harness claude|codex [--timeout <minutes>]`: Other family's CLI as second reviewer, correctness and security only. `reference/cli/second-review.md`
-- `review-merge <reviewer>=<file> [...]`: Merge the Stage 6 reviewer tables by file and line. `reference/cli/review-merge.md`
-- `review-save --reviewer <name> | --done`: Save a reviewer table (stdin) or the Track S marker. `reference/cli/review-save.md`
-- `acceptance [--failed]`: Run the held-out suite; read its JUnit, check stale images, apply progress guard. `reference/cli/acceptance.md`
-- `ci wait [--pr <n>] [--timeout <min>]`: Wait for the PR verdict of local `HEAD`: pass, fail, conflicts, threads, blocked, timeout. `reference/cli/ci.md`
-- `merge-check [--repo <path>] [--feature <slug>]`: The Stage 7 merge decision, `auto` or `human`, with its reasons. `reference/cli/merge-check.md`
-- `cleanup --branch <branch> [--repo <path>]`: After merge: fetch, remove merged worktree, delete branch, rebase main checkout if safe. `reference/cli/cleanup.md`
-- `metrics [--repo <path>] [--feature <slug>] [--write]`: Token cost per stage from Claude transcripts; `--write` adds the Feature Metrics row. `reference/cli/metrics.md`
-- `sessions --since <days> [--repo <path>]`: List the Claude Code and Codex sessions of every worktree, for retro. `reference/cli/sessions.md`
-- `release-check [--repo <path>] [--no-build] (--tag <name> | --sha <rev> [--for <tag>])`: May a commit get a release tag: a current audit record and no open security item. `reference/cli/release-check.md`
-- `ci-skip --base <rev> [--head <rev>] [--repo <path>] [--github-output]`: May CI skip this diff: only a release (version files, `CHANGELOG.md`), a kit upgrade or inert paths. `reference/cli/ci-skip.md`
-- `release-notes --tag <tag> [--repo <path>] [--output <file>]`: Write the `CHANGELOG.md` section of a tag to `--output`: the GitHub Release body. `reference/cli/release-notes.md`
-- `release-plan [--repo <path>] [--harness claude|codex] [--profile quick|standard|deep] [--budget <n>] [--require-sandbox]`: Plan a release audit run: folder, profile, budget, scope, sandbox; `--require-sandbox`: `no-sandbox` stop without image or engine. `reference/cli/release-plan.md`
-- `notes-migrate [--repo <path>] [--apply [--plan <hash>]]`: Move old notes layout to feature folders; dry run, then `--apply --plan <hash>`. `reference/cli/notes-migrate.md`
-- `release-record --run <folder> [--base <sha>] [--harness claude|codex] [--repo <path>]`: Write release audit result into project note; JSON `carried`, `reopened`. `reference/cli/release-record.md`
-- `audit-run <step> --run <folder> [--repo <path>]`: Parent-side steps of a release audit run: `seed`, `units`, `brief`, `check`, `promote`, `fold`, `findings`, `report`, `status`. `reference/cli/audit-run.md`
+- `status`: `reference/cli/status.md`
+- `logged`: `reference/cli/logged.md`
+- `gate`: `reference/cli/gate.md`
+- `seal`: `reference/cli/seal.md`
+- `seal-check`: `reference/cli/seal-check.md`
+- `search-wall`: `reference/cli/search-wall.md`
+- `skill-wall`: `reference/cli/skill-wall.md`
+- `source-wall`: `reference/cli/source-wall.md`
+- `stack-detect`: `reference/cli/stack-detect.md`
+- `mutation`: `reference/cli/mutation.md`
+- `size-check`: `reference/cli/size-check.md`
+- `verify-init`: `reference/cli/verify-init.md`
+- `drive`: `reference/cli/drive.md`
+- `capture`: `reference/cli/capture.md`
+- `audit`: `reference/cli/audit.md`
+- `board`: `reference/cli/board.md`
+- `decide`: `reference/cli/decide.md`
+- `pause`: `reference/cli/pause.md`
+- `second-review`: `reference/cli/second-review.md`
+- `review-merge`: `reference/cli/review-merge.md`
+- `review-save`: `reference/cli/review-save.md`
+- `acceptance`: `reference/cli/acceptance.md`
+- `ci`: `reference/cli/ci.md`
+- `merge-check`: `reference/cli/merge-check.md`
+- `cleanup`: `reference/cli/cleanup.md`
+- `metrics`: `reference/cli/metrics.md`
+- `sessions`: `reference/cli/sessions.md`
+- `release-check`: `reference/cli/release-check.md`
+- `ci-skip`: `reference/cli/ci-skip.md`
+- `release-notes`: `reference/cli/release-notes.md`
+- `release-plan`: `reference/cli/release-plan.md`
+- `notes-migrate`: `reference/cli/notes-migrate.md`
+- `release-record`: `reference/cli/release-record.md`
+- `audit-run`: `reference/cli/audit-run.md`
 
 ## Build and test
 

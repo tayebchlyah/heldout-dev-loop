@@ -468,7 +468,7 @@ class SecondReviewTextTests(unittest.TestCase):
 
     def test_agents_md_and_the_canary_name_the_second_review(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text()
-        for value in ("`second-review --harness claude|codex [--timeout <minutes>]`", "skill/scripts/second_review.py",
+        for value in ("`reference/cli/second-review.md`", "skill/scripts/second_review.py",
                       "skill/references/second-review.md"):
             with self.subTest(value=value):
                 self.assertIn(value, agents)

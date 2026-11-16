@@ -164,8 +164,19 @@ class RepoDocsTests(unittest.TestCase):
                 first = (ROOT / "reference" / "cli" / f"{command}.md").read_text().split("\n", 1)[0]
                 self.assertEqual(first, f"# {command}")
 
+    def test_cli_index_lines_are_name_and_pointer_only(self) -> None:
+        lines = [line for line in self.cli.splitlines() if line.startswith("- `")]
+        self.assertTrue(lines)
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertRegex(line, r"^- `([a-z-]+)`: `reference/cli/\1\.md`$")
+
     def test_read_line(self) -> None:
         self.assertIn("Read `reference/cli/<command>.md` before you change, test or debug a command", self.cli)
+
+    def test_cli_names_the_source_cli_for_a_command_newer_than_the_installed_tag(self) -> None:
+        self.assertIn("newer than the installed tag", self.cli)
+        self.assertIn("`python3 skill/scripts/devloop.py <command>`", self.cli)
 
     def test_kit_and_release_files(self) -> None:
         kit = (ROOT / "reference" / "kit.md").read_text()
