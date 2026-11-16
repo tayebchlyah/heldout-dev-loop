@@ -38,6 +38,7 @@ sys.exit({code})
 """
 LOCATION = {"start": {"line": 2, "column": 7}, "end": {"line": 2, "column": 18}}
 SUFFIX = ". Stage 0 owns it: see references/mutation.md, Setup."
+BACKSTOP = "mutation setup broken: held-out test files ran: 1 under tests/acceptance/" + SUFFIX
 
 
 class StrykerAdapter(unittest.TestCase):
@@ -52,12 +53,13 @@ class StrykerAdapter(unittest.TestCase):
         self._tmp.cleanup()
 
     def adapter(self, files: dict[str, str], request: dict, code: int = 0, report: bool = True,
-                tool: str | None = "repo/web") -> subprocess.CompletedProcess[str]:
+                tool: str | None = "repo/web", entry: str = "web",
+                recorded: Path = RECORDED) -> subprocess.CompletedProcess[str]:
         if tool is not None:
             write(self.root / tool / BIN, STUB.format(python=sys.executable, log=str(self.log),
-                                                      recorded=str(RECORDED), code=code, report=report))
+                                                      recorded=str(recorded), code=code, report=report))
             (self.root / tool / BIN).chmod(0o755)
-        entry = self.root / "repo" / "web"
+        entry = self.root / "repo" / entry
         for name, text in files.items():
             write(entry / name, text)
         env = {**os.environ, "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}"}
@@ -160,6 +162,40 @@ class StrykerAdapter(unittest.TestCase):
         self.assertEqual(stryker.diff_of('const s = "\U0001F600"; if (a > b) {\n', emoji, "a >= b"),
                          '-const s = "\U0001F600"; if (a > b) {\n+const s = "\U0001F600"; if (a >= b) {')
 
+    def with_test_files(self, keys: list[str]) -> Path:
+        report = {**json.loads(RECORDED.read_text()), "testFiles": {key: {"tests": []} for key in keys}}
+        path = self.root / f"recorded-{len(list(self.root.glob('recorded-*')))}.json"
+        path.write_text(json.dumps(report))
+        return path
+
+    def test_held_out_excluded(self) -> None:
+        request = {"run": True, "files": {"src/a.ts": [[1, 1]]}}
+        done = self.adapter({"stryker.config.json": CONFIG}, request, entry=".", tool="repo")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.log.read_text(), "run stryker.config.json --mutate src/a.ts:1-1 --reporters json "
+                                               "--ignorePatterns /tests/acceptance\n")
+        self.log.unlink()
+        config = json.dumps({"testRunner": "vitest", "ignorePatterns": ["dist", "/big"]})
+        done = self.adapter({"stryker.config.json": config}, request, entry=".", tool="repo")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(self.log.read_text().endswith("--ignorePatterns dist,/big,/tests/acceptance\n"))
+
+    def test_held_out_backstop(self) -> None:
+        files, request = {"stryker.config.json": CONFIG}, {"run": True, "files": {"src/a.ts": [[1, 1]]}}
+        for entry, tool, keys, code in ((".", "repo", ["tests/acceptance/a.test.ts", "tests/unit/b.test.ts"], 0),
+                                        ("web", "repo/web", ["../tests/acceptance/a.test.ts"], 0),
+                                        (".", "repo", ["tests/acceptance/a.test.ts"], 1)):
+            with self.subTest(entry=entry, keys=keys, code=code):
+                (self.root / "repo" / entry / "reports" / "mutation" / "mutation.json").unlink(missing_ok=True)
+                done = self.adapter(files, request, entry=entry, tool=tool, code=code,
+                                    recorded=self.with_test_files(keys))
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertEqual(done.stdout, "")
+                self.assertEqual(done.stderr.strip().splitlines()[-1], BACKSTOP)
+        done = self.adapter(files, request, entry=".", tool="repo",
+                            recorded=self.with_test_files(["tests/unit/b.test.ts"]))
+        self.assertEqual(done.returncode, 0, done.stderr)
+
     def test_setup_refusals(self) -> None:
         request = {"run": True, "files": {"src/a.ts": [[1, 1]]}}
         for files, words in (
@@ -169,6 +205,12 @@ class StrykerAdapter(unittest.TestCase):
                 ({"stryker.config.json": "{}"}, "testRunner"),
                 ({"stryker.config.json": json.dumps({"testRunner": "vitest", "coverageAnalysis": "off"})},
                  "coverageAnalysis"),
+                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "inPlace": True})},
+                 'sets "inPlace": true'),
+                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "ignorePatterns": "dist"})},
+                 "not a list of strings"),
+                ({"stryker.config.json": json.dumps({"testRunner": "vitest", "ignorePatterns": ["a,b"]})},
+                 "has a comma: a,b"),
                 ({"stryker.config.json": "{"}, "stryker.config.json"),
                 ({}, "stryker.config.json")):
             with self.subTest(words=words, files=sorted(files)):
@@ -193,8 +235,8 @@ class StrykerAdapter(unittest.TestCase):
         done = self.adapter({"stryker.config.json": CONFIG}, request, tool="repo")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertTrue(self.log.read_text().startswith("run stryker.config.json --mutate src/a.ts:1-1"))
-        for allowed in ("perTest", "all"):
-            config = json.dumps({"testRunner": "vitest", "coverageAnalysis": allowed})
+        for allowed in ({"coverageAnalysis": "perTest"}, {"coverageAnalysis": "all"}, {"inPlace": False}):
+            config = json.dumps({"testRunner": "vitest", **allowed})
             self.log.unlink(missing_ok=True)
             done = self.adapter({"stryker.config.json": config}, request)
             self.assertEqual(done.returncode, 0, done.stderr)
