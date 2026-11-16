@@ -518,6 +518,16 @@ class AutonomyContractTests(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertIn(value.lower(), path.read_text().lower())
 
+    def test_grant_holds_the_user_checkpoint(self) -> None:
+        skill = (ROOT / "skill" / "SKILL.md").read_text()
+        grant = skill[skill.index("Autonomy grant"):skill.index("Monitor rule")]
+        stop = next(line for line in grant.splitlines() if line.startswith("- Stop and report only for:"))
+        self.assertIn("an open checkpoint the user set", stop)
+        for value in ['--what "user checkpoint: <X>"', "Before each push and each merge, read the decision log",
+                      "`user checkpoint met: <X>`", "no log yet"]:
+            with self.subTest(value=value):
+                self.assertIn(value, grant)
+
     def test_handoff_commands_target_the_paused_checkout(self) -> None:
         cases = [(ROOT / "skills" / "continue" / "SKILL.md", ["pause --clear --feature <slug> --repo <checkout>",
                                                              "decide --kind discovery --feature <slug> --repo <checkout>"]),
