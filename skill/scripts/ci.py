@@ -24,6 +24,7 @@ THREADS_QUERY = ("query($owner: String!, $name: String!, $number: Int!) { reposi
                  " pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path line"
                  " comments(first: 1) { nodes { author { login } authorAssociation body url } } } } } } }")
 TEXT_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+SCAN_AUTHORS = {"github-advanced-security", "github-advanced-security[bot]"}
 FAILED_CHECK_STATES = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 BLOCKED_REASONS = {"REVIEW_REQUIRED": "review-required", "CHANGES_REQUESTED": "changes-requested"}
 
@@ -71,23 +72,28 @@ def open_threads(data: dict) -> list[dict]:
     return threads
 
 
+def outdated_scan(thread: dict) -> bool:
+    return thread.get("line") is None and thread.get("author") in SCAN_AUTHORS
+
+
 def verdict(view: dict, threads: list[dict]) -> dict | None:
     checks = view.get("statusCheckRollup") or []
     failed = next((c for c in checks if check_state(c) == "fail"), None)
     pending = pending_checks(view)
+    waiting = bool(pending) or not checks or "UNKNOWN" in (view.get("mergeable"), view.get("mergeStateStatus"))
 
     def result(state: str, reason: str | None = None) -> dict:
         return {"state": state, "reason": reason, "failed": failed if state == "fail" else None, "pending": pending}
 
     if view.get("mergeable") == "CONFLICTING" or view.get("mergeStateStatus") == "DIRTY":
         return result("conflicts")
-    if threads:
+    if threads and not (waiting and all(outdated_scan(t) for t in threads)):
         return result("threads")
     if any(r.get("state") == "CHANGES_REQUESTED" for r in view.get("latestReviews") or []):
         return result("blocked", "changes-requested")
     if failed:
         return result("fail")
-    if pending or not checks or "UNKNOWN" in (view.get("mergeable"), view.get("mergeStateStatus")):
+    if waiting:
         return None
     if view.get("isDraft"):
         return result("blocked", "draft")
@@ -104,6 +110,15 @@ def first_error(log: str) -> str | None:
         if "error" in line.lower() or "FAIL" in line:
             return "\n".join(lines[i:i + 30])
     return None
+
+
+def failed_step(log: str) -> str:
+    lines = re.sub(r"\x1b\[[0-9;]*m", "", log).splitlines()
+    marked = next((i for i, line in enumerate(lines) if "##[error]" in line), None)
+    if marked is None:
+        return "\n".join(lines)
+    start = max((i for i in range(marked) if "##[group]Run " in lines[i]), default=0)
+    return "\n".join(lines[start:])
 
 
 def gh(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
@@ -201,6 +216,10 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
             run = re.search(r"/runs/(\d+)", link)
             if run:
                 payload["first_error"] = first_error(gh("run", "view", run.group(1), "--log-failed").stdout)
+            job = re.search(r"/job/(\d+)", link)
+            if job and payload["first_error"] is None:
+                logs = gh("api", f"repos/{owner}/{name}/actions/jobs/{job.group(1)}/logs", "--allow-escape-sequences")
+                payload["first_error"] = first_error(failed_step(logs.stdout)) if logs.returncode == 0 else None
         if state in ("fail", "blocked"):
             payload["stale_base"] = stale_base(f"{owner}/{name}", view.get("baseRefName") or "", head)
         return (0 if state == "pass" else 1), payload
