@@ -97,9 +97,11 @@ class DetectCase(unittest.TestCase):
 
 class RootPresetTests(DetectCase):
     def test_o1_to_o4_o13_root_presets(self) -> None:
-        """O1: `pyproject.toml` and `uv.lock` give one entry `.`, uv, unit `root`, and `source_dirs` holds `src/` and
-        `tests/unit/`. O2: poetry, pip from `pyproject.toml` alone or `requirements.txt` alone. O3: pnpm, yarn, npm.
-        O4: `go.mod` gives go and `source_dirs` `["cmd/", "internal/"]`. O13 on each entry."""
+        """O1 (as superseded by Uv Workspace Units): `pyproject.toml` and `uv.lock` give one entry `.`, uv, unit
+        `root`, and `source_dirs` holds `src/` and `tests/unit/` when those folders exist, neither when they do not.
+        O2: poetry, pip from `pyproject.toml` alone or `requirements.txt` alone. O3: pnpm, yarn, npm. O4 (as
+        superseded): `go.mod` with `cmd/` and `internal/` gives go and `source_dirs` `["cmd/", "internal/"]`;
+        `go.mod` alone gives `[]`. O13 on each entry."""
         cases = ((1, ("pyproject.toml", "uv.lock"), "uv"),
                  (2, ("pyproject.toml", "poetry.lock"), "poetry"),
                  (2, ("pyproject.toml",), "pip"),
@@ -114,11 +116,20 @@ class RootPresetTests(DetectCase):
                 self.assertEqual(pairs(payload), [(".", preset)], payload)
                 self.assertEqual(payload["stacks"][0].get("unit"), "root", payload)
                 if preset == "uv":
-                    self.assertIn("src/", payload.get("source_dirs", []), payload)
-                    self.assertIn("tests/unit/", payload.get("source_dirs", []), payload)
+                    self.assertNotIn("src/", payload.get("source_dirs", []), payload)
+                    self.assertNotIn("tests/unit/", payload.get("source_dirs", []), payload)
                 if preset == "go":
-                    self.assertEqual(payload.get("source_dirs"), ["cmd/", "internal/"], payload)
+                    self.assertEqual(payload.get("source_dirs"), [], payload)
                 self.assert_commands(payload)
+        with self.subTest(oracle=1, folders="src/ and tests/unit/"):
+            payload = self.detect("pyproject.toml", "uv.lock", "src/app.py", "tests/unit/test_app.py")
+            self.assertEqual(pairs(payload), [(".", "uv")], payload)
+            self.assertIn("src/", payload.get("source_dirs", []), payload)
+            self.assertIn("tests/unit/", payload.get("source_dirs", []), payload)
+        with self.subTest(oracle=4, folders="cmd/ and internal/"):
+            payload = self.detect("go.mod", "cmd/main.go", "internal/app.go")
+            self.assertEqual(pairs(payload), [(".", "go")], payload)
+            self.assertEqual(payload.get("source_dirs"), ["cmd/", "internal/"], payload)
 
 
 class UnitFolderTests(DetectCase):
@@ -164,20 +175,20 @@ class SkipRuleTests(DetectCase):
 
 class OnePresetPerFolderTests(DetectCase):
     def test_o10_o11_o12_first_preset_and_workspace_members(self) -> None:
-        """O10: root `pyproject.toml`, `uv.lock` and `package.json`: one entry, uv. O11: a python folder under the
-        root uv unit is a member (no entry, in `source_dirs`), `frontend/` npm stays a unit. O12: root `package.json`
-        alone: `source_dirs` `["src/", "tests/unit/"]`."""
+        """O10: root `pyproject.toml`, `uv.lock` and `package.json`: one entry, uv. O11 (as superseded by Uv
+        Workspace Units): a python folder under the root uv unit is a member (no entry, in `source_dirs`),
+        `frontend/` npm stays a unit, `source_dirs` `["backend/", "frontend/"]` (no `src/` or `tests/unit/` folder).
+        O12 (as superseded): root `package.json` alone: `source_dirs` `[]`."""
         with self.subTest(oracle=10):
             payload = self.detect("pyproject.toml", "uv.lock", "package.json")
             self.assertEqual(pairs(payload), [(".", "uv")], payload)
         with self.subTest(oracle=11):
             payload = self.detect("pyproject.toml", "uv.lock", "backend/pyproject.toml", "frontend/package.json")
             self.assertEqual(pairs(payload), [(".", "uv"), ("frontend/", "npm")], payload)
-            for folder in ("backend/", "frontend/", "src/", "tests/unit/"):
-                self.assertIn(folder, payload.get("source_dirs", []), payload)
+            self.assertEqual(payload.get("source_dirs"), ["backend/", "frontend/"], payload)
         with self.subTest(oracle=12):
             payload = self.detect("package.json")
-            self.assertEqual(payload.get("source_dirs"), ["src/", "tests/unit/"], payload)
+            self.assertEqual(payload.get("source_dirs"), [], payload)
 
 
 if __name__ == "__main__":
