@@ -301,6 +301,11 @@ def setup(repo: Path) -> list[str]:
             for folder in _root_folders(repo, preset):
                 if not source_dirs.matches(covered, folder):
                     lines.append(f'stacks path . preset {name}: {folder} is not in source_dirs: add "{folder}"')
+    workspace = _workspace(_pyproject(repo)) if covered is not None else None
+    paths = {entry["path"] for entry in config["stacks"]}
+    for member in _members(repo, *workspace) if workspace else []:
+        if member not in paths and not source_dirs.matches(covered, member):
+            lines.append(f'uv workspace member {member} is not in source_dirs: add "{member}" and its stacks entry')
     return lines
 
 

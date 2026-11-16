@@ -78,6 +78,20 @@ class StacksSetupTests(unittest.TestCase):
                                                 ("src/", "tests/acceptance/"))),
                          [stacks.CARGO_SUITE, 'stacks path . preset cargo: tests/ is not in source_dirs: add "tests/"'])
 
+    def test_workspace_member_coverage(self) -> None:
+        files = ("packages/app/pyproject.toml", "packages/lib/pyproject.toml")
+        for dirs, want in ((["packages/app/"], ['uv workspace member packages/lib/ is not in source_dirs: add "packages/lib/" '
+                                                'and its stacks entry']),
+                           (["packages/"], []), (["packages/app/", "packages/lib/"], [])):
+            with self.subTest(dirs=dirs):
+                repo = self.repo({"stacks": [{"path": "packages/app/", "preset": "uv"}], "source_dirs": dirs}, files=files)
+                write(repo / "pyproject.toml", '[tool.uv.workspace]\nmembers = ["packages/*"]\n')
+                self.assertEqual(stacks.setup(repo), want)
+        repo = self.repo({"stacks": [{"path": "packages/app/", "preset": "uv"}, {"path": "packages/lib/", "preset": "uv"}],
+                          "source_dirs": ["packages/app/"]}, files=files)
+        write(repo / "pyproject.toml", '[tool.uv.workspace]\nmembers = ["packages/*"]\n')
+        self.assertEqual(stacks.setup(repo), ['stacks path packages/lib/ is not in source_dirs: add "packages/lib/"'])
+
     def test_root_no_coverage(self) -> None:
         for preset in ("dotnet", None):
             with self.subTest(preset=preset):
