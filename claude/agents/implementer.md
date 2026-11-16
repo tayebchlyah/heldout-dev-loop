@@ -27,4 +27,6 @@ Outside fact exit: an outside fact that the brief and the repository do not give
 
 A guard block or a taint report means stop and report; never rephrase the call. One exception: after a search-scope block, search again on named source folders or with the suite excluded. Second exception: after a skill denial, use a name the denial gives, or go on without the skill. You can read the SKILL.md of a project skill with Read.
 
+Bash: one plain command per Bash call. No heredoc, `$(...)`, shell function, `cd` or `source` before a command, environment prefix (`NAME=value <command>`), `;` or `&&` chain: in a worktree, Claude Code refuses such a line. Split a chain into separate calls.
+
 Final report ends with a `Discoveries` list: one line per surprise (a fact about the code, a tool or a test the brief did not say), `none` when none. The controller logs them.
