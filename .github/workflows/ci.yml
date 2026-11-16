@@ -18,6 +18,9 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       skip: ${{ steps.skip.outputs.skip }}
     steps:
@@ -37,9 +40,14 @@ jobs:
         env:
           TARGET: ${{ github.base_ref || github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BODY_EDIT: ${{ github.event.action == 'edited' && !github.event.changes.base }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$TARGET" != "$DEFAULT_BRANCH" ] || [ ! -f .devloop-base/.agents/skills/dev-loop/scripts/ci_skip.py ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$BODY_EDIT" = true ] && [ "$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event pull_request --commit "$HEAD_SHA" --status completed --limit 1 --json conclusion --jq '.[0].conclusion // ""' || true)" = success ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             python3 .devloop-base/.agents/skills/dev-loop/scripts/devloop.py ci-skip --repo . --base "${{ github.event.pull_request.base.sha || github.event.before }}" --github-output
           fi

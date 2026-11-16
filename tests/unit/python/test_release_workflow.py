@@ -115,35 +115,70 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("  pull_request:\n    types: [opened, synchronize, reopened, edited]\n", ci)
         cancel = "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'edited' }}\n"
         self.assertIn(cancel, ci)
-        self.assertNotIn("github.event.action", ci.replace(cancel, ""))
+        self.assertNotIn("github.event.action", ci.replace(cancel, "").replace(self.BODY_EDIT, ""))
         for path in ("reference/kit.md", "skills/release/SKILL.md"):
             with self.subTest(path=path):
                 self.assertIn("List `edited` in the `pull_request` types", (ROOT / path).read_text())
+
+    BODY_EDIT = "${{ github.event.action == 'edited' && !github.event.changes.base }}"
+
+    def run_skip_step(self, text: str, target: str, ci_skip: str, body_edit: str = "false",
+                      last_run: tuple[str, int] = ("", 1)) -> tuple[str, list[str]]:
+        step = text.split("      - id: skip\n", 1)[1].split("\n```", 1)[0].split("\n\n", 1)[0]
+        env_block, run = step.split("        run: |\n", 1)
+        env_block = "\n" + env_block.split("        env:\n", 1)[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            scripts = Path(tmp, ".devloop-base/.agents/skills/dev-loop/scripts")
+            scripts.mkdir(parents=True)
+            (scripts / "ci_skip.py").write_text("")
+            (scripts / "devloop.py").write_text(
+                f"import os\nopen(os.environ['GITHUB_OUTPUT'], 'a').write('skip={ci_skip}\\n')\n")
+            gh = Path(tmp, "bin", "gh")
+            gh.parent.mkdir()
+            gh.write_text(f"#!{sys.executable}\nimport sys\nopen({str(Path(tmp, 'calls'))!r}, 'a')"
+                          f".write(' '.join(sys.argv[1:]) + '\\n')\nprint({last_run[0]!r})\nsys.exit({last_run[1]})\n")
+            gh.chmod(0o755)
+            env = {**os.environ, "GITHUB_OUTPUT": str(Path(tmp, "out")), "GITHUB_REPOSITORY": "o/r",
+                   "PATH": f"{gh.parent}{os.pathsep}{os.environ['PATH']}"}
+            values = {"${{ github.base_ref || github.ref_name }}": target,
+                      "${{ github.event.repository.default_branch }}": "trunk", self.BODY_EDIT: body_edit,
+                      "${{ github.event.pull_request.head.sha }}": "HEAD", "${{ github.token }}": "token"}
+            for line in env_block.splitlines()[1:]:
+                key, value = line.strip().split(": ", 1)
+                env[key] = values[value]
+            script = textwrap.dedent(run).replace(
+                "${{ github.event.pull_request.base.sha || github.event.before }}", "BASE")
+            subprocess.run(["bash", "-euc", script], cwd=tmp, env=env, check=True)
+            calls = Path(tmp, "calls").read_text().splitlines() if Path(tmp, "calls").exists() else []
+            return Path(tmp, "out").read_text(), calls
 
     def test_changes_job_skips_only_on_a_default_branch_base(self) -> None:
         sources = {"ci.yml": self.workflow("ci.yml"), "reference/kit.md": (ROOT / "reference/kit.md").read_text(),
                    "skills/release/SKILL.md": (ROOT / "skills/release/SKILL.md").read_text()}
         for source, text in sources.items():
-            step = text.split("      - id: skip\n", 1)[1].split("\n```", 1)[0].split("\n\n", 1)[0]
-            env_block, run = step.split("        run: |\n", 1)
-            env_block = "\n" + env_block.split("        env:\n", 1)[1]
             for event, target, skip in (("pull_request", "trunk", "true"), ("push", "trunk", "true"),
                                         ("push", "feature", "false"), ("pull_request", "other", "false")):
-                with self.subTest(source=source, event=event, target=target), tempfile.TemporaryDirectory() as tmp:
-                    scripts = Path(tmp, ".devloop-base/.agents/skills/dev-loop/scripts")
-                    scripts.mkdir(parents=True)
-                    (scripts / "ci_skip.py").write_text("")
-                    (scripts / "devloop.py").write_text(
-                        "import os\nopen(os.environ['GITHUB_OUTPUT'], 'a').write('skip=true\\n')\n")
-                    env = {**os.environ, "GITHUB_OUTPUT": str(Path(tmp, "out"))}
-                    values = {"${{ github.base_ref || github.ref_name }}": target, "${{ github.event.repository.default_branch }}": "trunk"}
-                    for line in env_block.splitlines()[1:]:
-                        key, value = line.strip().split(": ", 1)
-                        env[key] = values[value]
-                    script = textwrap.dedent(run).replace(
-                        "${{ github.event.pull_request.base.sha || github.event.before }}", "BASE")
-                    subprocess.run(["bash", "-euc", script], cwd=tmp, env=env, check=True)
-                    self.assertEqual(Path(tmp, "out").read_text(), f"skip={skip}\n")
+                with self.subTest(source=source, event=event, target=target):
+                    self.assertEqual(self.run_skip_step(text, target, "true")[0], f"skip={skip}\n")
+
+    def test_a_body_edit_skips_only_after_a_green_run_on_the_head(self) -> None:
+        ci = self.workflow("ci.yml")
+        query = ("run list --repo o/r --workflow ci.yml --event pull_request --commit HEAD --status completed "
+                 "--limit 1 --json conclusion --jq .[0].conclusion // \"\"")
+        for name, target, body_edit, last_run, skip, calls in (
+                ("body edit after a green run", "trunk", "true", ("success", 0), "true", [query]),
+                ("body edit after a red run", "trunk", "true", ("failure", 0), "false", [query]),
+                ("body edit after a cancelled run", "trunk", "true", ("cancelled", 0), "false", [query]),
+                ("body edit, gh fails", "trunk", "true", ("", 1), "false", [query]),
+                ("body edit, no completed run", "trunk", "true", ("", 0), "false", [query]),
+                ("retarget or other event", "trunk", "false", ("success", 0), "false", []),
+                ("body edit on another base", "other", "true", ("success", 0), "false", [])):
+            with self.subTest(name):
+                self.assertEqual(self.run_skip_step(ci, target, "false", body_edit, last_run),
+                                 (f"skip={skip}\n", calls))
+        changes = self.jobs(ci)["changes"]
+        self.assertIn(f"          BODY_EDIT: {self.BODY_EDIT}\n", changes)
+        self.assertIn("    permissions:\n      contents: read\n      actions: read\n", changes)
 
     def test_dev_loop_json(self) -> None:
         config = json.loads((ROOT / "dev-loop.json").read_text())
