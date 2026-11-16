@@ -134,6 +134,14 @@ class GateRatchetTests(RatchetRepo):
         self.assertEqual(ratchet["attention"], [{"id": "d_two", "seconds": 31.0, "rule": "max", "limit": 30}])
         self.assertEqual((ratchet["growth"]["share"], ratchet["growth"]["ok"]), (0.02, True))
 
+    def test_skipped_in_run_leaves_the_baseline_sum(self) -> None:
+        self.seed("gate", {**BASE, "d_one": 40.0}, "main")
+        self.branch()
+        run = {**BASE, "n1_slow": 2.0, "n2_slow": 2.0, "n3_slow": 2.0}
+        code, out = self.gate(run, raw=("<testsuite><testcase name='d_one' time='0'><skipped/></testcase></testsuite>",))
+        growth = out["ratchet"]["growth"]
+        self.assertEqual((code, growth["share"], growth["ok"]), (1, 0.039, False))
+
     def test_bad_skipped_passes_the_record_over(self) -> None:
         self.branch()
         for bad in ("d_one", [1]):
