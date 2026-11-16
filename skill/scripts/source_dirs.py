@@ -155,7 +155,8 @@ def setup(repo: Path) -> tuple[list[str], list[str], list[str]]:
         if not folders:
             return failures, [], []
         return failures, [f"source_dirs missing in dev-loop.json: the spec-tester wall uses {_shown(DEFAULT)}. Top-level folders: {' '.join(folders)}. "
-                          'List in "source_dirs" each folder that holds implementation. An entry matches from the repo root only'], []
+                          'List in "source_dirs" each folder that holds implementation. An entry matches from the repo root only. '
+                          "devloop.py stack-detect proposes the value"], []
     if rule:
         return failures, [], []
     if main.state == "no-ref":

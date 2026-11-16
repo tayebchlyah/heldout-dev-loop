@@ -40,12 +40,13 @@ class SourceSetupTests(unittest.TestCase):
         self.assertEqual(actions, [
             f"source_dirs missing in dev-loop.json: the spec-tester wall uses {DEFAULT_LIST}. Top-level folders: "
             "api/ cmd/ docs/ internal/ pkg/ scripts/ src/ tests/. List in \"source_dirs\" each folder that holds "
-            "implementation. An entry matches from the repo root only"])
+            "implementation. An entry matches from the repo root only. devloop.py stack-detect proposes the value"])
         for harness in ("claude", "codex"):
             with self.subTest(harness=harness):
                 verdict, after = self.check(repo, harness)
                 self.assertEqual(verdict, f"{harness}: FAIL")
                 self.assertIn("Top-level folders: api/ cmd/", after)
+                self.assertIn(". devloop.py stack-detect proposes the value", after)
 
     def test_no_folder_no_line(self) -> None:
         repo = make_git_repo(self.root, {"README.md": "x\n", "dev-loop.json": "{}", ".github/workflows/ci.yml": "x\n"})
