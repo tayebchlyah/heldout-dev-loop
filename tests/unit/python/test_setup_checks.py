@@ -62,6 +62,55 @@ class ComposeProjectConfigTests(unittest.TestCase):
             self.assertIn("compose_project", (ROOT / doc).read_text())
 
 
+class GateJunitCheckTests(unittest.TestCase):
+    MESSAGE = ("scripts/gate.sh does not name DEVLOOP_REPORT_DIR: the time ratchet reads the gate JUnit XML there and "
+               "is skipped. Copy each JUnit file the gate writes to $DEVLOOP_REPORT_DIR (references/bootstrap.md)")
+
+    def check(self, gate: str | None, config: dict | None = None) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            write(repo / "dev-loop.json", json.dumps(config or {}))
+            if gate is not None:
+                write(repo / "scripts" / "gate.sh", gate)
+            return check_setup.check_gate_junit(repo)
+
+    def test_gate_that_names_the_dir_passes(self) -> None:
+        self.assertEqual(self.check('cp junit.xml "$DEVLOOP_REPORT_DIR/root-junit.xml"\n'), [])
+
+    def test_gate_without_the_dir_is_a_user_action(self) -> None:
+        self.assertEqual(self.check("pytest tests/unit\n"), [self.MESSAGE])
+
+    def test_comment_only_mention_counts_as_missing(self) -> None:
+        self.assertEqual(self.check("# DEVLOOP_REPORT_DIR: later\npytest\n"), [self.MESSAGE])
+
+    def test_mapped_gate_command_skips(self) -> None:
+        self.assertEqual(self.check("pytest\n", {"commands": {"gate": "make gate"}}), [])
+        self.assertEqual(self.check("pytest\n", {"commands": {"gate": "bash scripts/gate.sh"}}), [self.MESSAGE])
+
+    def test_no_gate_script_skips(self) -> None:
+        self.assertEqual(self.check(None), [])
+
+    def test_check_setup_lists_it_under_user_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            write(repo / "dev-loop.json", "{}")
+            write(repo / "scripts" / "gate.sh", "pytest\n")
+            result = subprocess.run(
+                [sys.executable, str(CHECKER), "--harness", "claude", "--home", str(Path(tmp) / "home"), "--repo", str(repo)],
+                capture_output=True, text=True, check=False, env=checker_env(Path(tmp) / "bin"))
+        head, _, actions = result.stdout.partition("User actions required")
+        self.assertIn(self.MESSAGE, actions)
+        self.assertNotIn("DEVLOOP_REPORT_DIR", head)
+
+    def test_this_repo_gate_passes(self) -> None:
+        self.assertEqual(check_setup.check_gate_junit(ROOT), [])
+
+    def test_the_upgrade_note_names_it(self) -> None:
+        kit = (ROOT / "reference/kit.md").read_text()
+        note = next(line for line in kit.splitlines() if line.startswith("Test time ratchet upgrade (#325)"))
+        self.assertIn("DEVLOOP_REPORT_DIR", note)
+
+
 class BoardVaultCheckTests(unittest.TestCase):
     GITIGNORE_LINE = "add Dev Loop Board/ to the vault .gitignore, unless a partner receives the notes by git"
 
