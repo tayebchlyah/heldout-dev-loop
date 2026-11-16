@@ -41,6 +41,7 @@ class RepoDocsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.agents = (ROOT / "AGENTS.md").read_text()
         self.cli = self.agents.split("## devloop CLI", 1)[1].split("\n## ", 1)[0]
+        self.index = [line for line in self.cli.splitlines() if line.startswith("- `")]
 
     def test_this_repo_walls_its_source(self) -> None:
         import source_dirs
@@ -156,7 +157,7 @@ class RepoDocsTests(unittest.TestCase):
         commands = help_commands()
         files = {p.name for p in (ROOT / "reference" / "cli").iterdir()}
         self.assertEqual(files, {f"{c}.md" for c in commands})
-        index = [m for line in self.cli.splitlines() if line.startswith("- `")
+        index = [m for line in self.index
                  for m in re.findall(r"`reference/cli/([a-z-]+)\.md`", line)]
         self.assertEqual(sorted(index), sorted(commands))
         for command in commands:
@@ -165,9 +166,8 @@ class RepoDocsTests(unittest.TestCase):
                 self.assertEqual(first, f"# {command}")
 
     def test_cli_index_lines_are_name_and_pointer_only(self) -> None:
-        lines = [line for line in self.cli.splitlines() if line.startswith("- `")]
-        self.assertTrue(lines)
-        for line in lines:
+        self.assertTrue(self.index)
+        for line in self.index:
             with self.subTest(line=line):
                 self.assertRegex(line, r"^- `([a-z-]+)`: `reference/cli/\1\.md`$")
 
