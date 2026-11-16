@@ -51,9 +51,9 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 
 ## devloop CLI
 
-`python3 .agents/skills/dev-loop/scripts/devloop.py <command>`; a command newer than the installed tag (`invalid choice`): `python3 skill/scripts/devloop.py <command>`. One JSON object on stdout. Exit 0 success, 1 failure JSON describes, 2 usage error.
+`python3 .agents/skills/dev-loop/scripts/devloop.py <command>`; a command or option newer than the installed tag (`invalid choice`, `unrecognized arguments`): `python3 skill/scripts/devloop.py <command>`. One JSON object on stdout. Exit 0 success, 1 failure JSON describes, 2 usage error.
 
-Read `reference/cli/<command>.md` before you change, test or debug a command, or run it: usage, purpose, full contract.
+Read `reference/cli/<command>.md` before you change, test or debug a command, or run a command or option whose usage you do not know: file holds usage, contract.
 
 - `status`: `reference/cli/status.md`
 - `logged`: `reference/cli/logged.md`
