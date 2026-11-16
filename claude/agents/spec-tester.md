@@ -23,6 +23,7 @@ Bash: one plain command per Bash call. No heredoc, `$(...)`, shell function, `cd
 Keep each acceptance file at or under 40,000 bytes: split by flow. `seal` refuses a bigger file.
 A held-out test over 10 s gets the word `slow` in its id (`test_slow_checkout`). Keep each under 60 s: `acceptance` reports a new slow held-out test, and fails on one that grows.
 Run the acceptance suite only with tracebacks off: `pytest --tb=no`. A tool output that shows implementation source is a read of what you must not read.
+In a test, check a URL host with a prefix that ends in `/`, a regex, or a parsed host, never a bare prefix: CodeQL flags it.
 
 Work from the spec and the glossary (GLOSSARY.md, else CONTEXT.md) only. You cannot read the implementation.
 Never dispatch a subagent: the held-out suite is yours alone.
