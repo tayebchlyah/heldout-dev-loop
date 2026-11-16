@@ -60,9 +60,10 @@ def in_modules(keys: list[str]) -> list[str]:
     names = set((os.environ.pop("DEVLOOP_TEST_MODULES", None) or "").replace(",", " ").split())
     if not names:
         return keys
-    missing = sorted(name for name in names if not Path(__file__).with_name(f"{name}.py").is_file())
+    known = {key.split(".")[0] for key in keys}
+    missing = sorted(names - known)
     if missing:
-        sys.exit(f"DEVLOOP_TEST_MODULES names no test module file: {' '.join(missing)}")
+        sys.exit(f"DEVLOOP_TEST_MODULES names no test module of this run: {' '.join(missing)}")
     return [key for key in keys if key.split(".")[0] in names | {"test_dev_loop"}]
 
 

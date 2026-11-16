@@ -64,6 +64,7 @@ def wire(name: str) -> None:
     for value in vars(module).values():
         if isinstance(value, type) and issubclass(value, unittest.TestCase) and value.__module__ == name:
             globals()[value.__name__] = value
+    globals()[name] = module
 
 
 for _name, _module in list(sys.modules.items()):
@@ -90,15 +91,16 @@ class JUnitReportTests(unittest.TestCase):
                     self.assertEqual(in_modules(ids), kept)
                     self.assertNotIn("DEVLOOP_TEST_MODULES", os.environ)
 
-    def test_in_modules_refuses_a_name_with_no_module_file(self) -> None:
-        for value in ("test_ci_skipp", "test_ci test_nope", "test_ci.A"):
+    def test_in_modules_refuses_a_name_that_is_no_test_module_of_the_run(self) -> None:
+        for value in ("test_ci_skipp", "test_ci test_nope", "test_ci.A", "support", "junit_report", "audit_fixtures"):
             with self.subTest(value=value), mock.patch.dict(os.environ, {"DEVLOOP_TEST_MODULES": value}):
-                with self.assertRaisesRegex(SystemExit, "DEVLOOP_TEST_MODULES.*test_"):
+                with self.assertRaisesRegex(SystemExit, "DEVLOOP_TEST_MODULES"):
                     in_modules(["test_ci.A.test_1"])
 
     def test_a_bare_module_argument_runs_that_module(self) -> None:
         env = {k: v for k, v in os.environ.items() if k not in ("DEVLOOP_TEST_MODULES", "DEVLOOP_TEST_SHARD")}
         with mock.patch.object(sys.modules[__name__], "run_chunks", return_value=0) as run, \
+                mock.patch("support.build_sandbox_template"), \
                 mock.patch.dict(os.environ, env, clear=True), mock.patch.object(sys, "argv", ["x", "test_size"]):
             self.assertEqual(main(), 0)
         self.assertEqual({test_id.split(".")[0] for test_id in run.call_args.args[2]}, {"test_size", "test_dev_loop"})
@@ -106,6 +108,12 @@ class JUnitReportTests(unittest.TestCase):
                                 env={**env, "DEVLOOP_TEST_JOBS": "1"})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("test_ci_skipp", result.stderr)
+
+    def test_a_bare_module_argument_with_a_flag_runs_that_module_in_unittest(self) -> None:
+        result = subprocess.run([sys.executable, __file__, "test_ci_skip", "-v"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stderr, r"test_ci_skip\.\w+\.test_\w+|\(test_ci_skip\.")
+        self.assertNotIn("has no attribute", result.stderr)
 
     def test_run_parallel_keeps_the_listed_modules(self) -> None:
         with mock.patch.dict(os.environ, {"DEVLOOP_TEST_MODULES": "test_size", "DEVLOOP_TEST_SHARD": ""}), \
