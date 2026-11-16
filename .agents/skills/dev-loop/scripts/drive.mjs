@@ -1,26 +1,16 @@
 #!/usr/bin/env node
 // dev-loop drive runner: drives the routes of one feature map entry in Chromium.
-// stdin: {"base_url", "storage_state" (absolute path or null), "routes", "evidence" (folder), "entry", "video" (folder)}.
+// stdin: {"base_url", "storage_state" (absolute path or null), "routes", "evidence" (folder), "entry", "video" (folder),
+// "playwright" (absolute path of the Playwright package folder)}.
 // Records no video: every route result has `video` null.
-// stdout: {"routes": [<route result>]}, exit 0. No Playwright in the repo: {"error"}, exit 1.
-// Playwright comes from the repo only (strict lookup): no Node parent walk, no NODE_PATH, no global install.
-import { execFileSync } from 'node:child_process'
+// stdout: {"routes": [<route result>]}, exit 0. No Playwright at the input path: {"error"}, exit 1.
+// Playwright comes from the input path only: no lookup, no Node parent walk, no NODE_PATH, no global install.
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
-const PLAYWRIGHT_DIRS = [
-  'node_modules/playwright',
-  'node_modules/@playwright/test',
-  'frontend/node_modules/playwright',
-  'frontend/node_modules/@playwright/test',
-]
 const VIEWPORT = { width: 1280, height: 800 }
 const NAME_TIMEOUT_MS = 10_000
-
-function playwrightDir(root) {
-  return PLAYWRIGHT_DIRS.map((dir) => join(root, dir)).find((dir) => existsSync(dir)) ?? null
-}
 
 async function driveRoute(context, input, route, n) {
   const started = Date.now()
@@ -60,10 +50,9 @@ async function driveRoute(context, input, route, n) {
 
 async function main() {
   const input = JSON.parse(readFileSync(0, 'utf8'))
-  const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
-  const dir = playwrightDir(root)
-  if (!dir) {
-    console.log(JSON.stringify({ error: `playwright not found in ${PLAYWRIGHT_DIRS.join(', ')} of ${root}` }))
+  const dir = input.playwright
+  if (typeof dir !== 'string' || !existsSync(dir)) {
+    console.log(JSON.stringify({ error: `playwright not found: ${dir}` }))
     return 1
   }
   const { chromium } = createRequire(import.meta.url)(dir)

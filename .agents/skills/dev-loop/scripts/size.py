@@ -13,7 +13,7 @@ from pathlib import Path
 import devloop
 from ci_skip import MERGED
 from devloop import emit
-from seal import merge_base, run_git
+from seal import ACCEPTANCE_DIR, merge_base, run_git
 
 LIMIT = 40000
 EXEMPT_ERROR = "file_size_exempt in dev-loop.json must be a list of non-empty strings"
@@ -48,8 +48,8 @@ def seam(data: bytes, path: str) -> tuple[dict | None, list[dict]]:
     return (None if best is None else {"line": best[0], "name": best[2]}), found
 
 
-def violation(path: str, data: bytes, base_bytes: int | None, reason: str) -> dict:
-    found, units = seam(data, path)
+def violation(path: str, data: bytes, base_bytes: int | None, reason: str, quote: bool = True) -> dict:
+    found, units = seam(data, path) if quote else (None, [])
     hint = (f"split {path} at line {found['line']} ({found['name']}), or by responsibility" if found
             else f"split {path} by responsibility")
     return {"path": path, "reason": reason, "bytes": len(data), "base_bytes": base_bytes, "seam": found,
@@ -167,7 +167,8 @@ def run_check(top: Path, mode: str) -> dict:
         data = (cat(top, head[path][1]) if mode == "committed"
                 else (top / path).read_bytes())
         if not binary(data):
-            out["violations"].append(violation(path, data, None if mode == "all" else base_bytes, why))
+            out["violations"].append(violation(path, data, None if mode == "all" else base_bytes, why,
+                                                    not path.startswith(ACCEPTANCE_DIR + "/")))
     out["ok"] = not out["violations"]
     return out
 

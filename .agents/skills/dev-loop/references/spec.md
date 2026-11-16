@@ -11,6 +11,7 @@ feature: <slug>
 track: S|M|L
 acceptance:
 review_status: draft
+issue:
 shipped:
 pr:
 ---
@@ -30,7 +31,7 @@ What this slice does not do, one line each, at least one. Stage 6 triage drops a
 One row per decision: ID, topic, decision, one line each. Mark each one-way door. The reasoning stays in the framing note.
 
 ## Interfaces and seams
-Public interfaces: names, parameter types, return types. `ui` in stacks: routes and accessible names.
+Public interfaces: names, parameter types, return types. `ui` in `capabilities`: routes and accessible names.
 Seams under test. Prefer an existing seam, the highest one. The ideal number of seams is one.
 Under each seam: `Catches:` one line, what a test at this seam catches. `Misses:` one line, what it cannot see.
 
@@ -52,7 +53,7 @@ Every decision and surprise of Delivery, one row each, appended by `scripts/devl
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ```
 
-`feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
+`feature`: slug, lower case, words joined by `-`. Branch `<prefix>/<slug>`. `track` from Stage 1. `review_status: approved` only after the user approves. `issue`: the GitHub issue number when the feature has one, else empty (the board links it). `shipped`, `pr`: empty until Stage 7 merges, then merge date `YYYY-MM-DD` and PR URL. Not `status`: the notes vault owns it.
 
 Seam rule. Source: Matt Pocock skills v1.3.2, `skills/engineering/to-spec/SKILL.md` line 15 (https://github.com/mattpocock/skills, commit `d1478fc`), copied verbatim:
 
@@ -62,7 +63,7 @@ Seam rule. Source: Matt Pocock skills v1.3.2, `skills/engineering/to-spec/SKILL.
 
 Spec written: dispatch one fresh subagent, no session context. Claude Code: `general-purpose`. Codex: a generic worker, read-only. Domain: "software engineer". Document: the spec path. Answer each question in the spec, or ask the user, before the approval. "nothing important left": done.
 
-Source: Superpowers 7.0.1, `skills/brainstorming/builder-check-prompt.md` (https://github.com/obra/superpowers, commit `2ce8aa1`), copied verbatim:
+Source: Superpowers 7.0.2, `skills/brainstorming/builder-check-prompt.md` (https://github.com/obra/superpowers, commit `22f0b46`), copied verbatim:
 
 ```
 You are a talented [DOMAIN, e.g. "software engineer", "event planner",

@@ -3,23 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
+import stat
 import subprocess
 import time
 from pathlib import Path
 
+from board import store
 from devloop import emit
+from notes_path import main_ref
 
 POLL_SECONDS = 30
 GH_TIMEOUT = 60
-VIEW_FIELDS = ("number,url,headRefOid,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision,latestReviews,"
+VIEW_FIELDS = ("number,url,headRefOid,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision,latestReviews,"
                "statusCheckRollup")
 THREADS_QUERY = ("query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {"
                  " pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path line"
                  " comments(first: 1) { nodes { author { login } authorAssociation body url } } } } } } }")
 TEXT_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+SCAN_AUTHORS = {"github-advanced-security", "github-advanced-security[bot]"}
 FAILED_CHECK_STATES = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 BLOCKED_REASONS = {"REVIEW_REQUIRED": "review-required", "CHANGES_REQUESTED": "changes-requested"}
 
@@ -67,23 +72,28 @@ def open_threads(data: dict) -> list[dict]:
     return threads
 
 
+def outdated_scan(thread: dict) -> bool:
+    return thread.get("line") is None and thread.get("author") in SCAN_AUTHORS
+
+
 def verdict(view: dict, threads: list[dict]) -> dict | None:
     checks = view.get("statusCheckRollup") or []
     failed = next((c for c in checks if check_state(c) == "fail"), None)
     pending = pending_checks(view)
+    waiting = bool(pending) or not checks or "UNKNOWN" in (view.get("mergeable"), view.get("mergeStateStatus"))
 
     def result(state: str, reason: str | None = None) -> dict:
         return {"state": state, "reason": reason, "failed": failed if state == "fail" else None, "pending": pending}
 
     if view.get("mergeable") == "CONFLICTING" or view.get("mergeStateStatus") == "DIRTY":
         return result("conflicts")
-    if threads:
+    if threads and not (waiting and all(outdated_scan(t) for t in threads)):
         return result("threads")
     if any(r.get("state") == "CHANGES_REQUESTED" for r in view.get("latestReviews") or []):
         return result("blocked", "changes-requested")
     if failed:
         return result("fail")
-    if pending or not checks or "UNKNOWN" in (view.get("mergeable"), view.get("mergeStateStatus")):
+    if waiting:
         return None
     if view.get("isDraft"):
         return result("blocked", "draft")
@@ -102,6 +112,15 @@ def first_error(log: str) -> str | None:
     return None
 
 
+def failed_step(log: str) -> str:
+    lines = re.sub(r"\x1b\[[0-9;]*m", "", log).splitlines()
+    marked = next((i for i, line in enumerate(lines) if "##[error]" in line), None)
+    if marked is None:
+        return "\n".join(lines)
+    start = max((i for i in range(marked) if "##[group]Run " in lines[i]), default=0)
+    return "\n".join(lines[start:])
+
+
 def gh(*args: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout or GH_TIMEOUT)
@@ -116,6 +135,32 @@ def stale_base(slug: str, base: str, head: str) -> bool | None:
     except ValueError:
         return None
     return number > 0 if isinstance(number, int) and not isinstance(number, bool) else None
+
+
+def record(view: dict) -> None:
+    number = view.get("number")
+    if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+        return
+    found = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], capture_output=True, text=True)
+    if found.returncode != 0:
+        return
+    text = json.dumps({"number": number, "url": str(view.get("url") or ""),
+                       "branch": str(view.get("headRefName") or "")}) + "\n"
+    fds: list[int] = []
+    try:
+        fds.append(os.open(found.stdout.strip(), os.O_RDONLY | os.O_DIRECTORY))
+        with contextlib.suppress(FileExistsError):
+            os.mkdir("dev-loop", 0o755, dir_fd=fds[0])
+        fds.append(os.open("dev-loop", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fds[0]))
+        with contextlib.suppress(FileNotFoundError):
+            if not stat.S_ISREG(os.stat("pr.json", dir_fd=fds[1], follow_symlinks=False).st_mode):
+                return
+        store.write_in(fds[1], "pr.json", text)
+    except OSError:
+        return
+    finally:
+        for fd in fds:
+            os.close(fd)
 
 
 def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
@@ -140,6 +185,7 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
             view = json.loads(shown.stdout)
         except ValueError:
             return 1, {**payload, "message": "gh pr view did not return JSON"}
+        record(view)
         payload.update(url=view.get("url"), head=view.get("headRefOid"))
         match = re.search(r"/([^/]+)/([^/]+)/pull/\d+", view.get("url") or "")
         owner, name = match.groups() if match else ("", "")
@@ -170,23 +216,50 @@ def wait(pr: int | None, timeout_minutes: float) -> tuple[int, dict]:
             run = re.search(r"/runs/(\d+)", link)
             if run:
                 payload["first_error"] = first_error(gh("run", "view", run.group(1), "--log-failed").stdout)
+            job = re.search(r"/job/(\d+)", link)
+            if job and payload["first_error"] is None:
+                logs = gh("api", f"repos/{owner}/{name}/actions/jobs/{job.group(1)}/logs", "--allow-escape-sequences")
+                payload["first_error"] = first_error(failed_step(logs.stdout)) if logs.returncode == 0 else None
         if state in ("fail", "blocked"):
             payload["stale_base"] = stale_base(f"{owner}/{name}", view.get("baseRefName") or "", head)
         return (0 if state == "pass" else 1), payload
 
 
 def check_github(repo: Path) -> list[str]:
-    """A "User actions required" line when the GitHub repo of `origin` does not allow a rebase merge."""
+    """The "User actions required" lines of the GitHub repo of `origin`: rebase merge off, head branch delete off."""
     origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=repo, capture_output=True, text=True)
     match = re.match(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/([^/]+?)(?:\.git)?/?$",
                      origin.stdout.strip()) if origin.returncode == 0 else None
     if not match:
         return []
     slug = "/".join(match.groups())
+    lines = []
     allowed = gh("api", f"repos/{slug}", "--jq", ".allow_rebase_merge", timeout=10)
     if allowed.returncode == 0 and allowed.stdout.strip() == "false":
-        return [f"allow rebase merging in the GitHub settings of {slug} (Stage 7 runs gh pr merge --rebase)"]
-    return []
+        lines.append(f"allow rebase merging in the GitHub settings of {slug} (Stage 7 runs gh pr merge --rebase)")
+    if delete_waived(repo):
+        return lines
+    delete = gh("api", f"repos/{slug}", "--jq", ".delete_branch_on_merge", timeout=10)
+    if delete.returncode == 0 and delete.stdout.strip() == "false":
+        lines.append(f'turn on "Automatically delete head branches" in the GitHub settings of {slug} (Stage 7 leaves '
+                     f"the merged branch on GitHub): gh api -X PATCH repos/{slug} -F delete_branch_on_merge=true, "
+                     f'or waive it with "delete_branch_on_merge": false in dev-loop.json')
+    return lines
+
+
+def delete_waived(repo: Path) -> bool:
+    ref = main_ref(repo)
+    if ref:
+        shown = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:dev-loop.json"], capture_output=True)
+        data = shown.stdout if shown.returncode == 0 else b""
+    else:
+        path = repo / "dev-loop.json"
+        data = path.read_bytes() if path.is_file() else b""
+    try:
+        config = json.loads(data)
+    except ValueError:
+        return False
+    return isinstance(config, dict) and config.get("delete_branch_on_merge") is False
 
 
 def cmd_ci_wait(args: argparse.Namespace) -> int:

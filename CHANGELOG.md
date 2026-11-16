@@ -1,5 +1,62 @@
 # Changelog
 
+## [3.1.0-rc.1] - 2026-11-16
+
+### ⬆️ Upgrade
+
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0-rc.1 upgrade` on a branch, in one PR. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
+2. Run `check_setup.py --harness claude|codex --repo .` and add the keys it asks for to `dev-loop.json` in the same PR. `source_dirs missing` lists your top-level folders: keep the folders that hold product code. Until the key reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`. `capabilities missing` proposes a value (`ui`, `backend`, both, or `[]`). `commands.acceptance missing`: map the command that runs the held-out suite; it is now the only acceptance runner. A UI whose Playwright is not at the root or in `frontend/`: run `devloop.py verify-init` again to record `verify.playwright`.
+3. A root Rust package: `check_setup.py` asks for a `[[test]] name = "acceptance"` entry with `test = false` in `Cargo.toml`, and `commands.acceptance` becomes `cargo test --test acceptance`.
+4. A nightly mutation workflow that runs `select_mutants.py`: replace it with the `devloop.py mutation` line of `.agents/skills/dev-loop/references/mutation.md` (section Run).
+5. On GitHub, turn on "Automatically delete head branches", or add `"delete_branch_on_merge": false` to `dev-loop.json`.
+6. Merge the PR. On each machine that runs Codex on the repo: run `/hooks` and trust the changed `acceptance-wall.sh`.
+
+### ✨ New Features
+
+**Any build tool at Stage 0.** The kit now holds 12 build tool presets, and `devloop.py stack-detect` finds each unit of a repo and its lint, typecheck and test commands. A new `capabilities` key says what the product is (`ui`, `backend`, both or neither), and every kit rule that read the `AGENTS.md` stack list now reads it.
+
+**Mutation testing for any stack.** `devloop.py mutation` picks the changed critical lines and runs one adapter per `mutation` entry over a JSON protocol: mutmut, StrykerJS and mutago are built in, and you can write your own. It checks each adapter result and sorts each surviving mutant into a decision or a message. Mutation is off until you add the `mutation` key; `check_setup.py` proposes a value.
+
+**Slow tests fail the gate.** `gate --summary` and `acceptance` compare each test time with the last green run on `main` and fail on a new slow test or a test that grew. A machine under load does not count, and a `Test-Time:` trailer waives a growth you want; `merge-check` then waits for you. `test_time` in `dev-loop.json` sets the limits.
+
+**Nothing left behind after a merge.** At the end of Stage 7, `devloop.py cleanup` removes the merged worktree and local branch and rebases your main checkout. It uses only safe git steps (no force, no reset, no stash) and skips what is in use, dirty or not merged.
+
+**A clearer board.** The board header shows the Heldout Dev Loop logo, how many items need you, and one cell per stage. Each feature row links to its GitHub issue and pull request.
+
+**Unit tests that do not copy the held-out suite.** Stage 6 of Tracks M and L ends with a new step: one fresh `implementer` removes each unit test that only copies a held-out test. The kit test rules now ask for in-process table rows, at most 3 end-to-end rows per behaviour, and one stub per process.
+
+**CI skips the suites for inert files.** List the paths no test reads in `inert_paths` of `dev-loop.json`, and a PR that changes only them skips the test suites. A short `hygiene` job still runs on a skip.
+
+**Stale containers in any compose layout.** The optional `commands.compose_project` key prints the Compose project of the worktree, so the stale image check of `acceptance` finds its containers wherever the compose files are.
+
+### 🔒 Security
+
+- `spec-tester` can no longer read product code outside `src/ app/ backend/ frontend/`: the new `source_dirs` key lists the folders it must not read. The kit reads the key from `main` only, so a feature branch cannot change it, and `merge-check` waits for you on a PR that changes it.
+- The built-in mutmut and Stryker adapters no longer run the held-out suite. Before, a mutant that only a held-out test killed counted as killed, and a failing held-out test printed its name and assertion text into the `mutation` output. `check_setup.py` and the adapters now refuse a setup that reaches `tests/acceptance/`.
+- `size-check` and `seal-check` no longer quote held-out test text to walled agents, and `gate --summary` no longer spreads that taint to every implementer.
+- The skill wall denies a `!` that a skill argument can turn into a shell line.
+
+### ⚡️ Performance
+
+- Fix rounds in Stage 6 run `gate --summary --changed`, the gate of the changed files only. Stage 7 and CI keep the full run.
+
+### 📝 Documentation & Content
+
+- The Claude route says that the Claude Code sandbox is no boundary in a dev-loop session.
+- The release notes of 1.0.0 to 2.1.1 are rewritten in the same section format as 3.0.0.
+
+### 🐛 Bug Fixes
+
+- The Claude Code Stop gate now tests the worktree you work in. Before, in a worktree session, it tested the main checkout and could pass with no test of your change.
+- An instruction such as "let me confirm before you push" now stops Delivery until you confirm. A review fix can no longer reverse a choice you made (a `dropped:user-choice` filter), and Stage 1 records the prototype variant you picked.
+- `ci wait` no longer stops on outdated code scanning threads while checks still run, and finds the first error in the job log when `gh run view --log-failed` is empty.
+- Each brief in a worktree session says which shell lines Claude Code refuses, and review desks get the code-review skill path instead of a search.
+- The wall hooks get a 15 s timeout instead of 5, so a loaded machine no longer blocks a tool call. `upgrade` updates the old value.
+- `metrics --write` fills the `shipped` cell of a Track S feature from the merge date of its PR.
+- A subagent keeps the effort its agent file sets, whatever the session `/effort` is.
+
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0-rc.1
+
 ## [3.0.0] - 2026-11-08
 
 ### ⬆️ Upgrade

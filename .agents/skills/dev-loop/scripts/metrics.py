@@ -504,6 +504,29 @@ def write_locked(file: Path, slug: str, line: str, unattributed: bool) -> None:
         temp.unlink(missing_ok=True)
 
 
+def pr_target(worktree: Path) -> str:
+    git_dir = git(worktree, "rev-parse", "--absolute-git-dir")
+    try:
+        data = devloop.read_below(Path(git_dir), "dev-loop", "pr.json") if git_dir else None
+        number = json.loads(data).get("number") if data else None
+    except (OSError, ValueError, AttributeError):
+        number = None
+    if isinstance(number, int) and not isinstance(number, bool) and number > 0:
+        return str(number)
+    return git(worktree, "symbolic-ref", "--quiet", "--short", "HEAD") or ""
+
+
+def merged_on(worktree: Path, target: str) -> str:
+    try:
+        shown = subprocess.run(["gh", "pr", "view", target, "--json", "state,mergedAt"], cwd=worktree,
+                               capture_output=True, text=True, timeout=60)
+        pr = json.loads(shown.stdout) if shown.returncode == 0 else {}
+        when = datetime.fromisoformat(pr["mergedAt"]) if pr.get("state") == "MERGED" else None
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError, AttributeError):
+        return ""
+    return when.astimezone().date().isoformat() if when else ""
+
+
 def cmd_metrics(args: argparse.Namespace) -> int:
     from board import writer
 
@@ -528,10 +551,12 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     items = attribute(load(project_folders(root, paths)), features)
     if not any(c.feature == slug and not c.copy for c in items):
         return emit({"error": f"no transcript records for {slug}"}, 1)
+    target = "" if matches else pr_target(worktree)
+    shipped = fields.get("shipped", "") if matches else merged_on(worktree, target) if target else ""
     common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir") or ""
     bounds, present = boundaries(Path(common) / "dev-loop" / "board-state.json", slug, bool(matches))
     ref = main_ref(repo)
-    payload = {"feature": slug, "track": track, "shipped": fields.get("shipped", ""),
+    payload = {"feature": slug, "track": track, "shipped": shipped,
                **numbers(items, slug, bounds),
                "tests": test_counts(worktree, ref) if ref else {"unit": 0, "acceptance": 0},
                "effort": efforts(items, slug, bounds)}

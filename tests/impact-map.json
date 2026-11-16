@@ -355,11 +355,6 @@
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
   ],
-  ".agents/skills/dev-loop/scripts/select_mutants.py": [
-   "tests/unit/node/payload.test.mjs",
-   "tests/unit/python/test_repo_rules.py",
-   "tests/unit/python/test_stacks_setup.py"
-  ],
   ".agents/skills/dev-loop/scripts/size.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
