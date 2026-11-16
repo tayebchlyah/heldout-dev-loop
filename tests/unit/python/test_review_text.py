@@ -83,8 +83,9 @@ class ReviewWaveContractTests(unittest.TestCase):
 
     def test_stale_image_rule_resets_on_the_stale_check_code_paths(self) -> None:
         line = next(line for line in self.stage.splitlines() if line.startswith("Stale image rule."))
-        self.assertIn("after any change to a code or build file (`merge-check` test-or-doc rule, a root `Dockerfile` too)", line)
-        self.assertNotIn("source_dirs", line)
+        self.assertIn("after any change under a `source_dirs` entry", line)
+        self.assertIn("to a file the `merge-check` test-or-doc rule does not call a test or doc", line)
+        self.assertIn("Since #312 it also follows the `merge-check` test-or-doc rule", (REPO_ROOT / "reference" / "kit.md").read_text())
 
     def test_gate_writes_ledger_line(self) -> None:
         self.assertIn("`Feature gate: green at <sha>`", self.stage)
