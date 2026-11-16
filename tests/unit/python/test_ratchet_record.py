@@ -30,6 +30,7 @@ class RecordTests(RatchetRepo):
     def test_record_writes(self) -> None:
         rows = {
             "scope": lambda: self.gate(BASE, env={"GATE_SCOPE": "changed"}),
+            "flag": lambda: self.gate(BASE, flags=("--changed",)),
             "dirty": lambda: ((self.repo / "new.txt").write_text("x"), self.gate(BASE))[1],
             "red gate": lambda: self.gate(BASE, exit=1),
         }

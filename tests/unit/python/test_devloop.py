@@ -205,6 +205,18 @@ class GateTests(Sandbox):
         self.assertEqual((code, out["exit"], out["failures"]), (0, 0, []))
         self.assertIn("all good", Path(out["log"]).read_text())
 
+    def test_changed_flag_sets_the_gate_scope(self) -> None:
+        self.gate('#!/bin/sh\necho "scope=${GATE_SCOPE-unset}"\n')
+        clean = {k: v for k, v in self.env.items() if k != "GATE_SCOPE"}
+        rows = [((), {}, "scope=unset", "full"),
+                (("--changed",), {"GATE_SCOPE": "other"}, "scope=changed", "changed"),
+                ((), {"GATE_SCOPE": "changed"}, "scope=changed", "changed")]
+        for flags, extra, line, scope in rows:
+            with self.subTest(flags=flags, env=extra):
+                code, out = run_cli("gate", "--summary", *flags, cwd=self.repo, env={**clean, **extra})
+                self.assertEqual((code, out["scope"]), (0, scope))
+                self.assertIn(line, Path(out["log"]).read_text())
+
     def test_failing_gate_lists_failure_lines(self) -> None:
         self.gate(FAILING_GATE)
         code, out = self.run_gate()

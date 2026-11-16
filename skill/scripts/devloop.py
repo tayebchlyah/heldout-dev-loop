@@ -5,7 +5,7 @@
   devloop.py merge-check [--repo PATH] [--feature SLUG]   auto or human merge, with reasons
   devloop.py cleanup --branch BRANCH [--repo PATH]    after a merge: fetch, remove the merged worktree, delete the branch, rebase main
   devloop.py logged [--name NAME] -- CMD...          run CMD, full output to a log file
-  devloop.py gate --summary                           run the gate through `logged`, summarize it
+  devloop.py gate --summary [--changed]               run the gate through `logged`, summarize it
   devloop.py ci wait [--pr N] [--timeout MIN]         wait for the PR checks
   devloop.py board [--repo PATH] [--event E] [--claim SLUG] [--no-serve] [--stop-server]
                                                       write the status notes of this machine
@@ -335,6 +335,7 @@ def main() -> int:
 
     gate = commands.add_parser("gate")
     gate.add_argument("--summary", action="store_true", required=True)
+    gate.add_argument("--changed", action="store_true")
     gate.set_defaults(run=("gate", "cmd_gate"))
 
     ci = commands.add_parser("ci").add_subparsers(dest="ci_command", required=True)
