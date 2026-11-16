@@ -1,6 +1,6 @@
 # Building rules
 
-Read before writing code. Four parts: principles, code volume, scope for your harness, test rules in [tests.md](tests.md).
+Read before writing code. Four parts: principles, code volume, scope for your harness, test rules in [tests.md](tests.md). Section Merge danger is for the Stage 7 merge rule.
 
 ## Principles
 

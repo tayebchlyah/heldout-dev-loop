@@ -522,7 +522,7 @@ class AutonomyContractTests(unittest.TestCase):
         skill = (ROOT / "skill" / "SKILL.md").read_text()
         grant = skill[skill.index("Autonomy grant"):skill.index("Monitor rule")]
         stop = next(line for line in grant.splitlines() if line.startswith("- Stop and report only for:"))
-        self.assertIn("an open checkpoint the user set", stop)
+        self.assertIn("an open checkpoint the user set, at a push or merge", stop)
         for value in ['--what "user checkpoint: <X>"', "Before each push and each merge, read the decision log",
                       "`user checkpoint met: <X>`", "no log yet"]:
             with self.subTest(value=value):
