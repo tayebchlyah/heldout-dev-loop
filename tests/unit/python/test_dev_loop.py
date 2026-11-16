@@ -110,9 +110,9 @@ class JUnitReportTests(unittest.TestCase):
         self.assertIn("test_ci_skipp", result.stderr)
 
     def test_a_bare_module_argument_with_a_flag_runs_that_module_in_unittest(self) -> None:
-        result = subprocess.run([sys.executable, __file__, "test_ci_skip", "-v"], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, __file__, "test_audit_text", "-v"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertRegex(result.stderr, r"test_ci_skip\.\w+\.test_\w+|\(test_ci_skip\.")
+        self.assertRegex(result.stderr, r"test_audit_text\.\w+\.test_\w+|\(test_audit_text\.")
         self.assertNotIn("has no attribute", result.stderr)
 
     def test_run_parallel_keeps_the_listed_modules(self) -> None:
