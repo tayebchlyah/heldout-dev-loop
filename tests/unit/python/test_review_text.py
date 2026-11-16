@@ -108,6 +108,22 @@ class ReviewYieldContractTests(unittest.TestCase):
                 self.assertIn(value, self.stage)
         self.assertLess(self.stage.index("premature abstraction"), self.stage.index("Defect = CONFIRMED"))
 
+    def test_user_choice_filter_and_scoped_fix_gate(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text()
+        stage_1 = stage_text(1)
+        fix_lines = [next(line for line in self.stage.splitlines() if line.startswith("Fix wave:")),
+                     *(next(line for line in (REFERENCES / name).read_text().splitlines() if "Fix wave" in line)
+                       for name in ("claude.md", "codex.md"))]
+        rows = [(self.stage, ["`dropped:user-choice`", "quotes the choice", "A defect stays a defect"]),
+                (stage_1, ["chosen variant and its key values", "Framing note (Tracks M and L)", "issue body (Track S)"]),
+                *((line, ["gate --summary --changed", "before the commit of the fix"]) for line in fix_lines),
+                *((line, ["process exits 0"]) for line in fix_lines[1:])]
+        for text, phrases in rows:
+            for phrase in phrases:
+                with self.subTest(text=text[:30], phrase=phrase):
+                    self.assertIn(phrase, text)
+        self.assertTrue(skill.splitlines()[7].startswith("End every stage that changed the repo with a direct gate"))
+
     def test_security_findings_go_to_a_fresh_verifier(self) -> None:
         for value in ["candidate-verifier prompt", "NEEDS VALIDATION", "REJECTED", "hardening gap",
                       "(c) security finding CONFIRMED by the verifier"]:
