@@ -47,12 +47,13 @@ class RatchetRecordTests(RatchetRepo):
             "red gate": lambda: self.gate(BASE, exit=1),
         })
 
-    def test_no_record_when_off_or_red_ratchet(self) -> None:
+    def test_no_record_when_off(self) -> None:
         self.main_config({"test_time": False})
         before = self.files()
         code, out = self.gate(BASE)
         self.assertEqual((code, out["ratchet"]["record"], self.files()), (0, None, before))
-        self.main_config({})
+
+    def test_no_record_on_a_red_ratchet(self) -> None:
         self.seed("gate", BASE, "main")
         self.branch()
         before = self.files()
