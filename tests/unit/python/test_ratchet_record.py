@@ -22,6 +22,9 @@ class RatchetRecordTests(RatchetRepo):
         self.assertEqual((record["times"], record["tree"], record["skipped"]), (BASE, self.tree("HEAD"), []))
         self.assertEqual(record["head"], git(self.repo, "rev-parse", "HEAD").strip())
         self.assertRegex(record["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+    def test_branch_run_with_a_baseline_writes_no_record(self) -> None:
+        self.seed("gate", BASE, "main")
         self.branch()
         code, out = self.gate({**BASE, "n_new": 3.0})
         self.assertEqual((code, out["ratchet"]["baseline"]["tree"], out["ratchet"]["record"]),
@@ -73,7 +76,7 @@ class RatchetRecordTests(RatchetRepo):
         self.assertNotIn(f"{1:040x}.json", names)
         self.assertIn(f"{self.tree('HEAD')}.json", names)
 
-    def test_rerun_replaces_the_record(self) -> None:
+    def test_slow_rerun_replaces_the_record(self) -> None:
         self.gate(BASE)
         code, out = self.gate({**BASE, "a": 1.2})
         self.assertEqual((code, self.files()), (0, {f"{self.tree('HEAD')}.json"}))
