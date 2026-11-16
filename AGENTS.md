@@ -22,7 +22,7 @@ Dogfood: repo runs dev-loop on itself, installed kit pinned to the latest tag, r
 - `skill/scripts/metrics.py`: `metrics`; `retro.py`: `status` `review_due`, `sessions`.
 - `skill/scripts/release.py`: `release-check`, `release-plan`, `release-record`, `release-notes`; `release_carry.py`: the `accept` carry; `release_rulings.py`: `## Deferred` parser; `sandbox-run.py`: audit sandbox (Docker).
 - `skill/scripts/audit/`: `audit-run` package: one module per step, shared `common`, `skilltext`, `safefs`.
-- `skill/scripts/mutation/`: `mutation`: `run.py` (selection, protocol, checks, report), built-in adapters `mutmut.py`, `stryker.py`, `mutago.py` (`adapter.py` shared), `setup.py` (its `check_setup.py` lines).
+- `skill/scripts/mutation/`: `mutation`: `run.py` (selection, protocol, checks, report), built-in adapters `mutmut.py`, `stryker.py`, `mutago.py` (`adapter.py` shared), `setup.py` (its `check_setup.py` lines), `heldout.py` (held-out folder rules `setup.py` and adapters share).
 - `skill/scripts/feature_gate.py`: `review-merge`, `review-save`, `acceptance`; `skill/scripts/second_review.py`: `second-review`.
 - `skill/scripts/size.py`: `size-check`, the `seal` size refusal; `notes_migrate/`: `notes-migrate`: `links`, `plan`, `texts`, `apply`.
 - `skill/scripts/seal/`: `seal`, `audit`, `seal-check`, `search-wall`, `skill-wall`, the `gate` `weakened` report; `board/`: progress board (`board/cli.py`: `board`).
