@@ -7,7 +7,9 @@
 # SubagentStop runs no gate for a read-only subagent (Explore, Plan) or for a
 # subagent whose tree is unchanged since its SubagentStart snapshot.
 # It tests the worktree that holds the hook cwd (an EnterWorktree session, #347),
-# CLAUDE_PROJECT_DIR when the input has none.
+# CLAUDE_PROJECT_DIR when the input has none. The cwd repo counts only when it shares the
+# git common dir of CLAUDE_PROJECT_DIR (a linked worktree of the project); a nested
+# separate repo (submodule, vendored clone) gates the project. gate-snapshot.sh binds alike.
 . "${0%/*}/git-pin.sh"
 IN=$(cat)
 # Refresh the progress board in the background. Called on every path that does not block.
@@ -20,6 +22,10 @@ board() {
 CWD=$(echo "$IN" | jq -r '.cwd // empty')
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" || { board; exit 0; }
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$TOP"
+if [ -n "$CLAUDE_PROJECT_DIR" ] && [ "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]; then
+  cd "$CLAUDE_PROJECT_DIR" || { board; exit 0; }
+  TOP=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$TOP"
+fi
 GATE=$(python3 -I -c 'import json; c = json.load(open("dev-loop.json")).get("commands", {}).get("gate"); print(c if isinstance(c, str) else "")' 2>/dev/null)
 [ -n "$GATE" ] || [ -x scripts/gate.sh ] || { board; exit 0; }
 git_pin_repo .
