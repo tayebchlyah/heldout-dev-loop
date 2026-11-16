@@ -130,6 +130,7 @@ def run(folder: Path, binary: Path, files: dict[str, list[list[int]]], config: d
     except (OSError, ValueError) as error:
         adapter.tool_failed(f"stryker run wrote no readable {REPORT.as_posix()} ({error})")
     if isinstance(tests := report.get("testFiles"), dict) and (count := heldout.ran(tests, folder, root)):
+        (folder / REPORT).unlink(missing_ok=True)
         adapter.setup_error(f"mutation setup broken: held-out test files ran: {count} under {heldout.HELD_OUT}/. {SETUP}")
     return mutants_from(report, files)
 
