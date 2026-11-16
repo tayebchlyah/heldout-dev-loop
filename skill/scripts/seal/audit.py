@@ -20,7 +20,7 @@ import devloop
 from devloop import emit
 from source_dirs import DEFAULT, HELD_OUT, fold, in_dot_folder, matches, read_main
 from seal import ACCEPTANCE_DIR, SEARCH_WORD, git_dir, merge_base, run_git
-from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, HEREDOC, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
+from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, strip_heredocs, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
                          shell_tokens)
 
 SPEC_TESTER = ("spec-tester", "spec_tester")
@@ -120,7 +120,7 @@ def reads_files(command: str) -> bool:
     if not SEARCH_WORD.search(command):
         return False
     try:
-        tokens = shell_tokens(HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command))
+        tokens = shell_tokens(strip_heredocs(command))
     except ValueError:
         return True
     words: list[str] = []

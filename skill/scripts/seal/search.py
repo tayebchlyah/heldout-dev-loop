@@ -24,7 +24,6 @@ NOT_OBJECT = "Blocked: guard error: hook input is not a JSON object"
 TESTERS = ("spec-tester", "spec_tester")
 WILD = re.compile(r"[*?\[{]")
 SUITE_NAMES = ("acceptance", "tests", ACCEPTANCE_DIR)
-HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\1([^\n]*)\n(?:[^\n]*\n)*?\t*\2(?=\n|$)")
 OPS = ";&|()<>"
 KEYWORDS = ("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until", "time")
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
@@ -198,6 +197,104 @@ def glob_tool(tool_input: dict, folder: str, home: str, suite: str) -> bool:
     root = absolute(path if isinstance(path, str) and path else ".", folder, home)
     full = pattern if pattern.startswith("/") else f"{root}/{pattern}"
     return worst([full], folder, home, suite, "some") == "inside"
+
+
+def _delimiter(text: str, i: int) -> tuple[str, int]:
+    word, quote = "", ""
+    while i < len(text):
+        c = text[i]
+        if quote:
+            if c == quote:
+                quote = ""
+            elif quote == '"' and c == "\\" and text[i + 1:i + 2] in ('"', "\\", "$", "`"):
+                i += 1
+                word += text[i]
+            else:
+                word += c
+        elif c == "\\" and i + 1 < len(text):
+            i += 1
+            word += text[i]
+        elif c in "'\"":
+            quote = c
+        elif c in " \t\n" or c in OPS:
+            break
+        else:
+            word += c
+        i += 1
+    return word, i
+
+
+def _body_end(text: str, start: int, pending: list[tuple[str, bool]]) -> int | None:
+    for delimiter, dash in pending:
+        while True:
+            if start >= len(text):
+                return None
+            end = text.find("\n", start)
+            end = len(text) if end < 0 else end
+            line = text[start:end]
+            start = end + 1
+            if (line.lstrip("\t") if dash else line) == delimiter:
+                break
+    return min(start, len(text))
+
+
+def strip_heredocs(text: str) -> str:
+    """Drop each heredoc body as bash reads it: only after an unquoted << or <<- outside a comment."""
+    out: list[str] = []
+    stack: list[str] = []
+    pending: list[tuple[str, bool]] = []
+    i = 0
+    while i < len(text):
+        c, context = text[i], stack[-1] if stack else ""
+        step = 1
+        if c == "\\":
+            step = 2
+        elif text.startswith("$((", i) or context != '"' and text.startswith("((", i):
+            depth, end = 0, i
+            while end < len(text):
+                depth += {"(": 1, ")": -1}.get(text[end], 0)
+                end += 1
+                if depth == 0 and text[end - 1] == ")":
+                    break
+            step = end - i
+        elif text.startswith("$(", i):
+            stack.append(")")
+            step = 2
+        elif context == '"':
+            if c == '"':
+                stack.pop()
+            elif c == "`":
+                stack.append("`")
+        elif c == "'":
+            end = text.find("'", i + 1)
+            step = (len(text) if end < 0 else end + 1) - i
+        elif c == "#" and (i == 0 or text[i - 1] in " \t\n" or text[i - 1] in OPS):
+            end = text.find("\n", i)
+            step = (len(text) if end < 0 else end) - i
+        elif c == context and context in ")`":
+            stack.pop()
+        elif c == '"' or c == "`" or c == "(" and context == ")":
+            stack.append(")" if c == "(" else c)
+        elif c == "<":
+            step = len(text[i:]) - len(text[i:].lstrip("<"))
+            if step == 2:
+                start = i + 2 + text.startswith("-", i + 2)
+                while start < len(text) and text[start] in " \t":
+                    start += 1
+                delimiter, end = _delimiter(text, start)
+                if delimiter:
+                    pending.append((delimiter, text.startswith("-", i + 2)))
+                step = end - i
+        elif c == "\n" and pending:
+            end = _body_end(text, i + 1, pending)
+            pending = []
+            if end is not None:
+                out.append(c)
+                i = end
+                continue
+        out.append(text[i:i + step])
+        i += step
+    return "".join(out)
 
 
 def shell_tokens(text: str) -> list[tuple[str, str]]:
@@ -426,7 +523,7 @@ def find_denied(args: list[str], folder: str, home: str, tops: list[tuple[str, s
 
 def bash_denied(command: str, folder: str, tops: list[tuple[str, str]], home: str) -> bool:
     try:
-        tokens = shell_tokens(HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command))
+        tokens = shell_tokens(strip_heredocs(command))
     except ValueError:
         return bool(SEARCH_WORD.search(command))
     scopes: list[str] = []

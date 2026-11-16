@@ -15,7 +15,7 @@ from pathlib import Path
 
 from devloop import emit
 from seal import ACCEPTANCE_DIR as SUITE
-from seal.search import HEREDOC
+from seal.search import strip_heredocs
 from source_dirs import fold, matches, read_main
 
 NOT_OBJECT = "source-wall: hook input is not a JSON object"
@@ -161,7 +161,7 @@ def _leading_moves(words: Sequence[str], start: str, env: Mapping[str, str]) -> 
 
 
 def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, Folders]]:
-    text = HEREDOC.sub(lambda m: f"<<{m.group(2)}{m.group(3)}", command.replace("\\\n", ""))
+    text = strip_heredocs(command.replace("\\\n", ""))
     try:
         words = [(word, word) for word in _tokens(text)]
         moves = _leading_moves([word for word, _ in words], start, env)
