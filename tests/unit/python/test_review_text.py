@@ -81,6 +81,11 @@ class ReviewWaveContractTests(unittest.TestCase):
         self.assertIn("After the drive: `scripts/devloop.py review-save --done`", line)
         self.assertLess(line.index("fix wave and drive only"), line.index("review-save --done"))
 
+    def test_stale_image_rule_resets_on_the_stale_check_code_paths(self) -> None:
+        line = next(line for line in self.stage.splitlines() if line.startswith("Stale image rule."))
+        self.assertIn("after any change to a code or build file (`merge-check` test-or-doc rule, a root `Dockerfile` too)", line)
+        self.assertNotIn("source_dirs", line)
+
     def test_gate_writes_ledger_line(self) -> None:
         self.assertIn("`Feature gate: green at <sha>`", self.stage)
         self.assertIn("progress.md", self.stage)

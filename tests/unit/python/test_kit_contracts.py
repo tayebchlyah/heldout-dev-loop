@@ -89,7 +89,7 @@ class SkillContractTests(unittest.TestCase):
 
     def test_source_dirs_kit_text(self) -> None:
         for name in ("docs/configuration.md", "docs/upgrade.md", "docs/usage.md", "reference/kit.md",
-                     "skill/references/claude.md", "skill/references/codex.md", "skill/SKILL.md"):
+                     "skill/references/claude.md", "skill/references/codex.md"):
             self.assertIn("source_dirs", (ROOT / name).read_text(), name)
         self.assertNotIn("covers `src/ app/ backend/ frontend/`", self.skill)
         self.assertLessEqual(len(SKILL.read_bytes()), 39945)
