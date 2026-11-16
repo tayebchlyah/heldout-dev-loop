@@ -118,12 +118,13 @@ class InstructionContractTests(unittest.TestCase):
                 (brief, ["`--exclude-dir=acceptance`", "one plain command per Bash call", "no script file"]),
                 (section(claude, "## Skill and agent names"), ["wins over the session `/effort`", "CLAUDE_CODE_EFFORT_LEVEL",
                                                               "https://code.claude.com/docs/en/sub-agents"]),
-                *((path.read_text(), ["one plain command per Bash call"]) for path in (IMPLEMENTERS[0], SPEC_TESTERS[0]))]
+                *((path.read_text(), ["one plain command per Bash call", "No word `git` inside an argument"]) for path in (IMPLEMENTERS[0], SPEC_TESTERS[0]))]
         self.assertEqual(len(desks), 2)
         for text, phrases in rows:
             for phrase in phrases:
                 with self.subTest(text=text[:30], phrase=phrase):
                     self.assertIn(phrase, text)
+        self.assertNotIn("$(", section(SKILL_ROOT / "references" / "verify.md", "## Stage 7"))
         for path in (IMPLEMENTERS[0], SPEC_TESTERS[0]):
             for banned in ("$TMPDIR", "script file"):
                 with self.subTest(path=path.name, banned=banned):
@@ -143,11 +144,10 @@ class InstructionContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn(value, text)
         self.assertNotIn("Prove it as far down this ladder", text)
-        building = (SKILL_ROOT / "references" / "building.md").read_text()
-        section = building[building.index("\n## Merge danger\n"):building.index("\n## pstack license\n")]
+        danger = section(SKILL_ROOT / "references" / "building.md", "## Merge danger")
         for value in ["Prove it as far down this ladder", "You ran it", "gh pr edit"]:
             with self.subTest(value=value):
-                self.assertIn(value, section)
+                self.assertIn(value, danger)
 
     def test_copied_text_names_its_source_and_license(self) -> None:
         building = (SKILL_ROOT / "references" / "building.md").read_text()
@@ -635,7 +635,7 @@ class CleanupTextTests(unittest.TestCase):
     def test_post_merge_steps_are_a_numbered_list(self) -> None:
         lines = [line for line in stage_text(7).splitlines() if re.match(r"\d\. ", line)]
         rows = [("`shipped: ", "`pr: "), ("git fetch origin",), ("metrics --write",),
-                ("`ExitWorktree` with `keep`",), ("cleanup --branch",), ("`metrics: ", "`cleanup: done`")]
+                ("`ExitWorktree` with `keep`",), ("cleanup --branch",), ("Claude Code: `metrics: ", "`cleanup: done`")]
         self.assertEqual([line[:2] for line in lines], [f"{n}." for n in range(1, len(rows) + 1)])
         for line, needles in zip(lines, rows):
             for needle in needles:
