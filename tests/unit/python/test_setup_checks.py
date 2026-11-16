@@ -74,23 +74,21 @@ class GateJunitCheckTests(unittest.TestCase):
                 write(repo / "scripts" / "gate.sh", gate)
             return check_setup.check_gate_junit(repo)
 
-    def test_gate_that_names_the_dir_passes(self) -> None:
-        self.assertEqual(self.check('cp junit.xml "$DEVLOOP_REPORT_DIR/root-junit.xml"\n'), [])
+    def test_check_gate_junit_cases(self) -> None:
+        cases = [
+            ("gate names the dir", 'cp junit.xml "$DEVLOOP_REPORT_DIR/root-junit.xml"\n', None, []),
+            ("gate without", "pytest tests/unit\n", None, [self.MESSAGE]),
+            ("comment-only mention", "# DEVLOOP_REPORT_DIR: later\npytest\n", None, [self.MESSAGE]),
+            ("mapped other command", "pytest\n", {"commands": {"gate": "make gate"}}, []),
+            ("mapped gate.sh", "pytest\n", {"commands": {"gate": "bash scripts/gate.sh"}}, [self.MESSAGE]),
+            ("no gate.sh", None, None, []),
+            ("test_time false", "pytest\n", {"test_time": False}, []),
+        ]
+        for name, gate, config, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.check(gate, config), expected)
 
-    def test_gate_without_the_dir_is_a_user_action(self) -> None:
-        self.assertEqual(self.check("pytest tests/unit\n"), [self.MESSAGE])
-
-    def test_comment_only_mention_counts_as_missing(self) -> None:
-        self.assertEqual(self.check("# DEVLOOP_REPORT_DIR: later\npytest\n"), [self.MESSAGE])
-
-    def test_mapped_gate_command_skips(self) -> None:
-        self.assertEqual(self.check("pytest\n", {"commands": {"gate": "make gate"}}), [])
-        self.assertEqual(self.check("pytest\n", {"commands": {"gate": "bash scripts/gate.sh"}}), [self.MESSAGE])
-
-    def test_no_gate_script_skips(self) -> None:
-        self.assertEqual(self.check(None), [])
-
-    def test_check_setup_lists_it_under_user_actions(self) -> None:
+    def test_check_setup_prints_it_under_user_actions_without_failing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             write(repo / "dev-loop.json", "{}")
@@ -100,6 +98,7 @@ class GateJunitCheckTests(unittest.TestCase):
                 capture_output=True, text=True, check=False, env=checker_env(Path(tmp) / "bin"))
         head, _, actions = result.stdout.partition("User actions required")
         self.assertIn(self.MESSAGE, actions)
+        self.assertNotIn(self.MESSAGE, head)
         self.assertNotIn("DEVLOOP_REPORT_DIR", head)
 
     def test_this_repo_gate_passes(self) -> None:
