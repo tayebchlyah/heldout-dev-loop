@@ -85,7 +85,9 @@ class SearchWallTests(unittest.TestCase):
                 "find . -name acceptance -o -name '*.py'", "grep -rn make 2>/dev/null", "rg make > out.txt",
                 "if true; then grep -rn make .; fi", "echo `grep -rn make .`", "x=$(rg make)", "{ rg make; }",
                 "/usr/bin/grep -rn make .", "LC_ALL=C grep -rn make .", "git grep make HEAD", 'grep -rn "make .',
-                "grep -rn make \\\n  .", "rg make tests/*", f"rg -g '!{held}/**' make {held}"]
+                "grep -rn make \\\n  .", "rg make tests/*", f"rg -g '!{held}/**' make {held}",
+                "true <<<EOF\ngrep -rn make .\nEOF", 'echo "<<EOF"\ngrep -rn make .\nEOF', "true # <<EOF\ngrep -rn make .\nEOF",
+                'cat <<E"OF"\nhi\nEOF\ngrep -rn make .\nE', "echo $((1<<2))\ngrep -rn make .\n2"]
         allow = ["grep -rn make src tests/unit", "rg make src", "git grep make -- src", "find src -name x",
                  "cd src && grep -rn make .", "grep -n make src/app.py", "grep make README.md",
                  f"grep -rn make {held}/../../src", "cat src/app.py", "grep -rn --exclude-dir=acceptance make .",
@@ -94,7 +96,8 @@ class SearchWallTests(unittest.TestCase):
                  f"find . -path ./{held} -prune -o -name '*.py' -print", f"find . -not -path '*/{held}/*' -name '*.py'",
                  "grep -rn make src 2>&1 | head", "rg --files src", "rg -r x make src",
                  "cat > brief.md <<'EOF'\nDon't grep -r the repo\nEOF", "echo grep", "grep make .", "grep -rn ';' src",
-                 "rg make src/*.py", "find . -name tests -prune -o -print"]
+                 "rg make src/*.py", "find . -name tests -prune -o -print", "cat <<-EOF\n\tgrep -rn make .\n\tEOF",
+                 "x=$(cat <<'EOF'\ngrep -rn make .\nEOF\n)", "cat <<A <<B\ngrep -rn make .\nA\nrg make\nB"]
         for command, expected in [(c, DENY) for c in deny] + [(c, ALLOW) for c in allow]:
             with self.subTest(command=command):
                 self.assertEqual(decide(payload(self.top, "Bash", {"command": command}), {"HOME": str(self.top.parent)}),

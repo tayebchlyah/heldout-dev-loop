@@ -114,6 +114,16 @@ class SourceWallTests(unittest.TestCase):
                        (bash(r, "cat internal{,}/x.go"), True), (bash(r, "cat internal${E}/x.go"), True),
                        (call(r, "Grep", {"pattern": "func", "glob": "{internal,x}/**"}), True)])
 
+    def test_heredoc_bodies_as_bash_reads_them(self) -> None:
+        set_main(self.repo, key(["internal/"]))
+        r = self.repo
+        denied = ["true <<<EOF\ncat internal/x.go\nEOF", 'echo "<<EOF"\ncat internal/x.go\nEOF',
+                  "true # <<EOF\ncat internal/x.go\nEOF", 'cat <<E"OF"\nhi\nEOF\ncat internal/x.go\nE',
+                  "cat <<EOF\nhi\ncat internal/x.go"]
+        allowed = ["cat <<-EOF\n\tinternal/x.go\n\tEOF", "x=$(cat <<'EOF'\ninternal/x.go\nEOF\n)",
+                   "cat <<A <<B\ninternal/x.go\nA\ninternal/y.go\nB", "cat <<\\EOF\ninternal/x.go\nEOF"]
+        self.verdicts([(bash(r, c), True) for c in denied] + [(bash(r, c), False) for c in allowed])
+
     def test_suite_seal_and_heredoc_exceptions(self) -> None:
         set_main(self.repo, key(["api/", "tests/", "scripts/"]))
         r = self.repo
