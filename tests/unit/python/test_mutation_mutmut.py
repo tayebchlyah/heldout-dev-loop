@@ -24,6 +24,7 @@ import adapter  # noqa: E402
 
 PYPROJECT = """[tool.mutmut]
 source_paths = ["src"]
+pytest_add_cli_args_test_selection = ["tests/unit"]
 only_mutate = ["src/pkg/*"]
 do_not_mutate = ["src/pkg/skip.py"]
 """
@@ -71,12 +72,33 @@ class MutmutAdapter(unittest.TestCase):
 
     def adapter(self, files: dict[str, str], request: dict) -> subprocess.CompletedProcess[str]:
         entry = self.root / "entry"
+        write(entry / "tests" / "unit" / "test_none.py", "")
         for name, text in files.items():
             write(entry / name, text)
         env = {**os.environ, "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ['PATH']}"}
         stdin = json.dumps({"protocol": 1, "base": "b", "head": "h", "only": None, **request})
         return subprocess.run([sys.executable, str(SCRIPT)], cwd=entry, input=stdin, capture_output=True,
                               text=True, env=env, timeout=60)
+
+    def test_held_out_refusals(self) -> None:
+        self.stub()
+        sources = {"src/pkg/plain.py": "def f():\n    return 1\n"}
+        request = {"run": True, "files": {"src/pkg/plain.py": [[2, 2]]}}
+        base = PYPROJECT.replace('pytest_add_cli_args_test_selection = ["tests/unit"]\n', "")
+        reaches = "[tool.mutmut] test selection reaches tests/acceptance: run unit tests only"
+        no_path = "[tool.mutmut] test selection names no test path: name the unit test folder"
+        cli = "[tool.mutmut] pytest_add_cli_args reaches tests/acceptance: run unit tests only"
+        for project, text in ((base + 'pytest_add_cli_args_test_selection = ["tests"]\n', reaches),
+                              (base + 'pytest_add_cli_args_test_selection = ["-x"]\n', no_path),
+                              (base, no_path),
+                              (PYPROJECT + 'pytest_add_cli_args = ["tests"]\n', cli)):
+            with self.subTest(text=text, project=project):
+                done = self.adapter({**sources, "pyproject.toml": project}, request)
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertEqual(done.stdout, "")
+                self.assertEqual(done.stderr.strip().splitlines()[-1],
+                                 f"mutation setup broken: {text}. Stage 0 owns it: see references/mutation.md, Setup.")
+                self.assertFalse(self.log.exists())
 
     def test_units_without_tool(self) -> None:
         self.stub()
@@ -165,7 +187,7 @@ class MutmutAdapter(unittest.TestCase):
         self.assertEqual(mutmut.mutant_line("# h\n@@ -3,3 +3,3 @@\n a\n b\n-c\n+d\n", 10), 14)
 
         self.stub(results=results + EXTRA)
-        pyproject = '[tool.mutmut]\nsource_paths = ["src"]\n'
+        pyproject = '[tool.mutmut]\nsource_paths = ["src"]\npytest_add_cli_args_test_selection = ["tests/unit"]\n'
         files = {"src/shop/core/price.py": [[2, 3], [9, 9], [14, 14]]}
         done = self.adapter({"pyproject.toml": pyproject, "src/shop/core/price.py": PRICE.read_text()},
                             {"run": True, "files": files})
