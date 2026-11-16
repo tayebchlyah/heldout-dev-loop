@@ -297,7 +297,7 @@ class NestedRouteWallTests(unittest.TestCase):
         settings = json.loads((ROOT / "claude" / "settings.fragment.json").read_text())
         group = next(g for g in settings["hooks"]["PreToolUse"] if any(TWIN in h["command"] for h in g["hooks"]))
         self.assertEqual(group["matcher"], ".*")
-        self.assertEqual([(h["timeout"], h["onFailure"]) for h in group["hooks"]], [(5, "block")])
+        self.assertEqual([(h["timeout"], h["onFailure"]) for h in group["hooks"]], [(15, "block")])
 
     def test_no_allowed_skill_forks(self) -> None:
         root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")

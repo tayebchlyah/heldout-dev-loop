@@ -46,7 +46,7 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
     {
       matcher: 'Bash|Monitor',
       hooks: [
-        { type: 'command', command: '~/.claude/hooks/git-guard.sh', timeout: 5, onFailure: 'block' },
+        { type: 'command', command: '~/.claude/hooks/git-guard.sh', timeout: 15, onFailure: 'block' },
       ],
     },
     {
@@ -55,18 +55,18 @@ test('the Claude fragment carries the exact hook commands, matchers and timeouts
         {
           type: 'command',
           command: '~/.claude/hooks/deny-acceptance-to-subagents.sh',
-          timeout: 5,
+          timeout: 15,
           onFailure: 'block',
         },
       ],
     },
     {
       matcher: 'AskUserQuestion',
-      hooks: [{ type: 'command', command: '~/.claude/hooks/deny-ask.sh', timeout: 5 }],
+      hooks: [{ type: 'command', command: '~/.claude/hooks/deny-ask.sh', timeout: 15 }],
     },
     {
       matcher: 'Edit|Write|NotebookEdit',
-      hooks: [{ type: 'command', command: '~/.claude/hooks/worktree-wall.sh', timeout: 5 }],
+      hooks: [{ type: 'command', command: '~/.claude/hooks/worktree-wall.sh', timeout: 15 }],
     },
   ])
 

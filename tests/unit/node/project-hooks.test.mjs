@@ -361,3 +361,16 @@ test('Claude hook definitions match for both-harness and Claude-only init and up
   }
   assert.ok(outputs[0].equals(outputs[1]))
 })
+
+test('upgrade raises an old 5 second Claude wall hook timeout to the fragment value', () => {
+  const { home, repo } = setup()
+  init(repo, home, ['--yes', '--harness=claude'])
+  const path = join(repo, '.claude/settings.json')
+  const walls = (settings) => settings.hooks.PreToolUse.flatMap((group) => group.hooks)
+  const settings = readJson(path)
+  for (const hook of walls(settings)) hook.timeout = 5
+  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`)
+  upgrade(repo, home)
+  const timeouts = walls(readJson(path)).map((hook) => [hook.command.split('/').at(-1).replace(/"$/, ''), hook.timeout])
+  assert.deepEqual(timeouts, [['git-guard.sh', 15], ['deny-acceptance-to-subagents.sh', 15], ['deny-ask.sh', 15], ['worktree-wall.sh', 15]])
+})
