@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from test_devloop import REPO_ROOT, SKILL_ROOT, load_check_setup, load_devloop
+from test_devloop import REPO_ROOT, SKILL_ROOT, load_check_setup, load_devloop, section
 
 
 TEN_RULES = [
@@ -103,6 +103,31 @@ class InstructionContractTests(unittest.TestCase):
         for value in ["Why not double?", "Did it even happen?", "inconclusive", "c742dd6", "Lauren Tan"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
+
+    def test_claude_shell_rule_desk_path_and_effort(self) -> None:
+        claude = SKILL_ROOT / "references" / "claude.md"
+        worktree = next(line for line in claude.read_text().splitlines() if line.startswith("- Worktree session:"))
+        gate = section(claude, "## Feature gate")
+        desks = [line for line in gate.splitlines() if "Pocock" in line and "desk:" in line]
+        brief = next(line for line in gate.splitlines() if line.startswith("1. **Review wave"))
+        rows = [(worktree, ["One git command per Bash call", "a heredoc", "`$(...)`", "`&&`",
+                            "`cd` or `source` before a command", "an environment prefix", "file under `$TMPDIR`",
+                            "then run the file"]),
+                *((desk, ["the absolute path the controller gives", "never search for it"]) for desk in desks),
+                (gate, ["Desk path:", "skills/engineering/code-review/SKILL.md"]),
+                (brief, ["`--exclude-dir=acceptance`", "one plain command per Bash call", "no script file"]),
+                (section(claude, "## Skill and agent names"), ["wins over the session `/effort`", "CLAUDE_CODE_EFFORT_LEVEL",
+                                                              "https://code.claude.com/docs/en/sub-agents"]),
+                *((path.read_text(), ["one plain command per Bash call"]) for path in (IMPLEMENTERS[0], SPEC_TESTERS[0]))]
+        self.assertEqual(len(desks), 2)
+        for text, phrases in rows:
+            for phrase in phrases:
+                with self.subTest(text=text[:30], phrase=phrase):
+                    self.assertIn(phrase, text)
+        for path in (IMPLEMENTERS[0], SPEC_TESTERS[0]):
+            for banned in ("$TMPDIR", "script file"):
+                with self.subTest(path=path.name, banned=banned):
+                    self.assertNotIn(banned, path.read_text())
 
     def test_stage_6_tests_the_premise_before_a_third_fix(self) -> None:
         self.assertIn("test the premise before a third fix", stage_text(6))
