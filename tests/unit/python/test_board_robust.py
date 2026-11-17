@@ -319,12 +319,19 @@ class BoardRobustTests(Board):
                 writer.board_note(self.repo, folder, {"skipped": []})
                 self.assertEqual((folder / "Dev Loop Board.md").read_text(), writer.board_text(want))
 
-    def test_board_note_takes_the_main_worktree_kit_version(self) -> None:
-        """#372: a newer kit in the cwd worktree never stamps its version on the main worktree template."""
+    def test_board_note_takes_the_running_kit_version(self) -> None:
+        """#372: the note gets the version of the kit copy that runs, never of the cwd worktree."""
         wt = self.worktree("kit-upgrade", prefix="chore")
-        put(wt / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "9.9.9", "files": {}}))
-        self.ok(cwd=wt)
-        self.assertEqual(read_note(self.board_dir / "Dev Loop Board.md")["version"], VERSION)
+        for kit, cwd_version in [(self.repo, "9.9.9"), (wt, "1.0.0")]:
+            with self.subTest(kit=kit.name):
+                (self.board_dir / "Dev Loop Board.md").unlink(missing_ok=True)
+                put(wt / ".dev-loop" / "MANIFEST.json", json.dumps({"version": cwd_version, "files": {}}))
+                scripts = kit / ".agents" / "skills" / "dev-loop" / "scripts"
+                shutil.copytree(DEVLOOP.parent, scripts, ignore=shutil.ignore_patterns("__pycache__"), dirs_exist_ok=True)
+                cli = [sys.executable, str(scripts / "devloop.py"), "board", "--no-serve"]
+                subprocess.run(cli, cwd=wt, env=self.env, capture_output=True, check=True, timeout=60)
+                want = json.loads((kit / ".dev-loop" / "MANIFEST.json").read_text())["version"]
+                self.assertEqual(read_note(self.board_dir / "Dev Loop Board.md")["version"], want)
 
     def test_shipped_note_in_the_write_set_is_never_rewritten(self) -> None:
         """O5 regression (Task 3 fix 2): an own note with shipped_at, feature still in the write set: unchanged."""

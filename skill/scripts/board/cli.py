@@ -62,7 +62,7 @@ def cmd_board(args: argparse.Namespace) -> int:
             from board import server
             machine = store.load_machine(Path.home())
             top = Path(git(repo, "rev-parse", "--show-toplevel") or repo)
-            payload["server"] = server.ensure(port, writer.kit_version(top), [store.root_of(notes)], machine["id"],
+            payload["server"] = server.ensure(port, writer.kit_version(writer.template_kit(top)), [store.root_of(notes)], machine["id"],
                                               machine["owner"])
     except Exception as exc:  # A bad machine.json, an undecodable spec, an OSError: JSON, never a traceback.
         error = f"{type(exc).__name__}: {exc}"
