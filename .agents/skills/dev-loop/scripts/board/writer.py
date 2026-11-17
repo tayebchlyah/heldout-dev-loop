@@ -374,7 +374,7 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         ctx.data["last_run"] = {"at": now, "skipped": payload["skipped"]}
         state.save(state_dir, ctx.data, state_fd)
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
-        board_note(Path(top), folder, payload)
+        board_note(template_kit(Path(top)), folder, payload)
     return 0, payload
 
 
@@ -448,6 +448,11 @@ def kit_version(top: Path) -> str:
     except (OSError, ValueError, KeyError, TypeError):
         return "0.0.0"
     return version if re.fullmatch(release_rulings.VERSION, version) else "0.0.0"
+
+
+def template_kit(top: Path) -> Path:
+    """#372: the checkout of the installed kit copy that holds the template, else `top` (a run from the source tree)."""
+    return TEMPLATE.parents[5] if TEMPLATE.parents[4].name == ".agents" else top
 
 
 def board_text(kit: str) -> str:

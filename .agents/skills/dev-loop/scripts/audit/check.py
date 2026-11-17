@@ -47,11 +47,15 @@ def check_errors(prefix: str, check: object, agent: str, run: Path) -> list[str]
         if not visible(check.get(field)):
             errors.append(f"{prefix}.{field}: expected visible text")
     artifact = check.get("artifact")
+    if "artifact" not in check:
+        errors.append(f"{prefix}.artifact: missing")
     if check.get("method") == "source":
         if artifact is not None:
             errors.append(f"{prefix}.artifact: a source check has artifact null")
     elif check.get("method") == "local":
         own = f"agents/{agent}/artifacts/"
+        if "artifact" not in check:
+            return errors
         rel = artifact[len(own):] if isinstance(artifact, str) and artifact.startswith(own) else None
         if rel is None or rel.endswith("/") or common.path_error(rel):
             errors.append(f"{prefix}.artifact: {artifact!r} is not agents/{agent}/artifacts/<relative path>")

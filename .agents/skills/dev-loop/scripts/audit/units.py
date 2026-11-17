@@ -53,7 +53,7 @@ def entry_errors(entry: object, *, refs_given: bool) -> list[str]:
     if not isinstance(refs, dict) or not set(LABELS) <= set(refs) or set(refs) - set(LABELS) - {"lifecycle"}:
         errors.append("canonical_refs: expected surface, boundary, subsystem, attack_class and an optional lifecycle")
     else:
-        errors += [f"canonical_refs.{key}: {why}" for key, value in refs.items() for why in common.ref_errors(value)]
+        errors += [f"canonical_refs.{key}: {why}" for key, value in refs.items() for why in common.canonical_ref_errors(value)]
     errors += [f"{key}: expected visible text" for key in LABELS if key in entry and not visible(entry[key])]
     if "starting_paths" not in entry:
         errors.append("starting_paths: missing")
