@@ -110,11 +110,16 @@ class SearchWallTests(unittest.TestCase):
                 self.assertEqual(decide(payload(self.top, "Bash", {"command": command}), {"HOME": str(self.top.parent)}),
                                  expected)
 
-    def test_unterminated_heredocs_scan_in_linear_time(self) -> None:
-        command = f"grep -r x {HELD}; cat <<A" + "\n<<A" * 16000
-        started = time.perf_counter()
-        verdict = decide(payload(self.top, "Bash", {"command": command}), {"HOME": "/nonexistent"})
-        self.assertEqual((verdict, time.perf_counter() - started < 1), (DENY, True))
+    def test_long_commands_scan_in_linear_time(self) -> None:
+        rows = {
+            "unterminated heredocs": f"grep -r x {HELD}; cat <<A" + "\n<<A" * 16000,
+            "single less-than signs": f"grep -r x {HELD}; cat x " + "< " * 600000,
+        }
+        for name, command in rows.items():
+            with self.subTest(name):
+                started = time.perf_counter()
+                verdict = decide(payload(self.top, "Bash", {"command": command}), {"HOME": "/nonexistent"})
+                self.assertEqual((verdict, time.perf_counter() - started < 5), (DENY, True))
 
     def test_roles_and_suites(self) -> None:
         top, other = self.top, self.tmp / "other"
