@@ -137,8 +137,8 @@ class AuditFoldTests(AuditRunCase):
         c = self.state()["candidates"]["f-1"]
         self.assertEqual((c["body"]["title"], c["hunter"], c["later"]), ("first", a, [b]))
         prompt = Path(self.step("brief", "--kind", "verifier", "--fingerprint", "f-1")[0]["prompt"]).read_text()
-        self.assertIn("first", prompt)
-        self.assertNotIn("second", prompt)
+        self.assertIn('"title": "first"', prompt)
+        self.assertNotIn('"title": "second"', prompt)
 
     def test_brief_json_edit_changes_nothing(self) -> None:
         agent, ids = self.hunter_brief("a.py")
