@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import sys
 
 sys.dont_write_bytecode = True
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 HELD_OUT = "tests/acceptance"
@@ -39,8 +40,23 @@ def _covers(outer: Path, inner: Path) -> bool:
                for p in (inner, *inner.parents))
 
 
+def _links(paths: list[Path]) -> Iterator[Path]:
+    todo, seen = [path for path in paths if path.is_dir()], set()
+    while todo:
+        folder = Path(os.path.realpath(todo.pop()))
+        if folder in seen:
+            continue
+        seen.add(folder)
+        for top, dirs, files in os.walk(folder):
+            for link in (Path(top) / name for name in (*dirs, *files)):
+                if link.is_symlink():
+                    target = Path(os.path.realpath(link))
+                    todo += [target] if target.is_dir() else []
+                    yield target
+
+
 def _reaches(paths: list[Path], held: Path) -> bool:
-    return any(_covers(held, path) or _covers(path, held) for path in paths)
+    return any(_covers(held, path) or _covers(path, held) for path in itertools.chain(paths, _links(paths)))
 
 
 def relative(folder: Path, root: Path) -> str | None:
@@ -53,7 +69,8 @@ def relative(folder: Path, root: Path) -> str | None:
 def stryker_refusals(config: dict) -> list[str]:
     gaps = []
     if config.get("inPlace") is True:
-        gaps.append('stryker.config.json sets "inPlace": true: the held-out suite then reaches the run')
+        gaps.append('TypeScript 7 runs without inPlace (references/mutation.md, Stryker): '
+                    'stryker.config.json sets "inPlace": true: the held-out suite then reaches the run')
     if "ignorePatterns" in config:
         patterns = config["ignorePatterns"]
         if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):

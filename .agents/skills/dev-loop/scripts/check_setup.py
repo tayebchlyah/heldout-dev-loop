@@ -318,17 +318,38 @@ GUARD_AFTER_GIT = (
 )
 
 
-def check_gate_guard(repo: Path) -> list[str]:
-    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_* before its first git call.
+GATE_JUNIT = (
+    "scripts/gate.sh does not name DEVLOOP_REPORT_DIR: the time ratchet reads the gate JUnit XML there and is skipped. "
+    "Copy each JUnit file the gate writes to $DEVLOOP_REPORT_DIR (references/bootstrap.md)"
+)
 
-    Skipped when commands.gate maps a command that does not run scripts/gate.sh."""
+
+def gate_lines(repo: Path) -> list[str] | None:
     gate = repo / "scripts" / "gate.sh"
     config = load_json(repo / "dev-loop.json", [])
     commands = config.get("commands") if isinstance(config, dict) else None
     mapped = commands.get("gate") if isinstance(commands, dict) else None
     if (isinstance(mapped, str) and mapped and not GATE_SCRIPT_CALL.search(mapped)) or not gate.is_file():
+        return None
+    return [line for line in gate.read_text(errors="replace").splitlines() if not line.lstrip().startswith("#")]
+
+
+def check_gate_junit(repo: Path) -> list[str]:
+    """#363: notice when scripts/gate.sh never names DEVLOOP_REPORT_DIR, unless test_time is false."""
+    config = load_json(repo / "dev-loop.json", [])
+    if isinstance(config, dict) and config.get("test_time") is False:
         return []
-    lines = [line for line in gate.read_text(errors="replace").splitlines() if not line.lstrip().startswith("#")]
+    lines = gate_lines(repo)
+    return [GATE_JUNIT] if lines is not None and not any("DEVLOOP_REPORT_DIR" in line for line in lines) else []
+
+
+def check_gate_guard(repo: Path) -> list[str]:
+    """A project scripts/gate.sh disables core.fsmonitor through GIT_CONFIG_* before its first git call.
+
+    Skipped when commands.gate maps a command that does not run scripts/gate.sh."""
+    lines = gate_lines(repo)
+    if lines is None:
+        return []
     guard = next((i for i, line in enumerate(lines) if all(part.search(line) for part in GUARD_PARTS)), None)
     if guard is None:
         return [GUARD_MISSING]
@@ -685,6 +706,7 @@ def main() -> int:
 
     notices = [(line, []) for line in setup_lines(args.repo)] if args.harness == "claude" else []
     notices += [(line, []) for line in source_notices] + mutation_notices
+    notices += [(line, []) for line in check_gate_junit(args.repo)]
     blocked = failures or action_groups
     print(f"{args.harness}: {'FAIL' if blocked else 'PASS'}")
     for failure in failures:

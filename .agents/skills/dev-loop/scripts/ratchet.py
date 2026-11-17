@@ -51,11 +51,13 @@ def limits(top: Path, main_ref: str, kind: str) -> dict | None:
     return {**DEFAULTS[kind], **value.get(kind, {})}
 
 
-def read_times(top: Path, report_dir: Path) -> dict[str, float]:
+def read_times(top: Path, report_dir: Path) -> tuple[dict[str, float], list[str]]:
     times: dict[str, float] = {}
+    skips: set[str] = set()
     for path in sorted(report_dir.glob("*.xml")):
         for case in junit_cases(path) or []:
             if case.find("skipped") is not None:
+                skips.add(case_id(case, top))
                 continue
             try:
                 seconds = float(case.get("time") or 0)
@@ -64,7 +66,7 @@ def read_times(top: Path, report_dir: Path) -> dict[str, float]:
             seconds = seconds if math.isfinite(seconds) and seconds > 0 else 0.0
             cid = case_id(case, top)
             times[cid] = max(seconds, times.get(cid, 0.0))
-    return times
+    return times, sorted(skips - times.keys())
 
 
 def store(top: Path, kind: str) -> Path:
@@ -82,6 +84,9 @@ def load(path: Path) -> dict | None:
     times = record.get("times")
     if not isinstance(times, dict) or not all(
             isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t) for t in times.values()):
+        return None
+    skips = record.get("skipped", [])
+    if not isinstance(skips, list) or not all(isinstance(i, str) for i in skips):
         return None
     return record
 
@@ -134,7 +139,7 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
         return skipped(str(exc), ok=False)
     if limit is None:
         return skipped("off")
-    times = read_times(top, report_dir)
+    times, run_skipped = read_times(top, report_dir)
     if not times:
         return skipped("no-junit")
     payload = {**skipped(""), "reason": None}
@@ -145,6 +150,7 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
                                 for i, t in sorted(times.items()) if t > limit["max"]]
         return payload
     base = {i: float(t) for i, t in record["times"].items()}
+    base_skipped = set(record.get("skipped", [])) - base.keys()
     factor = load_factor(times, base)
     head = git(top, "rev-parse", "HEAD") or ""
     found = waivers(top, main_ref, head)
@@ -153,6 +159,10 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
     payload.update(state="checked", baseline={k: record[k] for k in ("tree", "head", "at")}, factor=round(factor, 3))
     for cid, t in norm.items():
         old = base.get(cid)
+        if cid in base_skipped:
+            if t > limit["max"]:
+                payload["attention"].append({"id": cid, "seconds": round(t, 1), "rule": "max", "limit": limit["max"]})
+            continue
         if kind == "gate":
             hit = new_rule(cid, t, limit) if old is None else (
                 ("max", limit["max"]) if grown(t, old) and t > limit["max"] else None)
@@ -170,8 +180,8 @@ def check(kind: str, top: Path, report_dir: Path, main_ref: str | None) -> dict:
         hit = ("max", limit["max"]) if t > limit["max"] else new_rule(cid, t, limit) if old is None else None
         if hit:
             payload["attention"].append({"id": cid, "seconds": round(t, 1), "rule": hit[0], "limit": hit[1]})
-    total = sum(base.values())
-    share = (sum(norm.values()) - total) / total if total else 0.0
+    total = sum(t for i, t in base.items() if i not in run_skipped)
+    share = (sum(t for i, t in norm.items() if i not in base_skipped) - total) / total if total else 0.0
     if kind == "gate":
         ok = share <= limit["growth"]
         payload["growth"] = {"share": round(share, 3), "limit": limit["growth"], "ok": ok,
@@ -189,15 +199,18 @@ def clean(top: Path) -> bool:
 
 
 def write_record(kind: str, top: Path, report_dir: Path, factor: float = 1.0) -> str | None:
-    """Write the times of this run, divided by `factor`, as the record of the HEAD tree, keep the newest 50 of `kind`; its path, or None."""
-    times = {i: t / factor for i, t in read_times(top, report_dir).items()}
+    """Write the times of this run, divided by `factor`, and its skipped ids as the record of the HEAD tree,
+    keep the newest 50 of `kind`; its path, or None."""
+    raw, skips = read_times(top, report_dir)
+    times = {i: t / factor for i, t in raw.items()}
     tree, head = git(top, "rev-parse", "HEAD^{tree}"), git(top, "rev-parse", "HEAD")
     if not times or not tree or not head:
         return None
     folder = store(top, kind)
     path = folder / f"{tree}.json"
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    write_atomic(path, json.dumps({"tree": tree, "head": head, "at": at, "times": times}, sort_keys=True) + "\n")
+    write_atomic(path, json.dumps({"tree": tree, "head": head, "at": at, "times": times, "skipped": skips},
+                                  sort_keys=True) + "\n")
     stamped = []
     for p in folder.glob("*.json"):
         try:

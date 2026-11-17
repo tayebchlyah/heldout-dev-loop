@@ -111,6 +111,71 @@ def _holds_a_file(repo: Path, folder: str, claimed: list[str]) -> bool:
     return False
 
 
+def _pyproject(repo: Path) -> dict | None:
+    try:
+        return tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _workspace(pyproject: dict | None) -> tuple[list[str], list[str]] | None:
+    tool = pyproject.get("tool") if pyproject else None
+    uv = tool.get("uv") if isinstance(tool, dict) else None
+    table = uv.get("workspace") if isinstance(uv, dict) else None
+    if not isinstance(table, dict) or not _strings(table.get("members")):
+        return None
+    exclude = table.get("exclude")
+    return table["members"], exclude if _strings(exclude) else []
+
+
+def _root_folders(repo: Path, preset: dict) -> list[str]:
+    return [d for d in preset["source_dirs"] + [preset["test_dir"]]
+            if d and (repo / d).is_dir() and not source_dirs.fold(d).startswith(source_dirs.HELD_OUT)]
+
+
+def _exact(repo: Path, rel: str) -> bool:
+    folder = repo
+    for part in rel.split("/"):
+        try:
+            if part not in os.listdir(folder):
+                return False
+        except OSError:
+            return False
+        folder = folder / part
+    return True
+
+
+def _globbed(repo: Path, patterns: list[str]) -> set[str]:
+    found = set()
+    for pattern in patterns:
+        try:
+            matches = list(repo.glob(pattern))
+        except (ValueError, NotImplementedError, OSError):
+            continue
+        rels = (Path(os.path.relpath(m, repo)).as_posix() for m in matches if m.is_dir())
+        found.update(rel for rel in rels if _exact(repo, rel))
+    return found
+
+
+def _linked(repo: Path, rel: str) -> bool:
+    parts = rel.split("/")
+    return any((repo / "/".join(parts[:i])).is_symlink() for i in range(1, len(parts) + 1))
+
+
+def _members(repo: Path, members: list[str], exclude: list[str]) -> list[str]:
+    excluded = _globbed(repo, exclude)
+    kept = sorted(f"{rel}/" for rel in _globbed(repo, members) - excluded
+                  if rel != "." and source_dirs.validate([f"{rel}/"]) is None
+                  and not any(_skipped("/".join(rel.split("/")[:i]) + "/") for i in range(1, rel.count("/") + 2))
+                  and not _linked(repo, rel) and (repo / rel / "pyproject.toml").is_file())
+    ignored = _ignored(repo, kept)
+    return [rel for rel in kept if rel not in ignored]
+
+
 def detect(repo: Path, data: dict) -> dict:
     presets = data["presets"]
     matched: list[tuple[str, dict]] = []
@@ -122,22 +187,31 @@ def detect(repo: Path, data: dict) -> dict:
         preset = next((p for p in presets if folder_matches(repo / path, p)), None)
         if preset:
             matched.append((path, preset))
+    pyproject = _pyproject(repo)
+    workspace = _workspace(pyproject)
+    members = _members(repo, *workspace) if workspace else []
+    matched = [(path, preset) for path, preset in matched if path not in members]
+    matched += [(member, by_name(data)["uv"]) for member in members]
+    ui_scan = list(matched)
+    root = next((preset for path, preset in matched if path == "."), None)
+    if workspace and root and root["family"] == "python":
+        if not (isinstance(pyproject.get("project"), dict) and _root_folders(repo, root)):
+            matched = [(path, preset) for path, preset in matched if path != "."]
     units = [(path, preset) for path, preset in matched
-             if not any(q != path and q_preset["family"] == preset["family"] and _holds(q, path) for q, q_preset in matched)]
+             if path in members or not any(q != path and q_preset["family"] == preset["family"] and _holds(q, path)
+                                           for q, q_preset in matched)]
     units.sort(key=lambda item: (item[0] != ".", item[0]))
     stacks = [{"path": path, "preset": preset["name"], "unit": unit_name(path),
                "commands": {"lint": preset["lint"], "typecheck": preset["typecheck"], "test": preset["test"],
                             "junit": {key: preset["junit"][key] for key in ("command", "files", "package", "setup")}}}
               for path, preset in units]
     proposed = capabilities.proposal(repo)
-    if "ui" not in proposed and any(_ui(repo / path, data["ui_frameworks"]) for path, _ in matched):
+    if "ui" not in proposed and any(_ui(repo / path, data["ui_frameworks"]) for path, _ in ui_scan):
         proposed.insert(0, "ui")
     dirs = {path for path, _ in matched if path != "."}
     for path, preset in units:
         if path == ".":
-            dirs.update(preset["source_dirs"])
-            if preset["test_dir"]:
-                dirs.add(preset["test_dir"])
+            dirs.update(_root_folders(repo, preset))
     walled = sorted(d for d in dirs if not d.startswith(HELD))
     claimed = [path for path, _ in matched if path != "."] + walled
     unknown = [folder for folder in _folders(repo, "")
@@ -190,25 +264,16 @@ def _cargo_suite_unguarded(repo: Path) -> bool:
     return not targets or any(t.get("name") != "acceptance" or t.get("test") is not False for t in targets)
 
 
-def setup(repo: Path) -> list[str]:
-    """The check_setup.py failure lines of the `stacks` key, read from this checkout."""
-    try:
-        config = json.loads((repo / "dev-loop.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(config, dict) or "stacks" not in config:
-        return []
-    rule = validate(config["stacks"])
+def _stack_lines(repo: Path, stacks: list[dict], covered: list[str] | None) -> list[str]:
+    rule = validate(stacks)
     if rule:
         return [f"stacks in dev-loop.json is invalid: {rule}"]
     try:
         presets = by_name(load_presets())
     except (OSError, ValueError) as exc:
         return [f"stacks: presets.json cannot be read: {exc}"]
-    entries = config.get("source_dirs")
-    covered = entries if "source_dirs" in config and source_dirs.validate(entries) is None else None
     lines = []
-    for entry in config["stacks"]:
+    for entry in stacks:
         path, name = entry["path"], entry["preset"]
         preset = presets.get(name) if isinstance(name, str) else None
         if isinstance(name, str) and preset is None:
@@ -224,10 +289,39 @@ def setup(repo: Path) -> list[str]:
             if not source_dirs.matches(covered, path):
                 lines.append(f'stacks path {path} is not in source_dirs: add "{path}"')
         elif preset:
-            for folder in preset["source_dirs"]:
-                if (repo / folder).is_dir() and not source_dirs.matches(covered, folder):
+            for folder in _root_folders(repo, preset):
+                if not source_dirs.matches(covered, folder):
                     lines.append(f'stacks path . preset {name}: {folder} is not in source_dirs: add "{folder}"')
     return lines
+
+
+def _member_lines(repo: Path, stacks: object, covered: list[str]) -> list[str]:
+    workspace = _workspace(_pyproject(repo))
+    if not workspace:
+        return []
+    paths = {source_dirs.fold(entry["path"]) for entry in stacks} if validate(stacks) is None else set()
+    lines = [f'uv workspace member {member} is not in source_dirs: add "{member}" and its stacks entry'
+             for member in _members(repo, *workspace)
+             if source_dirs.fold(member) not in paths and not source_dirs.matches(covered, member)]
+    excluded = _globbed(repo, workspace[1])
+    return lines + [f"uv workspace member {rel}/ cannot be walled by source_dirs: rename it"
+                    for rel in sorted(_globbed(repo, workspace[0]) - excluded)
+                    if rel != "." and source_dirs.validate([f"{rel}/"]) is not None
+                    and (repo / rel / "pyproject.toml").is_file()]
+
+
+def setup(repo: Path) -> list[str]:
+    """The check_setup.py failure lines of the `stacks` key and the uv workspace members, read from this checkout."""
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(config, dict):
+        return []
+    entries = config.get("source_dirs")
+    covered = entries if "source_dirs" in config and source_dirs.validate(entries) is None else None
+    lines = _stack_lines(repo, config["stacks"], covered) if "stacks" in config else []
+    return lines + (_member_lines(repo, config.get("stacks", []), covered) if covered is not None else [])
 
 
 def cmd_stack_detect(args: argparse.Namespace) -> int:
