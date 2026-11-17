@@ -119,7 +119,13 @@ class SourceWallTests(unittest.TestCase):
         r = self.repo
         denied = ["true <<<EOF\ncat internal/x.go\nEOF", 'echo "<<EOF"\ncat internal/x.go\nEOF',
                   "true # <<EOF\ncat internal/x.go\nEOF", 'cat <<E"OF"\nhi\nEOF\ncat internal/x.go\nE',
-                  "cat <<EOF\nhi\ncat internal/x.go"]
+                  "cat <<EOF\nhi\ncat internal/x.go",
+                  "echo $'\\' <<EOF '\\'\ncat internal/x.go\nEOF", "x=a; echo ${x#<<EOF}\ncat internal/x.go\nEOF}",
+                  "cat <<$'EOF'\nhi\nEOF\ncat internal/x.go\n$EOF", "cat <<'EOF'\nx\\\nEOF\ncat internal/x.go\nEOF",
+                  "echo \"$(case x in a) echo \" <<EOF \";; esac)\"\ncat internal/x.go\nEOF",
+                  "echo $[1<<2]\ncat internal/x.go\n2]", "x=$(cat <<EOF\nhi\nEOF)\ncat internal/x.go\nEOF",
+                  "echo \"${x:-\" <<EOF \"}\"\ncat internal/x.go\nEOF", "cat <<$(x)\nbody\n$(x)\ncat internal/x.go\n$",
+                  "cat <<EOF\nx\nEO\\\nF\ncat internal/x.go\nEOF", "cat <<EOF\nx\\\\\nEOF\ncat internal/x.go\nEOF"]
         allowed = ["cat <<-EOF\n\tinternal/x.go\n\tEOF", "x=$(cat <<'EOF'\ninternal/x.go\nEOF\n)",
                    "cat <<A <<B\ninternal/x.go\nA\ninternal/y.go\nB", "cat <<\\EOF\ninternal/x.go\nEOF"]
         self.verdicts([(bash(r, c), True) for c in denied] + [(bash(r, c), False) for c in allowed])
