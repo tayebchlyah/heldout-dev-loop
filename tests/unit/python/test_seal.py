@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -485,6 +486,23 @@ class AuditTests(unittest.TestCase):
         data = json.loads(audit_module.taint_file(self.repo).read_text())
         self.assertEqual([r["agent_id"] for r in data["records"]], ["a1", "a2"])
         self.assertEqual([s["agent_id"] for s in data["skipped"]], ["a1"])
+
+    def test_append_follows_no_link_in_the_git_dir(self) -> None:
+        dev = audit_module.taint_file(self.repo).parent
+        outside, victim = self.tmp / "outside", self.tmp / "victim.txt"
+        outside.mkdir()
+        put(victim, "keep me\n")
+        for name, folder_link in (("lock link", False), ("folder link", True)):
+            with self.subTest(name):
+                if folder_link:
+                    shutil.rmtree(dev)
+                    dev.symlink_to(outside, target_is_directory=True)
+                else:
+                    dev.mkdir(parents=True)
+                    (dev / "taint.lock").symlink_to(victim)
+                with self.assertRaises(OSError):
+                    audit_module.append(self.repo, "skipped", {"agent_id": "a1"})
+                self.assertEqual((victim.read_text(), list(outside.iterdir())), ("keep me\n", []))
 
     def test_hook_input_not_json_writes_the_skip(self) -> None:
         """A skip for input that is no JSON object is written too, to the repo of the process cwd."""

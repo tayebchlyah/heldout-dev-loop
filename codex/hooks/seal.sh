@@ -26,7 +26,7 @@ case "$mode" in
     [ -n "$id" ] || exit 0
     head=$(git rev-parse HEAD 2>/dev/null) || exit 0
     subagents="$(git rev-parse --absolute-git-dir)/dev-loop-subagents"
-    [ -e "$subagents/$id.head" ] && exit 0
+    [ -L "$subagents" ] || [ -L "$subagents/$id.head" ] || [ -e "$subagents/$id.head" ] && exit 0
     mkdir -p "$subagents" && printf '%s\n' "$head" >"$subagents/$id.head"
     exit 0 ;;
   stop) printf '%s' "$input" | python3 -I "$cli" audit >/dev/null 2>&1 ;;
