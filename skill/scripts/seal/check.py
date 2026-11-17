@@ -197,7 +197,7 @@ def check(repo: Path, uncommitted: bool) -> dict:
         recent = set(run_git(repo, "rev-list", f"{base}..HEAD" if base else "HEAD").stdout.split()) | {base}
         warnings = [without_held_out(item) for item in state["closed"] + state["skipped"] if item.get("end") in recent]
         taint = [without_held_out(item) for item in state["open"]]
-    except (ValueError, AttributeError, TypeError, KeyError):  # taint.json does not parse or has the wrong shape
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
         violations.append(violation("taint-unreadable", path=str(taint_file(repo))))
         taint, warnings = [], []
     return {"ok": not violations and not taint, "violations": violations, "taint": taint,

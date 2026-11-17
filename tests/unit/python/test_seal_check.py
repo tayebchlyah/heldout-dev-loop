@@ -193,6 +193,11 @@ class SealCheckTests(SealRepo):
                 code, out = self.check()
                 self.assertEqual((code, out["ok"]), (1, False), out)
                 self.assertEqual(self.violations(), [("taint-unreadable", None, str(path))])
+        path.unlink()
+        path.mkdir()
+        code, out = self.check()
+        self.assertEqual((code, out["ok"]), (1, False), out)
+        self.assertEqual(self.violations(), [("taint-unreadable", None, str(path))])
 
     def test_closed_record_at_base_is_a_warning(self) -> None:
         head = git(self.repo, "rev-parse", "HEAD").strip()
