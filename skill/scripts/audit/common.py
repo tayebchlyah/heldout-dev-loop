@@ -173,7 +173,7 @@ def ref_errors(value: object) -> list[str]:
 def canonical_ref_errors(value: object) -> list[str]:
     """`ref_errors`, plus the length cap of the skill's `isCanonicalRef`: 1024 UTF-16 code units."""
     errors = ref_errors(value)
-    if isinstance(value, str) and len(value.encode("utf-16-le")) > 2 * 1024:
+    if isinstance(value, str) and len(value.encode("utf-16-le", "surrogatepass")) > 2 * 1024:
         errors.append("over 1024 UTF-16 code units")
     return errors
 
