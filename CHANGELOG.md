@@ -1,10 +1,10 @@
 # Changelog
 
-## [3.1.0-rc.2] - 2026-11-17
+## [3.1.0-rc.3] - 2026-11-17
 
 ### ⬆️ Upgrade
 
-1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0-rc.2 upgrade` on a branch, in one PR, from 3.0.0 or 3.1.0-rc.1. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0-rc.3 upgrade` on a branch, in one PR, from 3.0.0, 3.1.0-rc.1 or 3.1.0-rc.2. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
 2. Run `check_setup.py --harness claude|codex --repo .` and add the keys it asks for to `dev-loop.json` in the same PR. For `source_dirs missing`, run `devloop.py stack-detect`: it proposes the folders that hold product code, only folders that exist, and one entry per uv workspace member. Until the key reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`. `capabilities missing` proposes a value (`ui`, `backend`, both, or `[]`). `commands.acceptance missing`: map the command that runs the held-out suite; it is now the only acceptance runner. A UI whose Playwright is not at the root or in `frontend/`: run `devloop.py verify-init` again to record `verify.playwright`.
 3. With a `stacks` entry for the repo root, `check_setup.py` now also asks `source_dirs` to cover the preset test folder when it exists (`tests/` for a root Rust package). Add it.
 4. Make your gate copy its JUnit XML files into `$DEVLOOP_REPORT_DIR` when that variable is set. Without them the slow-test ratchet does not run. `check_setup.py` notes a `scripts/gate.sh` that never names it.
@@ -12,7 +12,7 @@
 6. A nightly mutation workflow that runs `select_mutants.py`: replace it with the `devloop.py mutation` line of `.agents/skills/dev-loop/references/mutation.md` (section Run).
 7. `inert_paths` works only with a CI job that calls `devloop.py ci-skip` (the `changes` job of the release skill, section CI skip job). Without that job, leave the key out.
 8. On GitHub, turn on "Automatically delete head branches", or add `"delete_branch_on_merge": false` to `dev-loop.json`.
-9. Merge the PR. Then, not before: delete `Dev Loop Board.md` in the notes folder, so the board writes its new template (a session on the old kit writes the old one again). On each machine that runs Codex on the repo: run `/hooks` and trust the changed `acceptance-wall.sh`.
+9. Merge the PR. Then, not before: delete `Dev Loop Board.md` in the notes folder, so the board writes its new template (a session on the old kit writes the old one again). On each machine that runs Codex on the repo: run `/hooks` and trust the changed `acceptance-wall.sh` and `seal.sh`.
 
 ### ✨ New Features
 
@@ -38,8 +38,9 @@
 - The built-in mutmut and Stryker adapters no longer run the held-out suite. Before, a mutant that only a held-out test killed counted as killed, and a failing held-out test printed its name and assertion text into the `mutation` output. `check_setup.py` and the adapters now refuse a setup that reaches `tests/acceptance/`.
 - `size-check` and `seal-check` no longer quote held-out test text to walled agents, and `gate --summary` no longer spreads that taint to every implementer.
 - The skill wall denies a `!` that a skill argument can turn into a shell line.
-- The source and search walls and the taint audit no longer skip command lines that only look like a heredoc body (a here-string, a quoted or commented `<<`, a `$'...'` or `${...}` word). A heredoc body is now removed only in plain forms; any other command is checked in full.
+- The source and search walls and the taint audit no longer skip command lines that only look like a heredoc body (a here-string, a quoted or commented `<<`, a `$'...'` or `${...}` word). A heredoc body is now removed only in plain forms; any other command is checked in full. A body with no end keeps the rest of the command in the check, and a long command no longer takes seconds to scan.
 - The mutmut held-out refusal also refuses a selected folder that holds a symlink, at any depth, to the held-out suite or a folder above it.
+- The taint record and the subagent start files no longer follow a link or write through a name planted in the git folder. A planted entry is moved aside, so the taint record is always written.
 - `check_setup.py` names each uv workspace member that `source_dirs` misses, so a member added after Stage 0 no longer stays readable by `spec-tester`.
 
 ### ⚡️ Performance
@@ -52,11 +53,13 @@
 - The release notes of 1.0.0 to 2.1.1 are rewritten in the same section format as 3.0.0.
 - `mutation.md` gives the StrykerJS setup for TypeScript 7, which runs without `inPlace`.
 - The Claude route says to read a log under the git folder with `Read`, and the weekly review allows a kit upgrade PR.
+- `tests.md` says when the time ratchet has no baseline (a new machine, the first branch).
 
 ### 🐛 Bug Fixes
 
 - The Claude Code Stop gate now tests the worktree you work in. Before, in a worktree session, it tested the main checkout and could pass with no test of your change.
 - An instruction such as "let me confirm before you push" now stops Delivery until you confirm. A review fix can no longer reverse a choice you made (a `dropped:user-choice` filter), and Stage 1 records the prototype variant you picked.
+- A session in a kit upgrade worktree no longer stamps the new kit version on the old board template. The board note now takes the version of the kit copy that holds its template.
 - `ci wait` no longer stops on outdated code scanning threads while checks still run, and finds the first error in the job log when `gh run view --log-failed` is empty.
 - Each brief in a worktree session says which shell lines Claude Code refuses, and review desks get the code-review skill path instead of a search.
 - The wall hooks get a 15 s timeout instead of 5, so a loaded machine no longer blocks a tool call. `upgrade` updates the old value.
@@ -65,8 +68,9 @@
 - The time ratchet no longer counts a test skipped at the baseline as new, and drops a test the run skipped from the growth share.
 - The stale image rule resets the stack on every code or build file change, as the stale check counts it.
 - `stack-detect` proposes only `source_dirs` folders that exist, a symlink to a folder included.
+- `audit-run check` refuses what `fold` refuses (an entry with no artifact key, a ref over 1024 characters), reports every field error at once, and no longer crashes on a lone surrogate. `seal-check` reports an unreadable taint file as `taint-unreadable` instead of a crash with no output.
 
-Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0-rc.2
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0-rc.3
 
 ## [3.0.0] - 2026-11-08
 
