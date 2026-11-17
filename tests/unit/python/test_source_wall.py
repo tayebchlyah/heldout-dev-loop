@@ -114,7 +114,7 @@ class SourceWallTests(unittest.TestCase):
                        (bash(r, "cat internal{,}/x.go"), True), (bash(r, "cat internal${E}/x.go"), True),
                        (call(r, "Grep", {"pattern": "func", "glob": "{internal,x}/**"}), True)])
 
-    def test_heredoc_bodies_as_bash_reads_them(self) -> None:
+    def test_heredoc_bodies_as_bash_reads_them_slow(self) -> None:
         set_main(self.repo, key(["internal/"]))
         r = self.repo
         denied = ["true <<<EOF\ncat internal/x.go\nEOF", 'echo "<<EOF"\ncat internal/x.go\nEOF',
