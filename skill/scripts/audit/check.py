@@ -47,7 +47,9 @@ def check_errors(prefix: str, check: object, agent: str, run: Path) -> list[str]
         if not visible(check.get(field)):
             errors.append(f"{prefix}.{field}: expected visible text")
     artifact = check.get("artifact")
-    if check.get("method") == "source":
+    if "artifact" not in check:
+        errors.append(f"{prefix}.artifact: missing")
+    elif check.get("method") == "source":
         if artifact is not None:
             errors.append(f"{prefix}.artifact: a source check has artifact null")
     elif check.get("method") == "local":
