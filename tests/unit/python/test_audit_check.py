@@ -52,6 +52,12 @@ class AuditCheckTests(AuditRunCase):
             "source with artifact": (lambda r: r["units"][0]["checks"][0].update(artifact=f"agents/{agent}/artifacts/x"),
                                      "artifact"),
             "no artifact key": (lambda r: r["units"][0]["checks"][0].pop("artifact"), "artifact"),
+            "no artifact key, bad method": (lambda r: (r["units"][0]["checks"][0].pop("artifact"),
+                                                       r["units"][0]["checks"][0].update(method="bogus")),
+                                            "method: expected source or local"),
+            "lone surrogate in a surface": (lambda r: r["uncovered"].append(
+                {"surface": json.loads('"a\\ud800"'), "boundary": "B", "subsystem": "S", "attack_class": "A",
+                 "starting_paths": ["a.py"], "reason": "r"}), "uncovered"),
             "ref over 1024 UTF-16 units": (lambda r: r["uncovered"].append(
                 {"surface": "\U0001d431" * 513, "boundary": "B", "subsystem": "S", "attack_class": "A",
                  "starting_paths": ["a.py"], "reason": "r"}), "1024"),

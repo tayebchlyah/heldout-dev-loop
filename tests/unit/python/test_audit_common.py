@@ -44,6 +44,20 @@ class AuditCommonTests(unittest.TestCase):
             self.assertTrue(common.ref_errors(bad), repr(bad))
         self.assertEqual(common.ref_errors("café #x"), [])
 
+    def test_canonical_ref_errors(self) -> None:
+        astral = "\U0001d431"
+        cases = {
+            "lone surrogate": (json.loads('"a\\ud800"'), True),
+            "512 astral characters": (astral * 512, False),
+            "513 astral characters": (astral * 513, True),
+            "1024 BMP characters": ("a" * 1024, False),
+            "1025 BMP characters": ("a" * 1025, True),
+        }
+        for name, (value, broken) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(bool(common.canonical_ref_errors(value)), broken)
+        self.assertIn("over 1024 UTF-16 code units", common.canonical_ref_errors(astral * 513))
+
     def test_path_error(self) -> None:
         for bad in ["/x", "../x", "a/../b", "a//b", "./a", ".", "", "a\0b", "a\\b", 7]:
             self.assertIsNotNone(common.path_error(bad), repr(bad))
