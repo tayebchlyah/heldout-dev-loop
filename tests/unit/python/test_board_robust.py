@@ -319,6 +319,13 @@ class BoardRobustTests(Board):
                 writer.board_note(self.repo, folder, {"skipped": []})
                 self.assertEqual((folder / "Dev Loop Board.md").read_text(), writer.board_text(want))
 
+    def test_board_note_takes_the_main_worktree_kit_version(self) -> None:
+        """#372: a newer kit in the cwd worktree never stamps its version on the main worktree template."""
+        wt = self.worktree("kit-upgrade", prefix="chore")
+        put(wt / ".dev-loop" / "MANIFEST.json", json.dumps({"version": "9.9.9", "files": {}}))
+        self.ok(cwd=wt)
+        self.assertEqual(read_note(self.board_dir / "Dev Loop Board.md")["version"], VERSION)
+
     def test_shipped_note_in_the_write_set_is_never_rewritten(self) -> None:
         """O5 regression (Task 3 fix 2): an own note with shipped_at, feature still in the write set: unchanged."""
         wt, _ = self.stage5("alpha", "Alpha Report")
