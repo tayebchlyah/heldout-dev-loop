@@ -236,6 +236,30 @@ class SealHookTests(unittest.TestCase):
                 finally:
                     git(self.repo, "reset", "-q", "--hard", first)
 
+    def test_subagent_start_follows_no_link(self) -> None:
+        victim, outside = self.tmp / "victim.txt", self.tmp / "outside"
+        outside.mkdir()
+        subagents = self.head_file("x").parent
+        rows = [("folder", lambda agent: subagents.symlink_to(outside, target_is_directory=True)),
+                ("head file", lambda agent: self.head_file(agent).symlink_to(self.tmp / f"{agent}.planted")),
+                ("snapshot file", lambda agent: (subagents / agent).symlink_to(victim))]
+        for harness, script, args in [("claude", "gate-snapshot.sh", []), ("codex", "seal.sh", ["start"])]:
+            for name, plant in rows:
+                with self.subTest(harness=harness, link=name):
+                    agent = f"l-{harness}-{name.replace(' ', '-')}"
+                    put(victim, "keep me\n")
+                    shutil.rmtree(subagents, ignore_errors=True)
+                    if subagents.is_symlink():
+                        subagents.unlink()
+                    if name != "folder":
+                        subagents.mkdir()
+                    plant(agent)
+                    result = self.hook(harness, script, {"hook_event_name": "SubagentStart", "agent_id": agent,
+                                                         "agent_type": "implementer"}, *args)
+                    self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+                    self.assertEqual((victim.read_text(), list(outside.iterdir())), ("keep me\n", []))
+                    self.assertFalse((self.tmp / f"{agent}.planted").exists())
+
     def test_claude_hooks_use_the_input_cwd_not_the_project_dir(self) -> None:
         other = self.tmp / "other"
         other.mkdir()

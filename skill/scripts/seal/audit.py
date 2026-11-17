@@ -255,7 +255,10 @@ def append(repo: Path, key: str, entry: dict) -> None:
     An entry of the same agent under the same key is replaced: each re-stop audits the whole transcript again."""
     path = taint_file(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path.with_name("taint.lock"), "w") as lock:
+    if path.parent.is_symlink():
+        raise OSError(f"a link, not a folder: {path.parent}")
+    fd = os.open(path.with_name("taint.lock"), os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         data = load(path)
         agent_id = entry.get("agent_id")
