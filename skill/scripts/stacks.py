@@ -264,25 +264,16 @@ def _cargo_suite_unguarded(repo: Path) -> bool:
     return not targets or any(t.get("name") != "acceptance" or t.get("test") is not False for t in targets)
 
 
-def setup(repo: Path) -> list[str]:
-    """The check_setup.py failure lines of the `stacks` key, read from this checkout."""
-    try:
-        config = json.loads((repo / "dev-loop.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(config, dict) or "stacks" not in config:
-        return []
-    rule = validate(config["stacks"])
+def _stack_lines(repo: Path, stacks: list[dict], covered: list[str] | None) -> list[str]:
+    rule = validate(stacks)
     if rule:
         return [f"stacks in dev-loop.json is invalid: {rule}"]
     try:
         presets = by_name(load_presets())
     except (OSError, ValueError) as exc:
         return [f"stacks: presets.json cannot be read: {exc}"]
-    entries = config.get("source_dirs")
-    covered = entries if "source_dirs" in config and source_dirs.validate(entries) is None else None
     lines = []
-    for entry in config["stacks"]:
+    for entry in stacks:
         path, name = entry["path"], entry["preset"]
         preset = presets.get(name) if isinstance(name, str) else None
         if isinstance(name, str) and preset is None:
@@ -301,12 +292,36 @@ def setup(repo: Path) -> list[str]:
             for folder in _root_folders(repo, preset):
                 if not source_dirs.matches(covered, folder):
                     lines.append(f'stacks path . preset {name}: {folder} is not in source_dirs: add "{folder}"')
-    workspace = _workspace(_pyproject(repo)) if covered is not None else None
-    paths = {entry["path"] for entry in config["stacks"]}
-    for member in _members(repo, *workspace) if workspace else []:
-        if member not in paths and not source_dirs.matches(covered, member):
-            lines.append(f'uv workspace member {member} is not in source_dirs: add "{member}" and its stacks entry')
     return lines
+
+
+def _member_lines(repo: Path, stacks: object, covered: list[str]) -> list[str]:
+    workspace = _workspace(_pyproject(repo))
+    if not workspace:
+        return []
+    paths = {source_dirs.fold(entry["path"]) for entry in stacks} if validate(stacks) is None else set()
+    lines = [f'uv workspace member {member} is not in source_dirs: add "{member}" and its stacks entry'
+             for member in _members(repo, *workspace)
+             if source_dirs.fold(member) not in paths and not source_dirs.matches(covered, member)]
+    excluded = _globbed(repo, workspace[1])
+    return lines + [f"uv workspace member {rel}/ cannot be walled by source_dirs: rename it"
+                    for rel in sorted(_globbed(repo, workspace[0]) - excluded)
+                    if rel != "." and source_dirs.validate([f"{rel}/"]) is not None
+                    and (repo / rel / "pyproject.toml").is_file()]
+
+
+def setup(repo: Path) -> list[str]:
+    """The check_setup.py failure lines of the `stacks` key and the uv workspace members, read from this checkout."""
+    try:
+        config = json.loads((repo / "dev-loop.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(config, dict):
+        return []
+    entries = config.get("source_dirs")
+    covered = entries if "source_dirs" in config and source_dirs.validate(entries) is None else None
+    lines = _stack_lines(repo, config["stacks"], covered) if "stacks" in config else []
+    return lines + (_member_lines(repo, config.get("stacks", []), covered) if covered is not None else [])
 
 
 def cmd_stack_detect(args: argparse.Namespace) -> int:

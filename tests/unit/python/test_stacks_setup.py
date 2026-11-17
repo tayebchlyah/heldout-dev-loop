@@ -91,6 +91,15 @@ class StacksSetupTests(unittest.TestCase):
                           "source_dirs": ["packages/app/"]}, files=files)
         write(repo / "pyproject.toml", '[tool.uv.workspace]\nmembers = ["packages/*"]\n')
         self.assertEqual(stacks.setup(repo), ['stacks path packages/lib/ is not in source_dirs: add "packages/lib/"'])
+        repo = self.repo({"source_dirs": ["packages/app/"]}, files=(*files, "packages/my pkg/pyproject.toml"))
+        write(repo / "pyproject.toml", '[tool.uv.workspace]\nmembers = ["packages/*"]\n')
+        self.assertEqual(stacks.setup(repo), ['uv workspace member packages/lib/ is not in source_dirs: add "packages/lib/" '
+                                              'and its stacks entry',
+                                              "uv workspace member packages/my pkg/ cannot be walled by source_dirs: rename it"])
+        if (repo / "PACKAGES").exists():
+            repo = self.repo({"stacks": [{"path": "packages/LIB/", "preset": "uv"}], "source_dirs": ["packages/app/"]}, files=files)
+            write(repo / "pyproject.toml", '[tool.uv.workspace]\nmembers = ["packages/*"]\n')
+            self.assertEqual(stacks.setup(repo), ['stacks path packages/LIB/ is not in source_dirs: add "packages/LIB/"'])
 
     def test_root_no_coverage(self) -> None:
         for preset in ("dotnet", None):
