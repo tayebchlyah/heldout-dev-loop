@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import sys
 
 sys.dont_write_bytecode = True
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 HELD_OUT = "tests/acceptance"
@@ -39,14 +40,23 @@ def _covers(outer: Path, inner: Path) -> bool:
                for p in (inner, *inner.parents))
 
 
-def _links(paths: list[Path]) -> list[Path]:
-    return [(Path(top) / name).resolve() for path in paths if path.is_dir()
-            for top, dirs, files in os.walk(path) for name in (*dirs, *files) if (Path(top) / name).is_symlink()]
+def _links(paths: list[Path]) -> Iterator[Path]:
+    todo, seen = [path for path in paths if path.is_dir()], set()
+    while todo:
+        folder = Path(os.path.realpath(todo.pop()))
+        if folder in seen:
+            continue
+        seen.add(folder)
+        for top, dirs, files in os.walk(folder):
+            for link in (Path(top) / name for name in (*dirs, *files)):
+                if link.is_symlink():
+                    target = Path(os.path.realpath(link))
+                    todo += [target] if target.is_dir() else []
+                    yield target
 
 
 def _reaches(paths: list[Path], held: Path) -> bool:
-    paths = [*paths, *_links(paths)]
-    return any(_covers(held, path) or _covers(path, held) for path in paths)
+    return any(_covers(held, path) or _covers(path, held) for path in itertools.chain(paths, _links(paths)))
 
 
 def relative(folder: Path, root: Path) -> str | None:

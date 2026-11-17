@@ -92,6 +92,12 @@ class MutationHeldOut(unittest.TestCase):
             self.assertEqual(heldout.selection_refusal(["tests/unit"], root, root), heldout.SELECTION_REACHES, name)
             self.assertEqual(heldout.cli_args_refusal(["tests/unit"], root, root), heldout.CLI_ARGS_REACHES, name)
             link.unlink()
+        (unit / "loop").symlink_to("loop")
+        self.assertIsNone(heldout.selection_refusal(["tests/unit"], root, root))
+        (root / "other").mkdir()
+        (root / "other/acc").symlink_to("../tests/acceptance")
+        (unit / "lib").symlink_to("../../other")
+        self.assertEqual(heldout.selection_refusal(["tests/unit"], root, root), heldout.SELECTION_REACHES)
 
     def test_cli_args_refusal(self) -> None:
         root = self.root
