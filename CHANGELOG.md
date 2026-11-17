@@ -1,19 +1,22 @@
 # Changelog
 
-## [3.1.0-rc.1] - 2026-11-16
+## [3.1.0-rc.2] - 2026-11-17
 
 ### ⬆️ Upgrade
 
-1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0-rc.1 upgrade` on a branch, in one PR. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
-2. Run `check_setup.py --harness claude|codex --repo .` and add the keys it asks for to `dev-loop.json` in the same PR. `source_dirs missing` lists your top-level folders: keep the folders that hold product code. Until the key reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`. `capabilities missing` proposes a value (`ui`, `backend`, both, or `[]`). `commands.acceptance missing`: map the command that runs the held-out suite; it is now the only acceptance runner. A UI whose Playwright is not at the root or in `frontend/`: run `devloop.py verify-init` again to record `verify.playwright`.
-3. A root Rust package: `check_setup.py` asks for a `[[test]] name = "acceptance"` entry with `test = false` in `Cargo.toml`, and `commands.acceptance` becomes `cargo test --test acceptance`.
-4. A nightly mutation workflow that runs `select_mutants.py`: replace it with the `devloop.py mutation` line of `.agents/skills/dev-loop/references/mutation.md` (section Run).
-5. On GitHub, turn on "Automatically delete head branches", or add `"delete_branch_on_merge": false` to `dev-loop.json`.
-6. Merge the PR. On each machine that runs Codex on the repo: run `/hooks` and trust the changed `acceptance-wall.sh`.
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0-rc.2 upgrade` on a branch, in one PR, from 3.0.0 or 3.1.0-rc.1. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
+2. Run `check_setup.py --harness claude|codex --repo .` and add the keys it asks for to `dev-loop.json` in the same PR. For `source_dirs missing`, run `devloop.py stack-detect`: it proposes the folders that hold product code, only folders that exist, and one entry per uv workspace member. Until the key reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`. `capabilities missing` proposes a value (`ui`, `backend`, both, or `[]`). `commands.acceptance missing`: map the command that runs the held-out suite; it is now the only acceptance runner. A UI whose Playwright is not at the root or in `frontend/`: run `devloop.py verify-init` again to record `verify.playwright`.
+3. With a `stacks` entry for the repo root, `check_setup.py` now also asks `source_dirs` to cover the preset test folder when it exists (`tests/` for a root Rust package). Add it.
+4. Make your gate copy its JUnit XML files into `$DEVLOOP_REPORT_DIR` when that variable is set. Without them the slow-test ratchet does not run. `check_setup.py` notes a `scripts/gate.sh` that never names it.
+5. A root Rust package: `check_setup.py` asks for a `[[test]] name = "acceptance"` entry with `test = false` in `Cargo.toml`, and `commands.acceptance` becomes `cargo test --test acceptance`.
+6. A nightly mutation workflow that runs `select_mutants.py`: replace it with the `devloop.py mutation` line of `.agents/skills/dev-loop/references/mutation.md` (section Run).
+7. `inert_paths` works only with a CI job that calls `devloop.py ci-skip` (the `changes` job of the release skill, section CI skip job). Without that job, leave the key out.
+8. On GitHub, turn on "Automatically delete head branches", or add `"delete_branch_on_merge": false` to `dev-loop.json`.
+9. Merge the PR. Then, not before: delete `Dev Loop Board.md` in the notes folder, so the board writes its new template (a session on the old kit writes the old one again). On each machine that runs Codex on the repo: run `/hooks` and trust the changed `acceptance-wall.sh`.
 
 ### ✨ New Features
 
-**Any build tool at Stage 0.** The kit now holds 12 build tool presets, and `devloop.py stack-detect` finds each unit of a repo and its lint, typecheck and test commands. A new `capabilities` key says what the product is (`ui`, `backend`, both or neither), and every kit rule that read the `AGENTS.md` stack list now reads it.
+**Any build tool at Stage 0.** The kit now holds 12 build tool presets, and `devloop.py stack-detect` finds each unit of a repo and its lint, typecheck and test commands. A new `capabilities` key says what the product is (`ui`, `backend`, both or neither), and every kit rule that read the `AGENTS.md` stack list now reads it. In a uv workspace, each member is its own unit, and the root stays a unit only when it is a package with code.
 
 **Mutation testing for any stack.** `devloop.py mutation` picks the changed critical lines and runs one adapter per `mutation` entry over a JSON protocol: mutmut, StrykerJS and mutago are built in, and you can write your own. It checks each adapter result and sorts each surviving mutant into a decision or a message. Mutation is off until you add the `mutation` key; `check_setup.py` proposes a value.
 
@@ -35,6 +38,9 @@
 - The built-in mutmut and Stryker adapters no longer run the held-out suite. Before, a mutant that only a held-out test killed counted as killed, and a failing held-out test printed its name and assertion text into the `mutation` output. `check_setup.py` and the adapters now refuse a setup that reaches `tests/acceptance/`.
 - `size-check` and `seal-check` no longer quote held-out test text to walled agents, and `gate --summary` no longer spreads that taint to every implementer.
 - The skill wall denies a `!` that a skill argument can turn into a shell line.
+- The source and search walls and the taint audit no longer skip command lines that only look like a heredoc body (a here-string, a quoted or commented `<<`, a `$'...'` or `${...}` word). A heredoc body is now removed only in plain forms; any other command is checked in full.
+- The mutmut held-out refusal also refuses a selected folder that holds a symlink, at any depth, to the held-out suite or a folder above it.
+- `check_setup.py` names each uv workspace member that `source_dirs` misses, so a member added after Stage 0 no longer stays readable by `spec-tester`.
 
 ### ⚡️ Performance
 
@@ -44,6 +50,8 @@
 
 - The Claude route says that the Claude Code sandbox is no boundary in a dev-loop session.
 - The release notes of 1.0.0 to 2.1.1 are rewritten in the same section format as 3.0.0.
+- `mutation.md` gives the StrykerJS setup for TypeScript 7, which runs without `inPlace`.
+- The Claude route says to read a log under the git folder with `Read`, and the weekly review allows a kit upgrade PR.
 
 ### 🐛 Bug Fixes
 
@@ -54,8 +62,11 @@
 - The wall hooks get a 15 s timeout instead of 5, so a loaded machine no longer blocks a tool call. `upgrade` updates the old value.
 - `metrics --write` fills the `shipped` cell of a Track S feature from the merge date of its PR.
 - A subagent keeps the effort its agent file sets, whatever the session `/effort` is.
+- The time ratchet no longer counts a test skipped at the baseline as new, and drops a test the run skipped from the growth share.
+- The stale image rule resets the stack on every code or build file change, as the stale check counts it.
+- `stack-detect` proposes only `source_dirs` folders that exist, a symlink to a folder included.
 
-Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0-rc.1
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0-rc.2
 
 ## [3.0.0] - 2026-11-08
 
