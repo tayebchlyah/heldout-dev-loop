@@ -374,7 +374,8 @@ def run(dl: ModuleType, repo: Path, notes: Path, home: Path, *, event: str | Non
         ctx.data["last_run"] = {"at": now, "skipped": payload["skipped"]}
         state.save(state_dir, ctx.data, state_fd)
         payload["notes"] = list(dict.fromkeys(payload["notes"]))
-        board_note(Path(top), folder, payload)
+        # #372: the hooks run the main worktree kit, so the version of its template is its MANIFEST version.
+        board_note(next(iter(trees), Path(top)), folder, payload)
     return 0, payload
 
 
