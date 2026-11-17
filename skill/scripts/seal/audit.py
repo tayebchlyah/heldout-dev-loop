@@ -8,6 +8,7 @@ import fcntl
 import json
 import os
 import re
+import stat
 import subprocess
 import tempfile
 import time
@@ -249,15 +250,26 @@ def load(path: Path) -> dict:
     return {"records": data.get("records", []), "skipped": data.get("skipped", [])}
 
 
+def move_aside(path: Path, wanted: Callable[[int], bool]) -> None:
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return
+    if not wanted(mode):
+        os.rename(path, path.with_name(f"{path.name}.planted.{os.getpid()}.{time.time_ns()}"))
+
+
 def append(repo: Path, key: str, entry: dict) -> None:
     """Add one entry under the lock (parallel SubagentStop hooks), written through a temp file and a rename.
 
     An entry of the same agent under the same key is replaced: each re-stop audits the whole transcript again."""
     path = taint_file(repo)
+    move_aside(path.parent, stat.S_ISDIR)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.parent.is_symlink():
-        raise OSError(f"a link, not a folder: {path.parent}")
-    fd = os.open(path.with_name("taint.lock"), os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    lock = path.with_name("taint.lock")
+    move_aside(lock, stat.S_ISREG)
+    move_aside(path, stat.S_ISREG)
+    fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         data = load(path)
