@@ -51,6 +51,10 @@ class AuditCheckTests(AuditRunCase):
             "other check agent": (lambda r: r["units"][0]["checks"][0].update(agent_id="h09"), "agent_id"),
             "source with artifact": (lambda r: r["units"][0]["checks"][0].update(artifact=f"agents/{agent}/artifacts/x"),
                                      "artifact"),
+            "no artifact key": (lambda r: r["units"][0]["checks"][0].pop("artifact"), "artifact"),
+            "ref over 1024 UTF-16 units": (lambda r: r["uncovered"].append(
+                {"surface": "\U0001d431" * 513, "boundary": "B", "subsystem": "S", "attack_class": "A",
+                 "starting_paths": ["a.py"], "reason": "r"}), "1024"),
             "artifact outside": (lambda r: r["units"][0]["checks"].append(
                 {**self.local_check(agent, "x.txt"), "artifact": f"agents/{agent}/x.txt"}), "artifact"),
             "artifact not in scratch": (lambda r: r["units"][0]["checks"].append(
