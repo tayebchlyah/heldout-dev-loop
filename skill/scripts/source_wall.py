@@ -161,7 +161,7 @@ def _leading_moves(words: Sequence[str], start: str, env: Mapping[str, str]) -> 
 
 
 def _command_candidates(command: str, start: str, env: Mapping[str, str]) -> Iterator[tuple[str, Folders]]:
-    text = strip_heredocs(command.replace("\\\n", ""))
+    text = strip_heredocs(command).replace("\\\n", "")
     try:
         words = [(word, word) for word in _tokens(text)]
         moves = _leading_moves([word for word, _ in words], start, env)

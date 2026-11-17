@@ -25,6 +25,8 @@ TESTERS = ("spec-tester", "spec_tester")
 WILD = re.compile(r"[*?\[{]")
 SUITE_NAMES = ("acceptance", "tests", ACCEPTANCE_DIR)
 OPS = ";&|()<>"
+NAME = re.compile(r"[A-Za-z_]\w*")
+UNSURE = re.compile(r"\$'|\$\{|\$\[|`|\bcase\b")
 KEYWORDS = ("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until", "time")
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 GREP_LONG = ("--regexp", "--file", "--max-count", "--after-context", "--before-context", "--context", "--directories",
@@ -206,9 +208,6 @@ def _delimiter(text: str, i: int) -> tuple[str, int]:
         if quote:
             if c == quote:
                 quote = ""
-            elif quote == '"' and c == "\\" and text[i + 1:i + 2] in ('"', "\\", "$", "`"):
-                i += 1
-                word += text[i]
             else:
                 word += c
         elif c == "\\" and i + 1 < len(text):
@@ -221,28 +220,33 @@ def _delimiter(text: str, i: int) -> tuple[str, int]:
         else:
             word += c
         i += 1
-    return word, i
+    return (word if NAME.fullmatch(word) and not quote else ""), i
 
 
-def _body_end(text: str, start: int, pending: list[tuple[str, bool]]) -> int | None:
-    for delimiter, dash in pending:
+def _body_end(text: str, start: int, pending: list[str]) -> int | None:
+    for delimiter in pending:
         while True:
             if start >= len(text):
                 return None
             end = text.find("\n", start)
             end = len(text) if end < 0 else end
-            line = text[start:end]
-            start = end + 1
-            if (line.lstrip("\t") if dash else line) == delimiter:
+            line = text[start:end].lstrip("\t")
+            if line == delimiter:
+                start = end + 1
                 break
+            if line.startswith(delimiter) or line.endswith("\\"):
+                return start
+            start = end + 1
     return min(start, len(text))
 
 
 def strip_heredocs(text: str) -> str:
-    """Drop each heredoc body as bash reads it: only after an unquoted << or <<- outside a comment."""
+    """Drop each heredoc body the shell reads; keep all text when the command uses a form not read here."""
+    if UNSURE.search(text):
+        return text
     out: list[str] = []
     stack: list[str] = []
-    pending: list[tuple[str, bool]] = []
+    pending: list[str] = []
     i = 0
     while i < len(text):
         c, context = text[i], stack[-1] if stack else ""
@@ -263,17 +267,15 @@ def strip_heredocs(text: str) -> str:
         elif context == '"':
             if c == '"':
                 stack.pop()
-            elif c == "`":
-                stack.append("`")
         elif c == "'":
             end = text.find("'", i + 1)
             step = (len(text) if end < 0 else end + 1) - i
         elif c == "#" and (i == 0 or text[i - 1] in " \t\n" or text[i - 1] in OPS):
             end = text.find("\n", i)
             step = (len(text) if end < 0 else end) - i
-        elif c == context and context in ")`":
+        elif c == ")" and context == ")":
             stack.pop()
-        elif c == '"' or c == "`" or c == "(" and context == ")":
+        elif c == '"' or c == "(" and context == ")":
             stack.append(")" if c == "(" else c)
         elif c == "<":
             step = len(text[i:]) - len(text[i:].lstrip("<"))
@@ -283,7 +285,7 @@ def strip_heredocs(text: str) -> str:
                     start += 1
                 delimiter, end = _delimiter(text, start)
                 if delimiter:
-                    pending.append((delimiter, text.startswith("-", i + 2)))
+                    pending.append(delimiter)
                 step = end - i
         elif c == "\n" and pending:
             end = _body_end(text, i + 1, pending)

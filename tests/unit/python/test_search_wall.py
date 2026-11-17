@@ -87,7 +87,13 @@ class SearchWallTests(unittest.TestCase):
                 "/usr/bin/grep -rn make .", "LC_ALL=C grep -rn make .", "git grep make HEAD", 'grep -rn "make .',
                 "grep -rn make \\\n  .", "rg make tests/*", f"rg -g '!{held}/**' make {held}",
                 "true <<<EOF\ngrep -rn make .\nEOF", 'echo "<<EOF"\ngrep -rn make .\nEOF', "true # <<EOF\ngrep -rn make .\nEOF",
-                'cat <<E"OF"\nhi\nEOF\ngrep -rn make .\nE', "echo $((1<<2))\ngrep -rn make .\n2"]
+                'cat <<E"OF"\nhi\nEOF\ngrep -rn make .\nE', "echo $((1<<2))\ngrep -rn make .\n2",
+                "echo $'\\' <<EOF '\\'\ngrep -rn make .\nEOF", "x=a; echo ${x#<<EOF}\ngrep -rn make .\nEOF}",
+                "cat <<$'EOF'\nhi\nEOF\ngrep -rn make .\n$EOF", "cat <<'EOF'\nx\\\nEOF\ngrep -rn make .\nEOF",
+                "echo \"$(case x in a) echo \" <<EOF \";; esac)\"\ngrep -rn make .\nEOF",
+                "echo $[1<<2]\ngrep -rn make .\n2]", "x=$(cat <<EOF\nhi\nEOF)\ngrep -rn make .\nEOF",
+                "echo \"${x:-\" <<EOF \"}\"\ngrep -rn make .\nEOF", "cat <<$(x)\nbody\n$(x)\ngrep -rn make .\n$",
+                "cat <<EOF\nx\nEO\\\nF\ngrep -rn make .\nEOF", "cat <<EOF\nx\\\\\nEOF\ngrep -rn make .\nEOF"]
         allow = ["grep -rn make src tests/unit", "rg make src", "git grep make -- src", "find src -name x",
                  "cd src && grep -rn make .", "grep -n make src/app.py", "grep make README.md",
                  f"grep -rn make {held}/../../src", "cat src/app.py", "grep -rn --exclude-dir=acceptance make .",

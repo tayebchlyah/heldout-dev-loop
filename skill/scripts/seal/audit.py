@@ -20,8 +20,8 @@ import devloop
 from devloop import emit
 from source_dirs import DEFAULT, HELD_OUT, fold, in_dot_folder, matches, read_main
 from seal import ACCEPTANCE_DIR, SEARCH_WORD, git_dir, merge_base, run_git
-from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, strip_heredocs, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
-                         shell_tokens)
+from seal.search import (ASSIGNMENT, GREP_FLAGS, GREP_LONG, KEYWORDS, PATTERN_GIVEN, RG_FLAGS, RG_LONG, parse_options,
+                         shell_tokens, strip_heredocs)
 
 SPEC_TESTER = ("spec-tester", "spec_tester")
 MIN_LINE = 30
