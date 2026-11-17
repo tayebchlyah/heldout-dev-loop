@@ -290,10 +290,12 @@ def strip_heredocs(text: str) -> str:
         elif c == "\n" and pending:
             end = _body_end(text, i + 1, pending)
             pending = []
-            if end is not None:
-                out.append(c)
-                i = end
-                continue
+            if end is None:
+                out.append(text[i:])
+                break
+            out.append(c)
+            i = end
+            continue
         out.append(text[i:i + step])
         i += step
     return "".join(out)

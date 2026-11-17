@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -108,6 +109,12 @@ class SearchWallTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(decide(payload(self.top, "Bash", {"command": command}), {"HOME": str(self.top.parent)}),
                                  expected)
+
+    def test_unterminated_heredocs_scan_in_linear_time(self) -> None:
+        command = f"grep -r x {HELD}; cat <<A" + "\n<<A" * 16000
+        started = time.perf_counter()
+        verdict = decide(payload(self.top, "Bash", {"command": command}), {"HOME": "/nonexistent"})
+        self.assertEqual((verdict, time.perf_counter() - started < 1), (DENY, True))
 
     def test_roles_and_suites(self) -> None:
         top, other = self.top, self.tmp / "other"
