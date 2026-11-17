@@ -278,7 +278,10 @@ def strip_heredocs(text: str) -> str:
         elif c == '"' or c == "(" and context == ")":
             stack.append(")" if c == "(" else c)
         elif c == "<":
-            step = len(text[i:]) - len(text[i:].lstrip("<"))
+            run = i
+            while run < len(text) and text[run] == "<":
+                run += 1
+            step = run - i
             if step == 2:
                 start = i + 2 + text.startswith("-", i + 2)
                 while start < len(text) and text[start] in " \t":
