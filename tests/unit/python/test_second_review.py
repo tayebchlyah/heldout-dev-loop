@@ -401,7 +401,7 @@ class SecondReviewSetupTests(unittest.TestCase):
                 failures, groups, _ = self.check(local=local)
                 self.assertEqual(len(failures), 1, failures)
                 self.assertIn("second_review", failures[0])
-                self.assertNotIn("D4", failures[0])
+                self.assertNotIn("D4", failures[0].replace(str(self.tmp.resolve()), ""))
                 self.assertEqual(groups, [])
 
     def test_command_and_setup_read_the_local_file_alike(self) -> None:
