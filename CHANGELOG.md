@@ -1,10 +1,10 @@
 # Changelog
 
-## [3.1.0-rc.3] - 2026-11-17
+## [3.1.0] - 2026-11-17
 
 ### ⬆️ Upgrade
 
-1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0-rc.3 upgrade` on a branch, in one PR, from 3.0.0, 3.1.0-rc.1 or 3.1.0-rc.2. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.0 upgrade` on a branch, in one PR, from 3.0.0 or a 3.1.0 release candidate. As in 3.0.0, make the branch, commit, PR and merge from Claude Code or by hand, not from Codex.
 2. Run `check_setup.py --harness claude|codex --repo .` and add the keys it asks for to `dev-loop.json` in the same PR. For `source_dirs missing`, run `devloop.py stack-detect`: it proposes the folders that hold product code, only folders that exist, and one entry per uv workspace member. Until the key reaches `main`, the spec-tester wall keeps `src/ app/ backend/ frontend/`. `capabilities missing` proposes a value (`ui`, `backend`, both, or `[]`). `commands.acceptance missing`: map the command that runs the held-out suite; it is now the only acceptance runner. A UI whose Playwright is not at the root or in `frontend/`: run `devloop.py verify-init` again to record `verify.playwright`.
 3. With a `stacks` entry for the repo root, `check_setup.py` now also asks `source_dirs` to cover the preset test folder when it exists (`tests/` for a root Rust package). Add it.
 4. Make your gate copy its JUnit XML files into `$DEVLOOP_REPORT_DIR` when that variable is set. Without them the slow-test ratchet does not run. `check_setup.py` notes a `scripts/gate.sh` that never names it.
@@ -70,7 +70,7 @@
 - `stack-detect` proposes only `source_dirs` folders that exist, a symlink to a folder included.
 - `audit-run check` refuses what `fold` refuses (an entry with no artifact key, a ref over 1024 characters), reports every field error at once, and no longer crashes on a lone surrogate. `seal-check` reports an unreadable taint file as `taint-unreadable` instead of a crash with no output.
 
-Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0-rc.3
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.0.0...v3.1.0
 
 ## [3.0.0] - 2026-11-08
 
