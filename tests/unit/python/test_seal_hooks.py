@@ -242,9 +242,12 @@ class SealHookTests(unittest.TestCase):
         subagents = self.head_file("x").parent
         rows = [("folder", lambda agent: subagents.symlink_to(outside, target_is_directory=True)),
                 ("head file", lambda agent: self.head_file(agent).symlink_to(self.tmp / f"{agent}.planted")),
-                ("snapshot file", lambda agent: (subagents / agent).symlink_to(victim))]
+                ("snapshot file", lambda agent: (subagents / agent).symlink_to(victim)),
+                ("snapshot hardlink", lambda agent: os.link(victim, subagents / agent))]
         for harness, script, args in [("claude", "gate-snapshot.sh", []), ("codex", "seal.sh", ["start"])]:
             for name, plant in rows:
+                if harness == "codex" and name.startswith("snapshot"):
+                    continue
                 with self.subTest(harness=harness, link=name):
                     agent = f"l-{harness}-{name.replace(' ', '-')}"
                     put(victim, "keep me\n")
@@ -259,6 +262,8 @@ class SealHookTests(unittest.TestCase):
                     self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
                     self.assertEqual((victim.read_text(), list(outside.iterdir())), ("keep me\n", []))
                     self.assertFalse((self.tmp / f"{agent}.planted").exists())
+                    if name != "folder":
+                        self.assertEqual([p.name for p in subagents.iterdir() if p.name.startswith(".")], [])
 
     def test_claude_hooks_use_the_input_cwd_not_the_project_dir(self) -> None:
         other = self.tmp / "other"
