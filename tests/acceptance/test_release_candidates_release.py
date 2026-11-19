@@ -269,15 +269,16 @@ class PromotedTests(PromotedCase):
         self.assertEqual((code, payload.get("ok"), payload.get("violations")), (0, True, []), payload)
 
     def test_o39_no_release_candidate(self) -> None:
-        """O39: no v3.0.0-rc.* tag: exit 1, ok false, candidate null, reason no-release-candidate."""
+        """O39 as superseded by Optional Release Candidate: no v3.0.0-rc.* tag: exit 0, ok true, candidate null,
+        violations [], skipped no-release-candidate."""
         self.tag(self.repo, "v3.0.1-rc.1")
         self.release_commit()
         self.tag(self.repo, "v3.0.0")
         code, payload = self.promoted("v3.0.0")
-        self.assertEqual(code, 1, payload)
+        self.assertEqual(code, 0, payload)
         self.assertIn("candidate", payload)
-        self.assertEqual((payload.get("ok"), payload.get("candidate"), payload.get("reason")),
-                         (False, None, "no-release-candidate"), payload)
+        self.assertEqual((payload.get("ok"), payload.get("candidate"), payload.get("violations"),
+                          payload.get("skipped")), (True, None, [], "no-release-candidate"), payload)
 
     def test_o40_rc_tag_is_skipped(self) -> None:
         """O40: `promoted --tag v3.0.0-rc.3`: exit 0, ok true, skipped not-a-final-tag."""

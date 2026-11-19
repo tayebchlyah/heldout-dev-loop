@@ -70,8 +70,8 @@ class FlowTests(WaveCase):
         self.assert_wave(check, line)
 
     def test_f2_next_release_needs_a_new_audit(self) -> None:
-        """F2 (oracle 9, 18): a tag on the wave, then `release-check` is stale again and `release-plan` covers
-        the fix code."""
+        """F2 (oracle 9 as superseded by Optional Release Candidate, 18): a tag on the wave, a release commit
+        keeps the wave, then a code commit is stale again and `release-plan` covers the fix code."""
         r, line = self.waved()
         r.tag("v1.0.0-rc.1", r.C)
         code, check = r.check("--tag", "v1.0.0-rc.1")
@@ -80,6 +80,11 @@ class FlowTests(WaveCase):
 
         e = r.release("1.0.0-rc.2")
         code, check = r.check("--sha", e)
+        self.assertEqual(code, 0, check)
+        self.assert_wave(check, line)
+
+        f = r.code("#9: other")
+        code, check = r.check("--sha", f)
         self.assertEqual(code, 1, check)
         stale = reasons_named(check, "stale-audit")
         self.assertTrue(stale, check)
@@ -90,7 +95,7 @@ class FlowTests(WaveCase):
         code, plan = r.devloop("release-plan")
         self.assertEqual(code, 0, plan)
         self.assertEqual(plan.get("base"), r.A, plan)
-        self.assertEqual(plan.get("scope"), f"{r.A}..{e}", plan)
+        self.assertEqual(plan.get("scope"), f"{r.A}..{f}", plan)
 
 
 class TextTests(WaveCase):
