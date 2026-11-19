@@ -1,6 +1,6 @@
 # Release
 
-A cycle: release candidates `vX.Y.Z-rc.N` (N from 1), then the final `vX.Y.Z`. Each runs through `/release` (Codex `$release`; `skills/release/SKILL.md`). The release commit holds this repo's kit upgraded to its own tag, so the next feature runs on it.
+A cycle: release candidates `vX.Y.Z-rc.N` (N from 1), then the final `vX.Y.Z`. A release candidate is optional: a final release may come with no rc. Each runs through `/release` (Codex `$release`; `skills/release/SKILL.md`). The release commit holds this repo's kit upgraded to its own tag, so the next feature runs on it.
 
 ## Version choice
 
@@ -31,7 +31,7 @@ First written release: in its release PR, run `/release-notes --all` by hand fro
 `/release` runs the `dev-loop.json` commands of this repo with `RELEASE_VERSION` and `RELEASE_TAG` set:
 
 1. `commands.release_prepare` (`node bin/install.mjs upgrade`): in the release branch, before the release commit. The dogfood upgrade goes into the release PR, so the tagged commit holds its own installed kit. No upgrade PR.
-2. `commands.release_check` (`scripts/release-check.sh`): after the release commit. Runs `scripts/canary.sh`; for a final version also `scripts/repo_rules.py promoted --tag "$RELEASE_TAG" --sha HEAD` (`promoted --sha`): the commit ships the kit source of its last rc (`package.json` counts beyond its `version` key). Its lines go into the release PR body.
+2. `commands.release_check` (`scripts/release-check.sh`): after the release commit. Runs `scripts/canary.sh`; for a final version also `scripts/repo_rules.py promoted --tag "$RELEASE_TAG" --sha HEAD` (`promoted --sha`): the commit ships the kit source of its last rc (`package.json` counts beyond its `version` key). With no `vX.Y.Z-rc.N` tag of the version, `promoted` skips: exit 0, `skipped` `no-release-candidate`. Its lines go into the release PR body.
 3. `commands.release_verify` (`scripts/release-verify.sh`): after the GitHub Release. A temporary clone of `main` runs `npx github:tayebchlyah/heldout-dev-loop#$RELEASE_TAG upgrade` and must show no diff. The upgrade fetches the tag over SSH (`git@github.com:`), so the releaser needs a GitHub SSH key.
 
 ## Audit sandbox
@@ -50,5 +50,5 @@ The release audit runs target code only in the image `dev-loop-audit:1` (`dev-lo
 ## Final release
 
 1. `/release` (Codex `$release`) in the main session, on `main` of the main checkout.
-2. Steps as for a release candidate, version `X.Y.Z`. `commands.release_check` also runs `promoted --sha`: a failure means a kit source change after the last rc (`package.json` counts beyond its `version` key); cut a new rc.
+2. Steps as for a release candidate, version `X.Y.Z`. `commands.release_check` also runs `promoted --sha`, which skips when the version has no rc: a failure means a kit source change after the last rc (`package.json` counts beyond its `version` key); cut a new rc.
 3. The tag push: `stale-audit` comes as for a release candidate, with the same rule (step 5 above). One tag per push, GitHub sends no push event for more than three tags. The workflow checks the version, runs `promoted` again, writes the notes from the `## [X.Y.Z]` section and makes the GitHub Release.

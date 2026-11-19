@@ -4,7 +4,7 @@
 comments: each comment line, trailing .sh comment and private docstring added against <base> is of an allowed kind (CODING_STANDARDS.md); a docstring is private unless a .py file outside tests/ imports its name.
 subjects: the subject of each commit in <base>..HEAD follows the gitmoji convention of cliff.toml.
 <base>: git merge-base HEAD origin/main, else main, else none (skipped no-base).
-promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base; package.json counts beyond its version key). With --sha <rev>: the commit <rev> stands for the final tag, before it exists.
+promoted: the final tag --tag vX.Y.Z has the kit source of its highest release candidate vX.Y.Z-rc.N (no base; package.json counts beyond its version key). With --sha <rev>: the commit <rev> stands for the final tag, before it exists. No vX.Y.Z-rc.N tag of the version: ok, skipped no-release-candidate (a release candidate is optional).
 """
 
 from __future__ import annotations
@@ -428,7 +428,7 @@ def promoted(repo: Path, tag: str, sha: str | None = None) -> tuple[dict, int]:
         if match and match.group(1) == tag:
             numbers[int(match.group(2))] = name
     if not numbers:
-        return {"ok": False, "tag": tag, "candidate": None, "violations": [], "reason": "no-release-candidate"}, 1
+        return {"ok": True, "tag": tag, "candidate": None, "violations": [], "skipped": "no-release-candidate"}, 0
     candidate = numbers[max(numbers)]
     candidate_ref = f"refs/tags/{candidate}^{{commit}}"
     final_sha = final.stdout.strip()
