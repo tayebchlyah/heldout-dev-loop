@@ -159,6 +159,7 @@ class SubjectCommandTests(RulesRepo):
 
 RC_PACKAGE = '{"version": "3.0.0-rc.2", "files": ["skill"]}\n'
 FINAL_PACKAGE = '{"version": "3.0.0", "files": ["skill"]}\n'
+SKIPPED = {"ok": True, "tag": "v3.0.0", "candidate": None, "violations": [], "skipped": "no-release-candidate"}
 
 
 class PromotedCommandTests(RulesRepo):
@@ -215,20 +216,21 @@ class PromotedCommandTests(RulesRepo):
         self.assertEqual((code, out["candidate"]), (0, "v3.0.0-rc.10"))
 
     def test_other_versions_and_bad_forms_are_not_candidates(self) -> None:
+        self.release("v2.9.0-rc.1", {"skill/a": "0\n"})
         self.release("v3.0.1-rc.1", {"skill/a": "1\n"})
         self.release("v3.0.0-rc.01", {"skill/a": "2\n"})
         self.release("v3.0.0-rc.0", {"skill/a": "3\n"})
         self.release("v3.0.0-beta.1", {"skill/a": "4\n"})
         self.release("v3.0.0", {"package.json": "{}\n"})
-        code, out = self.promoted("v3.0.0")
-        self.assertEqual((code, out["candidate"], out["reason"]), (1, None, "no-release-candidate"))
-        self.assertFalse(out["ok"])
+        self.assertEqual(self.promoted("v3.0.0"), (0, SKIPPED))
 
     def test_no_candidate(self) -> None:
         self.release("v3.0.0", {"package.json": "{}\n"})
-        code, out = self.promoted("v3.0.0")
-        self.assertEqual(code, 1)
-        self.assertEqual((out["ok"], out["candidate"], out["reason"]), (False, None, "no-release-candidate"))
+        self.assertEqual(self.promoted("v3.0.0"), (0, SKIPPED))
+
+    def test_no_candidate_with_sha_before_the_tag(self) -> None:
+        self.commit("🔖(release) v3.0.0", "package.json", "{}\n")
+        self.assertEqual(run_rules(self.repo, "promoted", "--tag", "v3.0.0", "--sha", "HEAD"), (0, SKIPPED))
 
     def test_release_candidate_tag_is_skipped(self) -> None:
         self.release("v3.0.0-rc.3", {"skill/a": "1\n"})
