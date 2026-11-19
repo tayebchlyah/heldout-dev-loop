@@ -18,11 +18,13 @@ from notes_path import main_ref, worktrees
 
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 NAMES_ERROR = "walled_skills in dev-loop.json must be a list of names, each ^[a-z0-9][a-z0-9-]{0,63}$"
-FRONT_KEY = re.compile(r"""(?:^|[{,])\s*["']?(context|hooks)["']?\s*:""", re.MULTILINE)
+FRONT_KEY = re.compile(r"""(?:^|[{,])\s*["']?(context|hooks|arguments)["']?\s*:""", re.MULTILINE)
 FENCE = re.compile(r"---[\s\ufeff]*\n([\s\S]*?)---")
 PLAIN_KEY = re.compile(r"[A-Za-z0-9_-]+[ \t]*:(?:\s|$)")
 PLACEHOLDER_BANG = re.compile(rb"\$[\s\S]{1,258}?!")
 AT_MENTION = re.compile(rb"(?:^|[^A-Za-z0-9._/+-])@", re.MULTILINE)
+PLACEHOLDER_AT = re.compile(rb"\$(?:[0-9]+|ARGUMENTS)@")
+NAMED_AT = re.compile(rb"\$[\s\S]{1,258}?@")
 LINK_MODE = "120000"
 TREE_MODE = "040000"
 FILE_MODES = ("100644", "100755")
@@ -121,7 +123,7 @@ def scan(text: bytes) -> str | None:
         return "shell line"
     if "hooks" in keys:
         return "hooks key"
-    if AT_MENTION.search(text):
+    if AT_MENTION.search(text) or PLACEHOLDER_AT.search(text) or ("arguments" in keys and NAMED_AT.search(text)):
         return "at mention"
     return "frontmatter shape" if odd_shape(front) else None
 
