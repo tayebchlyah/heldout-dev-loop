@@ -162,16 +162,17 @@ def is_release_tag(name: str) -> bool:
 
 
 def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str, build: bool) -> str | None:
-    """Why `release-check` does not measure from the fix wave: `not-ancestor`, `foreign-commit`, `unfixed` or
-    `released: <tag>` (a `v*` tag that holds the wave and points elsewhere than the target), else None."""
+    """#378: Why the wave is skipped: not-ancestor, foreign-commit, unfixed, released: <tag> (a v* tag ends it) or None."""
     sha = wave["sha"]
     if (sha == record_sha or run_git(repo, "merge-base", "--is-ancestor", record_sha, sha).returncode != 0
             or run_git(repo, "merge-base", "--is-ancestor", sha, target).returncode != 0):
         return "not-ancestor"
     if (refused := wave_check(repo, record_sha, sha, wave["issues"], build)) is not None:
         return refused["error"]
+    # #378: a tag ends the wave only when the target does not descend from it or code changed after it
     for tag in run_git(repo, "tag", "--list", "--sort=refname", "v*", "--contains", sha).stdout.split():
-        if run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}").stdout.strip() != target:
+        commit = run_git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}").stdout.strip()
+        if commit != target and stale_paths(repo, commit, target, build) is not None:
             return f"released: {tag}"
     return None
 

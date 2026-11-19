@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.1.1] - 2026-11-19
+
+### ⬆️ Upgrade
+
+1. Run `npx github:tayebchlyah/heldout-dev-loop#v3.1.1 upgrade` on a branch, in one PR, and merge it.
+
+### 🔒 Security
+
+- The skill wall now also refuses a project skill whose `SKILL.md` puts an `@` right after an args placeholder (`$0@`, `$ARGUMENTS@`, or any `$name` with a frontmatter `arguments` key). Claude Code fills the `Skill` args before it reads mentions, so the args could choose the byte before the `@` and attach a held-out file to a walled implementer.
+
+### 🐛 Bug Fixes
+
+- The skill wall no longer refuses a project skill for an `@` inside a word, such as `samber/cc-skills-golang@golang-lint` or `gotests@latest`. Only an `@` at a line start or after a byte other than a letter, digit, `.`, `_`, `/`, `+` or `-` is refused, as Claude Code reads a file mention there.
+- `release-check` no longer calls the audit stale when a final release only adds a release commit on top of a release candidate whose fix wave was recorded. A release tag now ends a fix wave only when code changed after it.
+
+Full changes: https://github.com/tayebchlyah/heldout-dev-loop/compare/v3.1.0...v3.1.1
+
 ## [3.1.0] - 2026-11-17
 
 ### ⬆️ Upgrade
