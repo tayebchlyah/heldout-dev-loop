@@ -22,6 +22,7 @@ FRONT_KEY = re.compile(r"""(?:^|[{,])\s*["']?(context|hooks)["']?\s*:""", re.MUL
 FENCE = re.compile(r"---[\s\ufeff]*\n([\s\S]*?)---")
 PLAIN_KEY = re.compile(r"[A-Za-z0-9_-]+[ \t]*:(?:\s|$)")
 PLACEHOLDER_BANG = re.compile(rb"\$[\s\S]{1,258}?!")
+AT_MENTION = re.compile(rb"(?:^|[^A-Za-z0-9._/+-])@", re.MULTILINE)
 LINK_MODE = "120000"
 TREE_MODE = "040000"
 FILE_MODES = ("100644", "100755")
@@ -120,7 +121,7 @@ def scan(text: bytes) -> str | None:
         return "shell line"
     if "hooks" in keys:
         return "hooks key"
-    if b"@" in text:
+    if AT_MENTION.search(text):
         return "at mention"
     return "frontmatter shape" if odd_shape(front) else None
 
