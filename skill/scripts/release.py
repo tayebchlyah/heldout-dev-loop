@@ -162,8 +162,7 @@ def is_release_tag(name: str) -> bool:
 
 
 def wave_ignored(repo: Path, record_sha: str, wave: dict, target: str, build: bool) -> str | None:
-    """Why `release-check` does not measure from the fix wave: `not-ancestor`, `foreign-commit`, `unfixed` or
-    `released: <tag>` (a `v*` tag that holds the wave and points elsewhere than the target), else None."""
+    """#378: Why the wave is skipped: not-ancestor, foreign-commit, unfixed, released: <tag> (a v* tag ends it) or None."""
     sha = wave["sha"]
     if (sha == record_sha or run_git(repo, "merge-base", "--is-ancestor", record_sha, sha).returncode != 0
             or run_git(repo, "merge-base", "--is-ancestor", sha, target).returncode != 0):
