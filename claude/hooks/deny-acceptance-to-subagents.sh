@@ -63,7 +63,7 @@
 # of a skill runs outside the Bash wall, and Skill loads the main checkout copy in an EnterWorktree session,
 # the worktree copy in a session that starts there. So every checkout Skill can load from must equal the main
 # ref: the worktree of cwd, the session start folder ($CLAUDE_PROJECT_DIR) and the main checkout. The scan
-# denies context: fork, a shell line, a hooks key, an @ and an odd frontmatter shape. An @ in Skill args
+# denies context: fork, a shell line, a hooks key, an @ mention (an @ not inside a word, or right after an args placeholder) and an odd frontmatter shape. An @ in Skill args
 # expands to a file attachment past every hook and the audit, through a symlink too, so any @ in the args
 # of an implementer Skill call is denied before the name test; other subagents get the name rule on args. spec-tester: every Skill call is denied. A skill denial
 # is no stop. The main session and every other subagent keep these tools. Not walled: a general-purpose
