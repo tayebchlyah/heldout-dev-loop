@@ -554,18 +554,54 @@ class WaveCheckTests(WaveRepo):
         for args in (("--sha", self.c), ("--tag", "v1.0.0-rc.1")):
             out, _ = self.check(*args)
             self.assertEqual((out["ok"], out["wave"]), (True, self.line), args)
-        out, _ = self.check("--sha", self.release_commit())
+        e = self.release_commit()
+        out, code = self.check("--sha", e)
+        self.assertEqual((code, out["ok"], out["wave"], out["wave_ignored"]), (0, True, self.line, None))
+        f = self.commit("#9: other")
+        out, _ = self.check("--sha", f)
         reason = out["reasons"][0]
         self.assertEqual((reason["reason"], out["wave"], out["wave_ignored"]), ("stale-audit", None, "released: v1.0.0-rc.1"))
         self.assertIn("src/app.py", reason["paths"])
+        self.git("tag", "-a", "v1.0.0", "-m", "x", e)
+        for args in (("--sha", e), ("--tag", "v1.0.0")):
+            out, _ = self.check(*args)
+            self.assertEqual((out["ok"], out["wave"]), (True, self.line), args)
+
+    def test_sibling_tag_ends_the_wave(self) -> None:
+        self.git("tag", "-a", "v1.0.0-rc.1", "-m", "x", self.release_commit())
+        self.git("checkout", "-q", "-b", "side", self.c)
+        e = self.commit("📝(docs) #8: note", {"docs/x.md": "x"})
+        out, _ = self.check("--sha", e)
+        self.assertEqual((out["reasons"][0]["reason"], out["wave"], out["wave_ignored"]), ("stale-audit", None, "released: v1.0.0-rc.1"))
+
+    def test_code_in_tag_keeps_the_wave(self) -> None:
+        self.git("tag", "-a", "v1.0.0-rc.1", "-m", "x", self.commit("#9: other"))
+        out, _ = self.check("--sha", self.release_commit())
+        self.assertEqual((out["reasons"][0]["reason"], out["wave"], out["wave_ignored"]), ("stale-audit", self.line, None))
+        self.assertIn("src/app.py", out["reasons"][0]["paths"])
+
+    def test_first_ending_tag_in_name_order(self) -> None:
+        self.git("tag", "v1.0.0", self.c)
+        self.git("tag", "v0.9.0", self.commit("#9: other"))
+        out, _ = self.check("--sha", self.release_commit())
+        self.assertEqual(out["wave_ignored"], "released: v1.0.0")
+
+    def test_tag_check_uses_the_build_flag(self) -> None:
+        self.git("tag", "v1.0.0-rc.1", self.c)
+        e = self.release_commit()
+        wave = release.current_wave(self.note.read_text(), "Run 2")
+        with unittest.mock.patch.object(release, "stale_paths", wraps=release.stale_paths) as spy:
+            self.assertIsNone(release.wave_ignored(self.repo, self.a, wave, e, False))
+        spy.assert_called_once_with(self.repo, self.c, e, False)
 
     def test_other_tags(self) -> None:
         self.git("tag", "backup", self.c)
-        d = self.release_commit()
-        self.assertTrue(self.check("--sha", d)[0]["ok"])
         self.git("tag", "v2.0.0", self.c)
         self.git("tag", "v1.0.0", self.c)
-        self.assertEqual(self.check("--sha", d)[0]["wave_ignored"], "released: v1.0.0")
+        d = self.release_commit()
+        self.assertTrue(self.check("--sha", d)[0]["ok"])
+        e = self.commit("#9: other")
+        self.assertEqual(self.check("--sha", e)[0]["wave_ignored"], "released: v1.0.0")
         self.git("tag", "-d", "v1.0.0", "v2.0.0")
         self.git("tag", "v1.0.1", d)
         self.assertTrue(self.check("--sha", d)[0]["ok"])
@@ -574,7 +610,7 @@ class WaveCheckTests(WaveRepo):
         self.git("config", "tag.sort", "-refname")
         self.git("tag", "v1.0.0", self.c)
         self.git("tag", "v1.0.1", self.c)
-        self.assertEqual(self.check("--sha", self.release_commit())[0]["wave_ignored"], "released: v1.0.0")
+        self.assertEqual(self.check("--sha", self.commit("#9: other"))[0]["wave_ignored"], "released: v1.0.0")
 
     def test_non_release_tag_has_wave_keys(self) -> None:
         self.git("tag", "foo", self.c)
