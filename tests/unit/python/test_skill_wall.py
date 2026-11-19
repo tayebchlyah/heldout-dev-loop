@@ -253,6 +253,12 @@ class SkillWallTests(unittest.TestCase):
             ("Body tool@mid.txt\n", None), ("Use samber/cc-skills-golang@golang-lint\n", None),
             ("go install github.com/cweill/gotests/gotests@latest\n", None),
             ("Mail a.b_c-d+e@x.org, v1.2@3 and 9@x\n", None),
+            ("Run go install $0@$1\n", "at mention"), ("Read $1@x\n", "at mention"),
+            ("See $ARGUMENTS@notes.md\n", "at mention"),
+            ("---\narguments: [repo, skill]\n---\nnpx skills add $repo@$skill\n", "at mention"),
+            ("---\narguments: [my-arg]\n---\nRun $my-arg@x\n", "at mention"),
+            ("---\narguments: x\n---\nCosts $5 and " + "a" * 259 + "@x\n", None),
+            ("$ go install x@latest\n", None), ("Pay $5 to a@b.c\n", None), ("Say $0x@y\n", None),
             ("\n---\ncontext: fork\n---\nBody\n", None),
             ("Body\ncontext: fork\n", None), (front("name2: y") + "hooks: x\n", None), (b"Plain \xff text\n", None)]
         for text, reason in rows:
