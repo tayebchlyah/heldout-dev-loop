@@ -246,6 +246,13 @@ class SkillWallTests(unittest.TestCase):
             ("---\n  a: 1\n---\nBody\n", "frontmatter shape"),
             (front("# note\ndescription: a\n  more"), None),
             ("Body see @notes.md\n", "at mention"), (front("description: see @notes.md"), "at mention"),
+            ("@start.txt\n", "at mention"), ("Body\n@line.txt\n", "at mention"), ("Body\t@tab.txt\n", "at mention"),
+            ("Body `@tick.txt`\n", "at mention"), ('Body "@q.txt"\n', "at mention"), ("Body (@p.txt)\n", "at mention"),
+            ("Body [@b.txt]\n", "at mention"), (b"\xef\xbb\xbf@bom.txt\n", "at mention"),
+            (b"Body \xc3\xa9@u.txt\n", "at mention"), ("Body tool@mid.txt and @end.txt\n", "at mention"),
+            ("Body tool@mid.txt\n", None), ("Use samber/cc-skills-golang@golang-lint\n", None),
+            ("go install github.com/cweill/gotests/gotests@latest\n", None),
+            ("Mail a.b_c-d+e@x.org, v1.2@3 and 9@x\n", None),
             ("\n---\ncontext: fork\n---\nBody\n", None),
             ("Body\ncontext: fork\n", None), (front("name2: y") + "hooks: x\n", None), (b"Plain \xff text\n", None)]
         for text, reason in rows:
