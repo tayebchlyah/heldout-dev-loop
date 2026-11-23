@@ -116,7 +116,7 @@ A journey script (an entry's `script`) reads the runner input on stdin: `base_ur
 
 ## Licenses
 
-Steps 1 to 4 and the feature map contract adapt pstack `create-verification-skill` (https://github.com/cursor/plugins/tree/main/pstack, commit `bf0c7cd`, pstack 0.15.42): `.cursor/skills/` became `.agents/skills/`, the Helpers section became one line, step 4 drives with `devloop.py drive --all`. Quoted under the MIT License:
+Steps 1 to 4 and the feature map contract adapt pstack `create-verification-skill` (https://github.com/cursor/plugins/tree/main/pstack, commit `0b46ec3`, pstack 0.15.46): `.cursor/skills/` became `.agents/skills/`, the Helpers section became one line, step 4 drives with `devloop.py drive --all`. Quoted under the MIT License:
 
 Copyright (c) 2026 Lauren Tan
 

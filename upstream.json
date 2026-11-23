@@ -41,8 +41,8 @@
       "name": "agent-skills",
       "repo": "addyosmani/agent-skills",
       "signal": "release",
-      "pin": "0.6.16",
-      "version": "0.6.16",
+      "pin": "0.6.17",
+      "version": "0.6.17",
       "paths": ["skills/doubt-driven-development/SKILL.md", "skills/security-and-hardening/SKILL.md"],
       "local": ["skill/references/spec.md"]
     },
@@ -60,8 +60,8 @@
       "repo": "cursor/plugins",
       "signal": "plugin-version",
       "file": "pstack/.cursor-plugin/plugin.json",
-      "pin": "bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7",
-      "version": "0.15.42",
+      "pin": "0b46ec399d55f2829e88822998f53b84944837d3",
+      "version": "0.15.46",
       "paths": [
         "pstack/skills/benchmark-checklist/SKILL.md",
         "pstack/skills/blast-radius/SKILL.md",
@@ -81,8 +81,8 @@
       "name": "codex-sandbox",
       "repo": "openai/codex",
       "signal": "release",
-      "pin": "rust-v0.169.0",
-      "version": "rust-v0.169.0",
+      "pin": "rust-v0.171.0",
+      "version": "rust-v0.171.0",
       "paths": [
         "codex-rs/sandboxing/src/seatbelt_base_policy.sbpl",
         "codex-rs/sandboxing/src/seatbelt_network_policy.sbpl",

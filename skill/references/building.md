@@ -4,7 +4,7 @@ Read before writing code. Four parts: principles, code volume, scope for your ha
 
 ## Principles
 
-Source: pstack 0.15.42 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `bf0c7cd`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds.
+Source: pstack 0.15.46 principle skills (https://github.com/cursor/plugins/tree/main/pstack, commit `0b46ec3`), `pstack/skills/principle-<name>/SKILL.md`, one line each, the "apply when" from its `description`. Each rule applies when its trigger holds.
 
 1. **Prove it works.** Apply before you call a task done. Check the real thing (run it, read the actual value, read the diff), not a proxy, a self-report or "it compiles". Script the check when you can.
 2. **Fix root causes.** Apply when debugging. Trace the symptom to the first place the system went wrong and fix it there. A guard is a fix only when the state it handles is legitimate.

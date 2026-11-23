@@ -80,7 +80,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_building_md_holds_pstack_principles(self) -> None:
         text = (SKILL_ROOT / "references" / "building.md").read_text().lower()
-        for value in [*PSTACK_PRINCIPLES, "bf0c7cd", "lauren tan", "benchmark.md"]:
+        for value in [*PSTACK_PRINCIPLES, "0b46ec3", "lauren tan", "benchmark.md"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
@@ -100,7 +100,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_benchmark_md_holds_the_checklist_and_its_notice(self) -> None:
         text = (SKILL_ROOT / "references" / "benchmark.md").read_text()
-        for value in ["Why not double?", "Did it even happen?", "inconclusive", "bf0c7cd", "Lauren Tan"]:
+        for value in ["Why not double?", "Did it even happen?", "inconclusive", "0b46ec3", "Lauren Tan"]:
             with self.subTest(value=value):
                 self.assertIn(value, text)
 
@@ -159,7 +159,7 @@ class InstructionContractTests(unittest.TestCase):
 
     def test_policy_module_names_its_source_and_change(self) -> None:
         doc = ast.get_docstring(ast.parse((REPO_ROOT / "codex" / "hooks" / "macos_policy.py").read_text()))
-        for value in ("Source: openai/codex rust-v0.169.0", "seatbelt_base_policy.sbpl", "seatbelt_network_policy.sbpl",
+        for value in ("Source: openai/codex rust-v0.171.0", "seatbelt_base_policy.sbpl", "seatbelt_network_policy.sbpl",
                       "seatbelt_read_only_platform_defaults.sbpl", "Apache-2.0 section 4(b)", "Python string", "verbatim"):
             with self.subTest(value=value):
                 self.assertIn(value, doc)

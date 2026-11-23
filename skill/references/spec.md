@@ -88,7 +88,7 @@ If nothing important is left, say "nothing important left".
 
 Add `## Threat model` to the spec: per trust boundary, the assets, one STRIDE row per threat that applies, the abuse cases. Each abuse case becomes an `## Acceptance oracle` line.
 
-Source: Addy Osmani agent-skills 0.6.16, `skills/security-and-hardening/SKILL.md`, section "Process: Threat Model First" (https://github.com/addyosmani/agent-skills, commit `39b723c`), copied verbatim, punctuation adapted: four em-dashes replaced by two commas, a colon and a semicolon.
+Source: Addy Osmani agent-skills 0.6.17, `skills/security-and-hardening/SKILL.md`, section "Process: Threat Model First" (https://github.com/addyosmani/agent-skills, commit `8c99fa3`), copied verbatim, punctuation adapted: four em-dashes replaced by two commas, a colon and a semicolon.
 
 Controls bolted on without a threat model are guesses. Before hardening, spend five minutes thinking like an attacker:
 
@@ -113,7 +113,7 @@ If you can't name the trust boundaries for a feature, you're not ready to secure
 
 Each decision marked one-way door, any track: one fresh subagent, no session context, gets the prompt below. ARTIFACT: the decision row plus its constraints, 3 to 5 sentences, then each caller, guard or test that contradicts it (outside the cap). CONTRACT: the oracle lines and interfaces it must satisfy. Never pass your reasoning; pass the evidence. Classify each finding: contract misread (fix the contract), valid (change the decision), trade-off (a row: `scripts/devloop.py decide --feature <slug> --kind decision`), noise. At most 3 cycles, then ask the user. Delivery runs no doubt review: Stage 2 ran it for each door the spec marks, and a one-way door the approved spec does not cover is a stop item (SKILL.md autonomy grant).
 
-Source: Addy Osmani agent-skills 0.6.16, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `39b723c`), core reviewer prompt and its rule, copied verbatim:
+Source: Addy Osmani agent-skills 0.6.17, `skills/doubt-driven-development/SKILL.md`, Step 3 "DOUBT" (https://github.com/addyosmani/agent-skills, commit `8c99fa3`), core reviewer prompt and its rule, copied verbatim:
 
 ```
 Adversarial review. Find what is wrong with this artifact.
