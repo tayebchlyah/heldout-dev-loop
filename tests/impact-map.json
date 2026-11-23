@@ -15,7 +15,17 @@
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
   ],
+  ".agents/skills/dev-loop/presets.json": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
   ".agents/skills/dev-loop/references/benchmark.md": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/references/bootstrap.md": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
@@ -205,6 +215,11 @@
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
   ],
+  ".agents/skills/dev-loop/scripts/capabilities.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
   ".agents/skills/dev-loop/scripts/capture.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
@@ -221,6 +236,11 @@
    "tests/unit/python/test_stacks_setup.py"
   ],
   ".agents/skills/dev-loop/scripts/ci_skip.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/cleanup.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
@@ -255,6 +275,46 @@
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
   ],
+  ".agents/skills/dev-loop/scripts/mutation/__init__.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/adapter.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/heldout.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/mutago.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/mutmut.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/run.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/setup.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/mutation/stryker.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
   ".agents/skills/dev-loop/scripts/notes_migrate/__init__.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
@@ -281,6 +341,11 @@
    "tests/unit/python/test_stacks_setup.py"
   ],
   ".agents/skills/dev-loop/scripts/notes_path.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/ratchet.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
@@ -355,7 +420,27 @@
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
   ],
+  ".agents/skills/dev-loop/scripts/security_skill.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
   ".agents/skills/dev-loop/scripts/size.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/source_dirs.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/source_wall.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_stacks_setup.py"
+  ],
+  ".agents/skills/dev-loop/scripts/stacks.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_stacks_setup.py"
@@ -814,6 +899,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -878,6 +964,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -899,6 +986,8 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
+   "tests/unit/python/test_repo_docs.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_search_hooks.py",
@@ -924,6 +1013,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -945,6 +1035,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_search_hooks.py",
@@ -968,6 +1059,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -988,6 +1080,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -1012,6 +1105,7 @@
    "tests/unit/python/test_push_spellings.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -1037,6 +1131,7 @@
    "tests/unit/python/test_push_spellings.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -1064,6 +1159,7 @@
    "tests/unit/python/test_push_spellings.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_search_hooks.py",
@@ -1089,6 +1185,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -1109,6 +1206,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -1129,6 +1227,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -1149,6 +1248,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -1365,6 +1465,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_search_hooks.py",
@@ -1388,6 +1489,7 @@
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1409,6 +1511,7 @@
    "tests/unit/python/test_macos_hook.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1431,6 +1534,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_search_hooks.py",
@@ -1453,6 +1557,7 @@
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1477,6 +1582,7 @@
    "tests/unit/python/test_push_spellings.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1501,6 +1607,7 @@
    "tests/unit/python/test_push_spellings.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1528,6 +1635,7 @@
    "tests/unit/python/test_push_spellings.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_search_hooks.py",
@@ -1551,6 +1659,7 @@
    "tests/unit/python/test_macos_hook.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1572,6 +1681,7 @@
    "tests/unit/python/test_macos_hook.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_docs.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -1595,6 +1705,7 @@
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1615,6 +1726,7 @@
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py"
   ],
@@ -1635,6 +1747,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_walls.py"
@@ -1662,6 +1775,7 @@
    "tests/unit/python/test_release_workflow.py",
    "tests/unit/python/test_repo_docs.py",
    "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_setup_checks.py",
    "tests/unit/python/test_stacks_setup.py"
   ],
   "docs/commands.md": [
@@ -1701,6 +1815,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1714,6 +1829,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_fill.py",
    "tests/unit/python/test_kit_reference.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py"
   ],
   "lib/fsops.mjs": [
@@ -1729,6 +1845,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1758,6 +1875,7 @@
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1774,6 +1892,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1790,6 +1909,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1806,6 +1926,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1821,6 +1942,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1835,6 +1957,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -1849,6 +1972,7 @@
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -2169,6 +2293,7 @@
   "scripts/acceptance.sh": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_feature_gate.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_suite_lock.py"
   ],
@@ -2181,6 +2306,7 @@
    "tests/unit/python/test_canary_nested.py",
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_second_review.py"
   ],
@@ -2188,6 +2314,7 @@
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_impact_gate.py",
    "tests/unit/python/test_impact_map.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_setup_checks.py",
    "tests/unit/python/test_stacks_setup.py",
@@ -2198,26 +2325,31 @@
    "tests/unit/python/test_impact_gate.py",
    "tests/unit/python/test_impact_map.py",
    "tests/unit/python/test_impact_trace.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py"
   ],
   "scripts/mutation_canary.sh": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_mutation_canary.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py"
   ],
   "scripts/release-check.sh": [
    "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_release_workflow.py",
    "tests/unit/python/test_repo_rules.py"
   ],
   "scripts/release-verify.sh": [
    "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_release_workflow.py",
    "tests/unit/python/test_repo_rules.py"
   ],
   "scripts/repo_rules.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_impact_trace.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_comments.py",
    "tests/unit/python/test_repo_rules.py"
   ],
@@ -2225,6 +2357,7 @@
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_feature_gate.py",
    "tests/unit/python/test_impact_gate.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_suite_lock.py"
   ],
@@ -2232,10 +2365,12 @@
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_feature_gate.py",
    "tests/unit/python/test_impact_gate.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py"
   ],
   "scripts/upstream_watch.py": [
    "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_upstream_watch.py"
   ],
@@ -2283,7 +2418,6 @@
    "tests/unit/python/test_second_review.py",
    "tests/unit/python/test_size.py",
    "tests/unit/python/test_skill_text.py",
-   "tests/unit/python/test_upstream_watch.py",
    "tests/unit/python/test_verify.py"
   ],
   "skill/presets.json": [
@@ -2342,6 +2476,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_repo_docs.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_review_text.py",
    "tests/unit/python/test_second_review.py",
@@ -2644,6 +2779,7 @@
    "tests/unit/python/test_audit_skilltext.py",
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2652,6 +2788,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2671,6 +2808,7 @@
    "tests/unit/python/test_audit_promote.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2679,6 +2817,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2698,6 +2837,7 @@
    "tests/unit/python/test_audit_promote.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2706,6 +2846,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2720,6 +2861,7 @@
    "tests/unit/python/test_audit_close.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2728,6 +2870,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2751,6 +2894,7 @@
    "tests/unit/python/test_audit_skilltext.py",
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2759,6 +2903,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2777,6 +2922,7 @@
    "tests/unit/python/test_audit_fold_review.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2785,6 +2931,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2801,6 +2948,7 @@
    "tests/unit/python/test_audit_fold_review.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2809,6 +2957,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2828,6 +2977,7 @@
    "tests/unit/python/test_audit_promote.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2836,6 +2986,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2849,6 +3000,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2857,6 +3009,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2876,6 +3029,7 @@
    "tests/unit/python/test_audit_promote.py",
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2884,6 +3038,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2905,6 +3060,7 @@
    "tests/unit/python/test_audit_seed.py",
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2913,6 +3069,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2933,6 +3090,7 @@
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_audit_skilltext.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2941,6 +3099,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -2961,6 +3120,7 @@
    "tests/unit/python/test_audit_report.py",
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -2969,6 +3129,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -3093,6 +3254,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3157,6 +3319,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -3209,6 +3372,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -3234,6 +3398,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -3267,6 +3432,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3310,6 +3476,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3355,6 +3522,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3398,6 +3566,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3421,6 +3590,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_capture.py",
    "tests/unit/python/test_check_setup.py",
@@ -3441,6 +3611,7 @@
    "tests/unit/python/test_presets.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_docs.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
@@ -3464,6 +3635,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capture.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -3473,6 +3645,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -3487,6 +3660,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -3500,6 +3674,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_review_text.py",
@@ -3523,6 +3698,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_ci.py",
@@ -3537,6 +3713,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3568,6 +3745,7 @@
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_ci_skip.py",
@@ -3621,6 +3799,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_cleanup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -3630,6 +3809,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -3737,6 +3917,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_kit_contracts.py",
@@ -3744,6 +3925,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -3758,6 +3940,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_case_floor.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -3769,6 +3952,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_ratchet_acceptance.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -3782,6 +3966,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_case_floor.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -3798,6 +3983,7 @@
    "tests/unit/python/test_ratchet_gate.py",
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_check.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3905,6 +4091,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3929,6 +4116,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -3940,6 +4128,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_mutation_canary.py",
    "tests/unit/python/test_mutation_classify.py",
+   "tests/unit/python/test_mutation_heldout.py",
    "tests/unit/python/test_mutation_rerun.py",
    "tests/unit/python/test_mutation_run.py",
    "tests/unit/python/test_mutation_select.py",
@@ -3947,6 +4136,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -3968,6 +4158,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -3979,9 +4170,50 @@
    "tests/unit/python/test_mutation_mutmut.py",
    "tests/unit/python/test_mutation_stryker.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
+  ],
+  "skill/scripts/mutation/heldout.py": [
+   "tests/unit/node/codex-kit-copy.test.mjs",
+   "tests/unit/node/kit.test.mjs",
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/node/project-hooks.test.mjs",
+   "tests/unit/node/project-init.test.mjs",
+   "tests/unit/node/project-upgrade.test.mjs",
+   "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
+   "tests/unit/python/test_capabilities.py",
+   "tests/unit/python/test_check_setup.py",
+   "tests/unit/python/test_codex_trusted_checks.py",
+   "tests/unit/python/test_devloop.py",
+   "tests/unit/python/test_hooks.py",
+   "tests/unit/python/test_kit_contracts.py",
+   "tests/unit/python/test_kit_reference.py",
+   "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_mutation.py",
+   "tests/unit/python/test_mutation_heldout.py",
+   "tests/unit/python/test_mutation_mutmut.py",
+   "tests/unit/python/test_mutation_setup.py",
+   "tests/unit/python/test_mutation_stryker.py",
+   "tests/unit/python/test_notes_path.py",
+   "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_retro.py",
+   "tests/unit/python/test_seal_hooks.py",
+   "tests/unit/python/test_second_review.py",
+   "tests/unit/python/test_setup_checks.py",
+   "tests/unit/python/test_skill_text.py",
+   "tests/unit/python/test_source_setup.py",
+   "tests/unit/python/test_stacks_setup.py",
+   "tests/unit/python/test_support.py",
+   "tests/unit/python/test_verify.py",
+   "tests/unit/python/test_verify_playwright.py",
+   "tests/unit/python/test_walls.py"
   ],
   "skill/scripts/mutation/mutago.py": [
    "tests/unit/node/codex-kit-copy.test.mjs",
@@ -3991,6 +4223,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4000,6 +4233,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_mutation_mutago.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4012,6 +4246,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4021,6 +4256,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_mutation_mutmut.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4034,6 +4270,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -4052,6 +4289,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -4074,6 +4312,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -4087,6 +4326,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -4108,6 +4348,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4117,6 +4358,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_mutation_stryker.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4129,6 +4371,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4139,6 +4382,7 @@
    "tests/unit/python/test_notes_migrate.py",
    "tests/unit/python/test_notes_migrate_apply.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4151,6 +4395,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4160,6 +4405,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_notes_migrate_apply.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4172,6 +4418,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4182,6 +4429,7 @@
    "tests/unit/python/test_notes_migrate.py",
    "tests/unit/python/test_notes_migrate_apply.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4194,6 +4442,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4204,6 +4453,7 @@
    "tests/unit/python/test_notes_migrate.py",
    "tests/unit/python/test_notes_migrate_apply.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4216,6 +4466,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4225,6 +4476,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_notes_migrate_apply.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py"
@@ -4355,6 +4607,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_case_floor.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -4371,6 +4624,7 @@
    "tests/unit/python/test_ratchet_gate.py",
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_check.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -4397,6 +4651,7 @@
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_ci_skip.py",
@@ -4460,6 +4715,7 @@
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_ci_skip.py",
@@ -4522,7 +4778,12 @@
    "tests/unit/python/test_audit_seed.py",
    "tests/unit/python/test_audit_units.py",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_github.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_links.py",
+   "tests/unit/python/test_board_robust.py",
+   "tests/unit/python/test_board_shipped.py",
+   "tests/unit/python/test_board_tasks.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_ci_skip.py",
@@ -4533,6 +4794,7 @@
    "tests/unit/python/test_kit_contracts.py",
    "tests/unit/python/test_kit_reference.py",
    "tests/unit/python/test_kit_walls.py",
+   "tests/unit/python/test_metrics_cli.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_mutation_setup.py",
    "tests/unit/python/test_notes_migrate_apply.py",
@@ -4563,6 +4825,7 @@
    "tests/unit/python/test_source_audit.py",
    "tests/unit/python/test_source_setup.py",
    "tests/unit/python/test_stacks_setup.py",
+   "tests/unit/python/test_status.py",
    "tests/unit/python/test_support.py",
    "tests/unit/python/test_verify.py",
    "tests/unit/python/test_verify_playwright.py",
@@ -4585,6 +4848,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -4599,6 +4863,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4607,6 +4872,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_sandbox_run.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -4654,6 +4920,7 @@
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_mutation_canary.py",
    "tests/unit/python/test_mutation_classify.py",
+   "tests/unit/python/test_mutation_heldout.py",
    "tests/unit/python/test_mutation_rerun.py",
    "tests/unit/python/test_mutation_run.py",
    "tests/unit/python/test_mutation_select.py",
@@ -4709,6 +4976,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -4725,6 +4993,7 @@
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal.py",
@@ -4757,6 +5026,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4767,6 +5037,7 @@
    "tests/unit/python/test_ratchet_gate.py",
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal.py",
    "tests/unit/python/test_seal_check.py",
@@ -4785,6 +5056,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_codex_wall.py",
@@ -4796,6 +5068,7 @@
    "tests/unit/python/test_ratchet_gate.py",
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal.py",
    "tests/unit/python/test_seal_check.py",
@@ -4821,6 +5094,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -4837,6 +5111,7 @@
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal.py",
@@ -4945,6 +5220,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_codex_wall.py",
@@ -4956,6 +5232,7 @@
    "tests/unit/python/test_ratchet_gate.py",
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal.py",
    "tests/unit/python/test_seal_check.py",
@@ -4980,6 +5257,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -4990,6 +5268,7 @@
    "tests/unit/python/test_ratchet_gate.py",
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal.py",
    "tests/unit/python/test_seal_check.py",
@@ -5009,6 +5288,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -5022,6 +5302,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -5045,6 +5326,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -5058,6 +5340,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -5081,6 +5364,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -5097,6 +5381,7 @@
    "tests/unit/python/test_ratchet_record.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal.py",
@@ -5214,6 +5499,7 @@
    "tests/unit/node/project-init.test.mjs",
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
    "tests/unit/python/test_devloop.py",
@@ -5222,6 +5508,7 @@
    "tests/unit/python/test_kit_walls.py",
    "tests/unit/python/test_mutation.py",
    "tests/unit/python/test_release.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_seal_hooks.py",
    "tests/unit/python/test_second_review.py",
@@ -5237,6 +5524,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_check_setup.py",
    "tests/unit/python/test_codex_trusted_checks.py",
@@ -5256,6 +5544,7 @@
    "tests/unit/python/test_presets.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -5357,6 +5646,7 @@
    "tests/unit/node/project-upgrade.test.mjs",
    "tests/unit/python/test_autonomy.py",
    "tests/unit/python/test_board_layout.py",
+   "tests/unit/python/test_board_robust.py",
    "tests/unit/python/test_capabilities.py",
    "tests/unit/python/test_capture.py",
    "tests/unit/python/test_check_setup.py",
@@ -5371,6 +5661,7 @@
    "tests/unit/python/test_notes_path.py",
    "tests/unit/python/test_release.py",
    "tests/unit/python/test_release_guard.py",
+   "tests/unit/python/test_release_rulings.py",
    "tests/unit/python/test_repo_rules.py",
    "tests/unit/python/test_retro.py",
    "tests/unit/python/test_seal_hooks.py",
@@ -5667,6 +5958,46 @@
   "tests/fixtures/mutation/mutmut/head/app/src/shop/core/price.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_mutation_mutmut.py",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/base/.gitignore": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/base/dev-loop.json": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/base/package.json": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/base/src/core/price.ts": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/base/stryker.config.json": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/base/tests/heldout/price.test.ts": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/expected.txt": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/head/src/core/price.ts": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/head/tests/unit/price.test.ts": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_repo_rules.py"
+  ],
+  "tests/fixtures/mutation/stryker-heldout/prepare.sh": [
+   "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_repo_rules.py"
   ],
   "tests/fixtures/mutation/stryker/base/dev-loop.json": [
@@ -6604,6 +6935,14 @@
    "tests/unit/python/test_verify.py",
    "tests/unit/python/test_verify_playwright.py"
   ],
+  "tests/unit/python/test_mutation_heldout.py": [
+   "tests/unit/node/payload.test.mjs",
+   "tests/unit/python/test_mutation_heldout.py",
+   "tests/unit/python/test_repo_docs.py",
+   "tests/unit/python/test_repo_rules.py",
+   "tests/unit/python/test_verify.py",
+   "tests/unit/python/test_verify_playwright.py"
+  ],
   "tests/unit/python/test_mutation_mutago.py": [
    "tests/unit/node/payload.test.mjs",
    "tests/unit/python/test_mutation_mutago.py",
@@ -7094,5 +7433,5 @@
    "tests/unit/python/test_upstream_watch.py"
   ]
  },
- "source": "36a0075a7160f88949c1b992d0ebd5f89c58efb2"
+ "source": "ebda54d0103aabfd30fbc17d38f11555b563cdfc"
 }
