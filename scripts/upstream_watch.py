@@ -17,6 +17,7 @@ import json
 import re
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 LABEL = "upstream-watch"
@@ -79,23 +80,23 @@ def watched(path: str | None, paths: list[str]) -> bool:
 def commits(src: dict, head: str, cmp: dict, files: list[tuple[str, str]]) -> list[tuple[str, str]]:
     subject = {}
     for path, _ in files:
-        for item in api(f"repos/{src['repo']}/commits?path={path}&sha={head}&per_page=100"):
+        for item in api(f"repos/{src['repo']}/commits?path={urllib.parse.quote(path, safe='/')}&sha={head}&per_page=100"):
             subject[item["sha"]] = (item["commit"]["message"].splitlines() or [""])[0]
     return [(c["sha"], subject[c["sha"]]) for c in cmp["commits"] if c["sha"] in subject]
 
 
-def releases(src: dict) -> tuple[list[dict], bool]:
+def releases(src: dict) -> tuple[list[dict], str]:
     after = []
     for page in range(1, RELEASE_PAGES + 1):
         listing = api(f"repos/{src['repo']}/releases?per_page={RELEASE_PAGE}&page={page}")
         for item in listing:
             if item["tag_name"] == src["pin"]:
-                return after, True
+                return after, "found"
             if not (item["draft"] or item["prerelease"]):
                 after.append(item)
         if len(listing) < RELEASE_PAGE:
-            break
-    return after, False
+            return after, "complete"
+    return after, "capped"
 
 
 def ticks(text: str, least: int) -> str:
@@ -108,24 +109,27 @@ def span(text: str) -> str:
 
 def notes_block(item: dict, keep: set[str]) -> list[str]:
     if "notes" not in keep:
-        return [f"- {item['tag_name']}: {item['html_url']}"]
+        return [f"- {span(item['tag_name'])}: {item['html_url']}"]
     text = (item["body"] or "").replace("\r\n", "\n")
     if len(text) > NOTES_LIMIT:
         text = text[:NOTES_LIMIT] + f"\n[cut at {NOTES_LIMIT} characters, full notes at the link]"
     fence = ticks(text, 3)
-    return [f"<details><summary>{html.escape(item['tag_name'])}</summary>", "", item["html_url"], "",
+    return [f"<details><summary><code>{html.escape(item['tag_name'])}</code></summary>", "", item["html_url"], "",
             f"{fence}text", text, fence, "", "</details>"]
 
 
 def section(src: dict, old: str, new: str, cmp: dict, files: list[tuple[str, str]], log: list[tuple[str, str]],
-            notes: tuple[list[dict], bool] | None, keep: set[str]) -> str:
-    lines = [f"## {src['name']}: {old} to {new}", "", f"`{src['repo']}`, compare: {cmp['html_url']}", ""]
+            notes: tuple[list[dict], str] | None, keep: set[str]) -> str:
+    lines = [f"## {src['name']}: {span(old)} to {span(new)}", "", f"`{src['repo']}`, compare: {cmp['html_url']}", ""]
+    patch_of = {f["filename"]: f.get("patch") for f in cmp["files"]}
+    over = bool(files) and cmp["total_commits"] > len(cmp["commits"])
+    had = {"diffs": any(patch_of.get(path) for path, _ in files), "notes": bool(notes and notes[0]),
+           "commits": bool(log) or over}
     for part, text in (("diffs", "Diffs"), ("notes", "Release note bodies"), ("commits", "Commits")):
-        if part not in keep:
+        if part not in keep and had[part]:
             lines += [f"{text} left out: the issue body went over the GitHub limit, see the links.", ""]
     if not files:
         lines += ["No watched file changed.", ""]
-    patch_of = {f["filename"]: f.get("patch") for f in cmp["files"]}
     for path, status in files:
         patch = patch_of.get(path)
         lines.append(f"- `{path}` ({status})" + ("" if patch else ", diff on the compare page"))
@@ -133,18 +137,23 @@ def section(src: dict, old: str, new: str, cmp: dict, files: list[tuple[str, str
             fence = ticks(patch, 3)
             lines += ["", f"{fence}diff", patch, fence]
         lines.append("")
-    if "commits" in keep and log:
-        lines += ["Commits that changed a watched file:", ""]
-        if cmp["total_commits"] > len(cmp["commits"]):
+    if "commits" in keep and had["commits"]:
+        if log:
+            lines += ["Commits that changed a watched file:", ""]
+        if over:
             lines += [f"Only the first {len(cmp['commits'])} of {cmp['total_commits']} commits of the range are "
                       "checked: see the compare page.", ""]
-        lines += [f"- [`{sha[:7]}`](https://github.com/{src['repo']}/commit/{sha}) {span(text)}" for sha, text in log]
-        lines.append("")
+        if log:
+            lines += [f"- [`{sha[:7]}`](https://github.com/{src['repo']}/commit/{sha}) {span(text)}" for sha, text in log]
+            lines.append("")
     if notes is not None:
-        after, found = notes
+        after, state = notes
         lines += ["Releases after the pin:", ""]
-        if not found:
-            lines += ["The pin is not among the 100 newest releases: the list may be incomplete.", ""]
+        if state == "capped":
+            lines += [f"The pin is not among the {RELEASE_PAGE * RELEASE_PAGES} newest releases: "
+                      "the list may be incomplete.", ""]
+        elif state == "complete":
+            lines += ["The pin has no release in the list: every release is shown.", ""]
         for item in after:
             lines += notes_block(item, keep)
             if "notes" in keep:
