@@ -41,9 +41,21 @@ def source(name: str, signal: str, **extra) -> dict:
             "local": [], **extra}
 
 
-def compare(repo: str, base: str, head: str, files: list[dict]) -> dict:
+def compare(repo: str, base: str, head: str, files: list[dict], commits: list[str] | tuple[str, ...] = (), total: int | None = None) -> dict:
     return {f"repos/{repo}/compare/{base}...{head}": {
-        "html_url": f"https://github.com/{repo}/compare/{base}...{head}", "files": files}}
+        "html_url": f"https://github.com/{repo}/compare/{base}...{head}", "files": files,
+        "commits": [{"sha": sha} for sha in commits], "total_commits": len(commits) if total is None else total},
+        f"repos/{repo}/releases?per_page=20&page=1": []}
+
+
+def path_commits(repo: str, head: str, path: str, log: list[tuple[str, str]]) -> dict:
+    return {f"repos/{repo}/commits?path={path}&sha={head}&per_page=100":
+            [{"sha": sha, "commit": {"message": message}} for sha, message in log]}
+
+
+def release(tag: str, body: str = "", draft: bool = False, prerelease: bool = False) -> dict:
+    return {"tag_name": tag, "body": body, "draft": draft, "prerelease": prerelease,
+            "html_url": f"https://github.com/o/rel/releases/tag/{tag}"}
 
 
 def trees(repo: str, base: str, head: str, before: dict, after: dict, truncated: bool = False) -> dict:
@@ -138,6 +150,8 @@ class UpstreamWatchTests(unittest.TestCase):
                  "skills/a/new.md": "1", "skills/a/same.md": "1", "skills/a/hidden.md": "9"}
         routes = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
                   **compare("o/rel", "v1.0.0", "v1.1.0", files), **trees("o/rel", "v1.0.0", "v1.1.0", before, after)}
+        for path in ("skills/a/SKILL.md", "AGENTS.md", "skills/a/gone.md", "skills/a/new.md", "skills/a/hidden.md"):
+            routes.update(path_commits("o/rel", "v1.1.0", path, []))
         code, out = self.run_watch([src], routes, "--dry-run")
         self.assertEqual(code, 0, out)
         body = out["body"]
@@ -166,12 +180,126 @@ class UpstreamWatchTests(unittest.TestCase):
         patch = "@@ -1 +1 @@\n" + "+line\n" * 20000
         routes = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
                   **compare("o/rel", "v1.0.0", "v1.1.0", [{"filename": "AGENTS.md", "status": "modified", "patch": patch}]),
-                  **trees("o/rel", "v1.0.0", "v1.1.0", {"AGENTS.md": "1"}, {"AGENTS.md": "2"})}
+                  **trees("o/rel", "v1.0.0", "v1.1.0", {"AGENTS.md": "1"}, {"AGENTS.md": "2"}),
+                  **path_commits("o/rel", "v1.1.0", "AGENTS.md", [])}
         _, out = self.run_watch([src], routes, "--dry-run")
         self.assertLess(len(out["body"]), 65536)
         self.assertIn("AGENTS.md", out["body"])
         self.assertNotIn("+line", out["body"])
         self.assertIn("over the GitHub limit", out["body"])
+
+    def test_commits_that_changed_a_watched_file(self) -> None:
+        src = source("rel", "release", pin="v1.0.0", version="1.0.0")
+        files = [{"filename": "AGENTS.md", "status": "modified"}, {"filename": "skills/a/x.md", "status": "added"}]
+        a, b, c, old = "1" * 40, "2" * 40, "3" * 40, "4" * 40
+        thanks = "docs: thanks @bob, fixes #12 and o/x#3\n\nbody line"
+        routes = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
+                  **compare("o/rel", "v1.0.0", "v1.1.0", files, commits=[a, b, c]),
+                  **trees("o/rel", "v1.0.0", "v1.1.0", {"AGENTS.md": "1"}, {"AGENTS.md": "2", "skills/a/x.md": "1"}),
+                  **path_commits("o/rel", "v1.1.0", "AGENTS.md", [(c, thanks), (old, "old: before the pin")]),
+                  **path_commits("o/rel", "v1.1.0", "skills/a/x.md", [(c, thanks), (a, "feat: use `x` here")])}
+        code, out = self.run_watch([src], routes, "--dry-run")
+        self.assertEqual(code, 0, out)
+        body = out["body"]
+        self.assertIn("Commits that changed a watched file:", body)
+        first = f"- [`1111111`](https://github.com/o/rel/commit/{a}) `` feat: use `x` here ``"
+        last = f"- [`3333333`](https://github.com/o/rel/commit/{c}) ` docs: thanks @bob, fixes #12 and o/x#3 `"
+        self.assertIn(first, body)
+        self.assertIn(last, body)
+        self.assertLess(body.index(first), body.index(last))
+        self.assertEqual(body.count(f"commit/{c})"), 1)
+        for text in ("2222222", "4444444", "before the pin", "body line"):
+            self.assertNotIn(text, body)
+
+    def test_commit_list_over_the_compare_limit_says_so(self) -> None:
+        src = source("rel", "release", pin="v1.0.0", version="1.0.0")
+        routes = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
+                  **compare("o/rel", "v1.0.0", "v1.1.0", [{"filename": "AGENTS.md", "status": "modified"}],
+                            commits=["1" * 40], total=300),
+                  **trees("o/rel", "v1.0.0", "v1.1.0", {"AGENTS.md": "1"}, {"AGENTS.md": "2"}),
+                  **path_commits("o/rel", "v1.1.0", "AGENTS.md", [("1" * 40, "fix: one")])}
+        _, out = self.run_watch([src], routes, "--dry-run")
+        self.assertIn("Only the first 1 of 300 commits of the range are checked", out["body"])
+
+    def test_release_notes_after_the_pin(self) -> None:
+        src = source("rel", "release", pin="v1.0.0", version="1.0.0")
+        listing = [release("v1.3.0-rc.1", "rc notes", prerelease=True), release("v1.2.0", "## Fixes\n- by @ann in #7\n```\ncode"),
+                   release("v1.1.1", "draft notes", draft=True), release("v1.1.0", "x" * 5000),
+                   release("v1.0.0", "pin notes"), release("v0.9.0", "older notes")]
+        routes = {"repos/o/rel/releases/latest": {"tag_name": "v1.2.0"},
+                  **compare("o/rel", "v1.0.0", "v1.2.0", []), **trees("o/rel", "v1.0.0", "v1.2.0", {}, {}),
+                  "repos/o/rel/releases?per_page=20&page=1": listing}
+        code, out = self.run_watch([src], routes, "--dry-run")
+        self.assertEqual(code, 0, out)
+        body = out["body"]
+        self.assertIn("<details><summary>v1.2.0</summary>\n\nhttps://github.com/o/rel/releases/tag/v1.2.0\n\n"
+                      "````text\n## Fixes\n- by @ann in #7\n```\ncode\n````\n\n</details>", body)
+        self.assertIn("<details><summary>v1.1.0</summary>", body)
+        self.assertIn("x" * 3000 + "\n[cut at 3000 characters, full notes at the link]", body)
+        self.assertNotIn("x" * 3001, body)
+        self.assertLess(body.index("v1.2.0</summary>"), body.index("v1.1.0</summary>"))
+        for text in ("rc notes", "draft notes", "pin notes", "older notes"):
+            self.assertNotIn(text, body)
+
+    def test_release_notes_when_the_pin_is_not_listed(self) -> None:
+        src = source("rel", "release", pin="v1.0.0", version="1.0.0")
+        routes = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
+                  **compare("o/rel", "v1.0.0", "v1.1.0", []), **trees("o/rel", "v1.0.0", "v1.1.0", {}, {}),
+                  "repos/o/rel/releases?per_page=20&page=1": [release("v1.1.0", "new notes")]}
+        _, out = self.run_watch([src], routes, "--dry-run")
+        self.assertIn("new notes", out["body"])
+        self.assertIn("The pin is not among the 100 newest releases", out["body"])
+
+    def test_release_list_reads_pages_of_20_up_to_5(self) -> None:
+        src = source("rel", "release", pin="v1.0.0", version="1.0.0")
+        alphas = [release(f"v1.1.0-alpha.{n}", "alpha notes", prerelease=True) for n in range(20)]
+        base = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
+                **compare("o/rel", "v1.0.0", "v1.1.0", []), **trees("o/rel", "v1.0.0", "v1.1.0", {}, {})}
+        found = {"repos/o/rel/releases?per_page=20&page=1": alphas,
+                 "repos/o/rel/releases?per_page=20&page=2": [release("v1.1.0", "page two notes"), release("v1.0.0")]}
+        capped = {f"repos/o/rel/releases?per_page=20&page={n}": alphas for n in range(1, 7)}
+        for name, pages, last, listed in (("pin on page 2", found, 2, True), ("five full pages", capped, 5, False)):
+            with self.subTest(name):
+                self.log.write_text("")
+                code, out = self.run_watch([src], {**base, **pages}, "--dry-run")
+                self.assertEqual(code, 0, out)
+                read = [c["args"][1] for c in self.calls() if "/releases?" in c["args"][1]]
+                self.assertEqual(read, [f"repos/o/rel/releases?per_page=20&page={n}" for n in range(1, last + 1)])
+                self.assertEqual("page two notes" in out["body"], listed)
+                self.assertEqual("not among the 100 newest" in out["body"], not listed)
+
+    def test_no_release_notes_for_other_signals(self) -> None:
+        src = source("pv", "plugin-version", pin="f" * 40, version="0.1.0", file="p/plugin.json")
+        routes = {**plugin_routes("0.2.0"), **compare("o/pv", "f" * 40, "c" * 40, []),
+                  **trees("o/pv", "f" * 40, "c" * 40, {}, {})}
+        code, out = self.run_watch([src], routes, "--dry-run")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("<details>", out["body"])
+        self.assertNotIn("releases?", " ".join(c["args"][1] for c in self.calls()))
+
+    def test_body_too_long_drops_diffs_then_notes_then_commits(self) -> None:
+        src = source("rel", "release", pin="v1.0.0", version="1.0.0")
+        files = [{"filename": "AGENTS.md", "status": "modified", "patch": "@@ -1 +1 @@\n+diff line"}]
+        log = [(str(n).zfill(40), f"fix: commit number {n} " + "y" * 150) for n in range(400)]
+        base = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"},
+                **trees("o/rel", "v1.0.0", "v1.1.0", {"AGENTS.md": "1"}, {"AGENTS.md": "2"})}
+        notes = [release(f"v1.{n}.0", "z" * 3000) for n in range(30, 0, -1)] + [release("v1.0.0")]
+        rows = [("notes too long", log[:5], notes, ["notes", "diffs"], ["commit number 4"]),
+                ("commits too long", log, notes, ["notes", "diffs", "commits"], ["v1.30.0"])]
+        for name, commits, listing, dropped, kept in rows:
+            with self.subTest(name):
+                routes = {**base, **compare("o/rel", "v1.0.0", "v1.1.0", files, commits=[s for s, _ in commits]),
+                          **path_commits("o/rel", "v1.1.0", "AGENTS.md", commits),
+                          "repos/o/rel/releases?per_page=20&page=1": listing}
+                _, out = self.run_watch([src], routes, "--dry-run")
+                body = out["body"]
+                self.assertLess(len(body), 65536)
+                self.assertNotIn("+diff line", body)
+                self.assertNotIn("z" * 100, body)
+                self.assertIn("https://github.com/o/rel/releases/tag/v1.30.0", body)
+                self.assertEqual("commit number" in body, "commits" not in dropped)
+                for text in kept:
+                    self.assertIn(text, body)
 
     def test_issue_action(self) -> None:
         new = {"repos/o/rel/releases/latest": {"tag_name": "v1.1.0"}, **compare("o/rel", "v1.0.0", "v1.1.0", []),
